@@ -1,8 +1,10 @@
 // This is the content for res-styles.js
-/* globals GM_addStyle */
 
-function injectPanelStyles() {
-    GM_addStyle(`
+function defineStyles(core) {
+    /* globals GM_addStyle */
+
+    function injectPanelStyles() {
+        GM_addStyle(`
 :root { --res-font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji"; }
 html[data-res-theme='dark'] { --res-bg-primary: #181a1b; --res-bg-secondary: #25282a; --res-bg-tertiary: #34383b; --res-bg-hover: #3d4245; --res-text-primary: #e8e6e3; --res-text-secondary: #b3b0aa; --res-border-color: #454a4d; --res-accent: #5a93ff; --res-accent-hover: #7eb0ff; --res-accent-glow: rgba(90, 147, 255, 0.3); --res-success: #22c55e; --res-error: #ef4444; --res-error-hover: #ff5252; --res-header-icon-color: #e8e6e3; --res-header-icon-hover-bg: #31363f; }
 html[data-res-theme='light'] { --res-bg-primary: #ffffff; --res-bg-secondary: #f1f3f5; --res-bg-tertiary: #e9ecef; --res-bg-hover: #e2e6e9; --res-text-primary: #212529; --res-text-secondary: #6c757d; --res-border-color: #ced4da; --res-accent: #0d6efd; --res-accent-hover: #3b82f6; --res-accent-glow: rgba(13, 110, 253, 0.25); --res-success: #198754; --res-error: #dc3545; --res-header-icon-color: #212529; --res-header-icon-hover-bg: #f1f3f5; }
@@ -147,7 +149,7 @@ body.res-panel-open #res-settings-panel { opacity: 1; pointer-events: auto; tran
     font-weight: 600;
     margin-bottom: 12px;
     padding-bottom: 8px;
-    border-bottom: 1px solid var(--rud-border-color);
+    border-bottom: 1px solid var(--res-border-color);
     color: var(--rud-text-primary);
 }
 .rud-group-box .rud-item {
@@ -172,4 +174,10 @@ body.res-panel-open #res-settings-panel { opacity: 1; pointer-events: auto; tran
     border-radius: 8px;
 }
 `);
+    }
+
+    // Return an object containing the functions this module exports
+    return {
+        injectPanelStyles
+    };
 }

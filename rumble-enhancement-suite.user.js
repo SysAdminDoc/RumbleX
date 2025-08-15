@@ -43,6 +43,10 @@
         // Define modules by passing core dependencies
         const styles = defineStyles(RES_CORE);
         const features = defineFeatures(RES_CORE);
+
+        // IMPORTANT: Attach features to the core object so other modules can access it
+        RES_CORE.features = features;
+
         const ui = defineUI(RES_CORE);
 
         // Bind 'this' context for all feature methods
