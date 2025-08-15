@@ -1,5 +1,5 @@
 // This is the content for res-ui.js
-/* globals $, appState, settingsManager, features, ICONS, createToast */
+/* globals $, appState, settingsManager, features, ICONS, createToast, populateBlockedUsersList, updateAllToggleStates, applyAllCssFeatures */
 
 function buildSettingsPanel() {
     const categoryOrder = ['Main Page Layout', 'Video Page Layout', 'Player Controls', 'Video Buttons', 'Video Comments', 'Live Chat', 'Navigation', 'Theme & Appearance'];
@@ -99,23 +99,6 @@ function buildThemePane(features) {
     return html;
 }
 
-async function populateBlockedUsersList(type) {
-    const users = await settingsManager.getBlockedUsers(type);
-    const $container = $(`.res-blocked-users-container[data-blocker-type="${type}"]`);
-    const $list = $container.find('.res-blocked-users-list');
-    const $unblockAllBtn = $container.find('.res-unblock-all-btn');
-    $list.empty();
-    if (users.length === 0) {
-        $list.append('<div class="res-list-empty">No users blocked.</div>');
-        $unblockAllBtn.hide();
-    } else {
-        users.sort((a,b) => a.toLowerCase().localeCompare(b.toLowerCase())).forEach(user => {
-            $list.append(`<div class="res-blocked-user-item"><span>${user}</span><button class="res-button res-unblock-btn" data-username="${user}" title="Unblock ${user}">Unblock</button></div>`);
-        });
-        $unblockAllBtn.show();
-    }
-}
-
 function injectControls() {
     const gearButtonHTML = `<button id="res-settings-button" title="Rumble Enhancement Suite Settings (Ctrl+Alt+R)">${ICONS.cog}</button>`;
 
@@ -136,14 +119,6 @@ function injectControls() {
             addClickListener();
         }
     }, 500);
-}
-
-function createToast(message, type = 'success', duration = 3000) {
-    $('.res-toast').remove();
-    const toast = $(`<div class="res-toast ${type}"></div>`).text(message);
-    $('body').append(toast);
-    setTimeout(() => toast.addClass('show'), 10);
-    setTimeout(() => { toast.removeClass('show'); setTimeout(() => toast.remove(), 500); }, duration);
 }
 
 function updateAllToggleStates() {
