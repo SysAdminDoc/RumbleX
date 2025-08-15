@@ -59,7 +59,9 @@
 
             const response = await new Promise((resolve, reject) => {
                 GM_xmlhttpRequest({
-                    method: 'GET', url, responseType: 'arraybuffer',
+                    method: 'GET',
+                    url,
+                    responseType: 'arraybuffer',
                     onprogress: (e) => {
                         if (e.lengthComputable) {
                             const percent = Math.round((e.loaded / e.total) * 100);
@@ -69,6 +71,7 @@
                     onload: (res) => (res.status >= 200 && res.status < 400) ? resolve(res) : reject(new Error(`HTTP error: ${res.status}`)),
                     onerror: () => reject(new Error('Network error during TAR download.')),
                     ontimeout: () => reject(new Error('TAR download timed out.')),
+                    timeout: 120000
                 });
             });
 
@@ -91,14 +94,13 @@
             const orderedSegments = [];
             let totalSize = 0;
             for (const name of segmentNames) {
-                // Support either exact match or path-only match
+                // Support either exact match or path suffix match
                 const key = tsFiles.has(name) ? name : (Array.from(tsFiles.keys()).find(k => k.endsWith('/' + name)) || null);
                 if (key && tsFiles.has(key)) {
                     const buffer = tsFiles.get(key);
                     orderedSegments.push(new Uint8Array(buffer));
                     totalSize += buffer.byteLength;
                 } else {
-                    // If any segment is missing we stop early with a clear error
                     throw new Error(`Missing segment in TAR: ${name}`);
                 }
             }
@@ -140,7 +142,6 @@
         }
     }
 
-
     // ---------------- Config ----------------
     const ACTION_BAR_SELECTORS = [
         '.media-by-channel-actions-container',
@@ -150,11 +151,9 @@
     ];
 
     // ---------------- Small utils ----------------
-    const sleep = (ms) => new Promise(r => setTimeout(r, ms));
     function debounce(fn, d) { let t; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), d); }; }
     function raf(fn) { return new Promise(r => requestAnimationFrame(() => { try { fn(); } finally { r(); } })); }
     function $(s, r = document) { return r.querySelector(s); }
-    function $all(s, r = document) { return Array.from(r.querySelectorAll(s)); }
     function isVideoPage(p = location.pathname) { return /^\/v[A-Za-z0-9]+(?:[\/\.-]|$)/.test(p); }
 
     function getVideoTitle() {
@@ -190,50 +189,106 @@
         let i = 0, n = bytes; while (n >= 1024 && i < u.length - 1) { n /= 1024; i++; }
         return `${n.toFixed(n >= 10 || i === 0 ? 0 : 1)} ${u[i]}`;
     }
-    
     function formatBitrate(bitrate) {
         if (!Number.isFinite(bitrate) || bitrate <= 0) return '';
         return `${Math.round(bitrate)} kbps`;
     }
 
-    // ---------------- NEW: Direct API Fetch & Parse ----------------
-    /**
-     * Finds the definitive metadata URL from the page's content, ignoring the browser's URL.
-     * This is the single source of truth for which video is currently playing.
-     *
-     * FIX: Make the regex tolerate any query param order, as long as `request=video` and `v=` are present.
-     */
-    function findVideoMetadataUrl() {
-        // Match any https://rumble.com/embedJS/... URL that contains request=video and v=... in the query string, regardless of order
-        const embedUrlRegex = /https:\/\/rumble\.com\/embedJS\/[^\s"'<>]+(?:\?|&)[^"'<>]*\brequest=video\b[^"'<>]*\bv=[^"'\s<>&]+/;
+    // ---------------- Metadata discovery ----------------
 
-        // Priority 1: script tags
+    // Very tolerant matcher: any embedJS URL containing request=video and v=... in any order.
+    const EMBED_URL_RE = /https:\/\/rumble\.com\/embedJS\/[^\s"'<>]+(?:\?|&)[^"'<>]*\brequest=video\b[^"'<>]*\bv=[^"'\s<>&]+/;
+
+    function scanForEmbedUrl() {
+        // 1) check <script> blocks (most reliable)
         const scripts = document.querySelectorAll('script');
         for (const script of scripts) {
-            if (script.textContent) {
-                const match = script.textContent.match(embedUrlRegex);
-                if (match && match[0]) return match[0];
-            }
+            const txt = script.textContent;
+            if (!txt) continue;
+            const m = txt.match(EMBED_URL_RE);
+            if (m && m[0]) return m[0];
         }
-        // Priority 2: whole document
-        const htmlMatch = document.documentElement.outerHTML.match(embedUrlRegex);
-        if (htmlMatch && htmlMatch[0]) return htmlMatch[0];
+        // 2) fallback: entire HTML
+        const m2 = document.documentElement.outerHTML.match(EMBED_URL_RE);
+        if (m2 && m2[0]) return m2[0];
+
+        // 3) Rumble sometimes sticks it in data attrs on the player iframe
+        const iframe = document.querySelector('iframe[src*="embedJS"]');
+        const src = iframe?.getAttribute('src') || iframe?.src;
+        if (src && EMBED_URL_RE.test(src)) return src;
 
         return null;
+    }
+
+    // Wait up to maxMs for the metadata URL, polling and also watching DOM insertions.
+    async function waitForMetadataUrl(maxMs = 15000) {
+        const start = Date.now();
+
+        // quick attempt first
+        let url = scanForEmbedUrl();
+        if (url) return url;
+
+        let resolver;
+        let rejecter;
+        const doneP = new Promise((res, rej) => { resolver = res; rejecter = rej; });
+
+        const observer = new MutationObserver(() => {
+            const u = scanForEmbedUrl();
+            if (u) {
+                cleanup();
+                resolver(u);
+            }
+        });
+        observer.observe(document.documentElement, { childList: true, subtree: true });
+
+        const poll = async () => {
+            while (Date.now() - start < maxMs) {
+                url = scanForEmbedUrl();
+                if (url) {
+                    cleanup();
+                    resolver(url);
+                    return;
+                }
+                await new Promise(r => setTimeout(r, 250));
+            }
+            cleanup();
+            rejecter(new Error('Timed out waiting for video data.'));
+        };
+
+        const timer = setTimeout(() => {
+            // timeout guard, in case poll loop was interrupted
+            cleanup();
+            rejecter(new Error('Timed out waiting for video data.'));
+        }, maxMs + 250);
+
+        function cleanup() {
+            clearTimeout(timer);
+            observer.disconnect();
+        }
+
+        // fire and wait
+        poll();
+        return doneP;
     }
 
     async function fetchVideoMetadata(url) {
         if (!url) {
             throw new Error("Video metadata URL could not be found on this page.");
         }
+        // Some environments like to see a Referer; send it. Also extend timeout.
+        const referer = location.href;
 
-        // Riddle note: whether the URL includes dref=rumble.com or dref= (blank), the endpoint responds the same.
-        // We don't need to modify it; just request what was found.
-        const response = await new Promise((resolve, reject) => {
+        const data = await new Promise((resolve, reject) => {
             GM_xmlhttpRequest({
                 method: 'GET',
-                url: url,
-                timeout: 20000,
+                url,
+                headers: {
+                    'Accept': 'application/json, */*;q=0.1',
+                    // Note: GM_xmlhttpRequest ignores forbidden headers set by the page itself,
+                    // but user scripts can usually set Referer.
+                    'Referer': referer
+                },
+                timeout: 30000,
                 onload: (res) => {
                     if (res.status >= 200 && res.status < 400) {
                         try {
@@ -250,13 +305,10 @@
             });
         });
 
-        return parseMetadata(response);
+        return parseMetadata(data);
     }
 
-    /**
-     * FIX: Merge candidates from both `data.u` and `data.ua`, and include HLS playlist(s).
-     *      Preserve fps and bitrate if provided; gracefully handle missing meta.
-     */
+    // Merge candidates from both `data.u` and `data.ua`, and include HLS playlist(s).
     function parseMetadata(data) {
         const downloads = [];
         const fps = data.fps || 0;
@@ -274,72 +326,55 @@
             });
         }
 
-        // Helper to walk a group (u or ua) for tar/mp4/audio
         function collectFromGroup(group) {
             if (!group) return;
 
-            // tar sets: could be single object under group.tar OR resolution-keyed under group.tar.{240,360,...}
             if (group.tar) {
                 const tar = group.tar;
-                // If tar has numeric keys (ua.tar)
                 const keys = Object.keys(tar);
-                const looksResolutionMap = keys.every(k => /^\d+$/.test(k));
-                if (looksResolutionMap) {
+                const isResolutionMap = keys.length && keys.every(k => /^\d+$/.test(k));
+                if (isResolutionMap) {
                     for (const k of keys) {
                         const it = tar[k];
-                        if (it && it.url) {
+                        if (it?.url) {
                             const h = it.meta?.h || parseInt(k, 10) || 0;
                             pushEntry({ label: `${h}p`, height: h, type: 'tar', url: it.url, size: it.meta?.size, bitrate: it.meta?.bitrate, fps });
                         }
                     }
-                } else {
-                    // single tar entry (u.tar)
-                    if (tar.url) {
-                        const h = tar.meta?.h || 0;
-                        pushEntry({ label: `${h || 'tar'}`, height: h, type: 'tar', url: tar.url, size: tar.meta?.size, bitrate: tar.meta?.bitrate, fps });
-                    }
+                } else if (tar.url) {
+                    const h = tar.meta?.h || 0;
+                    pushEntry({ label: `${h || 'tar'}`, height: h, type: 'tar', url: tar.url, size: tar.meta?.size, bitrate: tar.meta?.bitrate, fps });
                 }
             }
 
-            // mp4 sets (rare on Rumble, but keep support)
             if (group.mp4) {
-                const mp4 = group.mp4;
-                const keys = Object.keys(mp4);
-                for (const k of keys) {
-                    const it = mp4[k];
-                    if (it && it.url) {
-                        const h = it.meta?.h || (parseInt(k, 10) || 0);
+                for (const k of Object.keys(group.mp4)) {
+                    const it = group.mp4[k];
+                    if (it?.url) {
+                        const h = it.meta?.h || parseInt(k, 10) || 0;
                         pushEntry({ label: `${h}p`, height: h, type: 'mp4', url: it.url, size: it.meta?.size, bitrate: it.meta?.bitrate, fps });
                     }
                 }
             }
 
-            // audio-only
             if (group.audio) {
-                const keys = Object.keys(group.audio);
-                for (const k of keys) {
+                for (const k of Object.keys(group.audio)) {
                     const it = group.audio[k];
-                    if (it && it.url) {
+                    if (it?.url) {
                         pushEntry({ label: 'Audio', height: 0, type: 'aac', url: it.url, size: it.meta?.size, bitrate: it.meta?.bitrate, fps: 0 });
                     }
                 }
             }
 
-            // HLS variants
             if (group.hls) {
-                // Sometimes { auto: { url } }, sometimes directly { url }
-                if (group.hls.url) {
-                    pushEntry({ label: 'HLS (auto)', height: 0, type: 'hls', url: group.hls.url, size: 0, bitrate: 0, fps });
-                } else if (group.hls.auto && group.hls.auto.url) {
-                    pushEntry({ label: 'HLS (auto)', height: 0, type: 'hls', url: group.hls.auto.url, size: 0, bitrate: 0, fps });
-                }
+                if (group.hls.url) pushEntry({ label: 'HLS (auto)', height: 0, type: 'hls', url: group.hls.url, size: 0, bitrate: 0, fps });
+                if (group.hls.auto?.url) pushEntry({ label: 'HLS (auto)', height: 0, type: 'hls', url: group.hls.auto.url, size: 0, bitrate: 0, fps });
             }
         }
 
         collectFromGroup(data.u);
         collectFromGroup(data.ua);
 
-        // Sort: higher resolution first; then prefer mp4 over tar over hls over aac for same height
         const typeRank = { mp4: 0, tar: 1, hls: 2, aac: 3 };
         downloads.sort((a, b) => {
             if (b.height !== a.height) return b.height - a.height;
@@ -348,7 +383,6 @@
             return ar - br;
         });
 
-        // De-dup by label+type+url
         const seen = new Set();
         return downloads.filter(d => {
             const key = `${d.label}|${d.type}|${d.url}`;
@@ -358,7 +392,6 @@
         });
     }
 
-
     // ---------------- UI (Premium Redesign) ----------------
     GM_addStyle(`
     :root {
@@ -367,7 +400,7 @@
       --rud-ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
     }
     #rud-portal.rud-dark {
-      --rud-bg-primary: #111827; --rud-bg-secondary: #1f2937; --rud-bg-tertiary: #374151;
+      --rud-bg-primary: #111827; --rud-bg-secondary: #1f2937; --rud-bg-terTIARY: #374151;
       --rud-text-primary: #f9fafb; --rud-text-secondary: #d1d5db; --rud-text-muted: #9ca3af;
       --rud-border-color: #374151;
       --rud-accent: #22c55e; --rud-accent-hover: #16a34a; --rud-accent-text: #ffffff;
@@ -375,7 +408,7 @@
       --rud-backdrop-blur: blur(8px);
     }
     #rud-portal.rud-light {
-      --rud-bg-primary: #ffffff; --rud-bg-secondary: #f3f4f6; --rud-bg-tertiary: #e5e7eb;
+      --rud-bg-primary: #ffffff; --rud-bg-secondary: #f3f4f6; --rud-bg-terTIARY: #e5e7eb;
       --rud-text-primary: #111827; --rud-text-secondary: #374151; --rud-text-muted: #6b7280;
       --rud-border-color: #e5e7eb;
       --rud-accent: #16a34a; --rud-accent-hover: #15803d; --rud-accent-text: #ffffff;
@@ -428,12 +461,12 @@
     .rud-item + .rud-item { margin-top: 4px; }
     .rud-item:hover { background: var(--rud-bg-secondary); }
     .rud-item-res { font-weight: 700; font-size: 15px; color: var(--rud-text-primary); }
-    .rud-item-badge { font-size: 11px; font-weight: 600; padding: 3px 8px; border-radius: 12px; background: var(--rud-bg-tertiary); color: var(--rud-text-secondary); text-transform: uppercase; text-align: center;}
+    .rud-item-badge { font-size: 11px; font-weight: 600; padding: 3px 8px; border-radius: 12px; background: var(--rud-bg-terTIARY); color: var(--rud-text-secondary); text-transform: uppercase; text-align: center;}
     .rud-item-bitrate { font-size: 13px; color: var(--rud-text-muted); font-family: var(--rud-font-mono); white-space: nowrap; }
     .rud-item-size { font-size: 14px; color: var(--rud-text-secondary); font-family: var(--rud-font-mono); margin-left: auto; text-align: right; }
     .rud-item-actions { display: flex; gap: 8px; }
     .rud-item-actions a, .rud-item-actions button { display: flex; align-items: center; justify-content: center; gap: 6px; text-decoration: none; font-size: 13px; font-weight: 600; padding: 6px 12px; border-radius: 6px; transition: all .2s; }
-    .rud-item-actions .rud-copy-btn { background: var(--rud-bg-tertiary); color: var(--rud-text-secondary); border: 1px solid var(--rud-border-color); cursor: pointer; }
+    .rud-item-actions .rud-copy-btn { background: var(--rud-bg-terTIARY); color: var(--rud-text-secondary); border: 1px solid var(--rud-border-color); cursor: pointer; }
     .rud-item-actions .rud-copy-btn:hover { background: var(--rud-border-color); color: var(--rud-text-primary); }
     .rud-item-actions .rud-dl-link { background: var(--rud-accent); color: var(--rud-accent-text); border: 1px solid var(--rud-accent); }
     .rud-item-actions .rud-dl-link:hover { background: var(--rud-accent-hover); }
@@ -543,13 +576,13 @@
         </div>`;
             portal.appendChild(menu);
 
-            menu.querySelector('.rud-close-btn').addEventListener('click', () => close());
+            menu.querySelector('.rud-close-btn').addEventListener('click', () => close(), { passive: true });
             menu.querySelector('.rud-theme-toggle').addEventListener('click', () => {
                 const newTheme = portal.classList.contains('rud-dark') ? 'rud-light' : 'rud-dark';
                 portal.className = newTheme;
                 localStorage.setItem('rud-theme', newTheme);
                 updateThemeIcons();
-            });
+            }, { passive: true });
 
             const updateThemeIcons = () => {
                 const isDark = portal.classList.contains('rud-dark');
@@ -603,6 +636,7 @@
         const reposition = debounce(() => { if (menu.classList.contains('open')) { positionMenu(); adjustSpacer(); } }, 50);
         window.addEventListener('scroll', reposition, { passive: true });
         window.addEventListener('resize', reposition, { passive: true });
+        // We do not add any touchstart/touchmove listeners; keeping us out of scroll-blocking paths.
 
         async function open() {
             if (!menu.classList.contains('open')) {
@@ -693,7 +727,6 @@
                     ${actionButtonsHTML}
                 </div>`;
             
-            // Hide FPS badge for audio and HLS
             if (type === 'aac' || type === 'hls') {
                 const fpsBadge = item.querySelector('.rud-item-badge:nth-of-type(2)');
                 if (fpsBadge) fpsBadge.style.display = 'none';
@@ -705,7 +738,7 @@
                 const originalTooltip = btn.dataset.rudTooltip;
                 btn.dataset.rudTooltip = 'Copied!';
                 setTimeout(() => { btn.dataset.rudTooltip = originalTooltip; }, 2000);
-            });
+            }, { passive: true });
             
             const combineBtn = item.querySelector('.rud-combine-btn');
             if (combineBtn) {
@@ -734,7 +767,6 @@
     async function onDownloadClick(btn) {
         const menuApi = createMenu(btn);
 
-        // FIX: don't reference an out-of-scope `menu`. Use the menuApi to toggle.
         if (menuApi.haveAny()) {
             await menuApi.toggle();
             return;
@@ -745,7 +777,8 @@
         setButtonState(btn, 'Loading...', true);
 
         try {
-            const metadataUrl = findVideoMetadataUrl();
+            // New: patiently wait for Rumble to inject the embed URL
+            const metadataUrl = await waitForMetadataUrl(15000);
             const downloads = await fetchVideoMetadata(metadataUrl);
             await menuApi.clearLists();
             
@@ -777,14 +810,13 @@
                 
                 btn.addEventListener('click', async (ev) => {
                     ev.stopPropagation();
-                    // If the menu has items, just toggle it. Otherwise, fetch data.
                     if (menuApi.haveAny()) {
                         await menuApi.toggle();
                     } else {
                         onDownloadClick(btn);
                     }
                 });
-                
+
                 const wrap = document.createElement('span');
                 wrap.className = 'rud-inline-wrap';
                 container.prepend(wrap);
