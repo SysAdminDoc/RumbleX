@@ -1,8 +1,6 @@
-// This is the content for res-downloader.js
-// It's an IIFE (Immediately Invoked Function Expression) to keep its scope private.
 (function() {
     'use strict';
-    
+
     // --- [EMBEDDED LIBRARY] js-tar (for TAR extraction) ---
     const untar = (() => {
         function TarHeader(buffer, offset) {
@@ -14,26 +12,32 @@
             get size() { return this._getOctal(124, 12); },
             get prefix() { return this._getString(345, 155); },
             _getString: function (offset, size) {
-                let str = new TextDecoder().decode(this._buffer.subarray(this._offset + offset, this._offset + offset + size));
-                return str.substring(0, str.indexOf('\0'));
+                const view = this._buffer.subarray(this._offset + offset, this._offset + offset + size);
+                let str = new TextDecoder().decode(view);
+                const nul = str.indexOf('\0');
+                if (nul !== -1) str = str.substring(0, nul);
+                return str;
             },
             _getOctal: function (offset, size) {
-                return parseInt(this._getString(offset, size), 8) || 0;
+                return parseInt(this._getString(offset, size).trim(), 8) || 0;
             },
         };
         return async function untar(arrayBuffer) {
             const files = [];
             let offset = 0;
-            while (offset < arrayBuffer.byteLength - 512) {
-                const header = new TarHeader(new Uint8Array(arrayBuffer), offset);
-                if (header.name === '') break;
+            const u8 = new Uint8Array(arrayBuffer);
+            while (offset + 512 <= arrayBuffer.byteLength) {
+                const header = new TarHeader(u8, offset);
+                const name = header.name;
+                if (!name) break;
                 const dataSize = header.size;
                 const dataOffset = offset + 512;
                 files.push({
-                    name: header.prefix + header.name,
+                    name: (header.prefix || '') + name,
                     buffer: arrayBuffer.slice(dataOffset, dataOffset + dataSize),
                 });
-                offset += 512 + (Math.ceil(dataSize / 512) * 512);
+                const blocks = Math.ceil(dataSize / 512);
+                offset += 512 + (blocks * 512);
             }
             return files;
         };
@@ -73,10 +77,10 @@
             setButtonState('Extracting...', true);
 
             const extractedFiles = await untar(tarBuffer);
-            const playlistFile = extractedFiles.find(f => f.name.endsWith('.m3u8'));
+            const playlistFile = extractedFiles.find(f => f.name.toLowerCase().endsWith('.m3u8'));
             if (!playlistFile) throw new Error('No .m3u8 playlist found in TAR.');
 
-            const tsFiles = new Map(extractedFiles.filter(f => f.name.endsWith('.ts')).map(f => [f.name, f.buffer]));
+            const tsFiles = new Map(extractedFiles.filter(f => f.name.toLowerCase().endsWith('.ts')).map(f => [f.name, f.buffer]));
             await menuApi.setStatus(`Found playlist and ${tsFiles.size} video segments. Combining...`);
             setButtonState('Combining...', true);
 
@@ -87,10 +91,15 @@
             const orderedSegments = [];
             let totalSize = 0;
             for (const name of segmentNames) {
-                if (tsFiles.has(name)) {
-                    const buffer = tsFiles.get(name);
+                // Support either exact match or path-only match
+                const key = tsFiles.has(name) ? name : (Array.from(tsFiles.keys()).find(k => k.endsWith('/' + name)) || null);
+                if (key && tsFiles.has(key)) {
+                    const buffer = tsFiles.get(key);
                     orderedSegments.push(new Uint8Array(buffer));
                     totalSize += buffer.byteLength;
+                } else {
+                    // If any segment is missing we stop early with a clear error
+                    throw new Error(`Missing segment in TAR: ${name}`);
                 }
             }
 
@@ -167,9 +176,8 @@
             .trim()
             .slice(0, 180);
     }
-    function filenameWithExt(title, label, url) {
-        const extMatch = /\.([a-z0-9]+)(?:$|\?)/i.exec(url);
-        // Default to mp4 if no extension found, common for blobs
+    function filenameWithExt(title, label, urlOrExt) {
+        const extMatch = /\.([a-z0-9]+)(?:$|\?)/i.exec(urlOrExt);
         const ext = extMatch ? extMatch[1].toLowerCase() : 'ts';
         const base = sanitizeFilename(title);
         const res = label ? ` - ${label}` : '';
@@ -188,39 +196,44 @@
         return `${Math.round(bitrate)} kbps`;
     }
 
-    // --- NEW: Network Interception for reliable Metadata URL capture ---
-    let capturedMetadataUrl = null;
-    let resolveMetadataPromise = null;
-    const metadataPromise = new Promise(resolve => {
-        resolveMetadataPromise = resolve;
-    });
+    // ---------------- NEW: Direct API Fetch & Parse ----------------
+    /**
+     * Finds the definitive metadata URL from the page's content, ignoring the browser's URL.
+     * This is the single source of truth for which video is currently playing.
+     *
+     * FIX: Make the regex tolerate any query param order, as long as `request=video` and `v=` are present.
+     */
+    function findVideoMetadataUrl() {
+        // Match any https://rumble.com/embedJS/... URL that contains request=video and v=... in the query string, regardless of order
+        const embedUrlRegex = /https:\/\/rumble\.com\/embedJS\/[^\s"'<>]+(?:\?|&)[^"'<>]*\brequest=video\b[^"'<>]*\bv=[^"'\s<>&]+/;
 
-    const _fetch = window.fetch;
-    if (typeof _fetch === 'function') {
-        window.fetch = function(input, init) {
-            try {
-                const url = (typeof input === 'string' ? input : input?.url) || '';
-                const embedUrlRegex = /rumble\.com\/embedJS\/[^\s"'<>]+\?request=video/;
-                if (embedUrlRegex.test(url)) {
-                    if (!capturedMetadataUrl) {
-                        capturedMetadataUrl = url;
-                        if (resolveMetadataPromise) resolveMetadataPromise(url);
-                    }
-                }
-            } catch (e) {
-                console.warn('Rumble Downloader: Error in fetch wrapper:', e);
+        // Priority 1: script tags
+        const scripts = document.querySelectorAll('script');
+        for (const script of scripts) {
+            if (script.textContent) {
+                const match = script.textContent.match(embedUrlRegex);
+                if (match && match[0]) return match[0];
             }
-            return _fetch.apply(this, arguments);
-        };
+        }
+        // Priority 2: whole document
+        const htmlMatch = document.documentElement.outerHTML.match(embedUrlRegex);
+        if (htmlMatch && htmlMatch[0]) return htmlMatch[0];
+
+        return null;
     }
-    
-    // ---------------- Direct API Fetch & Parse ----------------
+
     async function fetchVideoMetadata(url) {
+        if (!url) {
+            throw new Error("Video metadata URL could not be found on this page.");
+        }
+
+        // Riddle note: whether the URL includes dref=rumble.com or dref= (blank), the endpoint responds the same.
+        // We don't need to modify it; just request what was found.
         const response = await new Promise((resolve, reject) => {
             GM_xmlhttpRequest({
                 method: 'GET',
                 url: url,
-                timeout: 15000,
+                timeout: 20000,
                 onload: (res) => {
                     if (res.status >= 200 && res.status < 400) {
                         try {
@@ -236,43 +249,113 @@
                 ontimeout: () => reject(new Error('Metadata request timed out.')),
             });
         });
+
         return parseMetadata(response);
     }
 
+    /**
+     * FIX: Merge candidates from both `data.u` and `data.ua`, and include HLS playlist(s).
+     *      Preserve fps and bitrate if provided; gracefully handle missing meta.
+     */
     function parseMetadata(data) {
         const downloads = [];
         const fps = data.fps || 0;
-        if (!data.ua) return [];
 
-        for (const type of ['tar', 'mp4']) {
-            if (data.ua[type]) {
-                for (const key in data.ua[type]) {
-                    const item = data.ua[type][key];
-                    if (item.url && item.meta) {
-                        downloads.push({
-                            label: `${item.meta.h}p` || `${key}p`, height: item.meta.h || 0,
-                            type: type, url: item.url, size: item.meta.size,
-                            bitrate: item.meta.bitrate, fps: fps,
-                        });
+        function pushEntry({label, height, type, url, size, bitrate, fps}) {
+            if (!url) return;
+            downloads.push({
+                label: label || (height ? `${height}p` : 'Unknown'),
+                height: Number.isFinite(height) ? height : 0,
+                type,
+                url,
+                size: Number.isFinite(size) ? size : 0,
+                bitrate: Number.isFinite(bitrate) ? bitrate : 0,
+                fps: Number.isFinite(fps) ? fps : 0
+            });
+        }
+
+        // Helper to walk a group (u or ua) for tar/mp4/audio
+        function collectFromGroup(group) {
+            if (!group) return;
+
+            // tar sets: could be single object under group.tar OR resolution-keyed under group.tar.{240,360,...}
+            if (group.tar) {
+                const tar = group.tar;
+                // If tar has numeric keys (ua.tar)
+                const keys = Object.keys(tar);
+                const looksResolutionMap = keys.every(k => /^\d+$/.test(k));
+                if (looksResolutionMap) {
+                    for (const k of keys) {
+                        const it = tar[k];
+                        if (it && it.url) {
+                            const h = it.meta?.h || parseInt(k, 10) || 0;
+                            pushEntry({ label: `${h}p`, height: h, type: 'tar', url: it.url, size: it.meta?.size, bitrate: it.meta?.bitrate, fps });
+                        }
+                    }
+                } else {
+                    // single tar entry (u.tar)
+                    if (tar.url) {
+                        const h = tar.meta?.h || 0;
+                        pushEntry({ label: `${h || 'tar'}`, height: h, type: 'tar', url: tar.url, size: tar.meta?.size, bitrate: tar.meta?.bitrate, fps });
                     }
                 }
             }
-        }
-        
-        if (data.ua.audio) {
-            for (const key in data.ua.audio) {
-                 const item = data.ua.audio[key];
-                 if (item.url && item.meta) {
-                    downloads.push({
-                        label: `Audio`, height: 0, type: 'aac', url: item.url,
-                        size: item.meta.size, bitrate: item.meta.bitrate, fps: 0,
-                    });
-                 }
+
+            // mp4 sets (rare on Rumble, but keep support)
+            if (group.mp4) {
+                const mp4 = group.mp4;
+                const keys = Object.keys(mp4);
+                for (const k of keys) {
+                    const it = mp4[k];
+                    if (it && it.url) {
+                        const h = it.meta?.h || (parseInt(k, 10) || 0);
+                        pushEntry({ label: `${h}p`, height: h, type: 'mp4', url: it.url, size: it.meta?.size, bitrate: it.meta?.bitrate, fps });
+                    }
+                }
+            }
+
+            // audio-only
+            if (group.audio) {
+                const keys = Object.keys(group.audio);
+                for (const k of keys) {
+                    const it = group.audio[k];
+                    if (it && it.url) {
+                        pushEntry({ label: 'Audio', height: 0, type: 'aac', url: it.url, size: it.meta?.size, bitrate: it.meta?.bitrate, fps: 0 });
+                    }
+                }
+            }
+
+            // HLS variants
+            if (group.hls) {
+                // Sometimes { auto: { url } }, sometimes directly { url }
+                if (group.hls.url) {
+                    pushEntry({ label: 'HLS (auto)', height: 0, type: 'hls', url: group.hls.url, size: 0, bitrate: 0, fps });
+                } else if (group.hls.auto && group.hls.auto.url) {
+                    pushEntry({ label: 'HLS (auto)', height: 0, type: 'hls', url: group.hls.auto.url, size: 0, bitrate: 0, fps });
+                }
             }
         }
 
-        downloads.sort((a, b) => b.height - a.height || a.type.localeCompare(b.type));
-        return downloads;
+        collectFromGroup(data.u);
+        collectFromGroup(data.ua);
+
+        // Sort: higher resolution first; then prefer mp4 over tar over hls over aac for same height
+        const typeRank = { mp4: 0, tar: 1, hls: 2, aac: 3 };
+        downloads.sort((a, b) => {
+            if (b.height !== a.height) return b.height - a.height;
+            const ar = typeRank[a.type] ?? 99;
+            const br = typeRank[b.type] ?? 99;
+            return ar - br;
+        });
+
+        // De-dup by label+type+url
+        const seen = new Set();
+        return downloads.filter(d => {
+            const key = `${d.label}|${d.type}|${d.url}`;
+            if (seen.has(key)) return false;
+            seen.add(key);
+            return true;
+        });
     }
 
 
@@ -308,17 +391,17 @@
       font-size: 14px; font-weight: 600; line-height: 1; letter-spacing: 0.02em;
       background-image: linear-gradient(to top, #15803d, #16a34a);
       color: #fff; border: 1px solid #16a34a; border-radius: 8px;
-      cursor: pointer; box-shadow: 0 1px 2px rgba(0,0,0,0.1), inset 0 1px 0 rgba(255,255,255,0.1);
+      cursor: pointer; box-shadow: 0 1px 2px rgba(0,0,0,0.1), inset 1px 1px 0 rgba(255,255,255,0.08);
       transition: all .2s var(--rud-ease-out); overflow: hidden;
     }
-    #rud-download-btn:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 4px 8px rgba(0,0,0,0.15), inset 0 1px 0 rgba(255,255,255,0.1); background-image: linear-gradient(to top, #16a34a, #22c55e); }
+    #rud-download-btn:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 4px 8px rgba(0,0,0,0.15), inset 1px 1px 0 rgba(255,255,255,0.08); background-image: linear-gradient(to top, #16a34a, #22c55e); }
     #rud-download-btn:active:not(:disabled) { transform: translateY(0px); }
     #rud-download-btn:disabled { opacity: .7; cursor: default; }
     #rud-download-btn .rud-btn-fill { position: absolute; left: 0; top: 0; bottom: 0; width: 0%; background: rgba(255,255,255,0.2); transition: width .2s var(--rud-ease-out); pointer-events:none; }
     #rud-download-btn .rud-btn-text { position: relative; z-index: 1; display: inline-flex; align-items: center; gap: 0.5rem; }
 
     .rud-panel {
-      position: fixed; left: 0; top: 0; /* JS positioned */
+      position: fixed; left: 0; top: 0;
       width: 640px; max-width: 95vw;
       background: var(--rud-bg-primary); color: var(--rud-text-primary);
       border: 1px solid var(--rud-border-color); border-radius: 12px;
@@ -567,7 +650,7 @@
             const { label, type, url, size, bitrate, fps } = dl;
             if (!label) return;
             const r = refs();
-            const key = `${label.toLowerCase()}|${type}`;
+            const key = `${label.toLowerCase()}|${type}|${url}`;
             const title = getVideoTitle();
             const fname = filenameWithExt(title, label, url);
             const menuApi = this;
@@ -590,7 +673,7 @@
                         <svg fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
                     </a>
                 `;
-            } else { // For MP4s and AAC
+            } else {
                 actionButtonsHTML = `
                     <a href="${url}" target="_blank" rel="noopener" download="${fname}" class="rud-dl-link" data-rud-tooltip="Download File">
                         <svg fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
@@ -610,7 +693,8 @@
                     ${actionButtonsHTML}
                 </div>`;
             
-            if (type === 'aac') {
+            // Hide FPS badge for audio and HLS
+            if (type === 'aac' || type === 'hls') {
                 const fpsBadge = item.querySelector('.rud-item-badge:nth-of-type(2)');
                 if (fpsBadge) fpsBadge.style.display = 'none';
             }
@@ -635,7 +719,6 @@
             queueMicrotask(() => { maybeToggleFooter(); });
         }
 
-
         return {
             open, close, toggle,
             setStatus, setStatusMuted,
@@ -650,28 +733,19 @@
     // ---------------- Main click ----------------
     async function onDownloadClick(btn) {
         const menuApi = createMenu(btn);
-        
-        if (menuApi.haveAny() && menu.classList.contains('open')) {
-            menuApi.close();
+
+        // FIX: don't reference an out-of-scope `menu`. Use the menuApi to toggle.
+        if (menuApi.haveAny()) {
+            await menuApi.toggle();
             return;
         }
 
         await menuApi.ensureVisible();
+        await menuApi.setStatusMuted('Finding video info...');
         setButtonState(btn, 'Loading...', true);
 
         try {
-            let metadataUrl;
-            if (capturedMetadataUrl) {
-                metadataUrl = capturedMetadataUrl;
-            } else {
-                await menuApi.setStatusMuted('Waiting for page to load video data...');
-                metadataUrl = await Promise.race([
-                    metadataPromise,
-                    new Promise((_, reject) => setTimeout(() => reject(new Error("Timed out waiting for video data.")), 8000))
-                ]);
-            }
-            
-            await menuApi.setStatusMuted('Fetching video info...');
+            const metadataUrl = findVideoMetadataUrl();
             const downloads = await fetchVideoMetadata(metadataUrl);
             await menuApi.clearLists();
             
@@ -688,10 +762,7 @@
             console.error("Rumble Downloader Error:", e);
             await menuApi.showEmpty(`An error occurred:<br>${e && (e.message || e)}`);
             setButtonState(btn, 'Error', true);
-            setTimeout(() => {
-                 setButtonState(btn, 'Download', false);
-                 capturedMetadataUrl = null; // Reset for next attempt
-            }, 3000);
+            setTimeout(() => setButtonState(btn, 'Download', false), 3000);
         }
     }
 
@@ -702,12 +773,13 @@
             const container = $(sel);
             if (container) {
                 const btn = createButton();
-                const menuApi = createMenu(btn);
+                const menuApi = createMenu(btn); // Create menu instance early
                 
-                btn.addEventListener('click', (ev) => {
+                btn.addEventListener('click', async (ev) => {
                     ev.stopPropagation();
+                    // If the menu has items, just toggle it. Otherwise, fetch data.
                     if (menuApi.haveAny()) {
-                        menuApi.toggle();
+                        await menuApi.toggle();
                     } else {
                         onDownloadClick(btn);
                     }
@@ -717,7 +789,7 @@
                 wrap.className = 'rud-inline-wrap';
                 container.prepend(wrap);
                 wrap.appendChild(btn);
-                return;
+                return; // Mount only once
             }
         }
     }
