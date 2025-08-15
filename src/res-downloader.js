@@ -2,7 +2,7 @@
 // It's an IIFE (Immediately Invoked Function Expression) to keep its scope private.
 (function() {
     'use strict';
-
+    
     // --- [EMBEDDED LIBRARY] js-tar (for TAR extraction) ---
     const untar = (() => {
         function TarHeader(buffer, offset) {
@@ -188,43 +188,34 @@
         return `${Math.round(bitrate)} kbps`;
     }
 
-    // ---------------- NEW: Direct API Fetch & Parse ----------------
-    
-    /**
-     * Finds the definitive metadata URL from the page's content, ignoring the browser's URL.
-     * This is the single source of truth for which video is currently playing.
-     */
-    function findVideoMetadataUrl() {
-        // This regex is designed to find the full URL for the video's metadata API call.
-        const embedUrlRegex = /https:\/\/rumble\.com\/embedJS\/[^\s"'<>]+\?request=video[^"'\s<>&]*&v=[^"'\s<>&]+/;
+    // --- NEW: Network Interception for reliable Metadata URL capture ---
+    let capturedMetadataUrl = null;
+    let resolveMetadataPromise = null;
+    const metadataPromise = new Promise(resolve => {
+        resolveMetadataPromise = resolve;
+    });
 
-        // Priority 1: Scan all script tags. This is the most reliable place to find it.
-        const scripts = document.querySelectorAll('script');
-        for (const script of scripts) {
-            if (script.textContent) {
-                const match = script.textContent.match(embedUrlRegex);
-                if (match && match[0]) {
-                    return match[0]; // Return the full matched URL
+    const _fetch = window.fetch;
+    if (typeof _fetch === 'function') {
+        window.fetch = function(input, init) {
+            try {
+                const url = (typeof input === 'string' ? input : input?.url) || '';
+                const embedUrlRegex = /rumble\.com\/embedJS\/[^\s"'<>]+\?request=video/;
+                if (embedUrlRegex.test(url)) {
+                    if (!capturedMetadataUrl) {
+                        capturedMetadataUrl = url;
+                        if (resolveMetadataPromise) resolveMetadataPromise(url);
+                    }
                 }
+            } catch (e) {
+                console.warn('Rumble Downloader: Error in fetch wrapper:', e);
             }
-        }
-        
-        // Priority 2: Check the entire document's HTML as a fallback.
-        // This can catch URLs loaded in non-standard ways or inside data attributes.
-        const htmlMatch = document.documentElement.outerHTML.match(embedUrlRegex);
-        if (htmlMatch && htmlMatch[0]) {
-            return htmlMatch[0];
-        }
-    
-        return null; // Return null if no URL is found after checking everywhere.
+            return _fetch.apply(this, arguments);
+        };
     }
-
-
+    
+    // ---------------- Direct API Fetch & Parse ----------------
     async function fetchVideoMetadata(url) {
-        if (!url) {
-            throw new Error("Video metadata URL could not be found on this page.");
-        }
-        
         const response = await new Promise((resolve, reject) => {
             GM_xmlhttpRequest({
                 method: 'GET',
@@ -245,64 +236,42 @@
                 ontimeout: () => reject(new Error('Metadata request timed out.')),
             });
         });
-
         return parseMetadata(response);
     }
 
     function parseMetadata(data) {
         const downloads = [];
         const fps = data.fps || 0;
+        if (!data.ua) return [];
 
-        if (!data.ua) {
-            return [];
-        }
-
-        // Process video streams (tar, mp4)
         for (const type of ['tar', 'mp4']) {
             if (data.ua[type]) {
                 for (const key in data.ua[type]) {
                     const item = data.ua[type][key];
                     if (item.url && item.meta) {
                         downloads.push({
-                            label: `${item.meta.h}p` || `${key}p`,
-                            height: item.meta.h || 0,
-                            type: type,
-                            url: item.url,
-                            size: item.meta.size,
-                            bitrate: item.meta.bitrate,
-                            fps: fps,
+                            label: `${item.meta.h}p` || `${key}p`, height: item.meta.h || 0,
+                            type: type, url: item.url, size: item.meta.size,
+                            bitrate: item.meta.bitrate, fps: fps,
                         });
                     }
                 }
             }
         }
         
-        // Process audio-only stream
         if (data.ua.audio) {
             for (const key in data.ua.audio) {
                  const item = data.ua.audio[key];
                  if (item.url && item.meta) {
                     downloads.push({
-                        label: `Audio`,
-                        height: 0, // Special value for sorting
-                        type: 'aac',
-                        url: item.url,
-                        size: item.meta.size,
-                        bitrate: item.meta.bitrate,
-                        fps: 0,
+                        label: `Audio`, height: 0, type: 'aac', url: item.url,
+                        size: item.meta.size, bitrate: item.meta.bitrate, fps: 0,
                     });
                  }
             }
         }
 
-        // Sort by height (desc), then by type (mp4 first)
-        downloads.sort((a, b) => {
-            if (b.height !== a.height) {
-                return b.height - a.height;
-            }
-            return a.type.localeCompare(b.type);
-        });
-
+        downloads.sort((a, b) => b.height - a.height || a.type.localeCompare(b.type));
         return downloads;
     }
 
@@ -641,7 +610,6 @@
                     ${actionButtonsHTML}
                 </div>`;
             
-            // Hide FPS badge for audio
             if (type === 'aac') {
                 const fpsBadge = item.querySelector('.rud-item-badge:nth-of-type(2)');
                 if (fpsBadge) fpsBadge.style.display = 'none';
@@ -683,19 +651,27 @@
     async function onDownloadClick(btn) {
         const menuApi = createMenu(btn);
         
-        // If the menu is already open with items, just toggle it
         if (menuApi.haveAny() && menu.classList.contains('open')) {
             menuApi.close();
             return;
         }
 
         await menuApi.ensureVisible();
-        await menuApi.setStatusMuted('Finding video info...');
         setButtonState(btn, 'Loading...', true);
 
         try {
-            const metadataUrl = findVideoMetadataUrl();
+            let metadataUrl;
+            if (capturedMetadataUrl) {
+                metadataUrl = capturedMetadataUrl;
+            } else {
+                await menuApi.setStatusMuted('Waiting for page to load video data...');
+                metadataUrl = await Promise.race([
+                    metadataPromise,
+                    new Promise((_, reject) => setTimeout(() => reject(new Error("Timed out waiting for video data.")), 8000))
+                ]);
+            }
             
+            await menuApi.setStatusMuted('Fetching video info...');
             const downloads = await fetchVideoMetadata(metadataUrl);
             await menuApi.clearLists();
             
@@ -712,7 +688,10 @@
             console.error("Rumble Downloader Error:", e);
             await menuApi.showEmpty(`An error occurred:<br>${e && (e.message || e)}`);
             setButtonState(btn, 'Error', true);
-            setTimeout(() => setButtonState(btn, 'Download', false), 3000);
+            setTimeout(() => {
+                 setButtonState(btn, 'Download', false);
+                 capturedMetadataUrl = null; // Reset for next attempt
+            }, 3000);
         }
     }
 
@@ -723,11 +702,10 @@
             const container = $(sel);
             if (container) {
                 const btn = createButton();
-                const menuApi = createMenu(btn); // Create menu instance early
+                const menuApi = createMenu(btn);
                 
                 btn.addEventListener('click', (ev) => {
                     ev.stopPropagation();
-                    // If the menu has items, just toggle it. Otherwise, fetch data.
                     if (menuApi.haveAny()) {
                         menuApi.toggle();
                     } else {
@@ -737,10 +715,9 @@
                 
                 const wrap = document.createElement('span');
                 wrap.className = 'rud-inline-wrap';
-                // Prepend to be one of the first action buttons
                 container.prepend(wrap);
                 wrap.appendChild(btn);
-                return; // Mount only once
+                return;
             }
         }
     }
