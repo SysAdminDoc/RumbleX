@@ -39,7 +39,7 @@
         };
     })();
 
-    // --- [NEW] TAR Processing Function ---
+    // --- TAR Processing Function ---
     async function processTarFile(url, btn, menuApi, title) {
         const originalButtonContent = btn.innerHTML;
         const setButtonState = (text, disabled = true) => {
@@ -531,6 +531,8 @@
     .rud-footer { padding: 12px 16px; border-top: 1px solid var(--rud-border-color); background: var(--rud-bg-secondary); }
     .rud-tar-note { font-size: 12px; color: var(--rud-text-muted); line-height: 1.5; }
     .rud-tar-note strong { color: var(--rud-text-secondary); }
+    .rud-tar-note .rud-disclaimer { margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--rud-border-color); }
+    .rud-tar-note .rud-disclaimer svg { vertical-align: middle; margin-right: 4px; width: 14px; height: 14px; }
 
     .rud-empty { padding: 48px 24px; text-align: center; color: var(--rud-text-muted); font-size: 14px; line-height: 1.6; }
     .rud-empty svg { width: 48px; height: 48px; margin-bottom: 16px; opacity: 0.5; }
@@ -627,7 +629,14 @@
         </div>
         <div class="rud-footer" style="display:none;">
             <div class="rud-tar-note">
-                <strong>How to Play TAR files:</strong> 1. Download & Extract the .tar file (e.g., with 7-Zip). 2. Drag the <strong>.m3u8</strong> file into a player like VLC.
+                <div><strong>How to Play TAR files:</strong> 1. Download & Extract the .tar file (e.g., with 7-Zip). 2. Drag the <strong>.m3u8</strong> file into a player like VLC.</div>
+                <div class="rud-disclaimer">
+                  The 
+                  <svg fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h6m-6 4h6m-6 4h6"></path></svg>
+                  <strong>Combine</strong> button processes the file in your browser. This is convenient but may fail on files larger than ~2GB due to memory limits. Use the 
+                  <svg fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
+                  <strong>Download</strong> button for larger files.
+                </div>
             </div>
         </div>`;
             portal.appendChild(menu);
@@ -749,17 +758,20 @@
             item.className = 'rud-item';
             item.dataset.type = type;
 
-            const TWO_GB = 2 * 1024 * 1024 * 1024;
-            let actionButtonHTML = '';
+            let actionButtonsHTML = '';
 
-            if (type === 'tar' && size && size <= TWO_GB) {
-                actionButtonHTML = `
+            if (type === 'tar') {
+                actionButtonsHTML = `
                     <button type="button" class="rud-combine-btn rud-dl-link" data-url="${url}" data-rud-tooltip="Extract & download as .ts file">
                         <svg fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h6m-6 4h6m-6 4h6"></path></svg>
                         <span>Combine</span>
-                    </button>`;
-            } else {
-                actionButtonHTML = `
+                    </button>
+                    <a href="${url}" target="_blank" rel="noopener" download="${fname}" class="rud-dl-link" data-rud-tooltip="Download .tar Archive">
+                        <svg fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
+                    </a>
+                `;
+            } else { // For MP4s
+                actionButtonsHTML = `
                     <a href="${url}" target="_blank" rel="noopener" download="${fname}" class="rud-dl-link" data-rud-tooltip="Download File">
                         <svg fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
                     </a>`;
@@ -773,7 +785,7 @@
                     <button type="button" class="rud-copy-btn" data-url="${url}" data-rud-tooltip="Copy Link">
                         <svg fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path></svg>
                     </button>
-                    ${actionButtonHTML}
+                    ${actionButtonsHTML}
                 </div>`;
 
             item.querySelector('.rud-copy-btn').addEventListener('click', (e) => {
