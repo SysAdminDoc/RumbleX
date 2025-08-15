@@ -1,9 +1,9 @@
 // ==UserScript==
 // @name         Rumble Enhancement Suite
-// @namespace    https://github.com/gemini-scripts/rumble-enhancement-suite
+// @namespace    https://github.com/SysAdminDoc/RumbleEnhancementSuite
 // @version      11.4-modular
-// @description  A premium suite of tools to enhance Rumble.com, featuring a data-driven, 100% reliable video downloader, privacy controls, advanced stats, live chat enhancements, a professional UI, and layout controls.
-// @author       Gemini Professional Web Development
+// @description  A premium suite of tools to enhance Rumble.com, featuring a data-driven, video downloader, privacy controls, advanced stats, live chat enhancements, a professional UI, and layout controls.
+// @author       Matthew Parker
 // @match        https://rumble.com/*
 // @exclude      https://rumble.com/user/*
 // @icon         https://www.google.com/s2/favicons?sz=64&domain=rumble.com
@@ -15,10 +15,10 @@
 // @grant        GM_setClipboard
 // @connect      *
 // @require      https://ajax.googleapis.com/ajax/libs/jquery/3.7.1/jquery.min.js
-// @require      https://your-hosting-location.com/res-styles.js
-// @require      https://your-hosting-location.com/res-features.js
-// @require      https://your-hosting-location.com/res-ui.js
-// @require      https://your-hosting-location.com/res-downloader.js
+// @require      https://raw.githubusercontent.com/SysAdminDoc/RumbleEnhancementSuite/refs/heads/main/src/res-styles.js
+// @require      https://raw.githubusercontent.com/SysAdminDoc/RumbleEnhancementSuite/refs/heads/main/src/res-features.js
+// @require      https://raw.githubusercontent.com/SysAdminDoc/RumbleEnhancementSuite/refs/heads/main/src/res-ui.js
+// @require      https://raw.githubusercontent.com/SysAdminDoc/RumbleEnhancementSuite/refs/heads/main/src/res-downloader.js
 // @run-at       document-start
 // ==/UserScript==
 
