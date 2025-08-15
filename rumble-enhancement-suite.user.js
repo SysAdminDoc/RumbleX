@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Rumble Enhancement Suite
 // @namespace    https://github.com/SysAdminDoc/RumbleEnhancementSuite
-// @version      11.5-modular
+// @version      11.6-modular
 // @description  A premium suite of tools to enhance Rumble.com, featuring a data-driven, video downloader, privacy controls, advanced stats, live chat enhancements, a professional UI, and layout controls.
 // @author       Matthew Parker
 // @match        https://rumble.com/*
@@ -23,7 +23,7 @@
 // @run-at       document-start
 // ==/UserScript==
 
-/* globals $, appState, settingsManager, features, styleManager, dataEngine, applyAllCssFeatures, integrateRUD, injectPanelStyles, buildSettingsPanel, attachUIEventListeners, injectControls */
+/* globals $, RES_CORE, defineStyles, defineFeatures, defineUI */
 
 (function() {
     'use strict';
@@ -33,36 +33,48 @@
     // ——————————————————————————————————————————————————————————————————————————
     async function init() {
         // --- Phase 1: Pre-DOM Ready ---
-        appState.settings = await settingsManager.load();
-        $('html').attr('data-res-theme', appState.settings.panelTheme);
+        // Load settings into the core state object
+        RES_CORE.appState.settings = await RES_CORE.settingsManager.load();
+        $('html').attr('data-res-theme', RES_CORE.appState.settings.panelTheme);
         if (!localStorage.getItem('rud-theme')) {
              localStorage.setItem('rud-theme', 'rud-dark');
         }
+
+        // Define modules by passing core dependencies
+        const styles = defineStyles(RES_CORE);
+        const features = defineFeatures(RES_CORE);
+        const ui = defineUI(RES_CORE);
+
+        // Bind 'this' context for all feature methods
         features.forEach(f => Object.keys(f).forEach(key => { if(typeof f[key] === 'function') f[key] = f[key].bind(f); }));
-        applyAllCssFeatures();
+
+        RES_CORE.applyAllCssFeatures(features);
 
         // --- Phase 2: DOM Ready ---
         $(() => {
-            dataEngine.init();
+            RES_CORE.dataEngine.init();
 
+            // Initialize all features
             const pageType = location.pathname === '/' ? 'home' : (location.pathname.startsWith('/v') ? 'video' : (location.pathname.startsWith('/c/') ? 'profile' : 'other'));
             features.forEach(feature => {
                 const appliesToPage = !feature.page || feature.page === 'all' || feature.page === pageType;
-                if (appliesToPage && appState.settings[feature.id] && feature.init) {
+                if (appliesToPage && RES_CORE.appState.settings[feature.id] && feature.init) {
                     try {
                         feature.init();
                     } catch (error) { console.error(`[Rumble Suite] Error initializing feature "${feature.name}":`, error); }
                 }
             });
 
-            integrateRUD();
+            RES_CORE.integrateRUD();
 
+            // Sync theme and inject UI controls
             const siteThemeFeature = features.find(f => f.id === 'siteTheme');
             siteThemeFeature.sync();
-            injectPanelStyles();
-            buildSettingsPanel();
-            attachUIEventListeners();
-            injectControls();
+
+            styles.injectPanelStyles();
+            ui.buildSettingsPanel();
+            ui.attachUIEventListeners();
+            ui.injectControls();
         });
     }
 
