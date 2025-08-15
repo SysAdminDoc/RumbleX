@@ -148,25 +148,6 @@
     function $all(s, r = document) { return Array.from(r.querySelectorAll(s)); }
     function isVideoPage(p = location.pathname) { return /^\/v[A-Za-z0-9]+(?:[\/\.-]|$)/.test(p); }
 
-    function getVideoIdFromString(str) {
-        if (!str) return null;
-        // Updated regex to better capture the video ID from various URL formats
-        const m = str.match(/(?:\/v|\/embed\/|\?v=)([a-zA-Z0-9]{5,})/);
-        return m ? m[1] : null;
-    }
-    function getVideoId() {
-        let id = getVideoIdFromString(location.pathname + location.search);
-        if (id) return id;
-        const canonical = $('link[rel="canonical"]')?.href;
-        if (canonical) { id = getVideoIdFromString(canonical); if (id) return id; }
-        const og = $('meta[property="og:url"]')?.content || $('meta[property="og:video:url"]')?.content;
-        if (og) { id = getVideoIdFromString(og); if (id) return id; }
-        // Fallback for player elements
-        const playerSrc = $('iframe[src*="rumble.com/embed/"]')?.src;
-        if(playerSrc) { id = getVideoIdFromString(playerSrc); if (id) return id; }
-        return null;
-    }
-
     function getVideoTitle() {
         const og = $('meta[property="og:title"]')?.content?.trim();
         if (og) return og;
@@ -208,11 +189,41 @@
     }
 
     // ---------------- NEW: Direct API Fetch & Parse ----------------
-    async function fetchVideoMetadata(videoId) {
-        if (!videoId) {
-            throw new Error("Video ID could not be found.");
+    
+    /**
+     * Finds the definitive metadata URL from the page's content, ignoring the browser's URL.
+     * This is the single source of truth for which video is currently playing.
+     */
+    function findVideoMetadataUrl() {
+        // This regex is designed to find the full URL for the video's metadata API call.
+        const embedUrlRegex = /https:\/\/rumble\.com\/embedJS\/[^\s"'<>]+\?request=video[^"'\s<>&]*&v=[^"'\s<>&]+/;
+
+        // Priority 1: Scan all script tags. This is the most reliable place to find it.
+        const scripts = document.querySelectorAll('script');
+        for (const script of scripts) {
+            if (script.textContent) {
+                const match = script.textContent.match(embedUrlRegex);
+                if (match && match[0]) {
+                    return match[0]; // Return the full matched URL
+                }
+            }
         }
-        const url = `https://rumble.com/embedJS/u3/?request=video&v=${videoId}`;
+        
+        // Priority 2: Check the entire document's HTML as a fallback.
+        // This can catch URLs loaded in non-standard ways or inside data attributes.
+        const htmlMatch = document.documentElement.outerHTML.match(embedUrlRegex);
+        if (htmlMatch && htmlMatch[0]) {
+            return htmlMatch[0];
+        }
+    
+        return null; // Return null if no URL is found after checking everywhere.
+    }
+
+
+    async function fetchVideoMetadata(url) {
+        if (!url) {
+            throw new Error("Video metadata URL could not be found on this page.");
+        }
         
         const response = await new Promise((resolve, reject) => {
             GM_xmlhttpRequest({
@@ -679,16 +690,13 @@
         }
 
         await menuApi.ensureVisible();
-        await menuApi.setStatusMuted('Fetching video info...');
+        await menuApi.setStatusMuted('Finding video info...');
         setButtonState(btn, 'Loading...', true);
 
         try {
-            const videoId = getVideoId();
-            if (!videoId) {
-                throw new Error("Could not find Video ID on this page.");
-            }
+            const metadataUrl = findVideoMetadataUrl();
             
-            const downloads = await fetchVideoMetadata(videoId);
+            const downloads = await fetchVideoMetadata(metadataUrl);
             await menuApi.clearLists();
             
             if (!downloads || downloads.length === 0) {
