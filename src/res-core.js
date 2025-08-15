@@ -1,5 +1,5 @@
 // This is the content for res-core.js
-/* globals $, GM_setValue, GM_getValue, GM_addStyle, Hls */
+/* globals $, GM_setValue, GM_getValue, GM_addStyle, Hls, features */
 
 // ——————————————————————————————————————————————————————————————————————————
 // 1. SETTINGS & STATE MANAGER
@@ -226,12 +226,15 @@ function integrateRUD() {
             default: return null;
         }
     }
-    const rudListObserver = new MutationObserver(() => {
+    const rudListObserver = new MutationObserver((mutations) => {
         const list = document.querySelector('.rud-panel .rud-list');
-        if (!list || list.hasAttribute('data-res-processed')) return;
+        if (!list || mutations.length === 0 || list.hasAttribute('data-res-processed')) return;
+
         const items = Array.from(list.querySelectorAll('.rud-item'));
         if (items.length === 0) return;
+
         list.setAttribute('data-res-processed', 'true');
+
         items.forEach(item => {
             const sizeEl = item.querySelector('.rud-item-size');
             const sizeText = sizeEl ? sizeEl.textContent : '';
@@ -240,9 +243,12 @@ function integrateRUD() {
                 item.classList.add('rud-hide');
             }
         });
+
         const mp4Items = items.filter(item => item.dataset.type === 'mp4' && !item.classList.contains('rud-hide'));
         const tarItems = items.filter(item => item.dataset.type === 'tar' && !item.classList.contains('rud-hide'));
+
         list.innerHTML = '';
+
         if (mp4Items.length > 0) {
             const mp4Group = document.createElement('div');
             mp4Group.className = 'rud-group-box';
@@ -250,6 +256,7 @@ function integrateRUD() {
             mp4Items.forEach(item => mp4Group.appendChild(item));
             list.appendChild(mp4Group);
         }
+
         if (tarItems.length > 0) {
             const tarGroup = document.createElement('div');
             tarGroup.className = 'rud-group-box';
@@ -257,17 +264,24 @@ function integrateRUD() {
             tarItems.forEach(item => tarGroup.appendChild(item));
             list.appendChild(tarGroup);
         }
+
         setTimeout(() => list.removeAttribute('data-res-processed'), 500);
     });
+
     const rudPanelObserver = new MutationObserver((mutations) => {
         for (const mutation of mutations) {
             for (const node of mutation.addedNodes) {
+                // When the RUD portal is added to the page...
                 if (node.nodeType === 1 && node.matches('#rud-portal')) {
-                    rudListObserver.observe(node.querySelector('.rud-list'), { childList: true, subtree: true });
+                    // ...start observing IT for when the .rud-list is added.
+                    rudListObserver.observe(node, { childList: true, subtree: true });
+                    // We can stop observing the body now.
+                    rudPanelObserver.disconnect();
                 }
             }
         }
     });
-    // Start observing the body for the portal to be added
+
+    // Start observing the main document body for the #rud-portal element to be added.
     rudPanelObserver.observe(document.body, { childList: true });
 }
