@@ -909,6 +909,36 @@
       return out;
     }
 
+    function limitToTopThree() {
+      const allItems = Array.from(byKey.values());
+      const videoItems = allItems.filter(item => {
+        const type = item.node.dataset.type;
+        return type === 'tar' || type === 'mp4';
+      });
+
+      if (videoItems.length <= 3) return; // No need to filter
+
+      const getUrl = (item) => item.node.querySelector('[data-url]')?.dataset.url || '';
+
+      videoItems.sort((a, b) => {
+        const rankA = tokenRank(extractTokenFromUrl(getUrl(a)));
+        const rankB = tokenRank(extractTokenFromUrl(getUrl(b)));
+        return rankB - rankA;
+      });
+
+      const topThreeItems = new Set(videoItems.slice(0, 3));
+
+      allItems.forEach(item => {
+        const type = item.node.dataset.type;
+        // Always show audio, otherwise check if it's in the top 3
+        if (type === 'audio' || topThreeItems.has(item)) {
+          item.node.style.display = 'grid';
+        } else {
+          item.node.style.display = 'none';
+        }
+      });
+    }
+
     const api = {
       open, close, toggle,
       setStatusMuted,
@@ -918,7 +948,8 @@
       haveAny: () => byKey.size > 0,
       ensureVisible: async () => { if (!menu.classList.contains('open')) await open(); },
       positionMenu,
-      exportListForCache
+      exportListForCache,
+      limitToTopThree
     };
     return api;
   }
@@ -935,6 +966,7 @@
       for (const it of cached) {
         menuApi.addOrUpdate({ label: it.label, type: it.type, url: it.url, size: it.size, fps: it.fps, bitrate: it.bitrate });
       }
+      menuApi.limitToTopThree(); // Apply filter to cached results
       await menuApi.setStatusMuted('Ready (cached).');
       return; // near-instant reuse
     }
@@ -974,6 +1006,7 @@
       }
 
       await probeTargetsFast(targets, menuApi);
+      menuApi.limitToTopThree(); // Apply filter after probing
 
       await menuApi.setStatusMuted('Ready.');
 
@@ -1020,6 +1053,7 @@
         if (cached && cached.length) {
           menuApi.clearLists().then(() => {
             cached.forEach(it => menuApi.addOrUpdate({ label: it.label, type: it.type, url: it.url, size: it.size, fps: it.fps, bitrate: it.bitrate }));
+            menuApi.limitToTopThree(); // Apply filter to primed cached results
             menuApi.setStatusMuted('Ready (cached).');
           });
         }

@@ -566,98 +566,101 @@
   // ---------------- UI (compact with center metadata; popup to the right) ----------------
   GM_addStyle(`
     :root {
-      --rud-font-sans: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-      --rud-font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace;
+      --rud-font-sans: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+      --rud-font-mono: 'Roboto Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace;
       --rud-ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
+      --rud-ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
     }
     #rud-portal.rud-dark {
-      --rud-bg-primary: #111827; --rud-bg-secondary: #1f2937; --rud-bg-tertiary: #343d4a;
+      --rud-bg-primary: #111827; --rud-bg-secondary: #1f2937; --rud-bg-tertiary: #374151;
       --rud-text-primary: #f9fafb; --rud-text-secondary: #d1d5db; --rud-text-muted: #9ca3af;
-      --rud-border-color: #2b3441;
+      --rud-border-color: #374151;
       --rud-accent: #22c55e; --rud-accent-hover: #16a34a; --rud-accent-text: #ffffff;
-      --rud-shadow: 0 10px 20px rgba(0,0,0,0.25);
-      --rud-backdrop-blur: blur(8px);
+      --rud-shadow: 0 10px 30px rgba(0,0,0,0.5);
+      --rud-backdrop-blur: blur(12px);
     }
     #rud-portal.rud-light {
       --rud-bg-primary: #ffffff; --rud-bg-secondary: #f3f4f6; --rud-bg-tertiary: #e5e7eb;
       --rud-text-primary: #111827; --rud-text-secondary: #374151; --rud-text-muted: #6b7280;
       --rud-border-color: #e5e7eb;
       --rud-accent: #16a34a; --rud-accent-hover: #15803d; --rud-accent-text: #ffffff;
-      --rud-shadow: 0 10px 18px rgba(0,0,0,0.12);
-      --rud-backdrop-blur: blur(8px);
+      --rud-shadow: 0 10px 25px rgba(0,0,0,0.1);
+      --rud-backdrop-blur: blur(12px);
     }
 
-    #rud-portal { position: fixed; inset: 0; pointer-events: none; z-index: 2147483646; font-family: var(--rud-font-sans); font-size: 13px; }
+    #rud-portal { position: fixed; inset: 0; pointer-events: none; z-index: 2147483646; font-family: var(--rud-font-sans); font-size: 14px; }
     .rud-inline-wrap { position: relative; display: inline-flex; }
     .rud-inline-wrap.rud-right { margin-left: auto; }
 
     #rud-download-btn {
-      position: relative; display: inline-flex; align-items: center; gap: 0.45rem; padding: 0.4rem 0.8rem;
-      font-size: 13px; font-weight: 700; line-height: 1; letter-spacing: 0.02em;
-      background-image: linear-gradient(to top, #15803d, #16a34a);
-      color: #fff; border: 1px solid #16a34a; border-radius: 8px;
-      cursor: pointer; box-shadow: 0 1px 2px rgba(0,0,0,0.14), inset 0 1px 0 rgba(255,255,255,0.08);
-      transition: all .18s var(--rud-ease-out); overflow: hidden; margin-left: 12px;
+      position: relative; display: inline-flex; align-items: center; gap: 0.5rem; padding: 0.5rem 1.1rem;
+      font-size: 14px; font-weight: 600; line-height: 1; color: var(--rud-text-primary);
+      background-color: #374151;
+      border: none; border-radius: 999px;
+      cursor: pointer; margin-left: 12px;
+      transition: all .2s var(--rud-ease-out);
     }
-    #rud-download-btn:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 6px 14px rgba(0,0,0,0.18), inset 0 1px 0 rgba(255,255,255,0.12); background-image: linear-gradient(to top, #16a34a, #22c55e); }
-    #rud-download-btn:active:not(:disabled) { transform: translateY(0px); }
-    #rud-download-btn:disabled { opacity: .75; cursor: default; }
-    #rud-download-btn .rud-btn-fill { position: absolute; left: 0; top: 0; bottom: 0; width: 0%; background: rgba(255,255,255,0.2); transition: width .2s var(--rud-ease-out); pointer-events:none; }
-    #rud-download-btn .rud-btn-text { position: relative; z-index: 1; display: inline-flex; align-items: center; gap: 0.45rem; }
+    #rud-download-btn:hover:not(:disabled) {
+      background-color: var(--rud-accent);
+      color: var(--rud-accent-text);
+      transform: translateY(-2px);
+      box-shadow: 0 6px 15px rgba(34, 197, 94, 0.3);
+    }
+    #rud-download-btn:active:not(:disabled) { transform: translateY(0px); box-shadow: none; }
+    #rud-download-btn:disabled { opacity: .7; cursor: default; }
+    #rud-download-btn .rud-btn-text { display: inline-flex; align-items: center; gap: 0.5rem; }
 
     .rud-panel {
       position: fixed;
-      background: var(--rud-bg-primary); color: var(--rud-text-primary);
-      border: 1px solid var(--rud-border-color); border-radius: 10px;
+      background: rgba(16, 16, 16, 0.8); color: var(--rud-text-primary);
+      border: 1px solid var(--rud-border-color); border-radius: 12px;
       box-shadow: var(--rud-shadow); overflow: hidden; display: none;
       pointer-events: auto; backdrop-filter: var(--rud-backdrop-blur); -webkit-backdrop-filter: var(--rud-backdrop-blur);
-      opacity: 0; transform: translateX(-8px) scale(0.985);
-      transition: opacity 0.18s var(--rud-ease-out), transform 0.18s var(--rud-ease-out);
-      width: 540px; max-width: 94vw;
+      opacity: 0; transform: translateX(-10px) scale(0.98);
+      transition: opacity 0.25s var(--rud-ease-out), transform 0.25s var(--rud-ease-out);
+      width: 560px; max-width: 95vw;
     }
     .rud-panel.open { display: flex; flex-direction: column; opacity: 1; transform: translateX(0) scale(1); }
 
-    .rud-header { display: flex; align-items: center; padding: 8px 10px; border-bottom: 1px solid var(--rud-border-color); }
-    .rud-status { flex-grow: 1; font-size: 12px; color: var(--rud-text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .rud-header-controls { display: flex; align-items: center; gap: 6px; }
-    .rud-icon-btn { display: flex; padding: 4px; background: none; border: none; border-radius: 6px; cursor: pointer; color: var(--rud-text-muted); transition: background .2s, color .2s; }
+    .rud-header { display: flex; align-items: center; padding: 10px 14px; border-bottom: 1px solid var(--rud-border-color); }
+    .rud-status { flex-grow: 1; font-size: 13px; color: var(--rud-text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .rud-header-controls { display: flex; align-items: center; gap: 8px; }
+    .rud-icon-btn { display: flex; padding: 6px; background: none; border: none; border-radius: 8px; cursor: pointer; color: var(--rud-text-muted); transition: background .2s, color .2s; }
     .rud-icon-btn:hover { background: var(--rud-bg-secondary); color: var(--rud-text-primary); }
-    .rud-icon-btn svg { width: 16px; height: 16px; }
+    .rud-icon-btn svg { width: 18px; height: 18px; }
 
-    .rud-body { max-height: 50vh; overflow-y: auto; }
-    .rud-list { display: flex; flex-direction: column; padding: 4px; }
-    .rud-item { display: grid; grid-template-columns: 72px 56px 1fr 88px auto; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 6px; }
+    .rud-body { max-height: 60vh; overflow-y: auto; }
+    .rud-list { display: flex; flex-direction: column; padding: 6px; }
+    .rud-item { display: grid; grid-template-columns: 70px 55px 1fr 75px 210px; align-items: center; gap: 6px; padding: 8px 10px; border-radius: 8px; transition: background .2s var(--rud-ease-in-out); }
     .rud-item + .rud-item { margin-top: 2px; }
     .rud-item:hover { background: var(--rud-bg-secondary); }
-    .rud-item-res { font-weight: 800; font-size: 13px; color: var(--rud-text-primary); }
-    .rud-item-badge { font-size: 10px; font-weight: 700; padding: 2px 6px; border-radius: 10px; background: var(--rud-bg-tertiary); color: var(--rud-text-secondary); text-transform: uppercase; text-align: center;}
-    .rud-item-meta { font-size: 11px; color: var(--rud-text-muted); text-align: center; white-space: nowrap; }
-    .rud-item-size { font-size: 12px; color: var(--rud-text-muted); font-family: var(--rud-font-mono); margin-right: 8px; text-align: right; }
-    .rud-item-actions { display: inline-flex; gap: 6px; }
-    .rud-item-actions a, .rud-item-actions button { display: inline-flex; align-items: center; justify-content: center; gap: 4px; text-decoration: none; font-size: 12px; font-weight: 700; padding: 4px 8px; border-radius: 6px; transition: all .16s; }
-    .rud-item-actions .rud-copy-btn { background: var(--rud-bg-tertiary); color: var(--rud-text-secondary); border: 1px solid var(--rud-border-color); cursor: pointer; }
+    .rud-item-res { font-weight: 700; font-size: 14px; color: var(--rud-text-primary); }
+    .rud-item-badge { font-size: 11px; font-weight: 700; padding: 3px 8px; border-radius: 12px; background: var(--rud-bg-tertiary); color: var(--rud-text-secondary); text-transform: uppercase; text-align: center;}
+    .rud-item-meta { font-size: 12px; color: var(--rud-text-muted); text-align: center; white-space: nowrap; }
+    .rud-item-size { font-size: 13px; color: var(--rud-text-muted); font-family: var(--rud-font-mono); text-align: right; }
+    .rud-item-actions { display: inline-flex; gap: 6px; justify-content: flex-end; }
+    .rud-item-actions a, .rud-item-actions button { display: inline-flex; align-items: center; justify-content: center; gap: 5px; text-decoration: none; font-size: 12px; font-weight: 600; padding: 5px 8px; border-radius: 6px; transition: all .2s var(--rud-ease-in-out); border: 1px solid transparent; flex-shrink: 0; }
+    .rud-item-actions .rud-copy-btn { background: var(--rud-bg-tertiary); color: var(--rud-text-secondary); border-color: var(--rud-border-color); cursor: pointer; }
     .rud-item-actions .rud-copy-btn:hover { background: var(--rud-border-color); color: var(--rud-text-primary); }
-    .rud-item-actions .rud-dl-link { background: var(--rud-accent); color: var(--rud-accent-text); border: 1px solid var(--rud-accent); }
+    .rud-item-actions .rud-dl-link { background: var(--rud-accent); color: var(--rud-accent-text); border-color: var(--rud-accent); }
     .rud-item-actions .rud-dl-link:hover { background: var(--rud-accent-hover); }
-    .rud-item-actions .rud-second { background: var(--rud-bg-tertiary); color: var(--rud-text-secondary); border: 1px solid var(--rud-border-color); }
-    .rud-item-actions svg { width: 13px; height: 13px; }
-
-    .rud-footer { padding: 8px 10px; border-top: 1px solid var(--rud-border-color); background: var(--rud-bg-secondary); }
-    .rud-tar-note { font-size: 11px; color: var(--rud-text-muted); line-height: 1.4; }
+    .rud-item-actions .rud-second { background: var(--rud-bg-tertiary); color: var(--rud-text-secondary); border-color: var(--rud-border-color); }
+    .rud-item-actions svg { width: 14px; height: 14px; }
+    
+    .rud-footer { padding: 10px 14px; border-top: 1px solid var(--rud-border-color); background: var(--rud-bg-secondary); }
+    .rud-tar-note { font-size: 12px; color: var(--rud-text-muted); line-height: 1.5; }
     .rud-tar-note strong { color: var(--rud-text-secondary); }
 
-    .rud-empty { padding: 32px 16px; text-align: center; color: var(--rud-text-muted); font-size: 13px; line-height: 1.6; }
-    .rud-empty svg { width: 42px; height: 42px; margin-bottom: 12px; opacity: 0.5; }
+    .rud-empty { padding: 40px 20px; text-align: center; color: var(--rud-text-muted); font-size: 14px; line-height: 1.6; }
+    .rud-empty svg { width: 48px; height: 48px; margin-bottom: 16px; opacity: 0.4; }
 
     [data-rud-tooltip] { position: relative; }
     [data-rud-tooltip]::after {
-      content: attr(data-rud-tooltip); position: absolute; bottom: calc(100% + 6px); left: 50%; transform: translateX(-50%);
-      background: #111827; color: #f9fafb; font-size: 11px; font-weight: 700; padding: 3px 6px; border-radius: 4px;
-      white-space: nowrap; opacity: 0; pointer-events: none; transition: opacity .16s, transform .16s;
+      content: attr(data-rud-tooltip); position: absolute; bottom: calc(100% + 8px); left: 50%; transform: translateX(-50%);
+      background: #111827; color: #f9fafb; font-size: 12px; font-weight: 600; padding: 4px 8px; border-radius: 6px;
+      white-space: nowrap; opacity: 0; pointer-events: none; transition: opacity .2s, transform .2s var(--rud-ease-out);
     }
-    [data-rud-tooltip]:hover::after { opacity: 1; transform: translateX(-50%) translateY(-2px); }
-
-    #rud-comments-spacer { width: 100%; height: 0px; transition: height 0.16s var(--rud-ease-out); }
+    [data-rud-tooltip]:hover::after { opacity: 1; transform: translateX(-50%) translateY(-4px); }
   `);
 
   function ensurePortal() {
@@ -676,9 +679,8 @@
     btn.id = 'rud-download-btn';
     btn.type = 'button';
     btn.innerHTML = `
-      <div class="rud-btn-fill"></div>
       <span class="rud-btn-text">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M12 3v11m0 0l4-4m-4 4L8 10M5 21h14" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v11m0 0l4-4m-4 4L8 10M5 21h14"></path></svg>
         <span class="rud-btn-label">Download</span>
       </span>`;
     return btn;
@@ -742,10 +744,9 @@
       await raf(() => {
         const rect = btn.getBoundingClientRect();
         const w = menu.offsetWidth;
-        const gap = 8;
-        // Place to the right of the button, aligned top edges
+        const gap = 12;
         let left = Math.round(rect.right + gap);
-        left = Math.max(12, Math.min(left, window.innerWidth - 12 - w));
+        left = Math.max(16, Math.min(left, window.innerWidth - 16 - w));
         const top = Math.round(rect.top);
         menu.style.left = `${left}px`;
         menu.style.top = `${top}px`;
@@ -786,7 +787,6 @@
       await positionMenu();
     }
 
-    // De-dupe map: key=label|type -> choose larger size
     const byKey = new Map();
 
     function replaceNode(oldNode, newNode) {
@@ -815,9 +815,6 @@
         item.className = 'rud-item';
         item.dataset.type = type;
 
-        // Actions:
-        // - For TAR rows: TAR link (left), Combine (middle), Copy (right)  [swapped positions per request]
-        // - For MP4/Audio rows: DL link (left), Copy (right)
         const actions =
           type === 'tar'
             ? `
@@ -830,8 +827,7 @@
                 <span>Combine</span>
               </button>
               <button type="button" class="rud-copy-btn" data-url="${url}" data-rud-tooltip="Copy Link">
-                <svg fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2z"></path></svg>
-                <span>Copy</span>
+                 <svg fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2z"></path></svg>
               </button>`
             : `
               <a href="${url}" target="_blank" rel="noopener" download="${fname}" class="rud-dl-link" data-rud-tooltip="Download">
@@ -840,7 +836,6 @@
               </a>
               <button type="button" class="rud-copy-btn" data-url="${url}" data-rud-tooltip="Copy Link">
                 <svg fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2z"></path></svg>
-                <span>Copy</span>
               </button>`;
 
         item.innerHTML = `
