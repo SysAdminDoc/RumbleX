@@ -150,13 +150,20 @@
 
   // ---------------- TAR download + combine to .ts ----------------
   async function processTarFile(url, btn, menuApi, title) {
-    const original = btn.innerHTML;
+    const originalHTML = btn.innerHTML;
+    const originalWidth = btn.offsetWidth; // Capture width before making changes
+
     const setBtn = (text, disabled = true) => {
       btn.disabled = disabled;
-      const label = btn.querySelector('span, .rud-btn-label');
-      if (label) label.textContent = text; else btn.textContent = text;
+      // Replace the button content with only text, which will be centered.
+      btn.innerHTML = `<span class="rud-btn-label">${safeHtml(text)}</span>`;
     };
+
     try {
+      // Lock the button's size and center its content to prevent layout shifts
+      btn.style.width = `${originalWidth}px`;
+      btn.style.justifyContent = 'center';
+
       setBtn('Downloading…', true);
       await menuApi.setStatusMuted(`Downloading TAR…`);
       const response = await new Promise((resolve, reject) => {
@@ -247,14 +254,27 @@
       URL.revokeObjectURL(blobUrl);
 
       setBtn('Done!', true);
-      setTimeout(() => { btn.innerHTML = original; btn.disabled = false; }, 1200);
+      setTimeout(() => {
+        btn.innerHTML = originalHTML;
+        btn.disabled = false;
+        // Unlock the button's size and styling
+        btn.style.width = '';
+        btn.style.justifyContent = '';
+      }, 1200);
 
     } catch (e) {
       console.error('Rumble Downloader TAR Error:', e);
       await menuApi.setStatusMuted(`Error: ${e && e.message ? e.message : e}`);
       setBtn('Error', true);
       btn.style.backgroundColor = '#b91c1c';
-      setTimeout(() => { btn.innerHTML = original; btn.disabled = false; btn.style.backgroundColor = ''; }, 3500);
+      setTimeout(() => {
+        btn.innerHTML = originalHTML;
+        btn.disabled = false;
+        btn.style.backgroundColor = '';
+        // Unlock the button's size and styling
+        btn.style.width = '';
+        btn.style.justifyContent = '';
+      }, 3500);
     }
   }
 
@@ -909,6 +929,36 @@
       return out;
     }
 
+    function limitToTopThree() {
+      const allItems = Array.from(byKey.values());
+      const videoItems = allItems.filter(item => {
+        const type = item.node.dataset.type;
+        return type === 'tar' || type === 'mp4';
+      });
+
+      if (videoItems.length <= 3) return; // No need to filter
+
+      const getUrl = (item) => item.node.querySelector('[data-url]')?.dataset.url || '';
+
+      videoItems.sort((a, b) => {
+        const rankA = tokenRank(extractTokenFromUrl(getUrl(a)));
+        const rankB = tokenRank(extractTokenFromUrl(getUrl(b)));
+        return rankB - rankA;
+      });
+
+      const topThreeItems = new Set(videoItems.slice(0, 3));
+
+      allItems.forEach(item => {
+        const type = item.node.dataset.type;
+        // Always show audio, otherwise check if it's in the top 3
+        if (type === 'audio' || topThreeItems.has(item)) {
+          item.node.style.display = 'grid';
+        } else {
+          item.node.style.display = 'none';
+        }
+      });
+    }
+
     const api = {
       open, close, toggle,
       setStatusMuted,
@@ -918,7 +968,8 @@
       haveAny: () => byKey.size > 0,
       ensureVisible: async () => { if (!menu.classList.contains('open')) await open(); },
       positionMenu,
-      exportListForCache
+      exportListForCache,
+      limitToTopThree
     };
     return api;
   }
@@ -935,6 +986,7 @@
       for (const it of cached) {
         menuApi.addOrUpdate({ label: it.label, type: it.type, url: it.url, size: it.size, fps: it.fps, bitrate: it.bitrate });
       }
+      menuApi.limitToTopThree(); // Apply filter to cached results
       await menuApi.setStatusMuted('Ready (cached).');
       return; // near-instant reuse
     }
@@ -974,6 +1026,7 @@
       }
 
       await probeTargetsFast(targets, menuApi);
+      menuApi.limitToTopThree(); // Apply filter after probing
 
       await menuApi.setStatusMuted('Ready.');
 
@@ -1020,6 +1073,7 @@
         if (cached && cached.length) {
           menuApi.clearLists().then(() => {
             cached.forEach(it => menuApi.addOrUpdate({ label: it.label, type: it.type, url: it.url, size: it.size, fps: it.fps, bitrate: it.bitrate }));
+            menuApi.limitToTopThree(); // Apply filter to primed cached results
             menuApi.setStatusMuted('Ready (cached).');
           });
         }

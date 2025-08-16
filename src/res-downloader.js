@@ -597,7 +597,6 @@
       --rud-border-color: #374151;
       --rud-accent: #22c55e; --rud-accent-hover: #16a34a; --rud-accent-text: #ffffff;
       --rud-shadow: 0 10px 30px rgba(0,0,0,0.5);
-      --rud-backdrop-blur: blur(12px);
     }
     #rud-portal.rud-light {
       --rud-bg-primary: #ffffff; --rud-bg-secondary: #f3f4f6; --rud-bg-tertiary: #e5e7eb;
@@ -605,11 +604,15 @@
       --rud-border-color: #e5e7eb;
       --rud-accent: #16a34a; --rud-accent-hover: #15803d; --rud-accent-text: #ffffff;
       --rud-shadow: 0 10px 25px rgba(0,0,0,0.1);
-      --rud-backdrop-blur: blur(12px);
     }
 
     #rud-portal { position: fixed; inset: 0; pointer-events: none; z-index: 2147483646; font-family: var(--rud-font-sans); font-size: 14px; }
-    .rud-inline-wrap { position: relative; display: inline-flex; }
+    
+    /* Ensure the wrapper can contain the absolutely positioned panel */
+    .rud-inline-wrap {
+      position: relative;
+      display: inline-flex;
+    }
     .rud-inline-wrap.rud-right { margin-left: auto; }
 
     #rud-download-btn {
@@ -630,26 +633,69 @@
     #rud-download-btn:disabled { opacity: .7; cursor: default; }
     #rud-download-btn .rud-btn-text { display: inline-flex; align-items: center; gap: 0.5rem; }
 
+    /* --- Popover Panel --- */
     .rud-panel {
-      position: fixed;
-      background: rgba(16, 16, 16, 0.8); color: var(--rud-text-primary);
-      border: 1px solid var(--rud-border-color); border-radius: 12px;
-      box-shadow: var(--rud-shadow); overflow: hidden; display: none;
-      pointer-events: auto; backdrop-filter: var(--rud-backdrop-blur); -webkit-backdrop-filter: var(--rud-backdrop-blur);
-      opacity: 0; transform: translateX(-10px) scale(0.98);
-      transition: opacity 0.25s var(--rud-ease-out), transform 0.25s var(--rud-ease-out);
-      width: 560px; max-width: 95vw;
+      position: absolute; /* Changed from fixed to absolute */
+      top: calc(100% + 12px); /* Position below the button with a 12px gap */
+      left: 50%; /* Start positioning from the center */
+      transform: translateX(-50%) scale(0.95); /* Center the panel horizontally */
+      
+      background: var(--rud-bg-primary); /* Use a solid background for popovers */
+      color: var(--rud-text-primary);
+      border: 1px solid var(--rud-border-color);
+      border-radius: 12px;
+      box-shadow: var(--rud-shadow);
+      overflow: hidden;
+      display: none;
+      pointer-events: auto;
+      
+      /* Note: backdrop-filter is removed as it's not ideal for popovers */
+      opacity: 0;
+      transition: opacity 0.2s var(--rud-ease-out), transform 0.2s var(--rud-ease-out);
+      width: 480px; /* Slightly reduced width for a more compact feel */
+      max-width: 95vw;
+      z-index: 10;
+      transform-origin: top center; /* Animate from the top-center */
     }
-    .rud-panel.open { display: flex; flex-direction: column; opacity: 1; transform: translateX(0) scale(1); }
 
-    .rud-header { display: flex; align-items: center; padding: 10px 14px; border-bottom: 1px solid var(--rud-border-color); }
+    /* The popover arrow */
+    .rud-panel::before {
+      content: '';
+      position: absolute;
+      bottom: 100%; /* Position the arrow at the top edge of the panel */
+      left: 50%;
+      transform: translateX(-50%);
+      width: 0;
+      height: 0;
+      border-left: 10px solid transparent;
+      border-right: 10px solid transparent;
+      border-bottom: 10px solid var(--rud-bg-primary); /* Arrow color matches panel */
+      /* Add a border to the arrow to match the panel's border */
+      filter: drop-shadow(0 -1px 0 var(--rud-border-color));
+    }
+
+    .rud-panel.open {
+      display: flex;
+      flex-direction: column;
+      opacity: 1;
+      transform: translateX(-50%) scale(1); /* Animate to full size */
+    }
+
+    /* --- Header & Body (minor tweaks) --- */
+    .rud-header {
+        background: var(--rud-bg-secondary); /* Give header a slight tint */
+        display: flex; align-items: center; padding: 10px 14px; border-bottom: 1px solid var(--rud-border-color);
+    }
     .rud-status { flex-grow: 1; font-size: 13px; color: var(--rud-text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .rud-header-controls { display: flex; align-items: center; gap: 8px; }
     .rud-icon-btn { display: flex; padding: 6px; background: none; border: none; border-radius: 8px; cursor: pointer; color: var(--rud-text-muted); transition: background .2s, color .2s; }
     .rud-icon-btn:hover { background: var(--rud-bg-secondary); color: var(--rud-text-primary); }
     .rud-icon-btn svg { width: 18px; height: 18px; }
 
-    .rud-body { max-height: 60vh; overflow-y: auto; }
+    .rud-body {
+        max-height: 50vh; /* Adjust max height for popover context */
+        overflow-y: auto;
+    }
     .rud-list { display: flex; flex-direction: column; padding: 6px; }
     .rud-item { display: grid; grid-template-columns: 70px 55px 1fr 75px 210px; align-items: center; gap: 6px; padding: 8px 10px; border-radius: 8px; transition: background .2s var(--rud-ease-in-out); }
     .rud-item + .rud-item { margin-top: 2px; }
@@ -735,21 +781,7 @@
             <div><strong>Note:</strong> Browser-side “Combine” often fails around ~2 GB. If the archive is that large, prefer the raw TAR download.</div>
           </div>
         </div>`;
-      portal.appendChild(menu);
-
-      menu.querySelector('.rud-close-btn').addEventListener('click', () => close());
-      menu.querySelector('.rud-theme-toggle').addEventListener('click', () => {
-        const newTheme = portal.classList.contains('rud-dark') ? 'rud-light' : 'rud-dark';
-        portal.className = newTheme;
-        localStorage.setItem('rud-theme', newTheme);
-        updateThemeIcons();
-      });
-      const updateThemeIcons = () => {
-        const isDark = portal.classList.contains('rud-dark');
-        menu.querySelector('.rud-theme-sun').style.display = isDark ? 'none' : 'block';
-        menu.querySelector('.rud-theme-moon').style.display = isDark ? 'block' : 'none';
-      };
-      updateThemeIcons();
+      // The menu is appended to the button's wrapper later, not the portal
     }
 
     const refs = () => ({
@@ -761,21 +793,25 @@
     });
 
     async function positionMenu() {
+      // With the popover theme, positioning is mostly handled by CSS.
+      // We just need to ensure the parent container is set to relative positioning.
       await raf(() => {
-        const rect = btn.getBoundingClientRect();
-        const w = menu.offsetWidth;
-        const gap = 12;
-        let left = Math.round(rect.right + gap);
-        left = Math.max(16, Math.min(left, window.innerWidth - 16 - w));
-        const top = Math.round(rect.top);
-        menu.style.left = `${left}px`;
-        menu.style.top = `${top}px`;
+        const wrap = btn.closest('.rud-inline-wrap');
+        if (wrap && getComputedStyle(wrap).position !== 'relative') {
+          wrap.style.position = 'relative';
+        }
+        if (!menu.parentElement) {
+            wrap.appendChild(menu); // Append menu to wrapper if not already there
+        }
+        // The CSS (top: 100%, left: 50%, transform: translateX(-50%))
+        // will now correctly position the menu relative to this wrapper.
       });
     }
+
     async function open() {
       if (!menu.classList.contains('open')) {
-        menu.classList.add('open');
         await positionMenu();
+        await raf(() => menu.classList.add('open'));
       }
     }
     async function close() {
@@ -784,6 +820,21 @@
       }
     }
     async function toggle() { if (menu.classList.contains('open')) await close(); else await open(); }
+
+    // Add close handlers after menu is potentially created
+    menu.querySelector('.rud-close-btn').addEventListener('click', () => close());
+    menu.querySelector('.rud-theme-toggle').addEventListener('click', () => {
+        const newTheme = portal.classList.contains('rud-dark') ? 'rud-light' : 'rud-dark';
+        portal.className = newTheme;
+        localStorage.setItem('rud-theme', newTheme);
+        updateThemeIcons();
+    });
+    const updateThemeIcons = () => {
+        const isDark = portal.classList.contains('rud-dark');
+        menu.querySelector('.rud-theme-sun').style.display = isDark ? 'none' : 'block';
+        menu.querySelector('.rud-theme-moon').style.display = isDark ? 'block' : 'none';
+    };
+    updateThemeIcons();
 
     async function setStatusMuted(text) {
       refs().statusEl.innerHTML = `<span class="muted">${safeHtml(text)}</span>`;
@@ -1088,6 +1139,14 @@
           }
           if (menuApi.haveAny() && !btn.disabled) menuApi.toggle();
           else onDownloadClick(btn);
+        }, { passive: true });
+        
+        // Close menu when clicking outside
+        document.addEventListener('click', (e) => {
+            const menuEl = btn.closest('.rud-inline-wrap')?.querySelector('.rud-panel');
+            if (menuEl && menuEl.classList.contains('open') && !menuEl.contains(e.target) && !btn.contains(e.target)) {
+                menuApi.close();
+            }
         }, { passive: true });
 
         return;
