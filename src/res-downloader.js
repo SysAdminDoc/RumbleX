@@ -572,32 +572,20 @@
       --rud-ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
     }
     #rud-portal.rud-dark {
-        --rud-bg-primary: #0a0a0a;
-        --rud-bg-secondary: #1a1a1a;
-        --rud-bg-tertiary: #2a2a2a;
-        --rud-text-primary: #f0f0f0;
-        --rud-text-secondary: #a0a0a0;
-        --rud-text-muted: #707070;
-        --rud-border-color: #2a2a2a;
-        --rud-accent: #00e075;
-        --rud-accent-hover: #00ff85;
-        --rud-accent-text: #000000;
-        --rud-shadow: 0 10px 30px rgba(0,0,0,0.5);
-        --rud-backdrop-blur: blur(12px);
+      --rud-bg-primary: #111827; --rud-bg-secondary: #1f2937; --rud-bg-tertiary: #374151;
+      --rud-text-primary: #f9fafb; --rud-text-secondary: #d1d5db; --rud-text-muted: #9ca3af;
+      --rud-border-color: #374151;
+      --rud-accent: #22c55e; --rud-accent-hover: #16a34a; --rud-accent-text: #ffffff;
+      --rud-shadow: 0 10px 30px rgba(0,0,0,0.5);
+      --rud-backdrop-blur: blur(12px);
     }
     #rud-portal.rud-light {
-        --rud-bg-primary: #ffffff;
-        --rud-bg-secondary: #f7f7f7;
-        --rud-bg-tertiary: #e9e9e9;
-        --rud-text-primary: #111827;
-        --rud-text-secondary: #374151;
-        --rud-text-muted: #6b7280;
-        --rud-border-color: #e5e7eb;
-        --rud-accent: #00b35e;
-        --rud-accent-hover: #009950;
-        --rud-accent-text: #ffffff;
-        --rud-shadow: 0 10px 25px rgba(0,0,0,0.1);
-        --rud-backdrop-blur: blur(12px);
+      --rud-bg-primary: #ffffff; --rud-bg-secondary: #f3f4f6; --rud-bg-tertiary: #e5e7eb;
+      --rud-text-primary: #111827; --rud-text-secondary: #374151; --rud-text-muted: #6b7280;
+      --rud-border-color: #e5e7eb;
+      --rud-accent: #16a34a; --rud-accent-hover: #15803d; --rud-accent-text: #ffffff;
+      --rud-shadow: 0 10px 25px rgba(0,0,0,0.1);
+      --rud-backdrop-blur: blur(12px);
     }
 
     #rud-portal { position: fixed; inset: 0; pointer-events: none; z-index: 2147483646; font-family: var(--rud-font-sans); font-size: 14px; }
@@ -605,17 +593,22 @@
     .rud-inline-wrap.rud-right { margin-left: auto; }
 
     #rud-download-btn {
-      position: relative; display: inline-flex; align-items: center; gap: 0.5rem; padding: 0.5rem 1rem;
-      font-size: 14px; font-weight: 600; line-height: 1; letter-spacing: 0.01em;
-      background: linear-gradient(180deg, var(--rud-accent), var(--rud-accent-hover));
-      color: var(--rud-accent-text); border: none; border-radius: 8px;
-      cursor: pointer; box-shadow: 0 2px 4px rgba(0,0,0,0.2), 0 0 0 1px rgba(255,255,255,0.1) inset, 0 0 20px -5px var(--rud-accent);
-      transition: all .2s var(--rud-ease-out); overflow: hidden; margin-left: 12px;
+      position: relative; display: inline-flex; align-items: center; gap: 0.5rem; padding: 0.5rem 1.1rem;
+      font-size: 14px; font-weight: 600; line-height: 1; color: var(--rud-text-primary);
+      background-color: #374151;
+      border: none; border-radius: 999px;
+      cursor: pointer; margin-left: 12px;
+      transition: all .2s var(--rud-ease-out);
     }
-    #rud-download-btn:hover:not(:disabled) { transform: translateY(-2px); box-shadow: 0 8px 16px rgba(0,0,0,0.25), 0 0 0 1px rgba(255,255,255,0.1) inset, 0 0 30px -5px var(--rud-accent); }
-    #rud-download-btn:active:not(:disabled) { transform: translateY(0px); }
+    #rud-download-btn:hover:not(:disabled) {
+      background-color: var(--rud-accent);
+      color: var(--rud-accent-text);
+      transform: translateY(-2px);
+      box-shadow: 0 6px 15px rgba(34, 197, 94, 0.3);
+    }
+    #rud-download-btn:active:not(:disabled) { transform: translateY(0px); box-shadow: none; }
     #rud-download-btn:disabled { opacity: .7; cursor: default; }
-    #rud-download-btn .rud-btn-text { position: relative; z-index: 1; display: inline-flex; align-items: center; gap: 0.5rem; }
+    #rud-download-btn .rud-btn-text { display: inline-flex; align-items: center; gap: 0.5rem; }
 
     .rud-panel {
       position: fixed;
@@ -625,7 +618,7 @@
       pointer-events: auto; backdrop-filter: var(--rud-backdrop-blur); -webkit-backdrop-filter: var(--rud-backdrop-blur);
       opacity: 0; transform: translateX(-10px) scale(0.98);
       transition: opacity 0.25s var(--rud-ease-out), transform 0.25s var(--rud-ease-out);
-      width: 580px; max-width: 95vw;
+      width: 560px; max-width: 95vw;
     }
     .rud-panel.open { display: flex; flex-direction: column; opacity: 1; transform: translateX(0) scale(1); }
 
@@ -638,18 +631,18 @@
 
     .rud-body { max-height: 60vh; overflow-y: auto; }
     .rud-list { display: flex; flex-direction: column; padding: 6px; }
-    .rud-item { display: grid; grid-template-columns: 80px 60px 1fr 90px auto; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 8px; transition: background .2s var(--rud-ease-in-out); }
-    .rud-item + .rud-item { margin-top: 4px; }
+    .rud-item { display: grid; grid-template-columns: 70px 55px 1fr 75px 210px; align-items: center; gap: 6px; padding: 8px 10px; border-radius: 8px; transition: background .2s var(--rud-ease-in-out); }
+    .rud-item + .rud-item { margin-top: 2px; }
     .rud-item:hover { background: var(--rud-bg-secondary); }
     .rud-item-res { font-weight: 700; font-size: 14px; color: var(--rud-text-primary); }
     .rud-item-badge { font-size: 11px; font-weight: 700; padding: 3px 8px; border-radius: 12px; background: var(--rud-bg-tertiary); color: var(--rud-text-secondary); text-transform: uppercase; text-align: center;}
     .rud-item-meta { font-size: 12px; color: var(--rud-text-muted); text-align: center; white-space: nowrap; }
     .rud-item-size { font-size: 13px; color: var(--rud-text-muted); font-family: var(--rud-font-mono); text-align: right; }
-    .rud-item-actions { display: inline-flex; gap: 8px; justify-content: flex-end; }
-    .rud-item-actions a, .rud-item-actions button { display: inline-flex; align-items: center; justify-content: center; gap: 5px; text-decoration: none; font-size: 13px; font-weight: 600; padding: 6px 10px; border-radius: 6px; transition: all .2s var(--rud-ease-in-out); border: 1px solid transparent; }
+    .rud-item-actions { display: inline-flex; gap: 6px; justify-content: flex-end; }
+    .rud-item-actions a, .rud-item-actions button { display: inline-flex; align-items: center; justify-content: center; gap: 5px; text-decoration: none; font-size: 12px; font-weight: 600; padding: 5px 8px; border-radius: 6px; transition: all .2s var(--rud-ease-in-out); border: 1px solid transparent; flex-shrink: 0; }
     .rud-item-actions .rud-copy-btn { background: var(--rud-bg-tertiary); color: var(--rud-text-secondary); border-color: var(--rud-border-color); cursor: pointer; }
     .rud-item-actions .rud-copy-btn:hover { background: var(--rud-border-color); color: var(--rud-text-primary); }
-    .rud-item-actions .rud-dl-link { background: var(--rud-accent); color: var(--rud-accent-text); border-color: var(--rud-accent); box-shadow: 0 0 15px -5px var(--rud-accent); }
+    .rud-item-actions .rud-dl-link { background: var(--rud-accent); color: var(--rud-accent-text); border-color: var(--rud-accent); }
     .rud-item-actions .rud-dl-link:hover { background: var(--rud-accent-hover); }
     .rud-item-actions .rud-second { background: var(--rud-bg-tertiary); color: var(--rud-text-secondary); border-color: var(--rud-border-color); }
     .rud-item-actions svg { width: 14px; height: 14px; }
@@ -664,7 +657,7 @@
     [data-rud-tooltip] { position: relative; }
     [data-rud-tooltip]::after {
       content: attr(data-rud-tooltip); position: absolute; bottom: calc(100% + 8px); left: 50%; transform: translateX(-50%);
-      background: #000; color: #fff; font-size: 12px; font-weight: 600; padding: 4px 8px; border-radius: 6px;
+      background: #111827; color: #f9fafb; font-size: 12px; font-weight: 600; padding: 4px 8px; border-radius: 6px;
       white-space: nowrap; opacity: 0; pointer-events: none; transition: opacity .2s, transform .2s var(--rud-ease-out);
     }
     [data-rud-tooltip]:hover::after { opacity: 1; transform: translateX(-50%) translateY(-4px); }
@@ -687,7 +680,7 @@
     btn.type = 'button';
     btn.innerHTML = `
       <span class="rud-btn-text">
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v11m0 0l4-4m-4 4L8 10M5 21h14"></path></svg>
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v11m0 0l4-4m-4 4L8 10M5 21h14"></path></svg>
         <span class="rud-btn-label">Download</span>
       </span>`;
     return btn;
@@ -794,7 +787,6 @@
       await positionMenu();
     }
 
-    // De-dupe map: key=label|type -> choose larger size
     const byKey = new Map();
 
     function replaceNode(oldNode, newNode) {
@@ -835,7 +827,7 @@
                 <span>Combine</span>
               </button>
               <button type="button" class="rud-copy-btn" data-url="${url}" data-rud-tooltip="Copy Link">
-                <svg fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2z"></path></svg>
+                 <svg fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2z"></path></svg>
               </button>`
             : `
               <a href="${url}" target="_blank" rel="noopener" download="${fname}" class="rud-dl-link" data-rud-tooltip="Download">
