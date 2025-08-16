@@ -1130,7 +1130,10 @@
         }
 
         btn.addEventListener('click', (ev) => {
-          ev.stopPropagation();
+          // *** THIS IS THE FIX ***
+          // Stop the click from bubbling up to Rumble's own analytics listeners
+          ev.stopPropagation(); 
+          
           // If already have entries, just toggle open/close
           const cachedNow = loadCachedList();
           if (cachedNow && cachedNow.length) {
