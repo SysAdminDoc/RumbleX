@@ -1,160 +1,15 @@
 (function() {
     'use strict';
 
-    // --- [EMBEDDED LIBRARY] js-tar (for TAR extraction) ---
-    const untar = (() => {
-        function TarHeader(buffer, offset) {
-            this._buffer = buffer;
-            this._offset = offset || 0;
-        }
-        TarHeader.prototype = {
-            get name() { return this._getString(0, 100); },
-            get size() { return this._getOctal(124, 12); },
-            get prefix() { return this._getString(345, 155); },
-            _getString: function (offset, size) {
-                const view = this._buffer.subarray(this._offset + offset, this._offset + offset + size);
-                let str = new TextDecoder().decode(view);
-                const nul = str.indexOf('\0');
-                if (nul !== -1) str = str.substring(0, nul);
-                return str;
-            },
-            _getOctal: function (offset, size) {
-                return parseInt(this._getString(offset, size).trim(), 8) || 0;
-            },
-        };
-        return async function untar(arrayBuffer) {
-            const files = [];
-            let offset = 0;
-            const u8 = new Uint8Array(arrayBuffer);
-            while (offset + 512 <= arrayBuffer.byteLength) {
-                const header = new TarHeader(u8, offset);
-                const name = header.name;
-                if (!name) break;
-                const dataSize = header.size;
-                const dataOffset = offset + 512;
-                files.push({
-                    name: (header.prefix || '') + name,
-                    buffer: arrayBuffer.slice(dataOffset, dataOffset + dataSize),
-                });
-                const blocks = Math.ceil(dataSize / 512);
-                offset += 512 + (blocks * 512);
-            }
-            return files;
-        };
-    })();
-
-    // --- TAR Processing Function ---
-    async function processTarFile(url, btn, menuApi, title) {
-        const originalButtonContent = btn.innerHTML;
-        const setButtonState = (text, disabled = true) => {
-            btn.disabled = disabled;
-            const label = btn.querySelector('span');
-            if (label) label.textContent = text;
-            else btn.textContent = text;
-        };
-
-        try {
-            setButtonState('Downloading...', true);
-            await menuApi.setStatus(`Downloading TAR from ${url.substring(0, 60)}...`);
-
-            const response = await new Promise((resolve, reject) => {
-                GM_xmlhttpRequest({
-                    method: 'GET',
-                    url,
-                    responseType: 'arraybuffer',
-                    onprogress: (e) => {
-                        if (e.lengthComputable) {
-                            const percent = Math.round((e.loaded / e.total) * 100);
-                            setButtonState(`DL ${percent}%`, true);
-                        }
-                    },
-                    onload: (res) => (res.status >= 200 && res.status < 400) ? resolve(res) : reject(new Error(`HTTP error: ${res.status}`)),
-                    onerror: () => reject(new Error('Network error during TAR download.')),
-                    ontimeout: () => reject(new Error('TAR download timed out.')),
-                    timeout: 120000
-                });
-            });
-
-            const tarBuffer = response.response;
-            await menuApi.setStatus(`Download complete (${formatBytes(tarBuffer.byteLength)}). Extracting...`);
-            setButtonState('Extracting...', true);
-
-            const extractedFiles = await untar(tarBuffer);
-            const playlistFile = extractedFiles.find(f => f.name.toLowerCase().endsWith('.m3u8'));
-            if (!playlistFile) throw new Error('No .m3u8 playlist found in TAR.');
-
-            const tsFiles = new Map(extractedFiles.filter(f => f.name.toLowerCase().endsWith('.ts')).map(f => [f.name, f.buffer]));
-            await menuApi.setStatus(`Found playlist and ${tsFiles.size} video segments. Combining...`);
-            setButtonState('Combining...', true);
-
-            const playlistText = new TextDecoder().decode(playlistFile.buffer);
-            const segmentNames = playlistText.split('\n').map(line => line.trim()).filter(line => line && !line.startsWith('#'));
-            if (segmentNames.length === 0) throw new Error('Playlist is empty or invalid.');
-
-            const orderedSegments = [];
-            let totalSize = 0;
-            for (const name of segmentNames) {
-                const key = tsFiles.has(name) ? name : (Array.from(tsFiles.keys()).find(k => k.endsWith('/' + name)) || null);
-                if (key && tsFiles.has(key)) {
-                    const buffer = tsFiles.get(key);
-                    orderedSegments.push(new Uint8Array(buffer));
-                    totalSize += buffer.byteLength;
-                } else {
-                    throw new Error(`Missing segment in TAR: ${name}`);
-                }
-            }
-
-            const combinedVideo = new Uint8Array(totalSize);
-            let currentOffset = 0;
-            for (const segment of orderedSegments) {
-                combinedVideo.set(segment, currentOffset);
-                currentOffset += segment.length;
-            }
-
-            await menuApi.setStatus(`Combination complete. Final size: ${formatBytes(totalSize)}.`);
-            const blob = new Blob([combinedVideo], { type: 'video/mp2t' });
-            const blobUrl = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = blobUrl;
-            a.download = filenameWithExt(title, 'combined', '.ts');
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
-            URL.revokeObjectURL(blobUrl);
-
-            setButtonState('Done!', true);
-            setTimeout(() => {
-                btn.innerHTML = originalButtonContent;
-                btn.disabled = false;
-            }, 3000);
-
-        } catch (e) {
-            console.error("Rumble Downloader TAR Error:", e);
-            await menuApi.setStatus(`Error: ${e.message}`);
-            setButtonState('Error!', true);
-            btn.style.backgroundColor = '#b91c1c';
-            setTimeout(() => {
-                btn.innerHTML = originalButtonContent;
-                btn.disabled = false;
-                btn.style.backgroundColor = '';
-            }, 5000);
-        }
-    }
-
-    // ---------------- Config ----------------
-    const ACTION_BAR_SELECTORS = [
-        '.media-by-channel-actions-container',
-        '.media-header__actions',
-        '.media-by__actions',
-        'div[data-js="video_action_button_group"]'
-    ];
-
     // ---------------- Small utils ----------------
-    function debounce(fn, d) { let t; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), d); }; }
-    function raf(fn) { return new Promise(r => requestAnimationFrame(() => { try { fn(); } finally { r(); } })); }
-    function $(s, r = document) { return r.querySelector(s); }
-    function isVideoPage(p = location.pathname) { return /^\/v[A-Za-z0-9]+(?:[\/\.-]|$)/.test(p); }
+    const debounce = (fn, d) => { let t; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), d); }; };
+    const raf = (fn) => new Promise(r => requestAnimationFrame(() => { try { fn(); } finally { r(); } }));
+    const $ = (s, r = document) => r.querySelector(s);
+    const isVideoPage = (p = location.pathname) => /^\/v[A-Za-z0-9]+(?:[\/\.-]|$)/.test(p);
 
+    function sanitizeFilename(name) {
+        return String(name).replace(/[\\/:*?"<>|]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 180);
+    }
     function getVideoTitle() {
         const og = $('meta[property="og:title"]')?.content?.trim();
         if (og) return og;
@@ -167,13 +22,6 @@
         if (h1) return h1;
         return 'video';
     }
-    function sanitizeFilename(name) {
-        return String(name)
-            .replace(/[\\/:*?"<>|]+/g, ' ')
-            .replace(/\s+/g, ' ')
-            .trim()
-            .slice(0, 180);
-    }
     function filenameWithExt(title, label, urlOrExt) {
         const extMatch = /\.([a-z0-9]+)(?:$|\?)/i.exec(urlOrExt);
         const ext = extMatch ? extMatch[1].toLowerCase() : 'ts';
@@ -181,7 +29,6 @@
         const res = label ? ` - ${label}` : '';
         return `${base}${res}.${ext}`;
     }
-
     function formatBytes(bytes) {
         if (!Number.isFinite(bytes) || bytes <= 0) return 'N/A';
         const u = ['B', 'KB', 'MB', 'GB', 'TB'];
@@ -193,7 +40,7 @@
         return `${Math.round(bitrate)} kbps`;
     }
 
-    // ---------------- Metadata discovery ----------------
+    // ---------------- Metadata discovery (robust) ----------------
     const EMBEDJS_URL_RE = /https:\/\/rumble\.com\/embedJS\/[^\s"'<>]+(?:\?|&)[^"'<>]*\brequest=video\b[^"'<>]*\bv=[^"'\s<>&]+/i;
 
     function extractVCodeFromUrl(u) {
@@ -204,55 +51,43 @@
         if (m2) return m2[1];
         return null;
     }
-
     function buildEmbedJsUrlFromV(vcode) {
         if (!vcode) return null;
-        // u3 is the common embed namespace. ver=2 is required for JSON. dref can be blank or rumble.com; both work.
         return `https://rumble.com/embedJS/u3/?request=video&ver=2&v=${encodeURIComponent(vcode)}&ifr=0&dref=rumble.com`;
-        // Note: Rumble accepts both with and without dref domain.
     }
 
     function scanForEmbedJsUrlDirect() {
-        // 1) <script> inline content that already contains an embedJS URL
+        // inline script content
         const scripts = document.querySelectorAll('script');
-        for (const script of scripts) {
-            const txt = script.textContent;
-            if (!txt) continue;
-            const m = txt.match(EMBEDJS_URL_RE);
+        for (const s of scripts) {
+            const t = s.textContent || '';
+            const m = t.match(EMBEDJS_URL_RE);
             if (m && m[0]) return m[0];
         }
-        // 2) whole HTML
+        // whole DOM
         const m2 = document.documentElement.outerHTML.match(EMBEDJS_URL_RE);
         if (m2 && m2[0]) return m2[0];
-
-        // 3) embedJS in iframe src
+        // iframe
         const iframe = document.querySelector('iframe[src*="embedJS"]');
         const src = iframe?.getAttribute('src') || iframe?.src;
         if (src && EMBEDJS_URL_RE.test(src)) return src;
-
         return null;
     }
-
     function tryDeriveEmbedJsUrlFromMeta() {
-        // Try og:video and twitter:player
-        const metaCandidates = [
-            document.querySelector('meta[property="og:video:url"]')?.content,
-            document.querySelector('meta[property="og:video"]')?.content,
-            document.querySelector('meta[name="twitter:player"]')?.content
+        const metas = [
+            $('meta[property="og:video:url"]')?.content,
+            $('meta[property="og:video"]')?.content,
+            $('meta[name="twitter:player"]')?.content
         ].filter(Boolean);
-
-        for (const u of metaCandidates) {
+        for (const u of metas) {
             const v = extractVCodeFromUrl(u);
             const built = buildEmbedJsUrlFromV(v);
             if (built) return built;
         }
-
-        // Try JSON-LD script blocks for "embedUrl"
         const ldBlocks = document.querySelectorAll('script[type="application/ld+json"]');
         for (const s of ldBlocks) {
             const t = s.textContent?.trim();
             if (!t) continue;
-            // Be forgiving: do a regex first to avoid JSON parse failures from trailing commas etc.
             const m = t.match(/"embedUrl"\s*:\s*"([^"]+)"/i);
             if (m && m[1]) {
                 const v = extractVCodeFromUrl(m[1]);
@@ -262,45 +97,34 @@
             try {
                 const obj = JSON.parse(t);
                 const urls = [];
-                if (obj && typeof obj === 'object') {
-                    if (obj.embedUrl) urls.push(obj.embedUrl);
-                    if (Array.isArray(obj)) {
-                        for (const it of obj) if (it && it.embedUrl) urls.push(it.embedUrl);
-                    }
-                }
+                if (Array.isArray(obj)) {
+                    for (const it of obj) if (it && it.embedUrl) urls.push(it.embedUrl);
+                } else if (obj && obj.embedUrl) urls.push(obj.embedUrl);
                 for (const u2 of urls) {
                     const v = extractVCodeFromUrl(u2);
                     const built = buildEmbedJsUrlFromV(v);
                     if (built) return built;
                 }
-            } catch { /* ignore ld+json parse hiccups */ }
+            } catch {}
         }
-
-        // Try plain <iframe src="/embed/...">
         const iframeEmbed = document.querySelector('iframe[src*="/embed/"]');
-        const iframeSrc = iframeEmbed?.getAttribute('src') || iframeEmbed?.src;
-        if (iframeSrc) {
-            const v = extractVCodeFromUrl(iframeSrc);
+        const iSrc = iframeEmbed?.getAttribute('src') || iframeEmbed?.src;
+        if (iSrc) {
+            const v = extractVCodeFromUrl(iSrc);
             const built = buildEmbedJsUrlFromV(v);
             if (built) return built;
         }
-
         return null;
     }
-
     async function waitForMetadataUrl(maxMs = 20000) {
         const start = Date.now();
-
-        // Fast paths
         let direct = scanForEmbedJsUrlDirect();
         if (direct) return direct;
         let derived = tryDeriveEmbedJsUrlFromMeta();
         if (derived) return derived;
 
-        // Observe DOM for late injections
         let resolver, rejecter;
         const doneP = new Promise((res, rej) => { resolver = res; rejecter = rej; });
-
         const observer = new MutationObserver(() => {
             direct = scanForEmbedJsUrlDirect();
             if (direct) { cleanup(); resolver(direct); return; }
@@ -309,66 +133,45 @@
             if (Date.now() - start >= maxMs) { cleanup(); rejecter(new Error('Timed out waiting for video data.')); }
         });
         observer.observe(document.documentElement, { childList: true, subtree: true });
-
-        const timer = setInterval(() => {
+        const poll = setInterval(() => {
             direct = scanForEmbedJsUrlDirect();
             if (direct) { cleanup(); resolver(direct); return; }
             derived = tryDeriveEmbedJsUrlFromMeta();
             if (derived) { cleanup(); resolver(derived); return; }
             if (Date.now() - start >= maxMs) { cleanup(); rejecter(new Error('Timed out waiting for video data.')); }
         }, 250);
-
-        const hardTimeout = setTimeout(() => { cleanup(); rejecter(new Error('Timed out waiting for video data.')); }, maxMs + 500);
-
-        function cleanup() {
-            clearInterval(timer);
-            clearTimeout(hardTimeout);
-            observer.disconnect();
-        }
-
+        const hard = setTimeout(() => { cleanup(); rejecter(new Error('Timed out waiting for video data.')); }, maxMs + 500);
+        function cleanup() { clearInterval(poll); clearTimeout(hard); observer.disconnect(); }
         return doneP;
     }
 
     async function fetchVideoMetadata(url) {
-        if (!url) {
-            throw new Error("Video metadata URL could not be found on this page.");
-        }
+        if (!url) throw new Error("Video metadata URL could not be found on this page.");
         const referer = location.href;
-
         const data = await new Promise((resolve, reject) => {
             GM_xmlhttpRequest({
-                method: 'GET',
-                url,
-                headers: {
-                    'Accept': 'application/json, */*;q=0.1',
-                    'Referer': referer
-                },
+                method: 'GET', url,
+                headers: { 'Accept': 'application/json, */*;q=0.1', 'Referer': referer },
                 timeout: 30000,
                 onload: (res) => {
                     if (res.status >= 200 && res.status < 400) {
-                        try {
-                            resolve(JSON.parse(res.responseText));
-                        } catch (e) {
-                            reject(new Error("Failed to parse video metadata."));
-                        }
-                    } else {
-                        reject(new Error(`Failed to fetch video metadata (HTTP ${res.status}).`));
-                    }
+                        try { resolve(JSON.parse(res.responseText)); }
+                        catch { reject(new Error("Failed to parse video metadata.")); }
+                    } else reject(new Error(`Failed to fetch video metadata (HTTP ${res.status}).`));
                 },
                 onerror: () => reject(new Error('Network error while fetching metadata.')),
                 ontimeout: () => reject(new Error('Metadata request timed out.')),
             });
         });
-
         return parseMetadata(data);
     }
 
-    // Merge candidates from both `data.u` and `data.ua`, and include HLS playlist(s).
+    // ---------------- Parse metadata -> downloads ----------------
     function parseMetadata(data) {
         const downloads = [];
         const fps = data.fps || 0;
 
-        function pushEntry({label, height, type, url, size, bitrate, fps}) {
+        function push({label, height, type, url, size, bitrate}) {
             if (!url) return;
             downloads.push({
                 label: label || (height ? `${height}p` : 'Unknown'),
@@ -381,171 +184,279 @@
             });
         }
 
-        function collectFromGroup(group) {
+        function collect(group) {
             if (!group) return;
-
             if (group.tar) {
-                const tar = group.tar;
-                const keys = Object.keys(tar);
-                const isResolutionMap = keys.length && keys.every(k => /^\d+$/.test(k));
-                if (isResolutionMap) {
-                    for (const k of keys) {
-                        const it = tar[k];
+                if (group.tar.url) {
+                    const h = group.tar.meta?.h || 0;
+                    push({label: `${h || 'tar'}`, height: h, type: 'tar', url: group.tar.url, size: group.tar.meta?.size, bitrate: group.tar.meta?.bitrate});
+                } else {
+                    for (const k of Object.keys(group.tar)) {
+                        const it = group.tar[k];
                         if (it?.url) {
                             const h = it.meta?.h || parseInt(k, 10) || 0;
-                            pushEntry({ label: `${h}p`, height: h, type: 'tar', url: it.url, size: it.meta?.size, bitrate: it.meta?.bitrate, fps });
+                            push({label: `${h}p`, height: h, type: 'tar', url: it.url, size: it.meta?.size, bitrate: it.meta?.bitrate});
                         }
                     }
-                } else if (tar.url) {
-                    const h = tar.meta?.h || 0;
-                    pushEntry({ label: `${h || 'tar'}`, height: h, type: 'tar', url: tar.url, size: tar.meta?.size, bitrate: tar.meta?.bitrate, fps });
                 }
             }
-
             if (group.mp4) {
                 for (const k of Object.keys(group.mp4)) {
                     const it = group.mp4[k];
                     if (it?.url) {
                         const h = it.meta?.h || parseInt(k, 10) || 0;
-                        pushEntry({ label: `${h}p`, height: h, type: 'mp4', url: it.url, size: it.meta?.size, bitrate: it.meta?.bitrate, fps });
+                        push({label: `${h}p`, height: h, type: 'mp4', url: it.url, size: it.meta?.size, bitrate: it.meta?.bitrate});
                     }
                 }
             }
-
             if (group.audio) {
                 for (const k of Object.keys(group.audio)) {
                     const it = group.audio[k];
                     if (it?.url) {
-                        pushEntry({ label: 'Audio', height: 0, type: 'aac', url: it.url, size: it.meta?.size, bitrate: it.meta?.bitrate, fps: 0 });
+                        push({label: 'Audio', height: 0, type: 'aac', url: it.url, size: it.meta?.size, bitrate: it.meta?.bitrate});
                     }
                 }
             }
-
             if (group.hls) {
-                if (group.hls.url) pushEntry({ label: 'HLS (auto)', height: 0, type: 'hls', url: group.hls.url, size: 0, bitrate: 0, fps });
-                if (group.hls.auto?.url) pushEntry({ label: 'HLS (auto)', height: 0, type: 'hls', url: group.hls.auto.url, size: 0, bitrate: 0, fps });
+                if (group.hls.url) push({label: 'HLS (auto)', height: 0, type: 'hls', url: group.hls.url, size: 0, bitrate: 0});
+                if (group.hls.auto?.url) push({label: 'HLS (auto)', height: 0, type: 'hls', url: group.hls.auto.url, size: 0, bitrate: 0});
             }
         }
 
-        collectFromGroup(data.u);
-        collectFromGroup(data.ua);
+        collect(data.u);
+        collect(data.ua);
 
         const typeRank = { mp4: 0, tar: 1, hls: 2, aac: 3 };
         downloads.sort((a, b) => {
             if (b.height !== a.height) return b.height - a.height;
-            const ar = typeRank[a.type] ?? 99;
-            const br = typeRank[b.type] ?? 99;
+            const ar = typeRank[a.type] ?? 99, br = typeRank[b.type] ?? 99;
             return ar - br;
         });
 
-        const seen = new Set();
-        return downloads.filter(d => {
-            const key = `${d.label}|${d.type}|${d.url}`;
-            if (seen.has(key)) return false;
-            seen.add(key);
-            return true;
-        });
+        // Do not dedupe by URL; dedupe by (label|type) keeping the largest size
+        const best = new Map();
+        for (const d of downloads) {
+            const key = `${d.label.toLowerCase()}|${d.type}`;
+            const prev = best.get(key);
+            if (!prev || (d.size || 0) > (prev.size || 0)) best.set(key, d);
+        }
+        return Array.from(best.values());
     }
 
-    // ---------------- UI (Premium Redesign) ----------------
+    // ---------------- TAR extractor + combiner (restored & hardened) ----------------
+    const untar = (() => {
+        function TarHeader(buffer, offset) { this._buffer = buffer; this._offset = offset || 0; }
+        TarHeader.prototype = {
+            get name() { return this._getString(0, 100); },
+            get size() { return this._getOctal(124, 12); },
+            get prefix() { return this._getString(345, 155); },
+            _getString(offset, size) {
+                const view = this._buffer.subarray(this._offset + offset, this._offset + offset + size);
+                let str = new TextDecoder().decode(view);
+                const nul = str.indexOf('\0');
+                if (nul !== -1) str = str.substring(0, nul);
+                return str;
+            },
+            _getOctal(offset, size) { return parseInt(this._getString(offset, size).trim(), 8) || 0; },
+        };
+        return async function untar(arrayBuffer) {
+            const files = [];
+            let offset = 0;
+            const u8 = new Uint8Array(arrayBuffer);
+            while (offset + 512 <= arrayBuffer.byteLength) {
+                const header = new TarHeader(u8, offset);
+                const name = header.name;
+                if (!name) break;
+                const dataSize = header.size;
+                const dataOffset = offset + 512;
+                files.push({ name: (header.prefix || '') + name, buffer: arrayBuffer.slice(dataOffset, dataOffset + dataSize) });
+                const blocks = Math.ceil(dataSize / 512);
+                offset += 512 + (blocks * 512);
+            }
+            return files;
+        };
+    })();
+
+    async function processTarFile(url, btn, menuApi, title) {
+        const original = btn.innerHTML;
+        const setBtn = (text, disabled = true) => {
+            btn.disabled = disabled;
+            const label = btn.querySelector('span');
+            if (label) label.textContent = text; else btn.textContent = text;
+        };
+        try {
+            setBtn('Downloading...', true);
+            await menuApi.setStatus(`Downloading TAR from ${url.substring(0, 60)}...`);
+            const response = await new Promise((resolve, reject) => {
+                GM_xmlhttpRequest({
+                    method: 'GET', url, responseType: 'arraybuffer', timeout: 120000,
+                    onprogress: (e) => {
+                        if (e.lengthComputable) {
+                            const percent = Math.round((e.loaded / e.total) * 100);
+                            setBtn(`DL ${percent}%`, true);
+                        }
+                    },
+                    onload: (res) => (res.status >= 200 && res.status < 400) ? resolve(res) : reject(new Error(`HTTP error: ${res.status}`)),
+                    onerror: () => reject(new Error('Network error during TAR download.')),
+                    ontimeout: () => reject(new Error('TAR download timed out.')),
+                });
+            });
+            const tarBuffer = response.response;
+            await menuApi.setStatus(`Download complete (${formatBytes(tarBuffer.byteLength)}). Extracting...`);
+            setBtn('Extracting...', true);
+
+            const extractedFiles = await untar(tarBuffer);
+            // Find playlist
+            const playlistFile = extractedFiles.find(f => f.name.toLowerCase().endsWith('.m3u8'));
+            if (!playlistFile) throw new Error('No .m3u8 playlist found in TAR.');
+
+            // Collect segments
+            const tsFiles = new Map(extractedFiles.filter(f => f.name.toLowerCase().endsWith('.ts')).map(f => [f.name, f.buffer]));
+            await menuApi.setStatus(`Found playlist and ${tsFiles.size} video segments. Combining...`);
+            setBtn('Combining...', true);
+
+            const playlistText = new TextDecoder().decode(playlistFile.buffer);
+            const segmentNames = playlistText.split('\n').map(line => line.trim()).filter(line => line && !line.startsWith('#'));
+            if (segmentNames.length === 0) throw new Error('Playlist is empty or invalid.');
+
+            const orderedSegments = [];
+            let totalSize = 0;
+            for (const name of segmentNames) {
+                // exact match or path-suffix match inside TAR
+                let key = null;
+                if (tsFiles.has(name)) key = name;
+                else {
+                    const found = Array.from(tsFiles.keys()).find(k => k.endsWith('/' + name));
+                    if (found) key = found;
+                }
+                if (!key) throw new Error(`Missing segment in TAR: ${name}`);
+                const buffer = tsFiles.get(key);
+                const u8 = new Uint8Array(buffer);
+                orderedSegments.push(u8);
+                totalSize += u8.byteLength;
+            }
+
+            const combinedVideo = new Uint8Array(totalSize);
+            let offset = 0;
+            for (const seg of orderedSegments) { combinedVideo.set(seg, offset); offset += seg.length; }
+
+            await menuApi.setStatus(`Combination complete. Final size: ${formatBytes(totalSize)}.`);
+            const blob = new Blob([combinedVideo], { type: 'video/mp2t' });
+            const blobUrl = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = blobUrl;
+            a.download = filenameWithExt(title, 'combined', '.ts');
+            document.body.appendChild(a); a.click(); document.body.removeChild(a);
+            URL.revokeObjectURL(blobUrl);
+
+            setBtn('Done!', true);
+            setTimeout(() => { btn.innerHTML = original; btn.disabled = false; }, 3000);
+        } catch (e) {
+            console.error("Rumble Downloader TAR Error:", e);
+            await menuApi.setStatus(`Error: ${e.message}`);
+            setBtn('Error!', true);
+            btn.style.backgroundColor = '#b91c1c';
+            setTimeout(() => { btn.innerHTML = original; btn.disabled = false; btn.style.backgroundColor = ''; }, 5000);
+        }
+    }
+
+    // ---------------- UI (condensed + right placement) ----------------
     GM_addStyle(`
     :root {
       --rud-font-sans: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-      --rud-font-mono: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+      --rud-font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace;
       --rud-ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
     }
     #rud-portal.rud-dark {
-      --rud-bg-primary: #111827; --rud-bg-secondary: #1f2937; --rud-bg-tertiary: #374151;
-      --rud-text-primary: #f9fafb; --rud-text-secondary: #d1d5db; --rud-text-muted: #9ca3af;
-      --rud-border-color: #374151;
-      --rud-accent: #22c55e; --rud-accent-hover: #16a34a; --rud-accent-text: #ffffff;
-      --rud-shadow: 0 10px 15px -3px rgba(0,0,0,0.1), 0 4px 6px -2px rgba(0,0,0,0.05);
-      --rud-backdrop-blur: blur(8px);
+      --rud-bg-primary:#111827; --rud-bg-secondary:#1f2937; --rud-bg-tertiary:#374151;
+      --rud-text-primary:#f9fafb; --rud-text-secondary:#d1d5db; --rud-text-muted:#9ca3af;
+      --rud-border-color:#303846;
+      --rud-accent:#22c55e; --rud-accent-hover:#16a34a; --rud-accent-text:#ffffff;
+      --rud-shadow:0 6px 10px rgba(0,0,0,.18);
     }
     #rud-portal.rud-light {
-      --rud-bg-primary: #ffffff; --rud-bg-secondary: #f3f4f6; --rud-bg-tertiary: #e5e7eb;
-      --rud-text-primary: #111827; --rud-text-secondary: #374151; --rud-text-muted: #6b7280;
-      --rud-border-color: #e5e7eb;
-      --rud-accent: #16a34a; --rud-accent-hover: #15803d; --rud-accent-text: #ffffff;
-      --rud-shadow: 0 10px 15px -3px rgba(0,0,0,0.07), 0 4px 6px -2px rgba(0,0,0,0.04);
-      --rud-backdrop-blur: blur(8px);
+      --rud-bg-primary:#ffffff; --rud-bg-secondary:#f8fafc; --rud-bg-tertiary:#e5e7eb;
+      --rud-text-primary:#111827; --rud-text-secondary:#374151; --rud-text-muted:#6b7280;
+      --rud-border-color:#e5e7eb;
+      --rud-accent:#16a34a; --rud-accent-hover:#15803d; --rud-accent-text:#ffffff;
+      --rud-shadow:0 6px 10px rgba(0,0,0,.08);
     }
 
     #rud-portal { position: fixed; inset: 0; pointer-events: none; z-index: 2147483646; font-family: var(--rud-font-sans); }
-    .rud-inline-wrap { position: relative; display: inline-block; }
+    .rud-inline-wrap { position: relative; display: inline-flex; }
+    .media-by-channel-actions-container .rud-inline-wrap.rud-right { margin-left: auto; } /* push to far right */
+    .media-by-channel-actions-container .rud-inline-wrap.rud-right #rud-download-btn { margin-left: 12px; } /* spacing from neighbor buttons */
 
     #rud-download-btn {
-      position: relative; display: inline-flex; align-items: center; gap: 0.5rem; padding: 0.5rem 1rem;
-      font-size: 14px; font-weight: 600; line-height: 1; letter-spacing: 0.02em;
-      background-image: linear-gradient(to top, #15803d, #16a34a);
-      color: #fff; border: 1px solid #16a34a; border-radius: 8px;
-      cursor: pointer; box-shadow: 0 1px 2px rgba(0,0,0,0.1), inset 1px 1px 0 rgba(255,255,255,0.08);
-      transition: all .2s var(--rud-ease-out); overflow: hidden;
+      position: relative; display: inline-flex; align-items: center; gap: .4rem; padding: .4rem .7rem;
+      font-size: 13px; font-weight: 700; line-height: 1;
+      background-image: linear-gradient(to top,#15803d,#16a34a);
+      color:#fff; border:1px solid #16a34a; border-radius:8px; cursor:pointer;
+      box-shadow:0 1px 2px rgba(0,0,0,0.1); transition:all .15s var(--rud-ease-out);
+      pointer-events:auto;
     }
-    #rud-download-btn:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 4px 8px rgba(0,0,0,0.15), inset 1px 1px 0 rgba(255,255,255,0.08); background-image: linear-gradient(to top, #16a34a, #22c55e); }
-    #rud-download-btn:active:not(:disabled) { transform: translateY(0px); }
-    #rud-download-btn:disabled { opacity: .7; cursor: default; }
-    #rud-download-btn .rud-btn-fill { position: absolute; left: 0; top: 0; bottom: 0; width: 0%; background: rgba(255,255,255,0.2); transition: width .2s var(--rud-ease-out); pointer-events:none; }
-    #rud-download-btn .rud-btn-text { position: relative; z-index: 1; display: inline-flex; align-items: center; gap: 0.5rem; }
+    #rud-download-btn:hover:not(:disabled){ transform:translateY(-1px); background-image:linear-gradient(to top,#16a34a,#22c55e); }
+    #rud-download-btn:disabled{ opacity:.75; cursor:default; }
+    #rud-download-btn .rud-btn-fill{ position:absolute; left:0; top:0; bottom:0; width:0%; background:rgba(255,255,255,.25); transition:width .15s; pointer-events:none; }
+    #rud-download-btn svg{ width:16px; height:16px; }
 
     .rud-panel {
       position: fixed; left: 0; top: 0;
-      width: 640px; max-width: 95vw;
+      width: 560px; max-width: 92vw;
       background: var(--rud-bg-primary); color: var(--rud-text-primary);
-      border: 1px solid var(--rud-border-color); border-radius: 12px;
-      box-shadow: var(--rud-shadow); overflow: hidden; display: none;
-      pointer-events: auto;
-      backdrop-filter: var(--rud-backdrop-blur);
-      -webkit-backdrop-filter: var(--rud-backdrop-blur);
-      opacity: 0; transform: translateY(-10px) scale(0.98);
-      transition: opacity 0.2s var(--rud-ease-out), transform 0.2s var(--rud-ease-out);
+      border: 1px solid var(--rud-border-color); border-radius: 10px;
+      box-shadow: var(--rud-shadow); overflow: hidden; display: none; pointer-events: auto;
+      opacity: 0; transform: translateY(-8px) scale(.985);
+      transition: opacity .15s var(--rud-ease-out), transform .15s var(--rud-ease-out);
     }
-    .rud-panel.open { display: flex; flex-direction: column; opacity: 1; transform: translateY(0) scale(1); }
+    .rud-panel.open { display:flex; flex-direction:column; opacity:1; transform:translateY(0) scale(1); }
 
-    .rud-header { display: flex; align-items: center; padding: 12px 16px; border-bottom: 1px solid var(--rud-border-color); }
-    .rud-status { flex-grow: 1; font-size: 14px; color: var(--rud-text-secondary); }
-    .rud-status .muted { color: var(--rud-text-muted); }
-    .rud-header-controls { display: flex; align-items: center; gap: 8px; }
-    .rud-icon-btn { display: flex; padding: 4px; background: none; border: none; border-radius: 6px; cursor: pointer; color: var(--rud-text-muted); transition: background .2s, color .2s; }
-    .rud-icon-btn:hover { background: var(--rud-bg-secondary); color: var(--rud-text-primary); }
-    .rud-icon-btn svg { width: 18px; height: 18px; }
+    .rud-header { display:flex; align-items:center; padding:6px 8px; border-bottom:1px solid var(--rud-border-color); }
+    .rud-status { flex:1; font-size:12px; color:var(--rud-text-muted); min-height: 14px; } /* slim and can be blank */
+    .rud-header-controls { display:flex; gap:6px; }
+    .rud-icon-btn { display:flex; padding:4px; background:none; border:none; border-radius:6px; cursor:pointer; color:var(--rud-text-muted); }
+    .rud-icon-btn:hover{ background:var(--rud-bg-secondary); color:var(--rud-text-primary); }
+    .rud-icon-btn svg{ width:16px; height:16px; }
 
-    .rud-body { max-height: 60vh; overflow-y: auto; }
-    .rud-list { display: flex; flex-direction: column; padding: 8px; }
-    .rud-item { display: grid; grid-template-columns: 80px 60px 60px 1fr auto; align-items: center; gap: 12px; padding: 12px; border-radius: 8px; transition: background .2s; }
-    .rud-item + .rud-item { margin-top: 4px; }
-    .rud-item:hover { background: var(--rud-bg-secondary); }
-    .rud-item-res { font-weight: 700; font-size: 15px; color: var(--rud-text-primary); }
-    .rud-item-badge { font-size: 11px; font-weight: 600; padding: 3px 8px; border-radius: 12px; background: var(--rud-bg-tertiary); color: var(--rud-text-secondary); text-transform: uppercase; text-align: center;}
-    .rud-item-bitrate { font-size: 13px; color: var(--rud-text-muted); font-family: var(--rud-font-mono); white-space: nowrap; }
-    .rud-item-size { font-size: 14px; color: var(--rud-text-secondary); font-family: var(--rud-font-mono); margin-left: auto; text-align: right; }
-    .rud-item-actions { display: flex; gap: 8px; }
-    .rud-item-actions a, .rud-item-actions button { display: flex; align-items: center; justify-content: center; gap: 6px; text-decoration: none; font-size: 13px; font-weight: 600; padding: 6px 12px; border-radius: 6px; transition: all .2s; }
-    .rud-item-actions .rud-copy-btn { background: var(--rud-bg-tertiary); color: var(--rud-text-secondary); border: 1px solid var(--rud-border-color); cursor: pointer; }
-    .rud-item-actions .rud-copy-btn:hover { background: var(--rud-border-color); color: var(--rud-text-primary); }
-    .rud-item-actions .rud-dl-link { background: var(--rud-accent); color: var(--rud-accent-text); border: 1px solid var(--rud-accent); }
-    .rud-item-actions .rud-dl-link:hover { background: var(--rud-accent-hover); }
-    .rud-item-actions svg { width: 14px; height: 14px; }
-
-    .rud-footer { padding: 12px 16px; border-top: 1px solid var(--rud-border-color); background: var(--rud-bg-secondary); }
-    .rud-tar-note { font-size: 12px; color: var(--rud-text-muted); line-height: 1.5; }
-    .rud-tar-note strong { color: var(--rud-text-secondary); }
-    .rud-tar-note .rud-disclaimer { margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--rud-border-color); }
-    .rud-tar-note .rud-disclaimer svg { vertical-align: middle; margin-right: 4px; width: 14px; height: 14px; }
-
-    .rud-empty { padding: 48px 24px; text-align: center; color: var(--rud-text-muted); font-size: 14px; line-height: 1.6; }
-    .rud-empty svg { width: 48px; height: 48px; margin-bottom: 16px; opacity: 0.5; }
-
-    [data-rud-tooltip] { position: relative; }
-    [data-rud-tooltip]::after {
-      content: attr(data-rud-tooltip); position: absolute; bottom: calc(100% + 6px); left: 50%; transform: translateX(-50%);
-      background: #111827; color: #f9fafb; font-size: 12px; font-weight: 500; padding: 4px 8px; border-radius: 4px;
-      white-space: nowrap; opacity: 0; pointer-events: none; transition: opacity .2s, transform .2s;
+    .rud-body{ max-height: 48vh; overflow-y:auto; }
+    .rud-list{ display:flex; flex-direction:column; padding:6px; gap:4px; }
+    .rud-item{
+      display:grid; grid-template-columns: 58px 46px 1fr auto; align-items:center;
+      gap:8px; padding:6px 8px; border-radius:8px; background:transparent;
+      border:1px solid transparent;
     }
-    [data-rud-tooltip]:hover::after { opacity: 1; transform: translateX(-50%) translateY(-2px); }
+    .rud-item:hover{ background:var(--rud-bg-secondary); border-color:var(--rud-border-color); }
+    .rud-item-res{ font-weight:800; font-size:13px; }
+    .rud-item-badge{ font-size:10px; font-weight:700; padding:2px 6px; border-radius:999px; background:var(--rud-bg-tertiary); color:var(--rud-text-secondary); text-transform:uppercase; justify-self:start; }
+    .rud-item-bitrate{ font-size:11px; color:var(--rud-text-muted); font-family:var(--rud-font-mono); white-space:nowrap; }
+    .rud-item-size{ font-size:12px; color:var(--rud-text-secondary); font-family:var(--rud-font-mono); margin-right:8px; }
+    .rud-item-actions{ display:flex; gap:6px; }
+    .rud-item-actions a, .rud-item-actions button{
+      display:inline-flex; align-items:center; justify-content:center; gap:6px; text-decoration:none;
+      font-size:12px; font-weight:700; padding:5px 8px; border-radius:6px; transition:background .15s; border:1px solid var(--rud-border-color);
+    }
+    .rud-item-actions .rud-copy-btn{ background:var(--rud-bg-tertiary); color:var(--rud-text-secondary); }
+    .rud-item-actions .rud-copy-btn:hover{ background:var(--rud-border-color); color:var(--rud-text-primary); }
+    .rud-item-actions .rud-dl-link{ background:var(--rud-accent); color:var(--rud-accent-text); border-color:var(--rud-accent); }
+    .rud-item-actions .rud-dl-link:hover{ background:var(--rud-accent-hover); }
+    .rud-item-actions svg{ width:13px; height:13px; }
 
-    #rud-comments-spacer { width: 100%; height: 0px; transition: height 0.2s var(--rud-ease-out); }
-  `);
+    .rud-footer{ padding:8px 10px; border-top:1px solid var(--rud-border-color); background:var(--rud-bg-secondary); }
+    .rud-tar-note{ font-size:11px; color:var(--rud-text-muted); line-height:1.4; }
+
+    .rud-empty{ padding:24px 16px; text-align:center; color:var(--rud-text-muted); font-size:13px; line-height:1.5; }
+    .rud-empty svg{ width:36px; height:36px; margin-bottom:8px; opacity:.6; }
+
+    [data-rud-tooltip]{ position:relative; }
+    [data-rud-tooltip]::after{
+      content: attr(data-rud-tooltip); position:absolute; bottom:calc(100% + 6px); left:50%; transform:translateX(-50%);
+      background:#111827; color:#f9fafb; font-size:11px; font-weight:700; padding:3px 6px; border-radius:4px;
+      white-space:nowrap; opacity:0; pointer-events:none; transition:opacity .15s, transform .15s;
+    }
+    [data-rud-tooltip]:hover::after{ opacity:1; transform:translateX(-50%) translateY(-2px); }
+
+    #rud-comments-spacer{ width:100%; height:0px; transition: height .15s var(--rud-ease-out); }
+    `);
 
     function ensurePortal() {
         let p = document.getElementById('rud-portal');
@@ -565,24 +476,19 @@
         btn.innerHTML = `
       <div class="rud-btn-fill"></div>
       <span class="rud-btn-text">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M12 3v11m0 0l4-4m-4 4L8 10M5 21h14" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+        <svg viewBox="0 0 24 24" fill="none"><path d="M12 3v11m0 0l4-4m-4 4L8 10M5 21h14" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"></path></svg>
         <span class="rud-btn-label">Download</span>
       </span>`;
         return btn;
     }
-
     function setButtonState(btn, text, disabled = false) {
         btn.disabled = disabled;
         const label = btn.querySelector('.rud-btn-label');
         if (label) label.textContent = text;
     }
 
-    function getCommentsEl() {
-        return document.querySelector('.media-page-comments-container, #video-comments');
-    }
-
     function ensureSpacerBeforeComments() {
-        const comments = getCommentsEl();
+        const comments = document.querySelector('.media-page-comments-container, #video-comments');
         if (!comments || !comments.parentElement) return null;
         let spacer = document.getElementById('rud-comments-spacer');
         if (!spacer) {
@@ -602,9 +508,9 @@
             menu.setAttribute('data-for', btn.id);
             menu.innerHTML = `
         <div class="rud-header">
-          <div class="rud-status"><span class="muted">Ready.</span></div>
+          <div class="rud-status"></div>
           <div class="rud-header-controls">
-            <button class="rud-icon-btn rud-theme-toggle" type="button" data-rud-tooltip="Toggle Theme">
+            <button class="rud-icon-btn rud-theme-toggle" type="button" data-rud-tooltip="Theme">
               <svg class="rud-theme-sun" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"></path></svg>
               <svg class="rud-theme-moon" fill="none" viewBox="0 0 24 24" stroke="currentColor" style="display:none;"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"></path></svg>
             </button>
@@ -619,18 +525,16 @@
         </div>
         <div class="rud-footer" style="display:none;">
             <div class="rud-tar-note">
-                <div><strong>How to Play TAR files:</strong> 1. Download & Extract the .tar file (e.g., with 7-Zip). 2. Drag the <strong>.m3u8</strong> file into a player like VLC.</div>
-                <div class="rud-disclaimer">
-                  The 
-                  <svg fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h6m-6 4h6m-6 4h6"></path></svg>
-                  <strong>Combine</strong> button processes the file in your browser. This is convenient but may fail on files larger than ~2GB due to memory limits. Use the 
-                  <svg fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
-                  <strong>Download</strong> button for larger files.
-                </div>
+              <strong>Tip:</strong> "Combine" merges the TAR playlist into a single .ts in-browser. Large files may exceed memory. Use raw TAR download if that happens.
             </div>
         </div>`;
             portal.appendChild(menu);
 
+            const updateThemeIcons = () => {
+                const isDark = portal.classList.contains('rud-dark');
+                menu.querySelector('.rud-theme-sun').style.display = isDark ? 'none' : 'block';
+                menu.querySelector('.rud-theme-moon').style.display = isDark ? 'block' : 'none';
+            };
             menu.querySelector('.rud-close-btn').addEventListener('click', () => close(), { passive: true });
             menu.querySelector('.rud-theme-toggle').addEventListener('click', () => {
                 const newTheme = portal.classList.contains('rud-dark') ? 'rud-light' : 'rud-dark';
@@ -638,19 +542,12 @@
                 localStorage.setItem('rud-theme', newTheme);
                 updateThemeIcons();
             }, { passive: true });
-
-            const updateThemeIcons = () => {
-                const isDark = portal.classList.contains('rud-dark');
-                menu.querySelector('.rud-theme-sun').style.display = isDark ? 'none' : 'block';
-                menu.querySelector('.rud-theme-moon').style.display = isDark ? 'block' : 'none';
-            };
             updateThemeIcons();
         }
 
         const refs = () => ({
             statusEl: menu.querySelector('.rud-status'),
             listEl: menu.querySelector('.rud-list'),
-            bodyEl: menu.querySelector('.rud-body'),
             emptyEl: menu.querySelector('.rud-empty'),
             footerEl: menu.querySelector('.rud-footer')
         });
@@ -659,15 +556,14 @@
             await raf(() => {
                 const rect = btn.getBoundingClientRect();
                 const w = menu.offsetWidth;
-                const gap = 8;
+                const gap = 6;
                 let left = Math.round(rect.left + (rect.width / 2) - (w / 2));
-                left = Math.max(16, Math.min(left, window.innerWidth - 16 - w));
+                left = Math.max(10, Math.min(left, window.innerWidth - 10 - w));
                 const top = Math.round(rect.bottom + gap);
                 menu.style.left = `${left}px`;
                 menu.style.top = `${top}px`;
             });
         }
-
         async function adjustSpacer() {
             await raf(() => {
                 const spacer = ensureSpacerBeforeComments();
@@ -676,7 +572,7 @@
                     spacer.style.height = '0px';
                     return;
                 }
-                spacer.style.height = `${menu.offsetHeight + 16}px`;
+                spacer.style.height = `${menu.offsetHeight + 12}px`;
             });
         }
 
@@ -688,33 +584,17 @@
         document.addEventListener('click', onDocClick, true);
         document.addEventListener('keydown', onEsc, { passive: true });
 
-        const reposition = debounce(() => { if (menu.classList.contains('open')) { positionMenu(); adjustSpacer(); } }, 50);
+        const reposition = debounce(() => { if (menu.classList.contains('open')) { positionMenu(); adjustSpacer(); } }, 60);
         window.addEventListener('scroll', reposition, { passive: true });
         window.addEventListener('resize', reposition, { passive: true });
 
-        async function open() {
-            if (!menu.classList.contains('open')) {
-                menu.classList.add('open');
-                await positionMenu();
-                await adjustSpacer();
-            }
-        }
-        async function close() {
-            if (menu.classList.contains('open')) {
-                menu.classList.remove('open');
-                await adjustSpacer();
-            }
-        }
-        async function toggle() {
-            if (menu.classList.contains('open')) await close();
-            else await open();
-        }
+        async function open() { if (!menu.classList.contains('open')) { menu.classList.add('open'); await positionMenu(); await adjustSpacer(); } }
+        async function close() { if (menu.classList.contains('open')) { menu.classList.remove('open'); await adjustSpacer(); } }
+        async function toggle() { if (menu.classList.contains('open')) await close(); else await open(); }
 
-        async function setStatus(text) { refs().statusEl.textContent = text; await positionMenu(); await adjustSpacer(); }
-        async function setStatusMuted(text) {
-            refs().statusEl.innerHTML = `<span class="muted">${String(text).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]))}</span>`;
-            await positionMenu(); await adjustSpacer();
-        }
+        async function setStatus(text) { refs().statusEl.textContent = text || ''; await positionMenu(); await adjustSpacer(); }
+        async function setStatusMuted(text) { refs().statusEl.textContent = text || ''; await positionMenu(); await adjustSpacer(); }
+
         async function showEmpty(message) {
             const r = refs();
             r.listEl.innerHTML = '';
@@ -726,6 +606,7 @@
             await positionMenu(); await adjustSpacer();
         }
         async function hideEmpty() { const r = refs(); r.listEl.style.display = 'flex'; r.emptyEl.style.display = 'none'; }
+
         async function maybeToggleFooter() {
             const r = refs();
             const hasTar = !!r.listEl.querySelector('[data-type="tar"]');
@@ -733,75 +614,94 @@
             await positionMenu(); await adjustSpacer();
         }
 
+        // Dedup map: label|type -> node, tracking size to prefer larger file
         const byKey = new Map();
+
         function addOrUpdate(dl) {
             const { label, type, url, size, bitrate, fps } = dl;
             if (!label) return;
             const r = refs();
-            const key = `${label.toLowerCase()}|${type}|${url}`;
+            const key = `${label.toLowerCase()}|${type}`;
             const title = getVideoTitle();
             const fname = filenameWithExt(title, label, url);
             const menuApi = this;
 
-            if (byKey.has(key)) { return; }
+            const renderInto = (item) => {
+                let actionButtonsHTML = '';
+                if (type === 'tar') {
+                    actionButtonsHTML = `
+                      <button type="button" class="rud-combine-btn rud-dl-link" data-url="${url}" data-rud-tooltip="Combine to .ts">
+                        <svg fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h6m-6 4h6m-6 4h6"></path></svg>
+                        <span>Combine</span>
+                      </button>
+                      <a href="${url}" target="_blank" rel="noopener" download="${fname}" class="rud-dl-link" data-rud-tooltip="Download .tar">
+                        <svg fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
+                        <span>Tar</span>
+                      </a>`;
+                } else {
+                    actionButtonsHTML = `
+                      <a href="${url}" target="_blank" rel="noopener" download="${fname}" class="rud-dl-link" data-rud-tooltip="Download">
+                        <svg fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
+                        <span>Get</span>
+                      </a>`;
+                }
+
+                item.innerHTML = `
+                  <div class="rud-item-res">${label}</div>
+                  <div class="rud-item-badge">${type}</div>
+                  <div class="rud-item-bitrate">${fps ? `${Math.round(fps)}fps · ` : ''}${formatBitrate(bitrate)}</div>
+                  <div class="rud-item-actions">
+                    <span class="rud-item-size">${formatBytes(size)}</span>
+                    <button type="button" class="rud-copy-btn" data-url="${url}" data-rud-tooltip="Copy">
+                      <svg fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path></svg>
+                      <span>Copy</span>
+                    </button>
+                    ${actionButtonsHTML}
+                  </div>`;
+
+                if (type === 'aac' || type === 'hls') {
+                    const fpsBadge = item.querySelector('.rud-item-bitrate');
+                    if (fpsBadge) fpsBadge.textContent = formatBitrate(bitrate);
+                }
+
+                item.dataset.type = type;
+
+                item.querySelector('.rud-copy-btn')?.addEventListener('click', (e) => {
+                    const b = e.currentTarget;
+                    GM_setClipboard(b.dataset.url);
+                    const t = b.dataset.rudTooltip;
+                    b.dataset.rudTooltip = 'Copied!';
+                    setTimeout(() => { b.dataset.rudTooltip = t; }, 1500);
+                }, { passive: true });
+
+                const combineBtn = item.querySelector('.rud-combine-btn');
+                if (combineBtn) {
+                    combineBtn.addEventListener('click', (e) => {
+                        processTarFile(e.currentTarget.dataset.url, e.currentTarget, menuApi, title);
+                    });
+                }
+            };
+
+            // Dedupe by (label|type): keep the larger size; replace content/links if bigger arrives
+            if (byKey.has(key)) {
+                const existing = byKey.get(key);
+                const oldSize = existing.size || 0;
+                const newSize = size || 0;
+                if (newSize > oldSize) {
+                    // Replace in-place: update content while keeping position
+                    renderInto(existing.node);
+                    existing.size = size;
+                    existing.url = url;
+                }
+                return;
+            }
 
             const item = document.createElement('div');
             item.className = 'rud-item';
-            item.dataset.type = type;
-
-            let actionButtonsHTML = '';
-
-            if (type === 'tar') {
-                actionButtonsHTML = `
-                    <button type="button" class="rud-combine-btn rud-dl-link" data-url="${url}" data-rud-tooltip="Extract & download as .ts file">
-                        <svg fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h6m-6 4h6m-6 4h6"></path></svg>
-                        <span>Combine</span>
-                    </button>
-                    <a href="${url}" target="_blank" rel="noopener" download="${fname}" class="rud-dl-link" data-rud-tooltip="Download .tar Archive">
-                        <svg fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
-                    </a>
-                `;
-            } else {
-                actionButtonsHTML = `
-                    <a href="${url}" target="_blank" rel="noopener" download="${fname}" class="rud-dl-link" data-rud-tooltip="Download File">
-                        <svg fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
-                    </a>`;
-            }
-
-            item.innerHTML = `
-                <div class="rud-item-res">${label}</div>
-                <div class="rud-item-badge">${type}</div>
-                <div class="rud-item-badge">${Math.round(fps)} FPS</div>
-                <div class="rud-item-bitrate">${formatBitrate(bitrate)}</div>
-                <div class="rud-item-actions">
-                    <span class="rud-item-size">${formatBytes(size)}</span>
-                    <button type="button" class="rud-copy-btn" data-url="${url}" data-rud-tooltip="Copy Link">
-                        <svg fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path></svg>
-                    </button>
-                    ${actionButtonsHTML}
-                </div>`;
-            
-            if (type === 'aac' || type === 'hls') {
-                const fpsBadge = item.querySelector('.rud-item-badge:nth-of-type(2)');
-                if (fpsBadge) fpsBadge.style.display = 'none';
-            }
-            
-            item.querySelector('.rud-copy-btn').addEventListener('click', (e) => {
-                const btn = e.currentTarget;
-                GM_setClipboard(btn.dataset.url);
-                const originalTooltip = btn.dataset.rudTooltip;
-                btn.dataset.rudTooltip = 'Copied!';
-                setTimeout(() => { btn.dataset.rudTooltip = originalTooltip; }, 2000);
-            }, { passive: true });
-            
-            const combineBtn = item.querySelector('.rud-combine-btn');
-            if (combineBtn) {
-                combineBtn.addEventListener('click', (e) => {
-                    processTarFile(e.currentTarget.dataset.url, e.currentTarget, menuApi, title);
-                });
-            }
-
+            renderInto(item);
             byKey.set(key, { node: item, url, size });
+
+            // Insert in sorted order: by height desc, then mp4/tar preference (already pre-sorted before addOrUpdate in parse)
             r.listEl.appendChild(item);
             queueMicrotask(() => { maybeToggleFooter(); });
         }
@@ -820,63 +720,74 @@
     // ---------------- Main click ----------------
     async function onDownloadClick(btn) {
         const menuApi = createMenu(btn);
-
-        if (menuApi.haveAny()) {
-            await menuApi.toggle();
-            return;
-        }
-
         await menuApi.ensureVisible();
-        await menuApi.setStatusMuted('Finding video info...');
-        setButtonState(btn, 'Loading...', true);
+        await menuApi.setStatusMuted('Finding video info…');
+        setButtonState(btn, 'Loading…', true);
 
         try {
             const metadataUrl = await waitForMetadataUrl(20000);
             const downloads = await fetchVideoMetadata(metadataUrl);
             await menuApi.clearLists();
-            
+
             if (!downloads || downloads.length === 0) {
                 await menuApi.showEmpty('No download links found in the video metadata.');
             } else {
                 downloads.forEach(dl => menuApi.addOrUpdate(dl));
-                await menuApi.setStatus(`Found ${downloads.length} download option(s).`);
+                // Do NOT print "Found N…" to save vertical space
+                await menuApi.setStatus('');
             }
-            
-            setButtonState(btn, 'Download', false);
 
+            setButtonState(btn, 'Download', false);
         } catch (e) {
             console.error("Rumble Downloader Error:", e);
             await menuApi.showEmpty(`An error occurred:<br>${e && (e.message || e)}`);
             setButtonState(btn, 'Error', true);
-            setTimeout(() => setButtonState(btn, 'Download', false), 3000);
+            setTimeout(() => setButtonState(btn, 'Download', false), 2500);
         }
     }
 
-    // ---------------- Mount button ----------------
-    function mountButton() {
-        if (!isVideoPage() || document.getElementById('rud-download-btn')) return;
-        for (const sel of ACTION_BAR_SELECTORS) {
-            const container = $(sel);
-            if (container) {
-                const btn = createButton();
-                const menuApi = createMenu(btn); // Create menu instance early
-                
-                btn.addEventListener('click', async (ev) => {
-                    ev.stopPropagation();
-                    if (menuApi.haveAny()) {
-                        await menuApi.toggle();
-                    } else {
-                        onDownloadClick(btn);
-                    }
-                });
+    // ---------------- Mount button (right side of the action bar) ----------------
+    const ACTION_BAR_SELECTORS = [
+        '.media-by-channel-actions-container', // primary target area (your provided container)
+        '.media-header__actions',
+        '.media-by__actions',
+        'div[data-js="video_action_button_group"]'
+    ];
 
-                const wrap = document.createElement('span');
-                wrap.className = 'rud-inline-wrap';
-                container.prepend(wrap);
-                wrap.appendChild(btn);
-                return; // Mount only once
-            }
+    function mountButton() {
+        if (!isVideoPage()) return;
+
+        // Find target container
+        let container = null;
+        for (const sel of ACTION_BAR_SELECTORS) {
+            const c = $(sel);
+            if (c) { container = c; break; }
         }
+        if (!container) return;
+
+        // Get or create button once; reparent it if needed (prevents duplicates even with SPA changes)
+        let btn = document.getElementById('rud-download-btn');
+        if (!btn) {
+            btn = createButton();
+            btn.addEventListener('click', async (ev) => {
+                ev.stopPropagation();
+                const menuApi = createMenu(btn);
+                if (menuApi.haveAny() && !btn.disabled) {
+                    await menuApi.toggle();
+                } else {
+                    onDownloadClick(btn);
+                }
+            }, { passive: false });
+        }
+
+        // Wrap and append on the right
+        const wrap = document.createElement('span');
+        wrap.className = 'rud-inline-wrap rud-right';
+        wrap.appendChild(btn);
+        container.appendChild(wrap); // append -> bottom right side of the bar; margin-left:auto pushes it right
+
+        // Clean up any empty stale wrappers created by SPA reflows
+        document.querySelectorAll('.rud-inline-wrap').forEach(w => { if (!w.firstElementChild) w.remove(); });
     }
 
     const routeObs = new MutationObserver(debounce(() => { mountButton(); }, 200));
@@ -886,5 +797,4 @@
     } else {
         mountButton();
     }
-
 })();
