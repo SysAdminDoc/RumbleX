@@ -1129,11 +1129,13 @@
           });
         }
 
-        btn.addEventListener('click', (ev) => {
-          // Stop the click from bubbling up to Rumble's own analytics listeners
+        // *** FINAL FIX: Use mousedown to prevent click event from ever firing ***
+        btn.addEventListener('mousedown', (ev) => {
+          // Stop the event here, immediately.
+          ev.preventDefault();
           ev.stopPropagation(); 
           
-          // If already have entries, just toggle open/close
+          // Then, manually trigger the logic that the 'click' was supposed to.
           const cachedNow = loadCachedList();
           if (cachedNow && cachedNow.length) {
             if (!btn.disabled) menuApi.toggle();
@@ -1141,7 +1143,7 @@
           }
           if (menuApi.haveAny() && !btn.disabled) menuApi.toggle();
           else onDownloadClick(btn);
-        }, true); // *** THIS IS THE FINAL FIX: Use event capture ***
+        }, true); // Use capture to be absolutely sure we get the event first.
         
         // Close menu when clicking outside
         document.addEventListener('click', (e) => {
