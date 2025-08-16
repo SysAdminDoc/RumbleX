@@ -151,16 +151,14 @@
   // ---------------- TAR download + combine to .ts ----------------
   async function processTarFile(url, btn, menuApi, title) {
     const originalHTML = btn.innerHTML;
-    const originalWidth = btn.offsetWidth; // Capture width before making changes
+    const originalWidth = btn.offsetWidth;
 
     const setBtn = (text, disabled = true) => {
       btn.disabled = disabled;
-      // Replace the button content with only text, which will be centered.
       btn.innerHTML = `<span class="rud-btn-label">${safeHtml(text)}</span>`;
     };
 
     try {
-      // Lock the button's size and center its content to prevent layout shifts
       btn.style.width = `${originalWidth}px`;
       btn.style.justifyContent = 'center';
 
@@ -185,26 +183,21 @@
       await menuApi.setStatusMuted(`Extracting TAR (${formatBytes(tarBuffer.byteLength)})…`);
       setBtn('Extracting…', true);
 
-      // 2 GB soft-guard: browser memory often struggles beyond this
       const twoGB = 2 * 1024 * 1024 * 1024;
       if (tarBuffer.byteLength >= twoGB) {
         await menuApi.setStatusMuted(`Warning: ${formatBytes(tarBuffer.byteLength)}. Browser-side Combine often fails around ~2 GB.`);
       }
 
       const extracted = await untar(tarBuffer);
-
-      // Map for segments
       const segmentFileMap = new Map(
         extracted
           .filter(f => /\.(ts|m4s)$/i.test(f.name))
           .map(f => [f.name, f.buffer])
       );
 
-      // Find plausible playlists
       const playlists = await findPlaylistsInTar(extracted);
       if (!playlists.length) throw new Error('No playlist (.m3u8/.m3u) found in TAR.');
 
-      // Choose the playlist with the most hits against present segments
       let best = null;
       for (const p of playlists) {
         const lines = p.text.split('\n').map(s => s.trim());
@@ -212,7 +205,6 @@
         let hits = 0;
         for (const n of segs) {
           if (segmentFileMap.has(n)) { hits++; continue; }
-          // nested folders inside tar: allow suffix match
           const found = Array.from(segmentFileMap.keys()).some(k => k.endsWith('/' + n));
           if (found) hits++;
         }
@@ -227,7 +219,6 @@
       await menuApi.setStatusMuted(`Combining ${best.hits}/${best.segments.length} segments…`);
       setBtn('Combining…', true);
 
-      // Build ordered segment list
       const ordered = [];
       let totalSize = 0;
       for (const name of best.segments) {
@@ -237,7 +228,6 @@
         ordered.push(u8); totalSize += u8.byteLength;
       }
 
-      // Concatenate to a single TS file
       const combined = new Uint8Array(totalSize);
       let off = 0;
       for (const seg of ordered) { combined.set(seg, off); off += seg.length; }
@@ -257,7 +247,6 @@
       setTimeout(() => {
         btn.innerHTML = originalHTML;
         btn.disabled = false;
-        // Unlock the button's size and styling
         btn.style.width = '';
         btn.style.justifyContent = '';
       }, 1200);
@@ -271,7 +260,6 @@
         btn.innerHTML = originalHTML;
         btn.disabled = false;
         btn.style.backgroundColor = '';
-        // Unlock the button's size and styling
         btn.style.width = '';
         btn.style.justifyContent = '';
       }, 3500);
@@ -285,7 +273,7 @@
   const PROBE_CONCURRENCY = 6;
   const COLLECTION_GRACE_MS = 3000;
   const COLLECTION_TICK_MS = 300;
-  let EMBED_META = null; // { fps, bitrateKbps }
+  let EMBED_META = null;
 
   function tokenToLabel(t) {
     const low = (t || '').toLowerCase();
@@ -332,7 +320,6 @@
     });
   }
 
-  // Capture outgoing URLs to improve candidate pool
   const captured = new Set();
   const embedSeen = new Set();
   function maybeCapture(url) {
@@ -546,7 +533,7 @@
     let done = 0, okCount = 0;
     const total = targets.length;
 
-    await menuApi.setStatusMuted(`Scanning…`);
+    await menuApi.setStatusMuted(`Scanning for sources…`);
 
     const queue = targets.slice();
     async function worker() {
@@ -583,11 +570,10 @@
     return okCount;
   }
 
-  // ---------------- UI (compact with center metadata; popup to the right) ----------------
+  // ---------------- UI (Compact Action List) ----------------
   GM_addStyle(`
     :root {
       --rud-font-sans: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-      --rud-font-mono: 'Roboto Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace;
       --rud-ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
       --rud-ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
     }
@@ -597,6 +583,7 @@
       --rud-border-color: #374151;
       --rud-accent: #22c55e; --rud-accent-hover: #16a34a; --rud-accent-text: #ffffff;
       --rud-shadow: 0 10px 30px rgba(0,0,0,0.5);
+      --rud-backdrop-blur: blur(12px);
     }
     #rud-portal.rud-light {
       --rud-bg-primary: #ffffff; --rud-bg-secondary: #f3f4f6; --rud-bg-tertiary: #e5e7eb;
@@ -604,15 +591,11 @@
       --rud-border-color: #e5e7eb;
       --rud-accent: #16a34a; --rud-accent-hover: #15803d; --rud-accent-text: #ffffff;
       --rud-shadow: 0 10px 25px rgba(0,0,0,0.1);
+      --rud-backdrop-blur: blur(12px);
     }
 
     #rud-portal { position: fixed; inset: 0; pointer-events: none; z-index: 2147483646; font-family: var(--rud-font-sans); font-size: 14px; }
-    
-    /* Ensure the wrapper can contain the absolutely positioned panel */
-    .rud-inline-wrap {
-      position: relative;
-      display: inline-flex;
-    }
+    .rud-inline-wrap { position: relative; display: inline-flex; }
     .rud-inline-wrap.rud-right { margin-left: auto; }
 
     #rud-download-btn {
@@ -622,8 +605,6 @@
       border: none; border-radius: 999px;
       cursor: pointer; margin-left: 12px;
       transition: all .2s var(--rud-ease-out);
-      /* *** CSS CHANGE: Make the button a 'ghost' to mouse events *** */
-      pointer-events: none;
     }
     #rud-download-btn:hover:not(:disabled) {
       background-color: var(--rud-accent);
@@ -635,89 +616,68 @@
     #rud-download-btn:disabled { opacity: .7; cursor: default; }
     #rud-download-btn .rud-btn-text { display: inline-flex; align-items: center; gap: 0.5rem; }
 
-    /* --- Popover Panel --- */
     .rud-panel {
-      position: absolute; /* Changed from fixed to absolute */
-      top: calc(100% + 12px); /* Position below the button with a 12px gap */
-      left: 50%; /* Start positioning from the center */
-      transform: translateX(-50%) scale(0.95); /* Center the panel horizontally */
-      
-      background: var(--rud-bg-primary); /* Use a solid background for popovers */
-      color: var(--rud-text-primary);
-      border: 1px solid var(--rud-border-color);
-      border-radius: 12px;
-      box-shadow: var(--rud-shadow);
-      overflow: hidden;
+      position: fixed;
+      background: rgba(16, 16, 16, 0.8); color: var(--rud-text-primary);
+      border: 1px solid var(--rud-border-color); border-radius: 12px;
+      box-shadow: var(--rud-shadow); overflow: hidden; display: none;
+      pointer-events: auto; backdrop-filter: var(--rud-backdrop-blur); -webkit-backdrop-filter: var(--rud-backdrop-blur);
+      opacity: 0; transform: translateX(-10px) scale(0.98);
+      transition: opacity 0.25s var(--rud-ease-out), transform 0.25s var(--rud-ease-out);
+      width: 360px; max-width: 95vw;
+    }
+    .rud-panel.open { display: flex; flex-direction: column; opacity: 1; transform: translateX(0) scale(1); }
+
+    .rud-body { max-height: 60vh; overflow-y: auto; padding: 6px; }
+    .rud-list { display: flex; flex-direction: column; }
+    
+    .rud-status-compact {
+      padding: 6px 8px;
+      font-size: 13px;
+      color: var(--rud-text-muted);
+      border-bottom: 1px solid var(--rud-border-color);
+      margin: -6px -6px 6px -6px;
       display: none;
-      pointer-events: auto;
-      
-      /* Note: backdrop-filter is removed as it's not ideal for popovers */
-      opacity: 0;
-      transition: opacity 0.2s var(--rud-ease-out), transform 0.2s var(--rud-ease-out);
-      width: 480px; /* Slightly reduced width for a more compact feel */
-      max-width: 95vw;
-      z-index: 10;
-      transform-origin: top center; /* Animate from the top-center */
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
     }
 
-    /* The popover arrow */
-    .rud-panel::before {
-      content: '';
-      position: absolute;
-      bottom: 100%; /* Position the arrow at the top edge of the panel */
-      left: 50%;
-      transform: translateX(-50%);
-      width: 0;
-      height: 0;
-      border-left: 10px solid transparent;
-      border-right: 10px solid transparent;
-      border-bottom: 10px solid var(--rud-bg-primary); /* Arrow color matches panel */
-      /* Add a border to the arrow to match the panel's border */
-      filter: drop-shadow(0 -1px 0 var(--rud-border-color));
-    }
-
-    .rud-panel.open {
+    .rud-item {
       display: flex;
-      flex-direction: column;
-      opacity: 1;
-      transform: translateX(-50%) scale(1); /* Animate to full size */
+      justify-content: space-between;
+      align-items: center;
+      padding: 8px;
+      border-radius: 8px;
+      transition: background .2s var(--rud-ease-in-out);
     }
-
-    /* --- Header & Body (minor tweaks) --- */
-    .rud-header {
-        background: var(--rud-bg-secondary); /* Give header a slight tint */
-        display: flex; align-items: center; padding: 10px 14px; border-bottom: 1px solid var(--rud-border-color);
-    }
-    .rud-status { flex-grow: 1; font-size: 13px; color: var(--rud-text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .rud-header-controls { display: flex; align-items: center; gap: 8px; }
-    .rud-icon-btn { display: flex; padding: 6px; background: none; border: none; border-radius: 8px; cursor: pointer; color: var(--rud-text-muted); transition: background .2s, color .2s; }
-    .rud-icon-btn:hover { background: var(--rud-bg-secondary); color: var(--rud-text-primary); }
-    .rud-icon-btn svg { width: 18px; height: 18px; }
-
-    .rud-body {
-        max-height: 50vh; /* Adjust max height for popover context */
-        overflow-y: auto;
-    }
-    .rud-list { display: flex; flex-direction: column; padding: 6px; }
-    .rud-item { display: grid; grid-template-columns: 70px 55px 1fr 75px 210px; align-items: center; gap: 6px; padding: 8px 10px; border-radius: 8px; transition: background .2s var(--rud-ease-in-out); }
     .rud-item + .rud-item { margin-top: 2px; }
     .rud-item:hover { background: var(--rud-bg-secondary); }
-    .rud-item-res { font-weight: 700; font-size: 14px; color: var(--rud-text-primary); }
-    .rud-item-badge { font-size: 11px; font-weight: 700; padding: 3px 8px; border-radius: 12px; background: var(--rud-bg-tertiary); color: var(--rud-text-secondary); text-transform: uppercase; text-align: center;}
-    .rud-item-meta { font-size: 12px; color: var(--rud-text-muted); text-align: center; white-space: nowrap; }
-    .rud-item-size { font-size: 13px; color: var(--rud-text-muted); font-family: var(--rud-font-mono); text-align: right; }
+
+    .rud-item-details { display: flex; flex-direction: column; gap: 2px; }
+    .rud-item-res { font-weight: 600; font-size: 14px; color: var(--rud-text-primary); }
+    .rud-item-sub { font-size: 12px; color: var(--rud-text-muted); }
+    .rud-item-sub .rud-item-badge {
+        display: inline-block;
+        font-size: 10px; font-weight: 700;
+        padding: 2px 6px; border-radius: 6px;
+        background: var(--rud-bg-tertiary); color: var(--rud-text-secondary);
+        text-transform: uppercase; margin-right: 6px; vertical-align: middle;
+    }
+
     .rud-item-actions { display: inline-flex; gap: 6px; justify-content: flex-end; }
-    .rud-item-actions a, .rud-item-actions button { display: inline-flex; align-items: center; justify-content: center; gap: 5px; text-decoration: none; font-size: 12px; font-weight: 600; padding: 5px 8px; border-radius: 6px; transition: all .2s var(--rud-ease-in-out); border: 1px solid transparent; flex-shrink: 0; }
-    .rud-item-actions .rud-copy-btn { background: var(--rud-bg-tertiary); color: var(--rud-text-secondary); border-color: var(--rud-border-color); cursor: pointer; }
+    .rud-item-actions a, .rud-item-actions button {
+      display: inline-flex; align-items: center; justify-content: center;
+      width: 32px; height: 32px;
+      text-decoration: none; border-radius: 6px;
+      transition: all .2s var(--rud-ease-in-out);
+      border: 1px solid transparent;
+      cursor: pointer;
+    }
+    .rud-item-actions .rud-copy-btn { background: var(--rud-bg-tertiary); color: var(--rud-text-secondary); border-color: var(--rud-border-color); }
     .rud-item-actions .rud-copy-btn:hover { background: var(--rud-border-color); color: var(--rud-text-primary); }
     .rud-item-actions .rud-dl-link { background: var(--rud-accent); color: var(--rud-accent-text); border-color: var(--rud-accent); }
     .rud-item-actions .rud-dl-link:hover { background: var(--rud-accent-hover); }
     .rud-item-actions .rud-second { background: var(--rud-bg-tertiary); color: var(--rud-text-secondary); border-color: var(--rud-border-color); }
-    .rud-item-actions svg { width: 14px; height: 14px; }
-    
-    .rud-footer { padding: 10px 14px; border-top: 1px solid var(--rud-border-color); background: var(--rud-bg-secondary); }
-    .rud-tar-note { font-size: 12px; color: var(--rud-text-muted); line-height: 1.5; }
-    .rud-tar-note strong { color: var(--rud-text-secondary); }
+    .rud-item-actions svg { width: 16px; height: 16px; }
 
     .rud-empty { padding: 40px 20px; text-align: center; color: var(--rud-text-muted); font-size: 14px; line-height: 1.6; }
     .rud-empty svg { width: 48px; height: 48px; margin-bottom: 16px; opacity: 0.4; }
@@ -762,84 +722,62 @@
       menu.className = 'rud-panel';
       menu.setAttribute('data-for', btn.id);
       menu.innerHTML = `
-        <div class="rud-header">
-          <div class="rud-status"><span class="muted">Ready.</span></div>
-          <div class="rud-header-controls">
-            <button class="rud-icon-btn rud-theme-toggle" type="button" title="Toggle Theme" data-rud-tooltip="Toggle Theme">
-              <svg class="rud-theme-sun" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"></path></svg>
-              <svg class="rud-theme-moon" fill="none" viewBox="0 0 24 24" stroke="currentColor" style="display:none;"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"></path></svg>
-            </button>
-            <button class="rud-icon-btn rud-close-btn" type="button" title="Close" data-rud-tooltip="Close">
-              <svg fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
-            </button>
-          </div>
-        </div>
         <div class="rud-body">
+          <div class="rud-status-compact"></div>
           <div class="rud-list"></div>
           <div class="rud-empty" style="display:none;"></div>
-        </div>
-        <div class="rud-footer" style="display:none;">
-          <div class="rud-tar-note">
-            <div><strong>Note:</strong> Browser-side “Combine” often fails around ~2 GB. If the archive is that large, prefer the raw TAR download.</div>
-          </div>
         </div>`;
-      // The menu is appended to the button's wrapper later, not the portal
+      portal.appendChild(menu);
     }
 
     const refs = () => ({
-      statusEl: menu.querySelector('.rud-status'),
+      statusEl: menu.querySelector('.rud-status-compact'),
       listEl: menu.querySelector('.rud-list'),
       bodyEl: menu.querySelector('.rud-body'),
       emptyEl: menu.querySelector('.rud-empty'),
-      footerEl: menu.querySelector('.rud-footer')
     });
 
+    const handleClickOutside = (event) => {
+      if (menu.classList.contains('open') && !menu.contains(event.target) && !btn.contains(event.target)) {
+        close();
+      }
+    };
+
     async function positionMenu() {
-      // With the popover theme, positioning is mostly handled by CSS.
-      // We just need to ensure the parent container is set to relative positioning.
       await raf(() => {
-        const wrap = btn.closest('.rud-inline-wrap');
-        if (wrap && getComputedStyle(wrap).position !== 'relative') {
-          wrap.style.position = 'relative';
-        }
-        if (!menu.parentElement) {
-            wrap.appendChild(menu); // Append menu to wrapper if not already there
-        }
-        // The CSS (top: 100%, left: 50%, transform: translateX(-50%))
-        // will now correctly position the menu relative to this wrapper.
+        const rect = btn.getBoundingClientRect();
+        const w = menu.offsetWidth;
+        const gap = 12;
+        let left = Math.round(rect.right + gap);
+        left = Math.max(16, Math.min(left, window.innerWidth - 16 - w));
+        const top = Math.round(rect.top);
+        menu.style.left = `${left}px`;
+        menu.style.top = `${top}px`;
       });
     }
-
     async function open() {
       if (!menu.classList.contains('open')) {
+        menu.classList.add('open');
         await positionMenu();
-        await raf(() => menu.classList.add('open'));
+        setTimeout(() => document.addEventListener('click', handleClickOutside, { capture: true }), 50);
       }
     }
     async function close() {
       if (menu.classList.contains('open')) {
         menu.classList.remove('open');
+        document.removeEventListener('click', handleClickOutside, { capture: true });
       }
     }
     async function toggle() { if (menu.classList.contains('open')) await close(); else await open(); }
 
-    // Add close handlers after menu is potentially created
-    menu.querySelector('.rud-close-btn').addEventListener('click', () => close());
-    menu.querySelector('.rud-theme-toggle').addEventListener('click', () => {
-        const newTheme = portal.classList.contains('rud-dark') ? 'rud-light' : 'rud-dark';
-        portal.className = newTheme;
-        localStorage.setItem('rud-theme', newTheme);
-        updateThemeIcons();
-    });
-    const updateThemeIcons = () => {
-        const isDark = portal.classList.contains('rud-dark');
-        menu.querySelector('.rud-theme-sun').style.display = isDark ? 'none' : 'block';
-        menu.querySelector('.rud-theme-moon').style.display = isDark ? 'block' : 'none';
-    };
-    updateThemeIcons();
-
     async function setStatusMuted(text) {
-      refs().statusEl.innerHTML = `<span class="muted">${safeHtml(text)}</span>`;
+      const { statusEl } = refs();
+      if (text) {
+        statusEl.textContent = text;
+        statusEl.style.display = 'block';
+      } else {
+        statusEl.style.display = 'none';
+      }
       await positionMenu();
     }
     async function showEmpty(message) {
@@ -853,24 +791,10 @@
       await positionMenu();
     }
     async function hideEmpty() { const r = refs(); r.listEl.style.display = 'flex'; r.emptyEl.style.display = 'none'; }
-    async function maybeToggleFooter() {
-      const r = refs();
-      const hasTar = !!r.listEl.querySelector('[data-type="tar"]');
-      r.footerEl.style.display = hasTar ? 'block' : 'none';
-      await positionMenu();
-    }
 
     const byKey = new Map();
-
     function replaceNode(oldNode, newNode) {
       if (oldNode && oldNode.parentElement) oldNode.parentElement.replaceChild(newNode, oldNode);
-    }
-
-    function metaText({ fps, bitrate }) {
-      const parts = [];
-      if (Number.isFinite(fps) && fps > 0) parts.push(`${fps} FPS`);
-      if (Number.isFinite(bitrate) && bitrate > 0) parts.push(`${bitrate} kbps`);
-      return parts.join(' · ');
     }
 
     function addOrUpdate(dl) {
@@ -881,7 +805,6 @@
       const title = getVideoTitle();
       const fname = filenameWithExt(title, label === 'Audio' ? 'audio' : label, url);
       const menuApi = api;
-      const mtxt = metaText({ fps: dl.fps, bitrate: dl.bitrate });
 
       const buildItem = () => {
         const item = document.createElement('div');
@@ -891,13 +814,11 @@
         const actions =
           type === 'tar'
             ? `
-              <a href="${url}" target="_blank" rel="noopener" download="${fname}" class="rud-dl-link" data-rud-tooltip="Download .tar">
+              <a href="${url}" target="_blank" rel="noopener" download="${fname}" class="rud-dl-link" data-rud-tooltip="Download .tar (raw archive)">
                 <svg fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
-                <span>Tar</span>
               </a>
-              <button type="button" class="rud-combine-btn rud-second" data-url="${url}" data-rud-tooltip="Extract + Combine to .ts">
+              <button type="button" class="rud-combine-btn rud-second" data-url="${url}" data-rud-tooltip="Combine segments to .ts file">
                 <svg fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h6m-6 4h6m-6 4h6"></path></svg>
-                <span>Combine</span>
               </button>
               <button type="button" class="rud-copy-btn" data-url="${url}" data-rud-tooltip="Copy Link">
                  <svg fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2z"></path></svg>
@@ -905,17 +826,19 @@
             : `
               <a href="${url}" target="_blank" rel="noopener" download="${fname}" class="rud-dl-link" data-rud-tooltip="Download">
                 <svg fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
-                <span>DL</span>
               </a>
               <button type="button" class="rud-copy-btn" data-url="${url}" data-rud-tooltip="Copy Link">
                 <svg fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2z"></path></svg>
               </button>`;
 
         item.innerHTML = `
-          <div class="rud-item-res">${safeHtml(label)}</div>
-          <div class="rud-item-badge">${safeHtml(type)}</div>
-          <div class="rud-item-meta">${safeHtml(mtxt || '')}</div>
-          <div class="rud-item-size">${formatBytes(size)}</div>
+          <div class="rud-item-details">
+              <div class="rud-item-res">${safeHtml(label)}</div>
+              <div class="rud-item-sub">
+                <span class="rud-item-badge">${safeHtml(type)}</span>
+                <span>${formatBytes(size)}</span>
+              </div>
+          </div>
           <div class="rud-item-actions">
             ${actions}
           </div>`;
@@ -962,7 +885,6 @@
         if (rank > childRank) { r.listEl.insertBefore(item, child); placed = true; break; }
       }
       if (!placed) r.listEl.appendChild(item);
-      queueMicrotask(() => { maybeToggleFooter(); });
     }
 
     function exportListForCache() {
@@ -989,7 +911,7 @@
         return type === 'tar' || type === 'mp4';
       });
 
-      if (videoItems.length <= 3) return; // No need to filter
+      if (videoItems.length <= 3) return;
 
       const getUrl = (item) => item.node.querySelector('[data-url]')?.dataset.url || '';
 
@@ -1003,9 +925,8 @@
 
       allItems.forEach(item => {
         const type = item.node.dataset.type;
-        // Always show audio, otherwise check if it's in the top 3
         if (type === 'audio' || topThreeItems.has(item)) {
-          item.node.style.display = 'grid';
+          item.node.style.display = 'flex';
         } else {
           item.node.style.display = 'none';
         }
@@ -1015,7 +936,7 @@
     const api = {
       open, close, toggle,
       setStatusMuted,
-      clearLists: async () => { const r = refs(); byKey.clear(); r.listEl.innerHTML = ''; await hideEmpty(); await maybeToggleFooter(); },
+      clearLists: async () => { const r = refs(); byKey.clear(); r.listEl.innerHTML = ''; await hideEmpty(); },
       addOrUpdate,
       showEmpty, hideEmpty,
       haveAny: () => byKey.size > 0,
@@ -1032,16 +953,15 @@
     const menuApi = createMenu(btn);
     await menuApi.ensureVisible();
 
-    // Try cache first
     const cached = loadCachedList();
     if (cached && cached.length) {
       await menuApi.clearLists();
       for (const it of cached) {
         menuApi.addOrUpdate({ label: it.label, type: it.type, url: it.url, size: it.size, fps: it.fps, bitrate: it.bitrate });
       }
-      menuApi.limitToTopThree(); // Apply filter to cached results
-      await menuApi.setStatusMuted('Ready (cached).');
-      return; // near-instant reuse
+      menuApi.limitToTopThree();
+      await menuApi.setStatusMuted('Ready (from cache)');
+      return;
     }
 
     await menuApi.setStatusMuted('Preparing…');
@@ -1079,11 +999,10 @@
       }
 
       await probeTargetsFast(targets, menuApi);
-      menuApi.limitToTopThree(); // Apply filter after probing
+      menuApi.limitToTopThree();
 
       await menuApi.setStatusMuted('Ready.');
 
-      // Save cache only after we fully processed the targets and have items
       if (menuApi.haveAny()) {
         const list = menuApi.exportListForCache();
         if (list.length) saveCachedList(list);
@@ -1121,23 +1040,17 @@
 
         const menuApi = createMenu(btn);
 
-        // If cached exists, prime menu so first click is instant
         const cached = loadCachedList();
         if (cached && cached.length) {
           menuApi.clearLists().then(() => {
             cached.forEach(it => menuApi.addOrUpdate({ label: it.label, type: it.type, url: it.url, size: it.size, fps: it.fps, bitrate: it.bitrate }));
-            menuApi.limitToTopThree(); // Apply filter to primed cached results
-            menuApi.setStatusMuted('Ready (cached).');
+            menuApi.limitToTopThree();
+            menuApi.setStatusMuted('Ready (from cache)');
           });
         }
-        
-        // *** JAVASCRIPT CHANGE: Attach listener to the wrapper, not the button ***
-        wrap.addEventListener('mousedown', (ev) => {
-          // Stop the event here, immediately. This is the most aggressive stop possible.
-          ev.preventDefault();
-          ev.stopImmediatePropagation();
-          
-          // Manually trigger the logic.
+
+        btn.addEventListener('click', (ev) => {
+          ev.stopPropagation();
           const cachedNow = loadCachedList();
           if (cachedNow && cachedNow.length) {
             if (!btn.disabled) menuApi.toggle();
@@ -1145,14 +1058,6 @@
           }
           if (menuApi.haveAny() && !btn.disabled) menuApi.toggle();
           else onDownloadClick(btn);
-        }, true); // Use capture to be absolutely sure we get the event first.
-        
-        // Close menu when clicking outside
-        document.addEventListener('click', (e) => {
-            const menuEl = btn.closest('.rud-inline-wrap')?.querySelector('.rud-panel');
-            if (menuEl && menuEl.classList.contains('open') && !menuEl.contains(e.target) && !btn.contains(e.target)) {
-                menuApi.close();
-            }
         }, { passive: true });
 
         return;
@@ -1164,14 +1069,5 @@
   routeObs.observe(document.documentElement, { childList: true, subtree: true });
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', mountButton, { passive: true });
   else mountButton();
-
-  // Quietly surface page errors inside header line without adding extra UI height
-  window.addEventListener('error', (ev) => {
-    const menu = document.querySelector('#rud-portal .rud-panel');
-    if (menu) {
-      const statusEl = menu.querySelector('.rud-status');
-      if (statusEl) statusEl.textContent = `Page Error: ${ev.message || ev.error || 'unknown'}`;
-    }
-  }, { passive: true });
 
 })();
