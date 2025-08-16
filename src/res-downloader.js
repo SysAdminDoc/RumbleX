@@ -622,6 +622,8 @@
       border: none; border-radius: 999px;
       cursor: pointer; margin-left: 12px;
       transition: all .2s var(--rud-ease-out);
+      /* *** CSS CHANGE: Make the button a 'ghost' to mouse events *** */
+      pointer-events: none;
     }
     #rud-download-btn:hover:not(:disabled) {
       background-color: var(--rud-accent);
@@ -1128,14 +1130,14 @@
             menuApi.setStatusMuted('Ready (cached).');
           });
         }
-
-        // *** FINAL FIX: Use mousedown to prevent click event from ever firing ***
-        btn.addEventListener('mousedown', (ev) => {
-          // Stop the event here, immediately.
+        
+        // *** JAVASCRIPT CHANGE: Attach listener to the wrapper, not the button ***
+        wrap.addEventListener('mousedown', (ev) => {
+          // Stop the event here, immediately. This is the most aggressive stop possible.
           ev.preventDefault();
-          ev.stopPropagation(); 
+          ev.stopImmediatePropagation();
           
-          // Then, manually trigger the logic that the 'click' was supposed to.
+          // Manually trigger the logic.
           const cachedNow = loadCachedList();
           if (cachedNow && cachedNow.length) {
             if (!btn.disabled) menuApi.toggle();
