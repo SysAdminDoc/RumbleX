@@ -3,7 +3,7 @@
 // @namespace    https://github.com/gemini-scripts/rumble-enhancement-suite
 // @version      5.0.0
 // @description  A refined Rumble downloader with a premium, modern UI. Features a clean, full-width layout, dark/light themes, enhanced user feedback, and copy-to-clipboard functionality. Built upon the original's robust DOM/Network/EmbedJS detection.
-// @author       Steve (UI by Gemini)
+// @author       Matthew Parker
 // @match        *://rumble.com/*
 // @run-at       document-start
 // @grant        GM_xmlhttpRequest
