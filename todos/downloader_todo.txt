@@ -1,1 +1,6 @@
-Fine tune the downloader logic. Run new download logic with a fallback on the old logic.
+-Fine tune the downloader logic. Run new download logic with a fallback on the old logic.
+
+-Add button to download captions, example of file:
+https://1a-1791.com/video/fww1/64/s8/11/c/A/w/_/cAw_y.fn8Si.vtt
+
+-Add button to summarize videos using AI APIs pulling the caption files.
