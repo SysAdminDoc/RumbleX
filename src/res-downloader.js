@@ -1130,7 +1130,6 @@
         }
 
         btn.addEventListener('click', (ev) => {
-          // *** THIS IS THE FIX ***
           // Stop the click from bubbling up to Rumble's own analytics listeners
           ev.stopPropagation(); 
           
@@ -1142,7 +1141,7 @@
           }
           if (menuApi.haveAny() && !btn.disabled) menuApi.toggle();
           else onDownloadClick(btn);
-        }, { passive: true });
+        }, true); // *** THIS IS THE FINAL FIX: Use event capture ***
         
         // Close menu when clicking outside
         document.addEventListener('click', (e) => {
