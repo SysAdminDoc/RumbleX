@@ -1,0 +1,32 @@
+
+#Make Play Icon look like youtube
+div.bigPlayUIInner.ctp {
+  background-color: #e64a19;
+  border-style: outset;
+  border-color: #bbdefb;
+}
+
+#Change download button style
+#rud-download-btn {
+  background-color: #2e7d32;
+  border-style: solid;
+  border-color: #75af3c;
+  border-left-width: 2px;
+  border-top-width: 2px;
+  border-right-width: 2px;
+  border-bottom-width: 2px;
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
