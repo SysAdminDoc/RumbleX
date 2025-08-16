@@ -150,13 +150,20 @@
 
   // ---------------- TAR download + combine to .ts ----------------
   async function processTarFile(url, btn, menuApi, title) {
-    const original = btn.innerHTML;
+    const originalHTML = btn.innerHTML;
+    const originalWidth = btn.offsetWidth; // Capture width before making changes
+
     const setBtn = (text, disabled = true) => {
       btn.disabled = disabled;
-      const label = btn.querySelector('span, .rud-btn-label');
-      if (label) label.textContent = text; else btn.textContent = text;
+      // Replace the button content with only text, which will be centered.
+      btn.innerHTML = `<span class="rud-btn-label">${safeHtml(text)}</span>`;
     };
+
     try {
+      // Lock the button's size and center its content to prevent layout shifts
+      btn.style.width = `${originalWidth}px`;
+      btn.style.justifyContent = 'center';
+
       setBtn('Downloading…', true);
       await menuApi.setStatusMuted(`Downloading TAR…`);
       const response = await new Promise((resolve, reject) => {
@@ -247,14 +254,27 @@
       URL.revokeObjectURL(blobUrl);
 
       setBtn('Done!', true);
-      setTimeout(() => { btn.innerHTML = original; btn.disabled = false; }, 1200);
+      setTimeout(() => {
+        btn.innerHTML = originalHTML;
+        btn.disabled = false;
+        // Unlock the button's size and styling
+        btn.style.width = '';
+        btn.style.justifyContent = '';
+      }, 1200);
 
     } catch (e) {
       console.error('Rumble Downloader TAR Error:', e);
       await menuApi.setStatusMuted(`Error: ${e && e.message ? e.message : e}`);
       setBtn('Error', true);
       btn.style.backgroundColor = '#b91c1c';
-      setTimeout(() => { btn.innerHTML = original; btn.disabled = false; btn.style.backgroundColor = ''; }, 3500);
+      setTimeout(() => {
+        btn.innerHTML = originalHTML;
+        btn.disabled = false;
+        btn.style.backgroundColor = '';
+        // Unlock the button's size and styling
+        btn.style.width = '';
+        btn.style.justifyContent = '';
+      }, 3500);
     }
   }
 
