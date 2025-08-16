@@ -39,6 +39,46 @@
   }
   const safeHtml = (s) => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
+  // ---------------- Simple per-video cache ----------------
+  const CACHE_NS = 'rud_cache_v1';
+  function getVideoIdFromString(str) {
+    if (!str) return null;
+    const m = str.match(/\/v([A-Za-z0-9]+)(?:[\/\.-]|$)/);
+    return m ? m[1] : null;
+  }
+  function getVideoId() {
+    let id = getVideoIdFromString(location.pathname);
+    if (id) return id;
+    const canonical = $('link[rel="canonical"]')?.href;
+    if (canonical) { id = getVideoIdFromString(canonical); if (id) return id; }
+    const og = $('meta[property="og:url"]')?.content || $('meta[property="og:video:url"]')?.content;
+    if (og) { id = getVideoIdFromString(og); if (id) return id; }
+    return null;
+  }
+  function getCacheKey() {
+    const vid = getVideoId();
+    return vid ? `${CACHE_NS}:${vid}` : `${CACHE_NS}:path:${location.pathname}`;
+  }
+  function loadCachedList() {
+    try {
+      const raw = localStorage.getItem(getCacheKey());
+      if (!raw) return null;
+      const parsed = JSON.parse(raw);
+      if (!parsed || !Array.isArray(parsed.items) || !parsed.items.length) return null;
+      return parsed.items;
+    } catch { return null; }
+  }
+  function saveCachedList(items) {
+    try {
+      if (!Array.isArray(items) || !items.length) return;
+      const payload = { savedAt: Date.now(), items };
+      localStorage.setItem(getCacheKey(), JSON.stringify(payload));
+    } catch { /* ignore */ }
+  }
+  function clearCacheForPage() {
+    try { localStorage.removeItem(getCacheKey()); } catch { }
+  }
+
   // ---------------- Embedded js-tar (very small) ----------------
   const untar = (() => {
     function TarHeader(buffer, offset) { this._buffer = buffer; this._offset = offset || 0; }
@@ -108,8 +148,8 @@
     return out;
   }
 
-  // ---------------- TAR download + combine to .ts OR extract AAC ----------------
-  async function processTarFile(url, btn, menuApi, title, mode = 'video') {
+  // ---------------- TAR download + combine to .ts ----------------
+  async function processTarFile(url, btn, menuApi, title) {
     const original = btn.innerHTML;
     const setBtn = (text, disabled = true) => {
       btn.disabled = disabled;
@@ -140,7 +180,7 @@
 
       // 2 GB soft-guard: browser memory often struggles beyond this
       const twoGB = 2 * 1024 * 1024 * 1024;
-      if (tarBuffer.byteLength >= twoGB && mode === 'video') {
+      if (tarBuffer.byteLength >= twoGB) {
         await menuApi.setStatusMuted(`Warning: ${formatBytes(tarBuffer.byteLength)}. Browser-side Combine often fails around ~2 GB.`);
       }
 
@@ -149,7 +189,7 @@
       // Map for segments
       const segmentFileMap = new Map(
         extracted
-          .filter(f => /\.(ts|aac|m4s)$/i.test(f.name))
+          .filter(f => /\.(ts|m4s)$/i.test(f.name))
           .map(f => [f.name, f.buffer])
       );
 
@@ -157,69 +197,33 @@
       const playlists = await findPlaylistsInTar(extracted);
       if (!playlists.length) throw new Error('No playlist (.m3u8/.m3u) found in TAR.');
 
-      // Prepare playlist candidates with info
+      // Choose the playlist with the most hits against present segments
+      let best = null;
       for (const p of playlists) {
-        const lines = p.text.split('\n').map(s => s.trim()).filter(Boolean);
+        const lines = p.text.split('\n').map(s => s.trim());
         const segs = lines.filter(s => s && !s.startsWith('#'));
-        p.segments = segs;
-        p.isFmp4 = /#EXT-X-MAP:/i.test(p.text) || /\.m4s(\?|$)/i.test(p.text);
-        p.hasAacSegments = segs.some(n => /\.aac(\?|$)/i.test(n));
-        // score by how many referenced segments exist
         let hits = 0;
         for (const n of segs) {
           if (segmentFileMap.has(n)) { hits++; continue; }
+          // nested folders inside tar: allow suffix match
           const found = Array.from(segmentFileMap.keys()).some(k => k.endsWith('/' + n));
           if (found) hits++;
         }
+        p.segments = segs;
         p.hits = hits;
+        p.isFmp4 = /#EXT-X-MAP:/i.test(p.text) || /\.m4s(\?|$)/i.test(p.text);
+        if (!best || p.hits > best.hits || (!best.hits && best.isFmp4 && !p.isFmp4)) best = p;
       }
+      if (!best || !best.segments.length) throw new Error('Playlist found, but no referenced segments present in TAR.');
+      if (best.isFmp4) throw new Error('This TAR uses fMP4 (.m4s) HLS. Browser-side “Combine” is not supported. Use the raw TAR download.');
 
-      const byHits = playlists.slice().sort((a, b) => b.hits - a.hits);
-      const bestVideo = byHits.find(p => !p.isFmp4 && !p.hasAacSegments);
-      const audioPL = byHits.find(p => p.hasAacSegments);
-
-      if (mode === 'audio') {
-        if (!audioPL) throw new Error('No AAC audio-only playlist found in TAR.');
-        await menuApi.setStatusMuted(`Extracting AAC ${audioPL.hits}/${audioPL.segments.length}…`);
-        setBtn('Audio…', true);
-        const ordered = [];
-        let totalSize = 0;
-        for (const name of audioPL.segments) {
-          let key = segmentFileMap.has(name) ? name : Array.from(segmentFileMap.keys()).find(k => k.endsWith('/' + name));
-          if (!key) throw new Error(`Missing AAC segment in TAR: ${name}`);
-          const u8 = new Uint8Array(segmentFileMap.get(key));
-          ordered.push(u8); totalSize += u8.byteLength;
-        }
-        const combined = new Uint8Array(totalSize);
-        let off = 0;
-        for (const seg of ordered) { combined.set(seg, off); off += seg.length; }
-        await menuApi.setStatusMuted(`Done. Final audio size: ${formatBytes(totalSize)}.`);
-        const blob = new Blob([combined], { type: 'audio/aac' });
-        const blobUrl = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = blobUrl;
-        a.download = filenameWithExt(title, 'audio', '.aac');
-        document.body.appendChild(a); a.click(); document.body.removeChild(a);
-        URL.revokeObjectURL(blobUrl);
-        setBtn('Done!', true);
-        setTimeout(() => { btn.innerHTML = original; btn.disabled = false; }, 1200);
-        return;
-      }
-
-      if (!bestVideo || !bestVideo.segments.length) {
-        if (byHits[0]?.isFmp4) {
-          throw new Error('This TAR uses fMP4 (.m4s) HLS. Browser-side Combine is not supported. Use the raw TAR download.');
-        }
-        throw new Error('Playlist found, but no referenced .ts segments present in TAR.');
-      }
-
-      await menuApi.setStatusMuted(`Combining ${bestVideo.hits}/${bestVideo.segments.length} segments…`);
+      await menuApi.setStatusMuted(`Combining ${best.hits}/${best.segments.length} segments…`);
       setBtn('Combining…', true);
 
       // Build ordered segment list
       const ordered = [];
       let totalSize = 0;
-      for (const name of bestVideo.segments) {
+      for (const name of best.segments) {
         let key = segmentFileMap.has(name) ? name : Array.from(segmentFileMap.keys()).find(k => k.endsWith('/' + name));
         if (!key) throw new Error(`Missing segment in TAR: ${name}`);
         const u8 = new Uint8Array(segmentFileMap.get(key));
@@ -388,20 +392,6 @@
     return Array.from(out);
   }
 
-  function getVideoIdFromString(str) {
-    if (!str) return null;
-    const m = str.match(/\/v([A-Za-z0-9]+)(?:[\/\.-]|$)/);
-    return m ? m[1] : null;
-  }
-  function getVideoId() {
-    let id = getVideoIdFromString(location.pathname);
-    if (id) return id;
-    const canonical = $('link[rel="canonical"]')?.href;
-    if (canonical) { id = getVideoIdFromString(canonical); if (id) return id; }
-    const og = $('meta[property="og:url"]')?.content || $('meta[property="og:video:url"]')?.content;
-    if (og) { id = getVideoIdFromString(og); if (id) return id; }
-    return null;
-  }
   function parseFromMp4Url(mp4Url) {
     try {
       const u = new URL(mp4Url, location.href);
@@ -466,26 +456,20 @@
   }
 
   async function fetchEmbedMeta() {
-    // Best-effort: try to scrape JSON blobs the embed script ships with
-    // Returns { fps: number|undefined, bitrateKbps: number|undefined }
     try {
-      // First, scan inline JSON in DOM
       for (const s of $all('script[type="application/ld+json"], script')) {
         const text = (s.textContent || '').slice(0, 500000);
         if (!/"fps"|"frameRate"|"bitrate"/i.test(text)) continue;
         let fps, bitrateKbps;
-        // Try simple regex matches
         let m = text.match(/"fps"\s*:\s*([0-9]{1,3}(?:\.[0-9]+)?)/i) || text.match(/"frameRate"\s*:\s*"?([0-9]{1,3}(?:\.[0-9]+)?)"?/i);
         if (m) fps = Math.round(parseFloat(m[1]));
         let b = text.match(/"bitrate"\s*:\s*([0-9]{2,7})/i) || text.match(/"bitrateKbps"\s*:\s*([0-9]{2,7})/i);
         if (b) {
           const val = parseInt(b[1], 10);
-          // Heuristic: values above 100000 probably bps
           bitrateKbps = val > 200000 ? Math.round(val / 1000) : val;
         }
         if (fps || bitrateKbps) return { fps, bitrateKbps };
       }
-      // Next, try captured embedJS URLs
       for (const u of Array.from(embedSeen)) {
         const text = await new Promise((resolve) => {
           GM_xmlhttpRequest({
@@ -510,7 +494,6 @@
   }
 
   async function harvestUrlsFromEmbedAll() {
-    // Reserved for future enhancements if we want to introspect embed JSON deeply
     return [];
   }
 
@@ -538,7 +521,7 @@
     return parts;
   }
 
-  async function probeTargetsFast(targets, menuApi, btn) {
+  async function probeTargetsFast(targets, menuApi) {
     const probedUrls = new Set(), satisfied = new Set();
     let done = 0, okCount = 0;
     const total = targets.length;
@@ -580,7 +563,7 @@
     return okCount;
   }
 
-  // ---------------- UI (compact with center metadata and audio) ----------------
+  // ---------------- UI (compact with center metadata; popup to the right) ----------------
   GM_addStyle(`
     :root {
       --rud-font-sans: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
@@ -623,16 +606,16 @@
     #rud-download-btn .rud-btn-text { position: relative; z-index: 1; display: inline-flex; align-items: center; gap: 0.45rem; }
 
     .rud-panel {
-      position: fixed; left: 0; top: 0;
-      width: 540px; max-width: 94vw;
+      position: fixed;
       background: var(--rud-bg-primary); color: var(--rud-text-primary);
       border: 1px solid var(--rud-border-color); border-radius: 10px;
       box-shadow: var(--rud-shadow); overflow: hidden; display: none;
       pointer-events: auto; backdrop-filter: var(--rud-backdrop-blur); -webkit-backdrop-filter: var(--rud-backdrop-blur);
-      opacity: 0; transform: translateY(-8px) scale(0.985);
+      opacity: 0; transform: translateX(-8px) scale(0.985);
       transition: opacity 0.18s var(--rud-ease-out), transform 0.18s var(--rud-ease-out);
+      width: 540px; max-width: 94vw;
     }
-    .rud-panel.open { display: flex; flex-direction: column; opacity: 1; transform: translateY(0) scale(1); }
+    .rud-panel.open { display: flex; flex-direction: column; opacity: 1; transform: translateX(0) scale(1); }
 
     .rud-header { display: flex; align-items: center; padding: 8px 10px; border-bottom: 1px solid var(--rud-border-color); }
     .rud-status { flex-grow: 1; font-size: 12px; color: var(--rud-text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -728,7 +711,6 @@
         <div class="rud-footer" style="display:none;">
           <div class="rud-tar-note">
             <div><strong>Note:</strong> Browser-side “Combine” often fails around ~2 GB. If the archive is that large, prefer the raw TAR download.</div>
-            <div>Tip: If the TAR includes an audio-only HLS with .aac segments, use the <strong>Audio</strong> button to extract a single .aac file.</div>
           </div>
         </div>`;
       portal.appendChild(menu);
@@ -761,9 +743,10 @@
         const rect = btn.getBoundingClientRect();
         const w = menu.offsetWidth;
         const gap = 8;
-        let left = Math.round(rect.left + (rect.width / 2) - (w / 2));
+        // Place to the right of the button, aligned top edges
+        let left = Math.round(rect.right + gap);
         left = Math.max(12, Math.min(left, window.innerWidth - 12 - w));
-        const top = Math.round(rect.bottom + gap);
+        const top = Math.round(rect.top);
         menu.style.left = `${left}px`;
         menu.style.top = `${top}px`;
       });
@@ -831,42 +814,46 @@
         const item = document.createElement('div');
         item.className = 'rud-item';
         item.dataset.type = type;
+
+        // Actions:
+        // - For TAR rows: TAR link (left), Combine (middle), Copy (right)  [swapped positions per request]
+        // - For MP4/Audio rows: DL link (left), Copy (right)
         const actions =
           type === 'tar'
             ? `
-              <button type="button" class="rud-combine-btn rud-dl-link" data-url="${url}" data-rud-tooltip="Extract + Combine to .ts">
-                <svg fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h6m-6 4h6m-6 4h6"></path></svg>
-                <span>Combine</span>
-              </button>
-              <button type="button" class="rud-aac-btn rud-second" data-url="${url}" data-rud-tooltip="Extract audio-only .aac if present">
-                <svg fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19V6l12-2v13"></path></svg>
-                <span>Audio</span>
-              </button>
               <a href="${url}" target="_blank" rel="noopener" download="${fname}" class="rud-dl-link" data-rud-tooltip="Download .tar">
                 <svg fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
                 <span>Tar</span>
-              </a>`
+              </a>
+              <button type="button" class="rud-combine-btn rud-second" data-url="${url}" data-rud-tooltip="Extract + Combine to .ts">
+                <svg fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h6m-6 4h6m-6 4h6"></path></svg>
+                <span>Combine</span>
+              </button>
+              <button type="button" class="rud-copy-btn" data-url="${url}" data-rud-tooltip="Copy Link">
+                <svg fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2z"></path></svg>
+                <span>Copy</span>
+              </button>`
             : `
               <a href="${url}" target="_blank" rel="noopener" download="${fname}" class="rud-dl-link" data-rud-tooltip="Download">
                 <svg fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
                 <span>DL</span>
-              </a>`;
+              </a>
+              <button type="button" class="rud-copy-btn" data-url="${url}" data-rud-tooltip="Copy Link">
+                <svg fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2z"></path></svg>
+                <span>Copy</span>
+              </button>`;
 
-        // Metadata column centered between badge and size
         item.innerHTML = `
           <div class="rud-item-res">${safeHtml(label)}</div>
           <div class="rud-item-badge">${safeHtml(type)}</div>
           <div class="rud-item-meta">${safeHtml(mtxt || '')}</div>
           <div class="rud-item-size">${formatBytes(size)}</div>
           <div class="rud-item-actions">
-            <button type="button" class="rud-copy-btn" data-url="${url}" data-rud-tooltip="Copy Link">
-              <svg fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path></svg>
-              <span>Copy</span>
-            </button>
             ${actions}
           </div>`;
 
-        item.querySelector('.rud-copy-btn').addEventListener('click', (e) => {
+        const copyBtn = item.querySelector('.rud-copy-btn');
+        copyBtn?.addEventListener('click', (e) => {
           const b = e.currentTarget;
           GM_setClipboard(b.dataset.url);
           const orig = b.dataset.rudTooltip;
@@ -877,14 +864,7 @@
         const combineBtn = item.querySelector('.rud-combine-btn');
         if (combineBtn) {
           combineBtn.addEventListener('click', (e) => {
-            processTarFile(e.currentTarget.dataset.url, e.currentTarget, menuApi, title, 'video');
-          });
-        }
-
-        const aacBtn = item.querySelector('.rud-aac-btn');
-        if (aacBtn) {
-          aacBtn.addEventListener('click', (e) => {
-            processTarFile(e.currentTarget.dataset.url, e.currentTarget, menuApi, title, 'audio');
+            processTarFile(e.currentTarget.dataset.url, e.currentTarget, menuApi, getVideoTitle());
           });
         }
         return item;
@@ -892,31 +872,46 @@
 
       const existing = byKey.get(key);
       if (existing) {
-        // choose the larger file size; if unknown sizes, prefer known size
         const oldSize = Number(existing.size) || 0;
         const newSize = Number(size) || 0;
         if (newSize > oldSize || (newSize && !oldSize)) {
           const newNode = buildItem();
           replaceNode(existing.node, newNode);
-          byKey.set(key, { node: newNode, url, size: newSize });
+          byKey.set(key, { node: newNode, url, size: newSize, meta: { fps: dl.fps, bitrate: dl.bitrate } });
         }
         return;
       }
 
       const item = buildItem();
-      byKey.set(key, { node: item, url, size: Number(size) || 0 });
+      byKey.set(key, { node: item, url, size: Number(size) || 0, meta: { fps: dl.fps, bitrate: dl.bitrate } });
 
-      // Insert by rank (resolution), Audio rows go to bottom
       const rank = type === 'audio' ? -1 : tokenRank(extractTokenFromUrl(url) || '');
       let placed = false;
       for (const child of r.listEl.children) {
-        const childUrl = child.querySelector('.rud-copy-btn')?.getAttribute('data-url') || '';
+        const childUrl = child.querySelector('.rud-item-actions .rud-dl-link, .rud-item-actions .rud-copy-btn')?.getAttribute('href') || child.querySelector('.rud-copy-btn')?.getAttribute('data-url') || '';
         const childType = child.getAttribute('data-type') || '';
         const childRank = childType === 'audio' ? -1 : tokenRank(extractTokenFromUrl(childUrl) || '');
         if (rank > childRank) { r.listEl.insertBefore(item, child); placed = true; break; }
       }
       if (!placed) r.listEl.appendChild(item);
       queueMicrotask(() => { maybeToggleFooter(); });
+    }
+
+    function exportListForCache() {
+      const out = [];
+      for (const [key, val] of byKey.entries()) {
+        const [labelLower, type] = key.split('|');
+        const label = labelLower === 'audio' ? 'Audio' : (labelLower.toUpperCase() === labelLower ? labelLower : labelLower);
+        out.push({
+          label,
+          type,
+          url: val.url,
+          size: val.size,
+          fps: val.meta?.fps,
+          bitrate: val.meta?.bitrate
+        });
+      }
+      return out;
     }
 
     const api = {
@@ -927,19 +922,31 @@
       showEmpty, hideEmpty,
       haveAny: () => byKey.size > 0,
       ensureVisible: async () => { if (!menu.classList.contains('open')) await open(); },
-      positionMenu
+      positionMenu,
+      exportListForCache
     };
     return api;
   }
 
-  // ---------------- Main click ----------------
+  // ---------------- Main click with caching ----------------
   async function onDownloadClick(btn) {
     const menuApi = createMenu(btn);
     await menuApi.ensureVisible();
+
+    // Try cache first
+    const cached = loadCachedList();
+    if (cached && cached.length) {
+      await menuApi.clearLists();
+      for (const it of cached) {
+        menuApi.addOrUpdate({ label: it.label, type: it.type, url: it.url, size: it.size, fps: it.fps, bitrate: it.bitrate });
+      }
+      await menuApi.setStatusMuted('Ready (cached).');
+      return; // near-instant reuse
+    }
+
     await menuApi.setStatusMuted('Preparing…');
     try {
       const all = await collectAllLinksVerbose();
-      // Load embed meta before rendering list
       EMBED_META = await fetchEmbedMeta();
       const parts = deriveParts(all);
 
@@ -951,7 +958,6 @@
         seenDirect.add(u);
         const tok = extractTokenFromUrl(u);
         const t = typeFromUrl(u);
-        // Filter out bogus token 'faa', allow audio rows as well
         if (t === 'audio' || ((tok || '').toLowerCase() !== 'faa')) {
           direct.push({ url: u, type: t, labelToken: (tok || '').toLowerCase(), origin: 'direct', pri: (hostScore(u) === 2 ? 0 : 4) });
         }
@@ -968,20 +974,29 @@
 
       if (!targets.length) {
         await menuApi.showEmpty('No candidates to probe. Play or seek the video, then click Download again.');
+        clearCacheForPage();
         return;
       }
 
-      await probeTargetsFast(targets, menuApi, btn);
+      await probeTargetsFast(targets, menuApi);
 
       await menuApi.setStatusMuted('Ready.');
+
+      // Save cache only after we fully processed the targets and have items
+      if (menuApi.haveAny()) {
+        const list = menuApi.exportListForCache();
+        if (list.length) saveCachedList(list);
+      }
+
       await menuApi.ensureVisible();
     } catch (e) {
       console.error('Rumble Downloader Error:', e);
       await menuApi.showEmpty(`An unexpected error occurred:<br>${e && (e.message || e)}`);
+      clearCacheForPage();
     }
   }
 
-  // ---------------- Mount button (bottom-right of your given container) ----------------
+  // ---------------- Mount button (module style) ----------------
   const ACTION_BAR_SELECTORS = [
     '.media-by-channel-actions-container.pr-8.mt-4.shrink-0.items-center.flex',
     '.media-by-channel-actions-container',
@@ -1004,8 +1019,24 @@
         container.appendChild(wrap);
 
         const menuApi = createMenu(btn);
+
+        // If cached exists, prime menu so first click is instant
+        const cached = loadCachedList();
+        if (cached && cached.length) {
+          menuApi.clearLists().then(() => {
+            cached.forEach(it => menuApi.addOrUpdate({ label: it.label, type: it.type, url: it.url, size: it.size, fps: it.fps, bitrate: it.bitrate }));
+            menuApi.setStatusMuted('Ready (cached).');
+          });
+        }
+
         btn.addEventListener('click', (ev) => {
           ev.stopPropagation();
+          // If already have entries, just toggle open/close
+          const cachedNow = loadCachedList();
+          if (cachedNow && cachedNow.length) {
+            if (!btn.disabled) menuApi.toggle();
+            return;
+          }
           if (menuApi.haveAny() && !btn.disabled) menuApi.toggle();
           else onDownloadClick(btn);
         }, { passive: true });
