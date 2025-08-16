@@ -37,6 +37,7 @@
     let i = 0, n = bytes; while (n >= 1024 && i < u.length - 1) { n /= 1024; i++; }
     return `${n.toFixed(n >= 10 ? 0 : 1)} ${u[i]}`;
   }
+  const safeHtml = (s) => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
   // ---------------- Embedded js-tar (very small) ----------------
   const untar = (() => {
@@ -107,8 +108,8 @@
     return out;
   }
 
-  // ---------------- TAR download + combine to .ts ----------------
-  async function processTarFile(url, btn, menuApi, title) {
+  // ---------------- TAR download + combine to .ts OR extract AAC ----------------
+  async function processTarFile(url, btn, menuApi, title, mode = 'video') {
     const original = btn.innerHTML;
     const setBtn = (text, disabled = true) => {
       btn.disabled = disabled;
@@ -120,7 +121,7 @@
       await menuApi.setStatusMuted(`Downloading TAR…`);
       const response = await new Promise((resolve, reject) => {
         GM_xmlhttpRequest({
-          method: 'GET', url, responseType: 'arraybuffer', timeout: 120000,
+          method: 'GET', url, responseType: 'arraybuffer', timeout: 180000,
           onprogress: (e) => {
             if (e.lengthComputable) {
               const pct = Math.max(1, Math.round((e.loaded / e.total) * 100));
@@ -137,6 +138,12 @@
       await menuApi.setStatusMuted(`Extracting TAR (${formatBytes(tarBuffer.byteLength)})…`);
       setBtn('Extracting…', true);
 
+      // 2 GB soft-guard: browser memory often struggles beyond this
+      const twoGB = 2 * 1024 * 1024 * 1024;
+      if (tarBuffer.byteLength >= twoGB && mode === 'video') {
+        await menuApi.setStatusMuted(`Warning: ${formatBytes(tarBuffer.byteLength)}. Browser-side Combine often fails around ~2 GB.`);
+      }
+
       const extracted = await untar(tarBuffer);
 
       // Map for segments
@@ -150,33 +157,69 @@
       const playlists = await findPlaylistsInTar(extracted);
       if (!playlists.length) throw new Error('No playlist (.m3u8/.m3u) found in TAR.');
 
-      // Choose the playlist with the most hits against present segments
-      let best = null;
+      // Prepare playlist candidates with info
       for (const p of playlists) {
-        const lines = p.text.split('\n').map(s => s.trim());
+        const lines = p.text.split('\n').map(s => s.trim()).filter(Boolean);
         const segs = lines.filter(s => s && !s.startsWith('#'));
+        p.segments = segs;
+        p.isFmp4 = /#EXT-X-MAP:/i.test(p.text) || /\.m4s(\?|$)/i.test(p.text);
+        p.hasAacSegments = segs.some(n => /\.aac(\?|$)/i.test(n));
+        // score by how many referenced segments exist
         let hits = 0;
         for (const n of segs) {
           if (segmentFileMap.has(n)) { hits++; continue; }
-          // nested folders inside tar: allow suffix match
           const found = Array.from(segmentFileMap.keys()).some(k => k.endsWith('/' + n));
           if (found) hits++;
         }
-        p.segments = segs;
         p.hits = hits;
-        p.isFmp4 = /#EXT-X-MAP:/i.test(p.text) || /\.m4s(\?|$)/i.test(p.text);
-        if (!best || p.hits > best.hits || (!best.hits && best.isFmp4 && !p.isFmp4)) best = p;
       }
-      if (!best || !best.segments.length) throw new Error('Playlist found, but no referenced segments present in TAR.');
-      if (best.isFmp4) throw new Error('This TAR uses fMP4 (.m4s) HLS. Browser-side “Combine” is not supported. Use the raw TAR download.');
 
-      await menuApi.setStatusMuted(`Combining ${best.hits}/${best.segments.length} segments…`);
+      const byHits = playlists.slice().sort((a, b) => b.hits - a.hits);
+      const bestVideo = byHits.find(p => !p.isFmp4 && !p.hasAacSegments);
+      const audioPL = byHits.find(p => p.hasAacSegments);
+
+      if (mode === 'audio') {
+        if (!audioPL) throw new Error('No AAC audio-only playlist found in TAR.');
+        await menuApi.setStatusMuted(`Extracting AAC ${audioPL.hits}/${audioPL.segments.length}…`);
+        setBtn('Audio…', true);
+        const ordered = [];
+        let totalSize = 0;
+        for (const name of audioPL.segments) {
+          let key = segmentFileMap.has(name) ? name : Array.from(segmentFileMap.keys()).find(k => k.endsWith('/' + name));
+          if (!key) throw new Error(`Missing AAC segment in TAR: ${name}`);
+          const u8 = new Uint8Array(segmentFileMap.get(key));
+          ordered.push(u8); totalSize += u8.byteLength;
+        }
+        const combined = new Uint8Array(totalSize);
+        let off = 0;
+        for (const seg of ordered) { combined.set(seg, off); off += seg.length; }
+        await menuApi.setStatusMuted(`Done. Final audio size: ${formatBytes(totalSize)}.`);
+        const blob = new Blob([combined], { type: 'audio/aac' });
+        const blobUrl = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = blobUrl;
+        a.download = filenameWithExt(title, 'audio', '.aac');
+        document.body.appendChild(a); a.click(); document.body.removeChild(a);
+        URL.revokeObjectURL(blobUrl);
+        setBtn('Done!', true);
+        setTimeout(() => { btn.innerHTML = original; btn.disabled = false; }, 1200);
+        return;
+      }
+
+      if (!bestVideo || !bestVideo.segments.length) {
+        if (byHits[0]?.isFmp4) {
+          throw new Error('This TAR uses fMP4 (.m4s) HLS. Browser-side Combine is not supported. Use the raw TAR download.');
+        }
+        throw new Error('Playlist found, but no referenced .ts segments present in TAR.');
+      }
+
+      await menuApi.setStatusMuted(`Combining ${bestVideo.hits}/${bestVideo.segments.length} segments…`);
       setBtn('Combining…', true);
 
       // Build ordered segment list
       const ordered = [];
       let totalSize = 0;
-      for (const name of best.segments) {
+      for (const name of bestVideo.segments) {
         let key = segmentFileMap.has(name) ? name : Array.from(segmentFileMap.keys()).find(k => k.endsWith('/' + name));
         if (!key) throw new Error(`Missing segment in TAR: ${name}`);
         const u8 = new Uint8Array(segmentFileMap.get(key));
@@ -211,13 +254,14 @@
     }
   }
 
-  // ---------------- Probing pipeline (find MP4/TAR candidates) ----------------
+  // ---------------- Probing pipeline (find MP4/TAR/AUDIO candidates) ----------------
   const CDN_HOST = 'https://hugh.cdn.rumble.cloud';
   const TOKEN_LABELS = { haa: '1080p', gaa: '720p', caa: '480p', baa: '360p', oaa: '240p' };
   const TOKENS = ['haa', 'gaa', 'caa', 'baa', 'oaa'];
   const PROBE_CONCURRENCY = 6;
   const COLLECTION_GRACE_MS = 3000;
   const COLLECTION_TICK_MS = 300;
+  let EMBED_META = null; // { fps, bitrateKbps }
 
   function tokenToLabel(t) {
     const low = (t || '').toLowerCase();
@@ -230,7 +274,11 @@
       default: return 0;
     }
   }
-  function typeFromUrl(u) { return /\.tar(\?|$)/i.test(u) ? 'tar' : 'mp4'; }
+  function typeFromUrl(u) {
+    if (/\.tar(\?|$)/i.test(u)) return 'tar';
+    if (/\.(aac|m4a)(\?|$)/i.test(u)) return 'audio';
+    return 'mp4';
+  }
   function extractTokenFromUrl(u) { const m = u.match(/\.([A-Za-z]{3})(?:\.rec)?\.(?:mp4|tar)\b/i); return m ? m[1] : null; }
   function hostScore(u) { try { const h = new URL(u, location.href).host; return h.includes('hugh.cdn.rumble.cloud') ? 2 : 1; } catch { return 0; } }
 
@@ -268,7 +316,7 @@
       const u = new URL(url, location.href).href;
       if (/\/video\/[^\s"'<>]+\.(?:mp4|tar)\b/i.test(u)) captured.add(u);
       else if (/rumble\.com\/embedJS\//i.test(u)) embedSeen.add(u);
-      else if (/\.(?:m3u8|ts)\b/i.test(u)) captured.add(`__HINT__${u}`);
+      else if (/\.(?:m3u8|ts|aac|m4a)\b/i.test(u)) captured.add(`__HINT__${u}`);
       else if (/[?&]r_file=/.test(u)) {
         try { const qs = new URL(u).searchParams.get('r_file'); if (qs) captured.add(`__HINT__${qs}`); } catch { }
       }
@@ -300,8 +348,9 @@
     $all('[src],[href]').forEach(el => {
       const v = el.getAttribute('src') || el.getAttribute('href') || '';
       if (/\/video\/.+\.(?:mp4|tar)(?:\?|$)/i.test(v)) add(v);
+      if (/\.(?:aac|m4a)(?:\?|$)/i.test(v)) add(v);
       if (/rumble\.com\/embedJS\//i.test(v)) { try { embedSeen.add(new URL(v, location.href).href); } catch { } }
-      if (/\.(?:m3u8|ts)(?:\?|$)/i.test(v)) add(`__HINT__${v}`);
+      if (/\.(?:m3u8|ts|aac|m4a)(?:\?|$)/i.test(v)) add(`__HINT__${v}`);
       if (/[?&]r_file=/.test(v)) {
         try { const q = new URL(v, location.href).searchParams.get('r_file'); if (q) add(`__HINT__${q}`); } catch { }
       }
@@ -310,12 +359,13 @@
     $all('video,source').forEach(el => {
       const v = el.src || '';
       if (/\/video\/.+\.(?:mp4|tar)(?:\?|$)/i.test(v)) add(v);
-      if (/\.(?:m3u8|ts)(?:\?|$)/i.test(v)) add(`__HINT__${v}`);
+      if (/\.(?:aac|m4a)(?:\?|$)/i.test(v)) add(v);
+      if (/\.(?:m3u8|ts|aac|m4a)(?:\?|$)/i.test(v)) add(`__HINT__${v}`);
     });
 
     const reDL = /https?:\/\/[^\s"'<>]+\/video\/[^\s"'<>]+\.(?:mp4|tar)\b[^\s"'<>]*/gi;
     const reE = /https?:\/\/rumble\.com\/embedJS\/[^\s"'<>]+/gi;
-    const reH = /https?:\/\/[^\s"'<>]+\.(?:m3u8|ts)\b[^\s"'<>]*/gi;
+    const reH = /https?:\/\/[^\s"'<>]+\.(?:m3u8|ts|aac|m4a)\b[^\s"'<>]*/gi;
     for (const s of $all('script')) {
       const text = (s.textContent || '').slice(0, 300000);
       let m; while ((m = reDL.exec(text))) add(m[0]);
@@ -330,7 +380,7 @@
     while ((m = re2.exec(html))) add(m[0]);
     let e; const re2E = /https?:\/\/rumble\.com\/embedJS\/[^\s"'<>]+/gi;
     while ((e = re2E.exec(html))) embedSeen.add(e[0]);
-    let h; const re2H = /https?:\/\/[^\s"'<>]+\.(?:m3u8|ts)\b[^\s"'<>]*/gi;
+    let h; const re2H = /https?:\/\/[^\s"'<>]+\.(?:m3u8|ts|aac|m4a)\b[^\s"'<>]*/gi;
     while ((h = re2H.exec(html))) add(`__HINT__${h[0]}`);
 
     for (const u of captured) add(u);
@@ -415,9 +465,52 @@
     return out;
   }
 
+  async function fetchEmbedMeta() {
+    // Best-effort: try to scrape JSON blobs the embed script ships with
+    // Returns { fps: number|undefined, bitrateKbps: number|undefined }
+    try {
+      // First, scan inline JSON in DOM
+      for (const s of $all('script[type="application/ld+json"], script')) {
+        const text = (s.textContent || '').slice(0, 500000);
+        if (!/"fps"|"frameRate"|"bitrate"/i.test(text)) continue;
+        let fps, bitrateKbps;
+        // Try simple regex matches
+        let m = text.match(/"fps"\s*:\s*([0-9]{1,3}(?:\.[0-9]+)?)/i) || text.match(/"frameRate"\s*:\s*"?([0-9]{1,3}(?:\.[0-9]+)?)"?/i);
+        if (m) fps = Math.round(parseFloat(m[1]));
+        let b = text.match(/"bitrate"\s*:\s*([0-9]{2,7})/i) || text.match(/"bitrateKbps"\s*:\s*([0-9]{2,7})/i);
+        if (b) {
+          const val = parseInt(b[1], 10);
+          // Heuristic: values above 100000 probably bps
+          bitrateKbps = val > 200000 ? Math.round(val / 1000) : val;
+        }
+        if (fps || bitrateKbps) return { fps, bitrateKbps };
+      }
+      // Next, try captured embedJS URLs
+      for (const u of Array.from(embedSeen)) {
+        const text = await new Promise((resolve) => {
+          GM_xmlhttpRequest({
+            method: 'GET', url: u, timeout: 12000,
+            onload: (r) => resolve(r.responseText || ''),
+            onerror: () => resolve(''), ontimeout: () => resolve('')
+          });
+        });
+        if (!text) continue;
+        let fps, bitrateKbps;
+        let m = text.match(/"fps"\s*:\s*([0-9]{1,3}(?:\.[0-9]+)?)/i) || text.match(/"frameRate"\s*:\s*"?([0-9]{1,3}(?:\.[0-9]+)?)"?/i);
+        if (m) fps = Math.round(parseFloat(m[1]));
+        let b = text.match(/"bitrate"\s*:\s*([0-9]{2,7})/i) || text.match(/"bitrateKbps"\s*:\s*([0-9]{2,7})/i);
+        if (b) {
+          const val = parseInt(b[1], 10);
+          bitrateKbps = val > 200000 ? Math.round(val / 1000) : val;
+        }
+        if (fps || bitrateKbps) return { fps, bitrateKbps };
+      }
+    } catch { }
+    return { fps: undefined, bitrateKbps: undefined };
+  }
+
   async function harvestUrlsFromEmbedAll() {
-    // We don’t need the JSON details, just let DOM capture + candidate builder do the job
-    // This function kept for potential future enhancement
+    // Reserved for future enhancements if we want to introspect embed JSON deeply
     return [];
   }
 
@@ -450,7 +543,6 @@
     let done = 0, okCount = 0;
     const total = targets.length;
 
-    // Status: we keep it compact and muted; no counts line when finished
     await menuApi.setStatusMuted(`Scanning…`);
 
     const queue = targets.slice();
@@ -459,7 +551,7 @@
         const t = queue.shift();
         if (!t) break;
         const tok = (t.labelToken || extractTokenFromUrl(t.url) || '').toLowerCase();
-        const label = tokenToLabel(tok) || 'detected';
+        const label = tokenToLabel(tok) || (t.type === 'audio' ? 'Audio' : 'detected');
         const keyQT = `${tok}|${t.type}`;
         if (satisfied.has(keyQT) || probedUrls.has(t.url)) { done++; continue; }
         probedUrls.add(t.url);
@@ -475,7 +567,11 @@
           }
         }
         done++;
-        if (pr.ok) { okCount++; menuApi.addOrUpdate({ label, type: t.type, url: t.url, size: pr.size, bitrate: undefined, fps: undefined }); satisfied.add(keyQT); }
+        if (pr.ok) {
+          okCount++;
+          menuApi.addOrUpdate({ label, type: t.type, url: t.url, size: pr.size, bitrate: EMBED_META?.bitrateKbps, fps: EMBED_META?.fps });
+          satisfied.add(keyQT);
+        }
         await sleep(0);
       }
     }
@@ -484,7 +580,7 @@
     return okCount;
   }
 
-  // ---------------- UI (compact) ----------------
+  // ---------------- UI (compact with center metadata and audio) ----------------
   GM_addStyle(`
     :root {
       --rud-font-sans: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
@@ -512,7 +608,6 @@
     .rud-inline-wrap { position: relative; display: inline-flex; }
     .rud-inline-wrap.rud-right { margin-left: auto; }
 
-    /* Button: compact + right-aligned + spacing from neighbors */
     #rud-download-btn {
       position: relative; display: inline-flex; align-items: center; gap: 0.45rem; padding: 0.4rem 0.8rem;
       font-size: 13px; font-weight: 700; line-height: 1; letter-spacing: 0.02em;
@@ -527,10 +622,9 @@
     #rud-download-btn .rud-btn-fill { position: absolute; left: 0; top: 0; bottom: 0; width: 0%; background: rgba(255,255,255,0.2); transition: width .2s var(--rud-ease-out); pointer-events:none; }
     #rud-download-btn .rud-btn-text { position: relative; z-index: 1; display: inline-flex; align-items: center; gap: 0.45rem; }
 
-    /* Panel: narrower and tighter */
     .rud-panel {
       position: fixed; left: 0; top: 0;
-      width: 520px; max-width: 94vw;
+      width: 540px; max-width: 94vw;
       background: var(--rud-bg-primary); color: var(--rud-text-primary);
       border: 1px solid var(--rud-border-color); border-radius: 10px;
       box-shadow: var(--rud-shadow); overflow: hidden; display: none;
@@ -549,12 +643,12 @@
 
     .rud-body { max-height: 50vh; overflow-y: auto; }
     .rud-list { display: flex; flex-direction: column; padding: 4px; }
-    /* Compact items: one line, small gaps */
-    .rud-item { display: grid; grid-template-columns: 72px 48px 1fr auto; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 6px; }
+    .rud-item { display: grid; grid-template-columns: 72px 56px 1fr 88px auto; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 6px; }
     .rud-item + .rud-item { margin-top: 2px; }
     .rud-item:hover { background: var(--rud-bg-secondary); }
     .rud-item-res { font-weight: 800; font-size: 13px; color: var(--rud-text-primary); }
     .rud-item-badge { font-size: 10px; font-weight: 700; padding: 2px 6px; border-radius: 10px; background: var(--rud-bg-tertiary); color: var(--rud-text-secondary); text-transform: uppercase; text-align: center;}
+    .rud-item-meta { font-size: 11px; color: var(--rud-text-muted); text-align: center; white-space: nowrap; }
     .rud-item-size { font-size: 12px; color: var(--rud-text-muted); font-family: var(--rud-font-mono); margin-right: 8px; text-align: right; }
     .rud-item-actions { display: inline-flex; gap: 6px; }
     .rud-item-actions a, .rud-item-actions button { display: inline-flex; align-items: center; justify-content: center; gap: 4px; text-decoration: none; font-size: 12px; font-weight: 700; padding: 4px 8px; border-radius: 6px; transition: all .16s; }
@@ -562,6 +656,7 @@
     .rud-item-actions .rud-copy-btn:hover { background: var(--rud-border-color); color: var(--rud-text-primary); }
     .rud-item-actions .rud-dl-link { background: var(--rud-accent); color: var(--rud-accent-text); border: 1px solid var(--rud-accent); }
     .rud-item-actions .rud-dl-link:hover { background: var(--rud-accent-hover); }
+    .rud-item-actions .rud-second { background: var(--rud-bg-tertiary); color: var(--rud-text-secondary); border: 1px solid var(--rud-border-color); }
     .rud-item-actions svg { width: 13px; height: 13px; }
 
     .rud-footer { padding: 8px 10px; border-top: 1px solid var(--rud-border-color); background: var(--rud-bg-secondary); }
@@ -632,7 +727,8 @@
         </div>
         <div class="rud-footer" style="display:none;">
           <div class="rud-tar-note">
-            <div><strong>Tip:</strong> For very large archives, prefer the raw TAR download button.</div>
+            <div><strong>Note:</strong> Browser-side “Combine” often fails around ~2 GB. If the archive is that large, prefer the raw TAR download.</div>
+            <div>Tip: If the TAR includes an audio-only HLS with .aac segments, use the <strong>Audio</strong> button to extract a single .aac file.</div>
           </div>
         </div>`;
       portal.appendChild(menu);
@@ -686,7 +782,7 @@
     async function toggle() { if (menu.classList.contains('open')) await close(); else await open(); }
 
     async function setStatusMuted(text) {
-      refs().statusEl.innerHTML = `<span class="muted">${String(text).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]))}</span>`;
+      refs().statusEl.innerHTML = `<span class="muted">${safeHtml(text)}</span>`;
       await positionMenu();
     }
     async function showEmpty(message) {
@@ -714,14 +810,22 @@
       if (oldNode && oldNode.parentElement) oldNode.parentElement.replaceChild(newNode, oldNode);
     }
 
+    function metaText({ fps, bitrate }) {
+      const parts = [];
+      if (Number.isFinite(fps) && fps > 0) parts.push(`${fps} FPS`);
+      if (Number.isFinite(bitrate) && bitrate > 0) parts.push(`${bitrate} kbps`);
+      return parts.join(' · ');
+    }
+
     function addOrUpdate(dl) {
       const { label, type, url, size } = dl;
       if (!label || !type || !url) return;
       const r = refs();
       const key = `${label.toLowerCase()}|${type}`;
       const title = getVideoTitle();
-      const fname = filenameWithExt(title, label, url);
+      const fname = filenameWithExt(title, label === 'Audio' ? 'audio' : label, url);
       const menuApi = api;
+      const mtxt = metaText({ fps: dl.fps, bitrate: dl.bitrate });
 
       const buildItem = () => {
         const item = document.createElement('div');
@@ -734,6 +838,10 @@
                 <svg fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h6m-6 4h6m-6 4h6"></path></svg>
                 <span>Combine</span>
               </button>
+              <button type="button" class="rud-aac-btn rud-second" data-url="${url}" data-rud-tooltip="Extract audio-only .aac if present">
+                <svg fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19V6l12-2v13"></path></svg>
+                <span>Audio</span>
+              </button>
               <a href="${url}" target="_blank" rel="noopener" download="${fname}" class="rud-dl-link" data-rud-tooltip="Download .tar">
                 <svg fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
                 <span>Tar</span>
@@ -744,9 +852,11 @@
                 <span>DL</span>
               </a>`;
 
+        // Metadata column centered between badge and size
         item.innerHTML = `
-          <div class="rud-item-res">${label}</div>
-          <div class="rud-item-badge">${type}</div>
+          <div class="rud-item-res">${safeHtml(label)}</div>
+          <div class="rud-item-badge">${safeHtml(type)}</div>
+          <div class="rud-item-meta">${safeHtml(mtxt || '')}</div>
           <div class="rud-item-size">${formatBytes(size)}</div>
           <div class="rud-item-actions">
             <button type="button" class="rud-copy-btn" data-url="${url}" data-rud-tooltip="Copy Link">
@@ -767,7 +877,14 @@
         const combineBtn = item.querySelector('.rud-combine-btn');
         if (combineBtn) {
           combineBtn.addEventListener('click', (e) => {
-            processTarFile(e.currentTarget.dataset.url, e.currentTarget, menuApi, title);
+            processTarFile(e.currentTarget.dataset.url, e.currentTarget, menuApi, title, 'video');
+          });
+        }
+
+        const aacBtn = item.querySelector('.rud-aac-btn');
+        if (aacBtn) {
+          aacBtn.addEventListener('click', (e) => {
+            processTarFile(e.currentTarget.dataset.url, e.currentTarget, menuApi, title, 'audio');
           });
         }
         return item;
@@ -789,12 +906,13 @@
       const item = buildItem();
       byKey.set(key, { node: item, url, size: Number(size) || 0 });
 
-      // Insert by rank (resolution) high -> low
-      const rank = tokenRank(extractTokenFromUrl(url) || '');
+      // Insert by rank (resolution), Audio rows go to bottom
+      const rank = type === 'audio' ? -1 : tokenRank(extractTokenFromUrl(url) || '');
       let placed = false;
       for (const child of r.listEl.children) {
         const childUrl = child.querySelector('.rud-copy-btn')?.getAttribute('data-url') || '';
-        const childRank = tokenRank(extractTokenFromUrl(childUrl) || '');
+        const childType = child.getAttribute('data-type') || '';
+        const childRank = childType === 'audio' ? -1 : tokenRank(extractTokenFromUrl(childUrl) || '');
         if (rank > childRank) { r.listEl.insertBefore(item, child); placed = true; break; }
       }
       if (!placed) r.listEl.appendChild(item);
@@ -821,16 +939,22 @@
     await menuApi.setStatusMuted('Preparing…');
     try {
       const all = await collectAllLinksVerbose();
+      // Load embed meta before rendering list
+      EMBED_META = await fetchEmbedMeta();
       const parts = deriveParts(all);
 
-      const directRaw = all.filter(u => /\/video\/.+\.(?:mp4|tar)\b/i.test(u));
+      const directRaw = all.filter(u => /\/video\/.+\.(?:mp4|tar)\b/i.test(u) || /\.(?:aac|m4a)(?:\?|$)/i.test(u));
       const direct = [];
       const seenDirect = new Set();
       for (const u of directRaw) {
         if (seenDirect.has(u)) continue;
         seenDirect.add(u);
         const tok = extractTokenFromUrl(u);
-        if ((tok || '').toLowerCase() !== 'faa') direct.push({ url: u, type: typeFromUrl(u), labelToken: (tok || '').toLowerCase(), origin: 'direct', pri: (hostScore(u) === 2 ? 0 : 4) });
+        const t = typeFromUrl(u);
+        // Filter out bogus token 'faa', allow audio rows as well
+        if (t === 'audio' || ((tok || '').toLowerCase() !== 'faa')) {
+          direct.push({ url: u, type: t, labelToken: (tok || '').toLowerCase(), origin: 'direct', pri: (hostScore(u) === 2 ? 0 : 4) });
+        }
       }
 
       let generated = parts ? generateCandidates(parts).map(c => ({ ...c, labelToken: (c.labelToken || '').toLowerCase() })) : [];
@@ -849,9 +973,7 @@
 
       await probeTargetsFast(targets, menuApi, btn);
 
-      // Important: We do NOT post a “Found N options” header line to keep UI compact.
       await menuApi.setStatusMuted('Ready.');
-
       await menuApi.ensureVisible();
     } catch (e) {
       console.error('Rumble Downloader Error:', e);
@@ -861,9 +983,7 @@
 
   // ---------------- Mount button (bottom-right of your given container) ----------------
   const ACTION_BAR_SELECTORS = [
-    // Preferred: the exact container you provided; we append and push right
     '.media-by-channel-actions-container.pr-8.mt-4.shrink-0.items-center.flex',
-    // Fallbacks:
     '.media-by-channel-actions-container',
     '.media-by-actions-container',
     '.media-header__actions',
@@ -879,9 +999,9 @@
       if (container) {
         const btn = createButton();
         const wrap = document.createElement('span');
-        wrap.className = 'rud-inline-wrap rud-right'; // right-align inside flex row
+        wrap.className = 'rud-inline-wrap rud-right';
         wrap.appendChild(btn);
-        container.appendChild(wrap); // append at end, margin-left:auto pushes it to the far right
+        container.appendChild(wrap);
 
         const menuApi = createMenu(btn);
         btn.addEventListener('click', (ev) => {
