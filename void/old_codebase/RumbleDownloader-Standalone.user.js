@@ -1,6 +1,6 @@
 // ==UserScript==
-// @name         Rumble Universal Downloader — Premium UI Edition
-// @namespace    https://github.com/gemini-scripts/rumble-enhancement-suite
+// @name         Rumble Universal Downloader
+// @namespace    https://github.com/SysAdminDoc/RumbleEnhancementSuite
 // @version      5.0.0
 // @description  A refined Rumble downloader with a premium, modern UI. Features a clean, full-width layout, dark/light themes, enhanced user feedback, and copy-to-clipboard functionality. Built upon the original's robust DOM/Network/EmbedJS detection.
 // @author       Matthew Parker
