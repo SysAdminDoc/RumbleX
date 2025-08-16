@@ -1,9 +1,9 @@
 // ==UserScript==
 // @name         Rumble Enhancement Suite
-// @namespace    https://github.com/gemini-scripts/rumble-enhancement-suite
+// @namespace    https://github.com/SysAdminDoc/RumbleEnhancementSuite
 // @version      10.2
 // @description  A premium suite of tools to enhance Rumble.com, featuring a data-driven, 100% reliable video downloader, privacy controls, advanced stats, live chat enhancements, a professional UI, and layout controls.
-// @author       Gemini Professional Web Development
+// @author       Matthew Parker
 // @match        https://rumble.com/*
 // @exclude      https://rumble.com/user/*
 // @icon         https://www.google.com/s2/favicons?sz=64&domain=rumble.com
@@ -11,6 +11,8 @@
 // @grant        GM_getValue
 // @grant        GM_addStyle
 // @grant        GM.xmlHttpRequest
+// @grant        GM_xmlhttpRequest
+// @grant        GM_setClipboard
 // @grant        unsafeWindow
 // @require      https://ajax.googleapis.com/ajax/libs/jquery/3.7.1/jquery.min.js
 // @run-at       document-start
