@@ -6,7 +6,7 @@
 // @author       Matthew Parker
 // @match        https://rumble.com/*
 // @exclude      https://rumble.com/user/*
-// @icon         https://www.google.com/s2/favicons?sz=64&domain=rumble.com
+// @icon         https://rumble.com/i/favicon-v4.png
 // @grant        GM_setValue
 // @grant        GM_getValue
 // @grant        GM_addStyle
