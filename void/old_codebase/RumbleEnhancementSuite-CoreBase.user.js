@@ -15,6 +15,8 @@
 // @grant        GM_setClipboard
 // @grant        unsafeWindow
 // @require      https://ajax.googleapis.com/ajax/libs/jquery/3.7.1/jquery.min.js
+// @updateURL    https://github.com/SysAdminDoc/RumbleEnhancementSuite/raw/refs/heads/main/void/old_codebase/RumbleEnhancementSuite-CoreBase.user.js
+// @downloadURL  https://github.com/SysAdminDoc/RumbleEnhancementSuite/raw/refs/heads/main/void/old_codebase/RumbleEnhancementSuite-CoreBase.user.js
 // @run-at       document-start
 // ==/UserScript==
 

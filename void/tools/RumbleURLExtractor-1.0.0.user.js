@@ -23,8 +23,8 @@
 // @require      https://raw.githubusercontent.com/SysAdminDoc/RumbleEnhancementSuite/refs/heads/main/src/res-features.js
 // @require      https://raw.githubusercontent.com/SysAdminDoc/RumbleEnhancementSuite/refs/heads/main/src/res-ui.js
 // @require      https://raw.githubusercontent.com/SysAdminDoc/RumbleEnhancementSuite/refs/heads/main/src/res-downloader.js
-// @updateURL    https://github.com/SysAdminDoc/RumbleEnhancementSuite/raw/refs/heads/main/void/tools/Rumble%20URL%20Extractor-1.0.0.user.js
-// @downloadURL  https://github.com/SysAdminDoc/RumbleEnhancementSuite/raw/refs/heads/main/void/tools/Rumble%20URL%20Extractor-1.0.0.user.js
+// @updateURL    https://github.com/SysAdminDoc/RumbleEnhancementSuite/raw/refs/heads/main/void/tools/RumbleURLExtractor-1.0.0.user.js
+// @downloadURL  https://github.com/SysAdminDoc/RumbleEnhancementSuite/raw/refs/heads/main/void/tools/RumbleURLExtractor-1.0.0.user.js
 // @run-at       document-start
 // ==/UserScript==
 

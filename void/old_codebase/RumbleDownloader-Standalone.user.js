@@ -10,6 +10,8 @@
 // @grant        GM_addStyle
 // @grant        GM_setClipboard
 // @require      https://greasemonkey.github.io/gm4-polyfill/gm4-polyfill.js
+// @updateURL    https://github.com/SysAdminDoc/RumbleEnhancementSuite/raw/refs/heads/main/void/old_codebase/RumbleDownloader-Standalone.user.js
+// @downloadURL  https://github.com/SysAdminDoc/RumbleEnhancementSuite/raw/refs/heads/main/void/old_codebase/RumbleDownloader-Standalone.user.js
 // @connect      *
 // ==/UserScript==
 (function() {
