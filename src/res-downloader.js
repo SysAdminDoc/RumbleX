@@ -94,7 +94,6 @@
             const orderedSegments = [];
             let totalSize = 0;
             for (const name of segmentNames) {
-                // Support either exact match or path suffix match
                 const key = tsFiles.has(name) ? name : (Array.from(tsFiles.keys()).find(k => k.endsWith('/' + name)) || null);
                 if (key && tsFiles.has(key)) {
                     const buffer = tsFiles.get(key);
@@ -195,79 +194,138 @@
     }
 
     // ---------------- Metadata discovery ----------------
+    const EMBEDJS_URL_RE = /https:\/\/rumble\.com\/embedJS\/[^\s"'<>]+(?:\?|&)[^"'<>]*\brequest=video\b[^"'<>]*\bv=[^"'\s<>&]+/i;
 
-    // Very tolerant matcher: any embedJS URL containing request=video and v=... in any order.
-    const EMBED_URL_RE = /https:\/\/rumble\.com\/embedJS\/[^\s"'<>]+(?:\?|&)[^"'<>]*\brequest=video\b[^"'<>]*\bv=[^"'\s<>&]+/;
+    function extractVCodeFromUrl(u) {
+        if (!u) return null;
+        const m1 = u.match(/[?&]v=([a-z0-9]+)/i);
+        if (m1) return m1[1];
+        const m2 = u.match(/\/embed\/([a-z0-9]+)/i);
+        if (m2) return m2[1];
+        return null;
+    }
 
-    function scanForEmbedUrl() {
-        // 1) check <script> blocks (most reliable)
+    function buildEmbedJsUrlFromV(vcode) {
+        if (!vcode) return null;
+        // u3 is the common embed namespace. ver=2 is required for JSON. dref can be blank or rumble.com; both work.
+        return `https://rumble.com/embedJS/u3/?request=video&ver=2&v=${encodeURIComponent(vcode)}&ifr=0&dref=rumble.com`;
+        // Note: Rumble accepts both with and without dref domain.
+    }
+
+    function scanForEmbedJsUrlDirect() {
+        // 1) <script> inline content that already contains an embedJS URL
         const scripts = document.querySelectorAll('script');
         for (const script of scripts) {
             const txt = script.textContent;
             if (!txt) continue;
-            const m = txt.match(EMBED_URL_RE);
+            const m = txt.match(EMBEDJS_URL_RE);
             if (m && m[0]) return m[0];
         }
-        // 2) fallback: entire HTML
-        const m2 = document.documentElement.outerHTML.match(EMBED_URL_RE);
+        // 2) whole HTML
+        const m2 = document.documentElement.outerHTML.match(EMBEDJS_URL_RE);
         if (m2 && m2[0]) return m2[0];
 
-        // 3) Rumble sometimes sticks it in data attrs on the player iframe
+        // 3) embedJS in iframe src
         const iframe = document.querySelector('iframe[src*="embedJS"]');
         const src = iframe?.getAttribute('src') || iframe?.src;
-        if (src && EMBED_URL_RE.test(src)) return src;
+        if (src && EMBEDJS_URL_RE.test(src)) return src;
 
         return null;
     }
 
-    // Wait up to maxMs for the metadata URL, polling and also watching DOM insertions.
-    async function waitForMetadataUrl(maxMs = 15000) {
+    function tryDeriveEmbedJsUrlFromMeta() {
+        // Try og:video and twitter:player
+        const metaCandidates = [
+            document.querySelector('meta[property="og:video:url"]')?.content,
+            document.querySelector('meta[property="og:video"]')?.content,
+            document.querySelector('meta[name="twitter:player"]')?.content
+        ].filter(Boolean);
+
+        for (const u of metaCandidates) {
+            const v = extractVCodeFromUrl(u);
+            const built = buildEmbedJsUrlFromV(v);
+            if (built) return built;
+        }
+
+        // Try JSON-LD script blocks for "embedUrl"
+        const ldBlocks = document.querySelectorAll('script[type="application/ld+json"]');
+        for (const s of ldBlocks) {
+            const t = s.textContent?.trim();
+            if (!t) continue;
+            // Be forgiving: do a regex first to avoid JSON parse failures from trailing commas etc.
+            const m = t.match(/"embedUrl"\s*:\s*"([^"]+)"/i);
+            if (m && m[1]) {
+                const v = extractVCodeFromUrl(m[1]);
+                const built = buildEmbedJsUrlFromV(v);
+                if (built) return built;
+            }
+            try {
+                const obj = JSON.parse(t);
+                const urls = [];
+                if (obj && typeof obj === 'object') {
+                    if (obj.embedUrl) urls.push(obj.embedUrl);
+                    if (Array.isArray(obj)) {
+                        for (const it of obj) if (it && it.embedUrl) urls.push(it.embedUrl);
+                    }
+                }
+                for (const u2 of urls) {
+                    const v = extractVCodeFromUrl(u2);
+                    const built = buildEmbedJsUrlFromV(v);
+                    if (built) return built;
+                }
+            } catch { /* ignore ld+json parse hiccups */ }
+        }
+
+        // Try plain <iframe src="/embed/...">
+        const iframeEmbed = document.querySelector('iframe[src*="/embed/"]');
+        const iframeSrc = iframeEmbed?.getAttribute('src') || iframeEmbed?.src;
+        if (iframeSrc) {
+            const v = extractVCodeFromUrl(iframeSrc);
+            const built = buildEmbedJsUrlFromV(v);
+            if (built) return built;
+        }
+
+        return null;
+    }
+
+    async function waitForMetadataUrl(maxMs = 20000) {
         const start = Date.now();
 
-        // quick attempt first
-        let url = scanForEmbedUrl();
-        if (url) return url;
+        // Fast paths
+        let direct = scanForEmbedJsUrlDirect();
+        if (direct) return direct;
+        let derived = tryDeriveEmbedJsUrlFromMeta();
+        if (derived) return derived;
 
-        let resolver;
-        let rejecter;
+        // Observe DOM for late injections
+        let resolver, rejecter;
         const doneP = new Promise((res, rej) => { resolver = res; rejecter = rej; });
 
         const observer = new MutationObserver(() => {
-            const u = scanForEmbedUrl();
-            if (u) {
-                cleanup();
-                resolver(u);
-            }
+            direct = scanForEmbedJsUrlDirect();
+            if (direct) { cleanup(); resolver(direct); return; }
+            derived = tryDeriveEmbedJsUrlFromMeta();
+            if (derived) { cleanup(); resolver(derived); return; }
+            if (Date.now() - start >= maxMs) { cleanup(); rejecter(new Error('Timed out waiting for video data.')); }
         });
         observer.observe(document.documentElement, { childList: true, subtree: true });
 
-        const poll = async () => {
-            while (Date.now() - start < maxMs) {
-                url = scanForEmbedUrl();
-                if (url) {
-                    cleanup();
-                    resolver(url);
-                    return;
-                }
-                await new Promise(r => setTimeout(r, 250));
-            }
-            cleanup();
-            rejecter(new Error('Timed out waiting for video data.'));
-        };
+        const timer = setInterval(() => {
+            direct = scanForEmbedJsUrlDirect();
+            if (direct) { cleanup(); resolver(direct); return; }
+            derived = tryDeriveEmbedJsUrlFromMeta();
+            if (derived) { cleanup(); resolver(derived); return; }
+            if (Date.now() - start >= maxMs) { cleanup(); rejecter(new Error('Timed out waiting for video data.')); }
+        }, 250);
 
-        const timer = setTimeout(() => {
-            // timeout guard, in case poll loop was interrupted
-            cleanup();
-            rejecter(new Error('Timed out waiting for video data.'));
-        }, maxMs + 250);
+        const hardTimeout = setTimeout(() => { cleanup(); rejecter(new Error('Timed out waiting for video data.')); }, maxMs + 500);
 
         function cleanup() {
-            clearTimeout(timer);
+            clearInterval(timer);
+            clearTimeout(hardTimeout);
             observer.disconnect();
         }
 
-        // fire and wait
-        poll();
         return doneP;
     }
 
@@ -275,7 +333,6 @@
         if (!url) {
             throw new Error("Video metadata URL could not be found on this page.");
         }
-        // Some environments like to see a Referer; send it. Also extend timeout.
         const referer = location.href;
 
         const data = await new Promise((resolve, reject) => {
@@ -284,8 +341,6 @@
                 url,
                 headers: {
                     'Accept': 'application/json, */*;q=0.1',
-                    // Note: GM_xmlhttpRequest ignores forbidden headers set by the page itself,
-                    // but user scripts can usually set Referer.
                     'Referer': referer
                 },
                 timeout: 30000,
@@ -400,7 +455,7 @@
       --rud-ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
     }
     #rud-portal.rud-dark {
-      --rud-bg-primary: #111827; --rud-bg-secondary: #1f2937; --rud-bg-terTIARY: #374151;
+      --rud-bg-primary: #111827; --rud-bg-secondary: #1f2937; --rud-bg-tertiary: #374151;
       --rud-text-primary: #f9fafb; --rud-text-secondary: #d1d5db; --rud-text-muted: #9ca3af;
       --rud-border-color: #374151;
       --rud-accent: #22c55e; --rud-accent-hover: #16a34a; --rud-accent-text: #ffffff;
@@ -408,7 +463,7 @@
       --rud-backdrop-blur: blur(8px);
     }
     #rud-portal.rud-light {
-      --rud-bg-primary: #ffffff; --rud-bg-secondary: #f3f4f6; --rud-bg-terTIARY: #e5e7eb;
+      --rud-bg-primary: #ffffff; --rud-bg-secondary: #f3f4f6; --rud-bg-tertiary: #e5e7eb;
       --rud-text-primary: #111827; --rud-text-secondary: #374151; --rud-text-muted: #6b7280;
       --rud-border-color: #e5e7eb;
       --rud-accent: #16a34a; --rud-accent-hover: #15803d; --rud-accent-text: #ffffff;
@@ -461,12 +516,12 @@
     .rud-item + .rud-item { margin-top: 4px; }
     .rud-item:hover { background: var(--rud-bg-secondary); }
     .rud-item-res { font-weight: 700; font-size: 15px; color: var(--rud-text-primary); }
-    .rud-item-badge { font-size: 11px; font-weight: 600; padding: 3px 8px; border-radius: 12px; background: var(--rud-bg-terTIARY); color: var(--rud-text-secondary); text-transform: uppercase; text-align: center;}
+    .rud-item-badge { font-size: 11px; font-weight: 600; padding: 3px 8px; border-radius: 12px; background: var(--rud-bg-tertiary); color: var(--rud-text-secondary); text-transform: uppercase; text-align: center;}
     .rud-item-bitrate { font-size: 13px; color: var(--rud-text-muted); font-family: var(--rud-font-mono); white-space: nowrap; }
     .rud-item-size { font-size: 14px; color: var(--rud-text-secondary); font-family: var(--rud-font-mono); margin-left: auto; text-align: right; }
     .rud-item-actions { display: flex; gap: 8px; }
     .rud-item-actions a, .rud-item-actions button { display: flex; align-items: center; justify-content: center; gap: 6px; text-decoration: none; font-size: 13px; font-weight: 600; padding: 6px 12px; border-radius: 6px; transition: all .2s; }
-    .rud-item-actions .rud-copy-btn { background: var(--rud-bg-terTIARY); color: var(--rud-text-secondary); border: 1px solid var(--rud-border-color); cursor: pointer; }
+    .rud-item-actions .rud-copy-btn { background: var(--rud-bg-tertiary); color: var(--rud-text-secondary); border: 1px solid var(--rud-border-color); cursor: pointer; }
     .rud-item-actions .rud-copy-btn:hover { background: var(--rud-border-color); color: var(--rud-text-primary); }
     .rud-item-actions .rud-dl-link { background: var(--rud-accent); color: var(--rud-accent-text); border: 1px solid var(--rud-accent); }
     .rud-item-actions .rud-dl-link:hover { background: var(--rud-accent-hover); }
@@ -636,7 +691,6 @@
         const reposition = debounce(() => { if (menu.classList.contains('open')) { positionMenu(); adjustSpacer(); } }, 50);
         window.addEventListener('scroll', reposition, { passive: true });
         window.addEventListener('resize', reposition, { passive: true });
-        // We do not add any touchstart/touchmove listeners; keeping us out of scroll-blocking paths.
 
         async function open() {
             if (!menu.classList.contains('open')) {
@@ -777,8 +831,7 @@
         setButtonState(btn, 'Loading...', true);
 
         try {
-            // New: patiently wait for Rumble to inject the embed URL
-            const metadataUrl = await waitForMetadataUrl(15000);
+            const metadataUrl = await waitForMetadataUrl(20000);
             const downloads = await fetchVideoMetadata(metadataUrl);
             await menuApi.clearLists();
             
