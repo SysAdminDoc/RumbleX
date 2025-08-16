@@ -2,7 +2,7 @@
 // @name         Rumble Enhancement Suite
 // @namespace    https://github.com/SysAdminDoc/RumbleEnhancementSuite
 // @version      11.6-modular
-// @description  A premium suite of tools to enhance Rumble.com, featuring a data-driven, video downloader, privacy controls, advanced stats, live chat enhancements, a professional UI, and layout controls.
+// @description  A premium suite of tools to enhance Rumble.com, featuring a downloader, privacy controls, live chat enhancements, a professional UI, and layout controls.
 // @author       Matthew Parker
 // @match        https://rumble.com/*
 // @exclude      https://rumble.com/user/*
