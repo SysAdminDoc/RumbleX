@@ -31,11 +31,14 @@ function defineFeatures(core) {
         },
         // --- NAVIGATION ---
         {
+{
             id: 'autoHideHeader',
             name: 'Auto-hide Header',
             description: 'Fades the header out. It fades back in when you move your cursor to the top of the page.',
             newCategory: 'Navigation',
+            page: 'video', // Only applies to video pages
             init() {
+                if (!location.pathname.startsWith('/v')) return; // Ensure it only runs on video pages
                 this.handler = (e) => {
                     if (e.clientY < 80) { // Top trigger zone
                         document.body.classList.add('res-header-visible');
