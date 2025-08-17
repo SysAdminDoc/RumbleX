@@ -31,11 +31,17 @@ function defineUI(core) {
                         categoryFeatures.filter(f => f.subCategory === subCat).forEach(f => panesHTML += buildSettingRow(f));
                     });
                 } else {
-                    categoryFeatures.forEach(f => panesHTML += buildSettingRow(f));
+                    categoryFeatures.forEach(f => {
+                        panesHTML += buildSettingRow(f);
+                        // Inject blocker management UI directly after its corresponding toggle
+                        if (f.id === 'commentBlocking') {
+                            panesHTML += buildBlockerManagementUI('comment');
+                        }
+                        if (f.id === 'liveChatBlocking') {
+                            panesHTML += buildBlockerManagementUI('livechat');
+                        }
+                    });
                 }
-
-                if (cat === 'Video Comments') panesHTML += buildBlockerManagementUI('comment');
-                if (cat === 'Live Chat') panesHTML += buildBlockerManagementUI('livechat');
             }
             panesHTML += `</div>`;
         });
@@ -57,7 +63,7 @@ function defineUI(core) {
                 <div class="res-settings-footer">
                     <div class="res-footer-left">
                         <a href="https://github.com/SysAdminDoc/RumbleX" target="_blank" class="res-github-link" title="View on GitHub">${ICONS.github}</a>
-                        <span class="res-version" title="Keyboard Shortcut: Ctrl+Alt+R">v11.9</span>
+                        <span class="res-version" title="Keyboard Shortcut: Ctrl+Alt+R">v12.0</span>
                     </div>
                     <div class="res-footer-right">
                         <div class="res-button-group">

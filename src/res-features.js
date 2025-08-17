@@ -76,39 +76,49 @@ function defineFeatures(core) {
             newCategory: 'Navigation',
             init() {
                 const css = `
-                    body.res-collapse-nav-active .main-menu-toggle { 
-                        display: none !important; 
-                    }
-                    body.res-collapse-nav-active nav.navs {
-                        position: fixed !important; top: 0; left: 0;
-                        transform: translateX(-100%);
-                        transition: transform 0.3s ease-in-out, box-shadow 0.3s ease-in-out;
-                        z-index: 10000;
-                        height: 100vh;
-                        visibility: visible !important; /* Override Rumble's inline style */
-                        opacity: 1 !important;
-                        pointer-events: none; /* Prevent interaction when hidden */
+                    body.res-collapse-nav-active .main-menu-toggle {
+                        display: none !important;
                     }
                     body.res-collapse-nav-active main.nav--transition {
                         margin-left: 0 !important;
                     }
-                    #res-nav-sidebar-trigger {
-                        position: fixed; top: 0; left: 0; width: 20px; height: 100vh; z-index: 9999;
+                    #res-nav-container {
+                        position: fixed;
+                        top: 0;
+                        left: 0;
+                        height: 100vh;
+                        width: 276px; /* Nav width (256px) + Trigger area (20px) */
+                        z-index: 10000;
+                        transform: translateX(-256px); /* Hide the nav part, leaving trigger area */
+                        transition: transform 0.3s ease-in-out;
                     }
-                    #res-nav-sidebar-trigger:hover + nav.navs,
-                    body.res-collapse-nav-active nav.navs:hover {
+                    #res-nav-container:hover {
                         transform: translateX(0);
+                    }
+                    body.res-collapse-nav-active nav.navs {
+                        position: absolute !important; /* Positioned inside the container */
+                        top: 0 !important;
+                        left: 0 !important;
+                        width: 256px !important;
+                        height: 100vh !important;
+                        display: block !important;
+                        visibility: visible !important;
+                        opacity: 1 !important;
+                        transform: none !important; /* No separate transform needed */
                         box-shadow: 10px 0 30px -10px rgba(0,0,0,0.5);
-                        pointer-events: auto; /* Allow interaction when visible */
                     }
                 `;
                 styleManager.inject(this.id, css);
                 $('body').addClass('res-collapse-nav-active');
-                if ($('#res-nav-sidebar-trigger').length === 0) {
-                    // Insert trigger div right before the nav element
-                    $('nav.navs').before('<div id="res-nav-sidebar-trigger"></div>');
+
+                // Wrap the nav in our hover container if it's not already
+                if ($('#res-nav-container').length === 0) {
+                    const $nav = $('nav.navs');
+                    if ($nav.length) {
+                        $nav.wrap('<div id="res-nav-container"></div>');
+                    }
                 }
-                // Force Rumble's menu to be considered "closed" so it doesn't block the page
+                // Force Rumble's menu state to be "closed" so it doesn't block page content
                 if (window.mainMenu && typeof window.mainMenu.close === 'function') {
                     window.mainMenu.close();
                 }
@@ -117,7 +127,10 @@ function defineFeatures(core) {
             destroy() {
                 styleManager.remove(this.id);
                 $('body').removeClass('res-collapse-nav-active');
-                $('#res-nav-sidebar-trigger').remove();
+                const $nav = $('nav.navs');
+                if ($nav.length && $nav.parent().is('#res-nav-container')) {
+                    $nav.unwrap(); // Remove the container
+                }
             }
         },
         {
@@ -125,7 +138,7 @@ function defineFeatures(core) {
             name: 'Hide Navigation Sidebar Completely',
             description: 'Completely hides the left navigation sidebar and its toggle icon in the header.',
             newCategory: 'Navigation',
-            css: '.main-menu-toggle, nav.navs { display: none !important; } main.nav--transition { margin-left: 0 !important; }'
+            css: '.main-menu-toggle, nav.navs, #res-nav-container { display: none !important; } main.nav--transition { margin-left: 0 !important; }'
         },
         {
             id: 'logoLinksToSubscriptions',
@@ -219,7 +232,7 @@ function defineFeatures(core) {
             page: 'video',
             _liveObserver: null,
             _resizeListener: null,
-            _standardCss: `body.res-full-width-player nav.navs, body.res-full-width-player aside.media-page-related-media-desktop-sidebar, body.res-full-width-player #player-spacer { display: none !important; } body.res-full-width-player main.nav--transition { margin-left: 0 !important; } body.res-full-width-player .main-and-sidebar { max-width: 100% !important; padding: 0 !important; margin: 0 !important; } body.res-full-width-player .main-content, body.res-full-width-player .media-container { width: 100% !important; max-width: 100% !important; } body.res-full-width-player .video-player, body.res-full-width-player [id^='vid_v'] { width: 100vw !important; height: calc(100vw * 9 / 16) !important; max-height: 100vh; } body.res-full-width-player #videoPlayer video { object-fit: contain !important; }`,
+            _standardCss: `body.res-full-width-player nav.navs, body.res-full-width-player aside.media-page-related-media-desktop-sidebar, body.res-full-width-player #player-spacer, body.res-full-width-player #res-nav-container { display: none !important; } body.res-full-width-player main.nav--transition { margin-left: 0 !important; } body.res-full-width-player .main-and-sidebar { max-width: 100% !important; padding: 0 !important; margin: 0 !important; } body.res-full-width-player .main-content, body.res-full-width-player .media-container { width: 100% !important; max-width: 100% !important; } body.res-full-width-player .video-player, body.res-full-width-player [id^='vid_v'] { width: 100vw !important; height: calc(100vw * 9 / 16) !important; max-height: 100vh; } body.res-full-width-player #videoPlayer video { object-fit: contain !important; }`,
             _liveCss: `
               /* Main grid container for the two-column layout */
               body.res-live-two-col:not(.rumble-player--fullscreen) .main-and-sidebar {
@@ -469,6 +482,12 @@ function defineFeatures(core) {
         { id: 'hidePremiumJoinButtons', name: 'Hide Premium/Join Buttons', description: 'Hides the "Rumble Premium" and "Join" buttons.', newCategory: 'Video Buttons', css: 'button[hx-get*="premium-value-prop"], button[data-js="locals-subscription-button"] { display: none !important; }', page: 'video' },
 
         // --- VIDEO COMMENTS ---
+        { id: 'autoLoadComments', name: 'Auto Load More Comments', description: 'Automatically loads more comments as you scroll down.', newCategory: 'Video Comments',
+            init() { if (!location.pathname.startsWith('/v')) return; const isElementInViewport = (el) => { if (!el) return false; const rect = el.getBoundingClientRect(); return rect.top <= (window.innerHeight || document.documentElement.clientHeight); }; const scrollHandler = () => { const $button = $('li.show-more-comments > button'); if ($button.length && isElementInViewport($button[0])) $button.click(); }; $(window).on('scroll.autoLoadComments', scrollHandler); },
+            destroy() { $(window).off('scroll.autoLoadComments'); }
+        },
+        { id: 'moveReplyButton', name: 'Move Reply Button', description: 'Moves the reply button next to the like/dislike buttons.', newCategory: 'Video Comments', css: `.comment-actions-wrapper { display: flex; align-items: center; } .comment-actions-wrapper .comment-actions { margin-left: 12px; }`, page: 'video' },
+        { id: 'hideCommentReportLink', name: 'Hide Comment Report Link', description: 'Hides the "report" link on user comments.', newCategory: 'Video Comments', css: '.comments-action-report.comments-action { display: none !important; }', page: 'video' },
         {
             id: 'commentBlocking', name: 'Enable Comment Blocking', description: 'Adds a block button to comments and hides comments from blocked users.', newCategory: 'Video Comments', isManagement: true,
             async init() { if (!location.pathname.startsWith('/v')) return; appState.commentBlockedUsers = await settingsManager.getBlockedUsers('comment'); this.applyBlockedUsers(); this.setupObserver(); },
@@ -499,17 +518,59 @@ function defineFeatures(core) {
             },
             applyBlockedUsers() { if (appState.commentBlockedUsers.length === 0) { styleManager.remove(this.id); return; } const selector = appState.commentBlockedUsers.map(user => `li.comment-item[data-username="${user}"]`).join(', '); styleManager.inject(this.id, `${selector} { display: none !important; }`); },
             async blockUser(username) { if (!username || appState.commentBlockedUsers.includes(username)) return; appState.commentBlockedUsers.push(username); await settingsManager.saveBlockedUsers(appState.commentBlockedUsers, 'comment'); this.applyBlockedUsers(); createToast(`User "${username}" has been blocked.`); },
-            async unblockUser(username) { appState.commentBlockedUsers = appState.commentBlockedUsers.filter(u => u !== username); await settingsManager.saveBlockedUsers(appState.commentBlockedUsers, 'comment'); this.applyBlockedUsers(); $(`li.comment-item[data-username="${username}"]`).show(); createToast(`User "${username}" has been unblocked.`); populateBlockedUsersList('comment'); },
+            async unblockUser(username) {
+                appState.commentBlockedUsers = appState.commentBlockedUsers.filter(u => u !== username);
+                await settingsManager.saveBlockedUsers(appState.commentBlockedUsers, 'comment');
+                this.applyBlockedUsers();
+                $(`li.comment-item[data-username="${username}"]`).show();
+                createToast(`User "${username}" has been unblocked.`);
+                
+                // Immediately remove from settings panel UI
+                const $blockedItem = $(`.res-blocked-users-container[data-blocker-type="comment"] .res-blocked-user-item[data-username="${username.toLowerCase()}"]`);
+                if ($blockedItem.length > 0) {
+                    $blockedItem.remove();
+                    const $list = $('.res-blocked-users-container[data-blocker-type="comment"] .res-blocked-users-list');
+                    if ($list.children().length === 0) {
+                        $list.append('<div class="res-list-empty">No users blocked.</div>');
+                        $('.res-blocked-users-container[data-blocker-type="comment"] .res-unblock-all-btn').hide();
+                    }
+                }
+            },
             async unblockAllUsers() { appState.commentBlockedUsers = []; await settingsManager.saveBlockedUsers([], 'comment'); this.applyBlockedUsers(); createToast('All users have been unblocked.', 'success', 2000); populateBlockedUsersList('comment'); }
         },
-        { id: 'autoLoadComments', name: 'Auto Load More Comments', description: 'Automatically loads more comments as you scroll down.', newCategory: 'Video Comments',
-            init() { if (!location.pathname.startsWith('/v')) return; const isElementInViewport = (el) => { if (!el) return false; const rect = el.getBoundingClientRect(); return rect.top <= (window.innerHeight || document.documentElement.clientHeight); }; const scrollHandler = () => { const $button = $('li.show-more-comments > button'); if ($button.length && isElementInViewport($button[0])) $button.click(); }; $(window).on('scroll.autoLoadComments', scrollHandler); },
-            destroy() { $(window).off('scroll.autoLoadComments'); }
-        },
-        { id: 'moveReplyButton', name: 'Move Reply Button', description: 'Moves the reply button next to the like/dislike buttons.', newCategory: 'Video Comments', css: `.comment-actions-wrapper { display: flex; align-items: center; } .comment-actions-wrapper .comment-actions { margin-left: 12px; }`, page: 'video' },
-        { id: 'hideCommentReportLink', name: 'Hide Comment Report Link', description: 'Hides the "report" link on user comments.', newCategory: 'Video Comments', css: '.comments-action-report.comments-action { display: none !important; }', page: 'video' },
 
         // --- LIVE CHAT ---
+        {
+            id: 'cleanLiveChat', name: 'Clean Live Chat UI', description: 'Hides pinned messages, the header, and Rant buttons for a cleaner, more focused live chat experience.', newCategory: 'Live Chat', page: 'video',
+            css: `
+                /* Hide pinned messages and their container */
+                div.chat-pinned-ui__pinned-message-container,
+                div.chat__pinned-ui-container {
+                  display: none !important;
+                }
+
+                /* Hide the chat header and adjust the main chat area to fill the space */
+                div.chat--header {
+                  display: none !important;
+                }
+                section.chat.relative {
+                  margin-top: -71px !important;
+                  height: 715px !important;
+                }
+
+                /* Reposition the chat toggle button */
+                button.media-page-chat-container-toggle-btn {
+                  margin-top: 580px !important;
+                  margin-left: -48px !important;
+                }
+
+                /* Hide the Rants/actions section above the chat input and the user's avatar */
+                div.chat-message-form-section.chat-message-form-section-justify-between,
+                .chat-message-form-section .user-image {
+                  display: none !important;
+                }
+            `
+        },
         {
             id: 'liveChatBlocking', name: 'Enable Live Chat Blocking', description: 'Adds a block button to live chat messages and hides messages from blocked users.', newCategory: 'Live Chat', isManagement: true,
             async init() {
@@ -552,39 +613,24 @@ function defineFeatures(core) {
                 styleManager.inject('live-chat-block-css', `${selector} { display: none !important; }`);
             },
             async blockUser(username) { if (!username || appState.liveChatBlockedUsers.includes(username)) return; appState.liveChatBlockedUsers.push(username); await settingsManager.saveBlockedUsers(appState.liveChatBlockedUsers, 'livechat'); this.applyBlockedUsers(); createToast(`Live chat user "${username}" has been blocked.`); },
-            async unblockUser(username) { appState.liveChatBlockedUsers = appState.liveChatBlockedUsers.filter(u => u !== username); await settingsManager.saveBlockedUsers(appState.liveChatBlockedUsers, 'livechat'); this.applyBlockedUsers(); createToast(`Live chat user "${username}" has been unblocked.`); populateBlockedUsersList('livechat'); },
+            async unblockUser(username) {
+                appState.liveChatBlockedUsers = appState.liveChatBlockedUsers.filter(u => u !== username);
+                await settingsManager.saveBlockedUsers(appState.liveChatBlockedUsers, 'livechat');
+                this.applyBlockedUsers();
+                createToast(`Live chat user "${username}" has been unblocked.`);
+
+                // Immediately remove from settings panel UI
+                const $blockedItem = $(`.res-blocked-users-container[data-blocker-type="livechat"] .res-blocked-user-item[data-username="${username.toLowerCase()}"]`);
+                if ($blockedItem.length > 0) {
+                    $blockedItem.remove();
+                    const $list = $('.res-blocked-users-container[data-blocker-type="livechat"] .res-blocked-users-list');
+                    if ($list.children().length === 0) {
+                        $list.append('<div class="res-list-empty">No users blocked.</div>');
+                        $('.res-blocked-users-container[data-blocker-type="livechat"] .res-unblock-all-btn').hide();
+                    }
+                }
+            },
             async unblockAllUsers() { appState.liveChatBlockedUsers = []; await settingsManager.saveBlockedUsers([], 'livechat'); this.applyBlockedUsers(); createToast('All live chat users have been unblocked.', 'success', 2000); populateBlockedUsersList('livechat'); }
-        },
-        {
-            id: 'cleanLiveChat', name: 'Clean Live Chat UI', description: 'Hides pinned messages, the header, and Rant buttons for a cleaner, more focused live chat experience.', newCategory: 'Live Chat', page: 'video',
-            css: `
-                /* Hide pinned messages and their container */
-                div.chat-pinned-ui__pinned-message-container,
-                div.chat__pinned-ui-container {
-                  display: none !important;
-                }
-
-                /* Hide the chat header and adjust the main chat area to fill the space */
-                div.chat--header {
-                  display: none !important;
-                }
-                section.chat.relative {
-                  margin-top: -71px !important;
-                  height: 715px !important;
-                }
-
-                /* Reposition the chat toggle button */
-                button.media-page-chat-container-toggle-btn {
-                  margin-top: 580px !important;
-                  margin-left: -48px !important;
-                }
-
-                /* Hide the Rants/actions section above the chat input and the user's avatar */
-                div.chat-message-form-section.chat-message-form-section-justify-between,
-                .chat-message-form-section .user-image {
-                  display: none !important;
-                }
-            `
         },
     ];
 
