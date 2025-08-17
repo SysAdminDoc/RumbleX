@@ -1,553 +1,407 @@
 // ==UserScript==
-// @name                Maximize Video
-// @name:zh-CN          视频网页全屏
-// @namespace           http://www.icycat.com
-// @description         Maximize all video players.Support Piture-in-picture.
-// @description:zh-CN   让所有视频网页全屏，开启画中画功能
-// @author              冻猫
-// @include             *
-// @exclude             *www.w3school.com.cn*
-// @version             12.0
+// @name                Maximize Video for YouTube & Rumble
+// @namespace           https://github.com/SysAdminDoc/RumbleX
+// @version             2025.08.17
+// @description         Maximizes the video player on YouTube and Rumble. Supports Picture-in-Picture.
+// @author              Matthew Parker
+// @match               https://*.youtube.com/*
+// @match               https://rumble.com/*
 // @run-at              document-end
-// @downloadURL https://update.greasyfork.org/scripts/4870/Maximize%20Video.user.js
-// @updateURL https://update.greasyfork.org/scripts/4870/Maximize%20Video.meta.js
+// @downloadURL         https://raw.githubusercontent.com/SysAdminDoc/RumbleX/main/modules/Maximize%20Video.user.js
+// @updateURL           https://raw.githubusercontent.com/SysAdminDoc/RumbleX/main/modules/Maximize%20Video.meta.js
 // ==/UserScript==
 
 ;(() => {
   const gv = {
     isFull: false,
-    isIframe: false,
-    autoCheckCount: 0,
-  }
-
-  //Html5规则[播放器最外层],适用于无法自动识别的自适应大小HTML5播放器
-  const html5Rules = {
-    "www.acfun.cn": [".player-container .player"],
-    "www.bilibili.com": ["#bilibiliPlayer"],
-    "www.douyu.com": ["#js-player-video-case"],
-    "www.huya.com": ["#videoContainer"],
-    "www.twitch.tv": [".player"],
-    "www.youtube.com": ["#movie_player"],
-    "www.yy.com": ["#player"],
-    "*weibo.com": ['[aria-label="Video Player"]', ".html5-video-live .html5-video"],
-    "v.huya.com": ["#video_embed_flash>div"],
-  }
-
-  //通用html5播放器
-  const generalPlayerRules = [".dplayer", ".video-js", ".jwplayer", "[data-player]"]
-
-  if (window.top !== window.self) {
-    gv.isIframe = true
-  }
-
-  if (navigator.language.toLocaleLowerCase() == "zh-cn") {
-    gv.btnText = {
-      max: "网页全屏",
-      pip: "画中画",
-      tip: "Iframe内视频，请用鼠标点击视频后重试",
-    }
-  } else {
-    gv.btnText = {
+    isIframe: window.top !== window.self,
+    player: null,
+    playerParents: [],
+    btnText: {
       max: "Maximize",
-      pip: "PicInPic",
-      tip: "Iframe video. Please click on the video and try again",
-    }
-  }
+      pip: "Picture-in-Picture",
+      tip: "This video is in an iframe. Please click the video first, then try again.",
+    },
+  };
+
+  // Site-specific rules for the primary video player container.
+  const siteRules = {
+    "*.youtube.com": ["#movie_player"],
+    "rumble.com": [".vid-container"],
+  };
 
   const tool = {
-    print(log) {
-      const now = new Date()
-      const year = now.getFullYear()
-      const month = (now.getMonth() + 1 < 10 ? "0" : "") + (now.getMonth() + 1)
-      const day = (now.getDate() < 10 ? "0" : "") + now.getDate()
-      const hour = (now.getHours() < 10 ? "0" : "") + now.getHours()
-      const minute = (now.getMinutes() < 10 ? "0" : "") + now.getMinutes()
-      const second = (now.getSeconds() < 10 ? "0" : "") + now.getSeconds()
-      const timenow = "[" + year + "-" + month + "-" + day + " " + hour + ":" + minute + ":" + second + "]"
-      console.log(timenow + "[Maximize Video] > " + log)
+    log(message) {
+      console.log(`[Maximize Video] :: ${new Date().toLocaleTimeString()} > ${message}`);
     },
+
     getRect(element) {
-      const rect = element.getBoundingClientRect()
-      const scroll = tool.getScroll()
+      const rect = element.getBoundingClientRect();
       return {
-        pageX: rect.left + scroll.left,
-        pageY: rect.top + scroll.top,
         screenX: rect.left,
         screenY: rect.top,
-      }
+      };
     },
-    isHalfFullClient(element) {
-      const client = tool.getClient()
-      const rect = tool.getRect(element)
-      if (
-        (Math.abs(client.width - element.offsetWidth) < 21 && rect.screenX < 20) ||
-        (Math.abs(client.height - element.offsetHeight) < 21 && rect.screenY < 10)
-      ) {
-        if (
-          Math.abs(element.offsetWidth / 2 + rect.screenX - client.width / 2) < 21 &&
-          Math.abs(element.offsetHeight / 2 + rect.screenY - client.height / 2) < 21
-        ) {
-          return true
-        } else {
-          return false
-        }
-      } else {
-        return false
-      }
-    },
-    isAllFullClient(element) {
-      const client = tool.getClient()
-      const rect = tool.getRect(element)
-      if (
-        Math.abs(client.width - element.offsetWidth) < 21 &&
-        rect.screenX < 20 &&
-        Math.abs(client.height - element.offsetHeight) < 21 &&
-        rect.screenY < 10
-      ) {
-        return true
-      } else {
-        return false
-      }
-    },
-    getScroll() {
-      return {
-        left: document.documentElement.scrollLeft || document.body.scrollLeft,
-        top: document.documentElement.scrollTop || document.body.scrollTop,
-      }
-    },
-    getClient() {
-      return {
-        width: document.compatMode == "CSS1Compat" ? document.documentElement.clientWidth : document.body.clientWidth,
-        height: document.compatMode == "CSS1Compat" ? document.documentElement.clientHeight : document.body.clientHeight,
-      }
-    },
+
     addStyle(css) {
-      const style = document.createElement("style")
-      style.type = "text/css"
-      const node = document.createTextNode(css)
-      style.appendChild(node)
-      document.head.appendChild(style)
-      return style
+      const style = document.createElement("style");
+      style.textContent = css;
+      document.head.appendChild(style);
+      return style;
     },
-    matchRule(str, rule) {
-      return new RegExp("^" + rule.split("*").join(".*") + "$").test(str)
+
+    matchHostname(rule) {
+      // Creates a regex from a wildcard rule (e.g., "*.youtube.com")
+      const regex = new RegExp(`^${rule.split("*").join(".*")}$`);
+      return regex.test(window.location.hostname);
     },
-    createButton(id) {
-      const btn = document.createElement("tbdiv")
-      btn.id = id
-      btn.onclick = () => {
-        maximize.playerControl()
-      }
-      document.body.appendChild(btn)
-      return btn
+
+    createButton(id, text, clickHandler) {
+      const btn = document.createElement("div");
+      btn.id = id;
+      btn.textContent = text;
+      btn.onclick = clickHandler;
+      document.body.appendChild(btn);
+      return btn;
     },
-    async addTip(str) {
-      if (!document.getElementById("catTip")) {
-        const tip = document.createElement("tbdiv")
-        tip.id = "catTip"
-        tip.innerHTML = str
-        ;(tip.style.cssText =
-          'transition: all 0.8s ease-out;background: none repeat scroll 0 0 #27a9d8;color: #FFFFFF;font: 1.1em "微软雅黑";margin-left: -250px;overflow: hidden;padding: 10px;position: fixed;text-align: center;bottom: 100px;z-index: 300;'),
-          document.body.appendChild(tip)
-        tip.style.right = -tip.offsetWidth - 5 + "px"
-        await new Promise((resolve) => {
-          tip.style.display = "block"
-          setTimeout(() => {
-            tip.style.right = "25px"
-            resolve("OK")
-          }, 300)
-        })
-        await new Promise((resolve) => {
-          setTimeout(() => {
-            tip.style.right = -tip.offsetWidth - 5 + "px"
-            resolve("OK")
-          }, 3500)
-        })
-        await new Promise((resolve) => {
-          setTimeout(() => {
-            document.body.removeChild(tip)
-            resolve("OK")
-          }, 1000)
-        })
-      }
-    },
-  }
+  };
 
   const setButton = {
     init() {
-      if (!document.getElementById("playerControlBtn")) {
-        init()
+      if (!document.getElementById("mv-control-btn")) {
+        // Run main initialization only once
+        mainInit();
       }
-      if (gv.isIframe && tool.isHalfFullClient(gv.player)) {
-        window.parent.postMessage("iframeVideo", "*")
-        return
+
+      // If the video is in a cross-origin iframe and is nearly filling it,
+      // notify the parent frame to handle the button display.
+      const clientWidth = document.documentElement.clientWidth;
+      const clientHeight = document.documentElement.clientHeight;
+      if (
+        gv.isIframe &&
+        Math.abs(clientWidth - gv.player.offsetWidth) < 20 &&
+        Math.abs(clientHeight - gv.player.offsetHeight) < 20
+      ) {
+        window.parent.postMessage("iframeVideoReady", "*");
+        return;
       }
-      this.show()
+
+      this.show();
     },
+
     show() {
-      gv.player.removeEventListener("mouseleave", handle.leavePlayer, false)
-      gv.player.addEventListener("mouseleave", handle.leavePlayer, false)
+      gv.player.removeEventListener("mouseleave", handle.leavePlayer, false);
+      gv.player.addEventListener("mouseleave", handle.leavePlayer, false);
 
       if (!gv.isFull) {
-        document.removeEventListener("scroll", handle.scrollFix, false)
-        document.addEventListener("scroll", handle.scrollFix, false)
+        document.addEventListener("scroll", handle.scrollFix, { passive: true });
       }
-      gv.controlBtn.style.display = "block"
-      gv.controlBtn.style.visibility = "visible"
-      if (document.pictureInPictureEnabled && gv.player.nodeName != "OBJECT" && gv.player.nodeName != "EMBED") {
-        gv.picinpicBtn.style.display = "block"
-        gv.picinpicBtn.style.visibility = "visible"
+
+      gv.controlBtn.style.visibility = "visible";
+      // Only show Picture-in-Picture button if the API is enabled and a video element is found
+      if (document.pictureInPictureEnabled && gv.player.querySelector("video")) {
+        gv.pipBtn.style.visibility = "visible";
       }
-      this.locate()
+
+      this.locate();
     },
+
     locate() {
-      const playerRect = tool.getRect(gv.player)
-      gv.controlBtn.style.opacity = "0.5"
-      gv.controlBtn.innerHTML = gv.btnText.max
-      gv.controlBtn.style.top = playerRect.screenY - 20 + "px"
-      // 网页全屏按钮位置，Maximize button
-      gv.controlBtn.style.left = playerRect.screenX - 64 + gv.player.offsetWidth + "px"
-      gv.picinpicBtn.style.opacity = "0.5"
-      gv.picinpicBtn.innerHTML = gv.btnText.pip
-      gv.picinpicBtn.style.top = gv.controlBtn.style.top
-      // 画中画按钮位置，PicInPic button
-      gv.picinpicBtn.style.left = playerRect.screenX - 64 + gv.player.offsetWidth - 54 + "px"
+      const playerRect = gv.player.getBoundingClientRect();
+      const scrollY = window.scrollY;
+
+      // Position Maximize button
+      gv.controlBtn.style.top = `${playerRect.top + scrollY}px`;
+      gv.controlBtn.style.left = `${playerRect.right - gv.controlBtn.offsetWidth}px`;
+
+      // Position Picture-in-Picture button
+      gv.pipBtn.style.top = `${playerRect.top + scrollY}px`;
+      gv.pipBtn.style.left = `${playerRect.right - gv.controlBtn.offsetWidth - gv.pipBtn.offsetWidth - 5}px`;
     },
-  }
+
+    hide() {
+        if (gv.controlBtn.style.visibility !== "hidden") {
+            gv.controlBtn.style.visibility = "hidden";
+            gv.pipBtn.style.visibility = "hidden";
+            gv.player.removeEventListener("mouseleave", handle.leavePlayer, false);
+            document.removeEventListener("scroll", handle.scrollFix, false);
+        }
+    }
+  };
 
   const handle = {
     getPlayer(e) {
-      if (gv.isFull) {
-        return
+      if (gv.isFull) return;
+
+      let foundPlayers = [];
+      const hostname = window.location.hostname;
+
+      // 1. Check site-specific rules first
+      for (const rule in siteRules) {
+        if (tool.matchHostname(rule)) {
+          siteRules[rule].forEach(selector => {
+            document.querySelectorAll(selector).forEach(p => foundPlayers.push(p));
+          });
+          break;
+        }
       }
-      gv.mouseoverEl = e.target
-      const hostname = document.location.hostname
-      let players = []
-      for (let i in html5Rules) {
-        if (tool.matchRule(hostname, i)) {
-          for (let html5Rule of html5Rules[i]) {
-            if (document.querySelectorAll(html5Rule).length > 0) {
-              for (let player of document.querySelectorAll(html5Rule)) {
-                players.push(player)
+
+      // 2. Fallback for generic video tags if no rule matched
+      if (foundPlayers.length === 0) {
+          const videos = document.querySelectorAll("video");
+          for (const v of videos) {
+              const vRect = v.getBoundingClientRect();
+              // Check if mouse is over a sufficiently large video element
+              if (
+                  e.clientX >= vRect.left && e.clientX <= vRect.right &&
+                  e.clientY >= vRect.top && e.clientY <= vRect.bottom &&
+                  v.offsetWidth > 399 && v.offsetHeight > 220
+              ) {
+                  foundPlayers.push(v.parentElement); // Target the container for better behavior
               }
-            }
           }
-          break
-        }
       }
-      if (players.length == 0) {
-        for (let generalPlayerRule of generalPlayerRules) {
-          if (document.querySelectorAll(generalPlayerRule).length > 0) {
-            for (let player of document.querySelectorAll(generalPlayerRule)) {
-              players.push(player)
-            }
-          }
-        }
-      }
-      if (players.length == 0 && e.target.nodeName != "VIDEO" && document.querySelectorAll("video").length > 0) {
-        const videos = document.querySelectorAll("video")
-        for (let v of videos) {
-          const vRect = v.getBoundingClientRect()
-          if (
-            e.clientX >= vRect.x - 2 &&
-            e.clientX <= vRect.x + vRect.width + 2 &&
-            e.clientY >= vRect.y - 2 &&
-            e.clientY <= vRect.y + vRect.height + 2 &&
-            v.offsetWidth > 399 &&
-            v.offsetHeight > 220
-          ) {
-            players = []
-            players[0] = handle.autoCheck(v)
-            gv.autoCheckCount = 1
-            break
+
+      if (foundPlayers.length > 0) {
+        const path = e.composedPath();
+        for (const p of foundPlayers) {
+          if (path.includes(p)) {
+            gv.player = p;
+            setButton.init();
+            return;
           }
         }
       }
-      if (players.length > 0) {
-        const path = e.path || e.composedPath()
-        for (let v of players) {
-          if (path.indexOf(v) > -1) {
-            gv.player = v
-            setButton.init()
-            return
-          }
-        }
-      }
-      switch (e.target.nodeName) {
-        case "VIDEO":
-        case "OBJECT":
-        case "EMBED":
-          if (e.target.offsetWidth > 399 && e.target.offsetHeight > 220) {
-            gv.player = e.target
-            setButton.init()
-          }
-          break
-        default:
-          handle.leavePlayer()
+      
+      // If no player was found under the cursor, hide the buttons
+      if (gv.player) {
+          handle.leavePlayer();
       }
     },
-    autoCheck(v) {
-      let tempPlayer,
-        el = v
-      gv.playerChilds = []
-      gv.playerChilds.push(v)
-      while ((el = el.parentNode)) {
-        if (Math.abs(v.offsetWidth - el.offsetWidth) < 15 && Math.abs(v.offsetHeight - el.offsetHeight) < 15) {
-          tempPlayer = el
-          gv.playerChilds.push(el)
-        } else {
-          break
-        }
-      }
-      return tempPlayer
+
+    leavePlayer(e) {
+        // Add a small delay to prevent flickering when moving mouse over player controls
+        gv.leaveTimer = setTimeout(() => {
+            setButton.hide();
+        }, 100);
     },
-    leavePlayer() {
-      if (gv.controlBtn.style.visibility == "visible") {
-        gv.controlBtn.style.opacity = ""
-        gv.controlBtn.style.visibility = ""
-        gv.picinpicBtn.style.opacity = ""
-        gv.picinpicBtn.style.visibility = ""
-        gv.player.removeEventListener("mouseleave", handle.leavePlayer, false)
-        document.removeEventListener("scroll", handle.scrollFix, false)
-      }
+
+    scrollFix() {
+      clearTimeout(gv.scrollTimer);
+      gv.scrollTimer = setTimeout(setButton.locate, 50);
     },
-    scrollFix(e) {
-      clearTimeout(gv.scrollFixTimer)
-      gv.scrollFixTimer = setTimeout(() => {
-        setButton.locate()
-      }, 20)
-    },
+
     hotKey(e) {
-      //默认退出键为ESC。需要修改为其他快捷键的请搜索"keycode"，修改为按键对应的数字。
-      if (e.keyCode == 27) {
-        maximize.playerControl()
+      // Use 'Escape' to exit maximization and 'F2' for Picture-in-Picture
+      if (e.key === 'Escape' && gv.isFull) {
+        maximize.toggle();
       }
-      //默认画中画快捷键为F2。
-      if (e.keyCode == 113) {
-        handle.pictureInPicture()
-      }
-    },
-    async receiveMessage(e) {
-      switch (e.data) {
-        case "iframePicInPic":
-          tool.print("messege:iframePicInPic")
-          if (!document.pictureInPictureElement) {
-            await document
-              .querySelector("video")
-              .requestPictureInPicture()
-              .catch((error) => {
-                tool.addTip(gv.btnText.tip)
-              })
-          } else {
-            await document.exitPictureInPicture()
-          }
-          break
-        case "iframeVideo":
-          tool.print("messege:iframeVideo")
-          if (!gv.isFull) {
-            gv.player = gv.mouseoverEl
-            setButton.init()
-          }
-          break
-        case "parentFull":
-          tool.print("messege:parentFull")
-          gv.player = gv.mouseoverEl
-          if (gv.isIframe) {
-            window.parent.postMessage("parentFull", "*")
-          }
-          maximize.checkParent()
-          maximize.fullWin()
-          if (getComputedStyle(gv.player).left != "0px") {
-            tool.addStyle("#htmlToothbrush #bodyToothbrush .playerToothbrush {left:0px !important;width:100vw !important;}")
-          }
-          gv.isFull = true
-          break
-        case "parentSmall":
-          tool.print("messege:parentSmall")
-          if (gv.isIframe) {
-            window.parent.postMessage("parentSmall", "*")
-          }
-          maximize.smallWin()
-          break
-        case "innerFull":
-          tool.print("messege:innerFull")
-          if (gv.player.nodeName == "IFRAME") {
-            gv.player.contentWindow.postMessage("innerFull", "*")
-          }
-          maximize.checkParent()
-          maximize.fullWin()
-          break
-        case "innerSmall":
-          tool.print("messege:innerSmall")
-          if (gv.player.nodeName == "IFRAME") {
-            gv.player.contentWindow.postMessage("innerSmall", "*")
-          }
-          maximize.smallWin()
-          break
+      if (e.key === 'F2') {
+        e.preventDefault();
+        handle.togglePictureInPicture();
       }
     },
-    pictureInPicture() {
-      if (!document.pictureInPictureElement) {
-        if (gv.player) {
-          if (gv.player.nodeName == "IFRAME") {
-            gv.player.contentWindow.postMessage("iframePicInPic", "*")
-          } else {
-            gv.player.parentNode.querySelector("video").requestPictureInPicture()
-          }
+
+    async togglePictureInPicture() {
+      const video = gv.player?.querySelector("video");
+      if (!video) return;
+
+      try {
+        if (document.pictureInPictureElement) {
+          await document.exitPictureInPicture();
         } else {
-          document.querySelector("video").requestPictureInPicture()
+          await video.requestPictureInPicture();
         }
-      } else {
-        document.exitPictureInPicture()
+      } catch (error) {
+        tool.log(`Picture-in-Picture failed: ${error}`);
       }
     },
-  }
+
+    // Handles messages from/to iframes for synchronization
+    receiveMessage(e) {
+        const actions = {
+            "iframeVideoReady": () => {
+                tool.log("Message received: iframe video is ready.");
+                if (!gv.isFull) {
+                    gv.player = e.source.frameElement;
+                    setButton.init();
+                }
+            },
+            "enterMax": () => {
+                tool.log("Message received: Enter maximization.");
+                gv.player = e.source.frameElement;
+                if (gv.isIframe) window.parent.postMessage("enterMax", "*");
+                maximize.enter();
+            },
+            "exitMax": () => {
+                tool.log("Message received: Exit maximization.");
+                if (gv.isIframe) window.parent.postMessage("exitMax", "*");
+                maximize.exit();
+            },
+            "syncEnter": () => {
+                gv.player.contentWindow.postMessage("syncEnter", "*");
+                maximize.enter();
+            },
+            "syncExit": () => {
+                gv.player.contentWindow.postMessage("syncExit", "*");
+                maximize.exit();
+            }
+        };
+
+        if (actions[e.data]) {
+            actions[e.data]();
+        }
+    }
+  };
 
   const maximize = {
-    playerControl() {
-      if (!gv.player) {
-        return
-      }
-      this.checkParent()
+    toggle() {
+      if (!gv.player) return;
+
       if (!gv.isFull) {
-        if (gv.isIframe) {
-          window.parent.postMessage("parentFull", "*")
-        }
-        if (gv.player.nodeName == "IFRAME") {
-          gv.player.contentWindow.postMessage("innerFull", "*")
-        }
-        this.fullWin()
-        if (gv.autoCheckCount > 0 && !tool.isHalfFullClient(gv.playerChilds[0])) {
-          if (gv.autoCheckCount > 10) {
-            for (let v of gv.playerChilds) {
-              v.classList.add("videoToothbrush")
-            }
-            return
-          }
-          const tempPlayer = handle.autoCheck(gv.playerChilds[0])
-          gv.autoCheckCount++
-          maximize.playerControl()
-          gv.player = tempPlayer
-          maximize.playerControl()
-        } else {
-          gv.autoCheckCount = 0
-        }
+        this.findParents();
+        if (gv.isIframe) window.parent.postMessage("enterMax", "*");
+        if (gv.player.nodeName === "IFRAME") gv.player.contentWindow.postMessage("syncEnter", "*");
+        this.enter();
       } else {
-        if (gv.isIframe) {
-          window.parent.postMessage("parentSmall", "*")
-        }
-        if (gv.player.nodeName == "IFRAME") {
-          gv.player.contentWindow.postMessage("innerSmall", "*")
-        }
-        this.smallWin()
+        if (gv.isIframe) window.parent.postMessage("exitMax", "*");
+        if (gv.player.nodeName === "IFRAME") gv.player.contentWindow.postMessage("syncExit", "*");
+        this.exit();
       }
     },
-    checkParent() {
-      if (gv.isFull) {
-        return
-      }
-      gv.playerParents = []
-      let full = gv.player
-      while ((full = full.parentNode)) {
-        if (full.nodeName == "BODY") {
-          break
-        }
-        if (full.getAttribute) {
-          gv.playerParents.push(full)
-        }
-      }
-    },
-    fullWin() {
-      if (!gv.isFull) {
-        document.removeEventListener("mouseover", handle.getPlayer, false)
-        gv.backHtmlId = document.body.parentNode.id
-        gv.backBodyId = document.body.id
-        if (document.location.hostname == "www.youtube.com" && !document.querySelector("#player-theater-container #movie_player")) {
-          document.querySelector("#movie_player .ytp-size-button").click()
-          gv.ytbStageChange = true
-        }
-        gv.leftBtn.style.display = "block"
-        gv.rightBtn.style.display = "block"
-        gv.picinpicBtn.style.display = ""
-        gv.controlBtn.style.display = ""
-        this.addClass()
-      }
-      gv.isFull = true
-    },
-    addClass() {
-      document.body.parentNode.id = "htmlToothbrush"
-      document.body.id = "bodyToothbrush"
-      for (let v of gv.playerParents) {
-        v.classList.add("parentToothbrush")
-        //父元素position:fixed会造成层级错乱
-        if (getComputedStyle(v).position == "fixed") {
-          v.classList.add("absoluteToothbrush")
-        }
-      }
-      gv.player.classList.add("playerToothbrush")
-      if (gv.player.nodeName == "VIDEO") {
-        gv.backControls = gv.player.controls
-        gv.player.controls = true
-      }
-      window.dispatchEvent(new Event("resize"))
-    },
-    smallWin() {
-      document.body.parentNode.id = gv.backHtmlId
-      document.body.id = gv.backBodyId
-      for (let v of gv.playerParents) {
-        v.classList.remove("parentToothbrush")
-        v.classList.remove("absoluteToothbrush")
-      }
-      gv.player.classList.remove("playerToothbrush")
-      if (document.location.hostname == "www.youtube.com" && gv.ytbStageChange && document.querySelector("#player-theater-container #movie_player")) {
-        document.querySelector("#movie_player .ytp-size-button").click()
-        gv.ytbStageChange = false
-      }
-      if (gv.player.nodeName == "VIDEO") {
-        gv.player.controls = gv.backControls
-      }
-      gv.leftBtn.style.display = ""
-      gv.rightBtn.style.display = ""
-      gv.controlBtn.style.display = ""
-      document.addEventListener("mouseover", handle.getPlayer, false)
-      window.dispatchEvent(new Event("resize"))
-      gv.isFull = false
-    },
-  }
 
-  const init = () => {
-    gv.picinpicBtn = document.createElement("tbdiv")
-    gv.picinpicBtn.id = "picinpicBtn"
-    gv.picinpicBtn.onclick = () => {
-      handle.pictureInPicture()
-    }
-    document.body.appendChild(gv.picinpicBtn)
-    gv.controlBtn = tool.createButton("playerControlBtn")
-    gv.leftBtn = tool.createButton("leftFullStackButton")
-    gv.rightBtn = tool.createButton("rightFullStackButton")
+    findParents() {
+      if (gv.isFull) return;
+      gv.playerParents = [];
+      let el = gv.player;
+      while ((el = el.parentNode) && el.nodeName !== "BODY") {
+        gv.playerParents.push(el);
+      }
+    },
 
-    if (getComputedStyle(gv.controlBtn).position != "fixed") {
-      tool.addStyle(
-        [
-          "#htmlToothbrush #bodyToothbrush .parentToothbrush .bilibili-player-video {margin:0 !important;}",
-          "#htmlToothbrush, #bodyToothbrush {overflow:hidden !important;zoom:100% !important;}",
-          "#htmlToothbrush #bodyToothbrush .parentToothbrush {overflow:visible !important;z-index:auto !important;transform:none !important;-webkit-transform-style:flat !important;transition:none !important;contain:none !important;}",
-          "#htmlToothbrush #bodyToothbrush .absoluteToothbrush {position:absolute !important;}",
-          "#htmlToothbrush #bodyToothbrush .playerToothbrush {position:fixed !important;top:0px !important;left:0px !important;width:100vw !important;height:100vh !important;max-width:none !important;max-height:none !important;min-width:0 !important;min-height:0 !important;margin:0 !important;padding:0 !important;z-index:2147483646 !important;border:none !important;background-color:#000 !important;transform:none !important;}",
-          "#htmlToothbrush #bodyToothbrush .parentToothbrush video {object-fit:contain !important;}",
-          "#htmlToothbrush #bodyToothbrush .parentToothbrush .videoToothbrush {width:100vw !important;height:100vh !important;}",
-          '#playerControlBtn {text-shadow: none;visibility:hidden;opacity:0;display:none;transition: all 0.5s ease;cursor: pointer;font: 12px "微软雅黑";margin:0;width:64px;height:20px;line-height:20px;border:none;text-align: center;position: fixed;z-index:2147483647;background-color: #27A9D8;color: #FFF;} #playerControlBtn:hover {visibility:visible;opacity:1;background-color:#2774D8;}',
-          '#picinpicBtn {text-shadow: none;visibility:hidden;opacity:0;display:none;transition: all 0.5s ease;cursor: pointer;font: 12px "微软雅黑";margin:0;width:53px;height:20px;line-height:20px;border:none;text-align: center;position: fixed;z-index:2147483647;background-color: #27A9D8;color: #FFF;} #picinpicBtn:hover {visibility:visible;opacity:1;background-color:#2774D8;}',
-          "#leftFullStackButton{display:none;position:fixed;width:1px;height:100vh;top:0;left:0;z-index:2147483647;background:#000;}",
-          "#rightFullStackButton{display:none;position:fixed;width:1px;height:100vh;top:0;right:0;z-index:2147483647;background:#000;}",
-        ].join("\n")
-      )
-    }
-    document.addEventListener("mouseover", handle.getPlayer, false)
-    document.addEventListener("keydown", handle.hotKey, false)
-    window.addEventListener("message", handle.receiveMessage, false)
-    tool.print("Ready")
-  }
+    enter() {
+        if (gv.isFull) return;
+        document.removeEventListener("mouseover", handle.getPlayer, false);
+        
+        gv.leftBar.style.display = "block";
+        gv.rightBar.style.display = "block";
+        setButton.hide();
 
-  init()
-})()
+        document.documentElement.classList.add("mv-html");
+        document.body.classList.add("mv-body");
+        gv.playerParents.forEach(p => p.classList.add("mv-parent"));
+        gv.player.classList.add("mv-player");
+        
+        // Special fix for YouTube's theater mode
+        const ytpSizeButton = document.querySelector("#movie_player .ytp-size-button");
+        const isTheater = document.querySelector("ytd-watch-flexy[theater]");
+        if (ytpSizeButton && !isTheater) {
+            ytpSizeButton.click();
+            gv.ytpToggled = true;
+        }
+
+        window.dispatchEvent(new Event("resize"));
+        gv.isFull = true;
+    },
+
+    exit() {
+        if (!gv.isFull) return;
+        document.documentElement.classList.remove("mv-html");
+        document.body.classList.remove("mv-body");
+        gv.playerParents.forEach(p => {
+            p.classList.remove("mv-parent");
+        });
+        gv.player.classList.remove("mv-player");
+
+        // Revert YouTube theater mode if we enabled it
+        if (gv.ytpToggled) {
+            document.querySelector("#movie_player .ytp-size-button")?.click();
+            gv.ytpToggled = false;
+        }
+        
+        gv.leftBar.style.display = "none";
+        gv.rightBar.style.display = "none";
+
+        document.addEventListener("mouseover", handle.getPlayer, false);
+        window.dispatchEvent(new Event("resize"));
+        gv.isFull = false;
+    },
+  };
+
+  const mainInit = () => {
+    gv.controlBtn = tool.createButton("mv-control-btn", gv.btnText.max, maximize.toggle);
+    gv.pipBtn = tool.createButton("mv-pip-btn", gv.btnText.pip, handle.togglePictureInPicture);
+    gv.leftBar = tool.createButton("mv-left-bar", "", () => {});
+    gv.rightBar = tool.createButton("mv-right-bar", "", () => {});
+    
+    tool.addStyle(`
+        /* Hide scrollbars and lock page when maximized */
+        .mv-html, .mv-body { overflow: hidden !important; }
+        
+        /* Reset parent elements to prevent visual bugs */
+        .mv-html .mv-body .mv-parent {
+            overflow: visible !important;
+            z-index: auto !important;
+            transform: none !important;
+            contain: none !important;
+        }
+        
+        /* The core style for the maximized player */
+        .mv-html .mv-body .mv-player {
+            position: fixed !important;
+            top: 0 !important;
+            left: 0 !important;
+            width: 100vw !important;
+            height: 100vh !important;
+            max-width: none !important;
+            max-height: none !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            z-index: 2147483646 !important; /* Max z-index */
+            border: none !important;
+            background-color: #000 !important;
+        }
+
+        /* Ensure video tag fills the container */
+        .mv-player video { object-fit: contain !important; }
+        
+        /* Button Styles */
+        #mv-control-btn, #mv-pip-btn {
+            visibility: hidden;
+            position: absolute;
+            z-index: 2147483647;
+            background-color: #27A9D8;
+            color: #FFF;
+            font: 12px "Segoe UI", sans-serif;
+            padding: 4px 8px;
+            border-radius: 3px;
+            cursor: pointer;
+            opacity: 0.7;
+            transition: opacity 0.3s ease;
+        }
+        #mv-control-btn:hover, #mv-pip-btn:hover { opacity: 1; }
+
+        /* Black bars for aspect ratio correction */
+        #mv-left-bar, #mv-right-bar {
+            display: none;
+            position: fixed;
+            width: 1px; /* Will be covered by player */
+            height: 100vh;
+            top: 0;
+            z-index: 2147483647;
+            background: #000;
+        }
+        #mv-left-bar { left: 0; }
+        #mv-right-bar { right: 0; }
+    `);
+
+    document.addEventListener("mouseover", handle.getPlayer, false);
+    document.addEventListener("keydown", handle.hotKey, false);
+    window.addEventListener("message", handle.receiveMessage, false);
+    
+    tool.log("Script loaded and ready.");
+  };
+
+  // Start the script
+  mainInit();
+})();
