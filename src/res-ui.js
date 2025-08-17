@@ -104,8 +104,13 @@ function defineUI(core) {
     }
 
     function buildThemePane(features) {
+        // Find the main site theme feature
         const siteThemeFeature = features.find(f => f.id === 'siteTheme');
-        return `
+        // Find the sidebar theme feature
+        const sidebarThemeFeature = features.find(f => f.id === 'themeCollapsedSidebar');
+
+        // Start building the HTML with the site theme options
+        let paneHTML = `
          <div class="res-setting-row res-management-row" data-feature-id="${siteThemeFeature.id}">
             <div class="res-setting-row-text">
                 <label>${siteThemeFeature.name}</label>
@@ -126,6 +131,13 @@ function defineUI(core) {
                 </label>
             </div>
         </div>`;
+
+        // If the sidebar theme feature exists, build its setting row and add it
+        if (sidebarThemeFeature) {
+            paneHTML += buildSettingRow(sidebarThemeFeature);
+        }
+
+        return paneHTML;
     }
 
     function injectControls() {

@@ -200,7 +200,7 @@ function defineFeatures(core) {
             },
             destroy() { if (this.observer) this.observer.disconnect(); document.querySelectorAll('div.videostream:has(a[href="/premium"])').forEach(el => el.style.display = ''); }
         },
-        { id: 'hideProfileBacksplash', name: 'Hide Profile Backsplash', description: 'Hides the large header image on channel profiles.', newCategory: 'Main Page Layout', subCategory: 'User Profile Page', page: 'profile', css: `div.channel-header--backsplash { display: none; } html.main-menu-mode-permanent { margin-top: 30px !important; }` },
+        { id: 'hideProfileBacksplash', name: 'Hide Profile Backsplash', description: 'Hides the large header image on channel profiles.', newCategory: 'Main Page Layout', subCategory: 'User Profile Page', page: 'profile', css: `div.channel-header--backsplash { display: none !important; } html.main-menu-mode-permanent { margin-top: 30px !important; }` },
         { id: 'hideFeaturedBanner', name: 'Hide Featured Banner', description: 'Hides the top category banner on the home page.', newCategory: 'Main Page Layout', subCategory: 'Home Page', css: 'div.homepage-featured { display: none !important; }', page: 'home' },
         { id: 'hideEditorPicks', name: "Hide Editor Picks", description: "Hides the main 'Editor Picks' content row on the home page.", newCategory: 'Main Page Layout', subCategory: 'Home Page', css: '#section-editor-picks { display: none !important; }', page: 'home' },
         { id: 'hideTopLiveCategories', name: "Hide 'Top Live' Row", description: "Hides the 'Top Live Categories' row on the home page.", newCategory: 'Main Page Layout', subCategory: 'Home Page', css: 'section#section-top-live { display: none !important; }', page: 'home' },
