@@ -80,13 +80,14 @@ function defineFeatures(core) {
                         display: none !important; 
                     }
                     body.res-collapse-nav-active nav.navs {
-                        position: fixed; top: 0; left: 0;
+                        position: fixed !important; top: 0; left: 0;
                         transform: translateX(-100%);
                         transition: transform 0.3s ease-in-out, box-shadow 0.3s ease-in-out;
                         z-index: 10000;
                         height: 100vh;
                         visibility: visible !important; /* Override Rumble's inline style */
                         opacity: 1 !important;
+                        pointer-events: none; /* Prevent interaction when hidden */
                     }
                     body.res-collapse-nav-active main.nav--transition {
                         margin-left: 0 !important;
@@ -98,6 +99,7 @@ function defineFeatures(core) {
                     body.res-collapse-nav-active nav.navs:hover {
                         transform: translateX(0);
                         box-shadow: 10px 0 30px -10px rgba(0,0,0,0.5);
+                        pointer-events: auto; /* Allow interaction when visible */
                     }
                 `;
                 styleManager.inject(this.id, css);
@@ -106,6 +108,11 @@ function defineFeatures(core) {
                     // Insert trigger div right before the nav element
                     $('nav.navs').before('<div id="res-nav-sidebar-trigger"></div>');
                 }
+                // Force Rumble's menu to be considered "closed" so it doesn't block the page
+                if (window.mainMenu && typeof window.mainMenu.close === 'function') {
+                    window.mainMenu.close();
+                }
+                $('body').removeClass('main-menu-visible');
             },
             destroy() {
                 styleManager.remove(this.id);
@@ -500,7 +507,7 @@ function defineFeatures(core) {
             destroy() { $(window).off('scroll.autoLoadComments'); }
         },
         { id: 'moveReplyButton', name: 'Move Reply Button', description: 'Moves the reply button next to the like/dislike buttons.', newCategory: 'Video Comments', css: `.comment-actions-wrapper { display: flex; align-items: center; } .comment-actions-wrapper .comment-actions { margin-left: 12px; }`, page: 'video' },
-        { id: 'hideCommentReportLink', name: 'Hide Comment Report Link', description: 'Hides the "report" link on user comments.', newCategory: 'Video Comments', css: '.comments-action-report.comments-action { display: none !important; }', page: 'video' },
+        { id: 'hideCommentReportLink', name: 'Hide Comment Report Link', description: 'Hides the "report" link on user comments.', newCategory: 'Video Comments', css: '.comments-action-report.comments-action { display: none !important; }`, page: 'video' },
 
         // --- LIVE CHAT ---
         {

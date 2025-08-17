@@ -7,7 +7,7 @@ const RES_CORE = {
     // ——————————————————————————————————————————————————————————————————————————
     settingsManager: {
         defaults: {
-            panelTheme: 'dark', siteTheme: 'system', autoHideHeader: true, collapseNavSidebar: true,
+            siteTheme: 'system', autoHideHeader: true, collapseNavSidebar: true,
             logoLinksToSubscriptions: true, hideNavSidebarCompletely: false, widenSearchBar: true, hideUploadIcon: false, hideHeaderAd: false,
             hideProfileBacksplash: false, hidePremiumVideos: true, hideFeaturedBanner: false, hideEditorPicks: false,
             hideTopLiveCategories: false, hidePremiumRow: false, hideHomepageAd: false, hideForYouRow: false,
@@ -143,7 +143,7 @@ const RES_CORE = {
     },
 
     async populateBlockedUsersList(type) {
-        const users = await this.settingsManager.getBlockedUsers(type);
+        const users = await RES_CORE.settingsManager.getBlockedUsers(type);
         const $container = $(`.res-blocked-users-container[data-blocker-type="${type}"]`);
         const $list = $container.find('.res-blocked-users-list');
         const $unblockAllBtn = $container.find('.res-unblock-all-btn');
