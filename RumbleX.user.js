@@ -20,8 +20,8 @@
 // @require      https://raw.githubusercontent.com/SysAdminDoc/RumbleX/refs/heads/main/src/res-features.js
 // @require      https://raw.githubusercontent.com/SysAdminDoc/RumbleX/refs/heads/main/src/res-ui.js
 // @require      https://raw.githubusercontent.com/SysAdminDoc/RumbleX/refs/heads/main/src/res-downloader.js
-// @updateURL    https://github.com/SysAdminDoc/RumbleX/raw/refs/heads/main/rumble-enhancement-suite.user.js
-// @downloadURL  https://github.com/SysAdminDoc/RumbleX/raw/refs/heads/main/rumble-enhancement-suite.user.js
+// @updateURL    https://github.com/SysAdminDoc/RumbleX/raw/refs/heads/main/RumbleX.user.js
+// @downloadURL  https://github.com/SysAdminDoc/RumbleX/raw/refs/heads/main/RumbleX.user.js
 // @run-at       document-start
 // ==/UserScript==
 
