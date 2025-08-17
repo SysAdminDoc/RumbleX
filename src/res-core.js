@@ -7,7 +7,7 @@ const RES_CORE = {
     // ——————————————————————————————————————————————————————————————————————————
     settingsManager: {
         defaults: {
-            siteTheme: 'system', autoHideHeader: true, collapseNavSidebar: true,
+            siteTheme: 'system', themeCollapsedSidebar: true, autoHideHeader: true, collapseNavSidebar: true,
             logoLinksToSubscriptions: true, hideNavSidebarCompletely: false, widenSearchBar: true, hideUploadIcon: false, hideHeaderAd: false,
             hideProfileBacksplash: false, hidePremiumVideos: true, hideFeaturedBanner: false, hideEditorPicks: false,
             hideTopLiveCategories: false, hidePremiumRow: false, hideHomepageAd: false, hideForYouRow: false,
