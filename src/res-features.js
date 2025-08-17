@@ -31,7 +31,6 @@ function defineFeatures(core) {
         },
         // --- NAVIGATION ---
         {
-{
             id: 'autoHideHeader',
             name: 'Auto-hide Header',
             description: 'Fades the header out. It fades back in when you move your cursor to the top of the page.',
