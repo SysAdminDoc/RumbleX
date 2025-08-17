@@ -52,7 +52,9 @@ RumbleX is packed with enhancements, all neatly organized and accessible from a 
 - **Improved layout** – Moves the "Reply" button next to like/dislike for a tighter comment section.
 
 ### Settings Panel
-![Settings Panel](docs/images/settings-panel.png)
+![Settings Panel](assets/images/settings-panel.png)
+
+
 
 - **Quick access** – Open via the new gear icon in the header or **Ctrl + Alt + R**.  
 - **Organized design** – Features grouped into logical tabs (Main Page, Video Page, Player Controls, etc.).  
@@ -66,11 +68,10 @@ RumbleX is packed with enhancements, all neatly organized and accessible from a 
 To use RumbleX, you’ll need a userscript manager extension:
 
 1. **Install a Userscript Manager**  
-   - [**Tampermonkey**](https://www.tampermonkey.net/) (Recommended: Chrome, Firefox, Edge, Opera)  
-   - [**Greasemonkey**](https://addons.mozilla.org/en-US/firefox/addon/greasemonkey/) (Firefox)
+   - [**Tampermonkey**](https://www.tampermonkey.net/) (Recommended: Chrome, Firefox, Edge, Opera)
 
 2. **Install RumbleX**  
-   - Click the "Install" button on the script’s page (e.g., on Greasy Fork or GitHub).  
+   - Click the "Install" button.  
    - Your userscript manager will open, showing the script. Review permissions, then click **Install**.  
 
 Once installed, just head over to [Rumble.com](https://rumble.com) — RumbleX will be active immediately.
@@ -88,7 +89,7 @@ Once installed, just head over to [Rumble.com](https://rumble.com) — RumbleX w
 ## Notes
 
 - RumbleX is entirely client-side. It runs only in your browser and doesn’t send your data anywhere.  
-- It is designed to complement Rumble’s native features, not replace them — you’re always in control of what’s enabled.  
+- It is designed to complement Rumble’s native features, not replace them, you’re always in control of what’s enabled.  
 
 ---
 
@@ -101,17 +102,10 @@ Use of this script is at your own risk. The maintainers of RumbleX are not respo
 
 ## Contributing
 
-Feedback, feature requests, and pull requests are welcome. If you find a bug or have an idea, open an issue here on GitHub.  
+Feedback, feature requests, and pull requests are welcome. If you find a bug or have an idea, open an issue.  
 
 ---
 
 ## License
 
 RumbleX is released under the MIT License. See [LICENSE](LICENSE) for details.
-
----
-
-## Repository Structure
-
-A suggested layout for keeping the repo clean and professional:
-
