@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         RumbleX
 // @namespace    https://github.com/SysAdminDoc/RumbleX
-// @version      11.7
+// @version      11.8
 // @description  Supercharge your Rumble.com experience.
 // @author       Matthew Parker
 // @match        https://rumble.com/*
@@ -66,7 +66,7 @@
                 if (appliesToPage && RES_CORE.appState.settings[feature.id] && feature.init) {
                     try {
                         feature.init();
-                    } catch (error) { console.error(`[Rumble Suite] Error initializing feature "${feature.name}":`, error); }
+                    } catch (error) { console.error(`[RumbleX] Error initializing feature "${feature.name}":`, error); }
                 }
             });
 

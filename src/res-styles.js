@@ -31,8 +31,10 @@ body.res-panel-open #res-settings-panel { opacity: 1; pointer-events: auto; tran
 /* === Settings Panel: Header, Body, Footer === */
 .res-settings-header { display: flex; align-items: center; justify-content: space-between; padding: 12px 12px 12px 24px; border-bottom: 1px solid var(--res-border-color); flex-shrink: 0; }
 .res-header-title { display: flex; align-items: center; gap: 14px; }
-.res-header-title svg { color: var(--res-accent); }
-.res-header-title h2 { font-size: 18px; font-weight: 600; margin: 0; }
+.res-header-title img { width: 32px; height: 32px; }
+.res-header-title h2 { font-size: 22px; font-weight: 700; margin: 0; }
+.res-header-brand { background: linear-gradient(45deg, #8effa1, #5a93ff); -webkit-background-clip: text; -webkit-text-fill-color: transparent; filter: brightness(1.1); }
+html[data-res-theme='light'] .res-header-brand { background: linear-gradient(45deg, #15803d, #0d6efd); -webkit-background-clip: text; }
 .res-header-button { background: none; border: none; cursor: pointer; padding: 8px; display: flex; align-items: center; justify-content: center; border-radius: 50%; transition: background-color 0.2s ease, transform 0.2s ease; }
 .res-header-button:hover { background: var(--res-bg-secondary); transform: scale(1.1); }
 .res-header-button svg { width: 20px; height: 20px; color: var(--res-text-secondary); }
@@ -46,6 +48,10 @@ body.res-panel-open #res-settings-panel { opacity: 1; pointer-events: auto; tran
 .res-settings-pane.active { display: grid; gap: 16px; animation: res-fade-in 0.4s ease-out; }
 @keyframes res-fade-in { from { opacity: 0; transform: translateX(10px); } to { opacity: 1; transform: translateX(0); } }
 .res-settings-footer { padding: 12px 24px; border-top: 1px solid var(--res-border-color); flex-shrink: 0; display: flex; justify-content: space-between; align-items: center; background: var(--res-bg-secondary); }
+.res-footer-left { display: flex; align-items: center; gap: 16px; }
+.res-github-link { color: var(--res-text-secondary); display: flex; align-items: center; transition: color .2s; }
+.res-github-link:hover { color: var(--res-text-primary); }
+.res-github-link svg { width: 22px; height: 22px; }
 .res-theme-select { display: flex; align-items: center; gap: 8px; font-size: 14px; }
 .res-theme-select select { background: var(--res-bg-tertiary); color: var(--res-text-primary); border: 1px solid var(--res-border-color); border-radius: 6px; padding: 6px 8px; font-family: var(--res-font); font-size: 14px; }
 .res-version { font-size: 12px; color: var(--res-text-secondary); cursor: help; }
