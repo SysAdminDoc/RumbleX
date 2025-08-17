@@ -70,13 +70,13 @@ function defineFeatures(core) {
             }
         },
         {
-            id: 'autoHideNavSidebar',
-            name: 'Auto-hide Navigation Sidebar',
-            description: 'Hides the main navigation sidebar. It slides into view when you move your cursor to the left edge of the page.',
+            id: 'collapseNavSidebar',
+            name: 'Collapse Navigation Sidebar',
+            description: 'Collapses the sidebar. It slides into view when you move your cursor to the left edge of the page.',
             newCategory: 'Navigation',
             init() {
                 const css = `
-                    body.res-autohide-nav-active nav.navs {
+                    body.res-collapse-nav-active nav.navs {
                         position: fixed; top: 0; left: 0;
                         transform: translateX(-100%);
                         transition: transform 0.3s ease-in-out, opacity 0.3s ease-in-out;
@@ -85,30 +85,37 @@ function defineFeatures(core) {
                         opacity: 0.95;
                         visibility: hidden;
                     }
-                    body.res-autohide-nav-active main.nav--transition {
+                    body.res-collapse-nav-active main.nav--transition {
                         margin-left: 0 !important;
                     }
                     #res-nav-sidebar-trigger {
                         position: fixed; top: 80px; left: 0; width: 30px; height: calc(100% - 80px); z-index: 1001;
                     }
                     #res-nav-sidebar-trigger:hover + nav.navs,
-                    body.res-autohide-nav-active nav.navs:hover {
+                    body.res-collapse-nav-active nav.navs:hover {
                         transform: translateX(0);
                         opacity: 1;
                         visibility: visible;
                     }
                 `;
                 styleManager.inject(this.id, css);
-                $('body').addClass('res-autohide-nav-active');
+                $('body').addClass('res-collapse-nav-active');
                 if ($('#res-nav-sidebar-trigger').length === 0) {
                     $('body').append('<div id="res-nav-sidebar-trigger"></div>');
                 }
             },
             destroy() {
                 styleManager.remove(this.id);
-                $('body').removeClass('res-autohide-nav-active');
+                $('body').removeClass('res-collapse-nav-active');
                 $('#res-nav-sidebar-trigger').remove();
             }
+        },
+        {
+            id: 'hideNavSidebarCompletely',
+            name: 'Hide Navigation Sidebar Completely',
+            description: 'Completely hides the left navigation sidebar and its toggle icon in the header.',
+            newCategory: 'Navigation',
+            css: '.main-menu-toggle, nav.navs { display: none !important; } main.nav--transition { margin-left: 0 !important; }'
         },
         {
             id: 'logoLinksToSubscriptions',

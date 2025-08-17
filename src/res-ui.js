@@ -145,6 +145,7 @@ function defineUI(core) {
 
     function attachUIEventListeners() {
         const $doc = $(document);
+        let isHandlingMutex = false;
 
         $doc.on('click', '#res-close-settings, #res-panel-overlay', () => $('body').removeClass('res-panel-open'));
         $doc.on('click', '.res-tab-btn', function() { $('.res-tab-btn, .res-settings-pane').removeClass('active'); $(this).addClass('active'); $(`#res-pane-${$(this).data('tab')}`).addClass('active'); });
@@ -160,8 +161,24 @@ function defineUI(core) {
         });
 
         $doc.on('change', '.res-feature-cb', async function() {
-            const featureId = $(this).closest('.res-setting-row, .res-management-row').data('feature-id');
-            const isEnabled = $(this).is(':checked');
+            if (isHandlingMutex) return;
+
+            const $this = $(this);
+            const featureId = $this.closest('[data-feature-id]').data('feature-id');
+            const isEnabled = $this.is(':checked');
+            
+            // --- Mutual Exclusion Logic for Navigation Sidebar ---
+            const navSidebarMutex = ['collapseNavSidebar', 'hideNavSidebarCompletely'];
+            if (isEnabled && navSidebarMutex.includes(featureId)) {
+                isHandlingMutex = true;
+                const otherFeatureId = navSidebarMutex.find(id => id !== featureId);
+                const $otherCheckbox = $(`#res-toggle-${otherFeatureId}`);
+                if ($otherCheckbox.is(':checked')) {
+                    $otherCheckbox.prop('checked', false).trigger('change');
+                }
+                isHandlingMutex = false;
+            }
+
             appState.settings[featureId] = isEnabled;
             await settingsManager.save(appState.settings);
             const feature = core.features.find(f => f.id === featureId);
@@ -177,9 +194,34 @@ function defineUI(core) {
         });
 
         $doc.on('change', '.res-toggle-all-cb', function() {
-            const isEnabled = $(this).is(':checked');
-            const catId = $(this).closest('.res-toggle-all-row').data('category-id');
-            $(`#res-pane-${catId}`).find('.res-feature-cb').not(':disabled').each(function() { if ($(this).is(':checked') !== isEnabled) $(this).prop('checked', isEnabled).trigger('change'); });
+            const $this = $(this);
+            const isEnabled = $this.is(':checked');
+            const catId = $this.closest('.res-toggle-all-row').data('category-id');
+            const $pane = $(`#res-pane-${catId}`);
+
+            isHandlingMutex = true;
+            if (catId === 'Navigation') {
+                if (isEnabled) {
+                    // When turning all ON, default to 'collapse' and turn others on.
+                    $('#res-toggle-collapseNavSidebar').prop('checked', true).trigger('change');
+                    $('#res-toggle-hideNavSidebarCompletely').prop('checked', false); // Don't trigger change, it's handled by the other
+                    appState.settings.hideNavSidebarCompletely = false;
+
+                    $pane.find('.res-feature-cb').not('#res-toggle-collapseNavSidebar, #res-toggle-hideNavSidebarCompletely').prop('checked', true).trigger('change');
+                } else {
+                    // When turning all OFF, just turn them all off.
+                    $pane.find('.res-feature-cb').not(':disabled').prop('checked', false).trigger('change');
+                }
+            } else {
+                // Default behavior for other categories
+                $pane.find('.res-feature-cb').not(':disabled').each(function() {
+                    if ($(this).is(':checked') !== isEnabled) {
+                        $(this).prop('checked', isEnabled).trigger('change');
+                    }
+                });
+            }
+            isHandlingMutex = false;
+            settingsManager.save(appState.settings);
         });
 
         $doc.on('change', '#res-panel-theme-selector', async function() {

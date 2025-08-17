@@ -7,8 +7,8 @@ const RES_CORE = {
     // ——————————————————————————————————————————————————————————————————————————
     settingsManager: {
         defaults: {
-            panelTheme: 'dark', siteTheme: 'system', autoHideHeader: true, autoHideNavSidebar: true,
-            logoLinksToSubscriptions: true, widenSearchBar: true, hideUploadIcon: false, hideHeaderAd: false,
+            panelTheme: 'dark', siteTheme: 'system', autoHideHeader: true, collapseNavSidebar: true,
+            logoLinksToSubscriptions: true, hideNavSidebarCompletely: false, widenSearchBar: true, hideUploadIcon: false, hideHeaderAd: false,
             hideProfileBacksplash: false, hidePremiumVideos: true, hideFeaturedBanner: false, hideEditorPicks: false,
             hideTopLiveCategories: false, hidePremiumRow: false, hideHomepageAd: false, hideForYouRow: false,
             hideGamingRow: false, hideFinanceRow: false, hideLiveRow: false, hideFeaturedPlaylistsRow: false,
