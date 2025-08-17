@@ -19,12 +19,22 @@ function defineUI(core) {
             tabsHTML += `<button class="res-tab-btn ${activeClass}" data-tab="${catId}">${cat}</button>`;
             panesHTML += `<div id="res-pane-${catId}" class="res-settings-pane ${activeClass}">`;
 
-            if (cat === 'Video Comments') panesHTML += buildBlockerPane(categoryFeatures, 'comment');
-            else if (cat === 'Live Chat') panesHTML += buildBlockerPane(categoryFeatures, 'livechat');
-            else if (cat === 'Theme & Appearance') panesHTML += buildThemePane(categoryFeatures);
-            else {
-                 panesHTML += `<div class="res-setting-row res-toggle-all-row" data-category-id="${catId}"><div class="res-setting-row-text"><label for="res-toggle-all-${catId}">Toggle All</label><small>Enable or disable all settings in this category.</small></div><label class="res-switch"><input type="checkbox" id="res-toggle-all-${catId}" class="res-toggle-all-cb"><span class="res-slider"></span></label></div>`;
-                 categoryFeatures.forEach(f => panesHTML += buildSettingRow(f));
+            // Special case for Theme pane which has no toggles
+            if (cat === 'Theme & Appearance') {
+                panesHTML += buildThemePane(categoryFeatures);
+            } else {
+                // Add "Toggle All" to every other category
+                panesHTML += `<div class="res-setting-row res-toggle-all-row" data-category-id="${catId}"><div class="res-setting-row-text"><label for="res-toggle-all-${catId}">Toggle All</label><small>Enable or disable all settings in this category.</small></div><label class="res-switch"><input type="checkbox" id="res-toggle-all-${catId}" class="res-toggle-all-cb"><span class="res-slider"></span></label></div>`;
+                
+                // Add individual feature rows
+                categoryFeatures.forEach(f => panesHTML += buildSettingRow(f));
+
+                // Add blocker management UI if applicable
+                if (cat === 'Video Comments') {
+                    panesHTML += buildBlockerManagementUI('comment');
+                } else if (cat === 'Live Chat') {
+                    panesHTML += buildBlockerManagementUI('livechat');
+                }
             }
             panesHTML += `</div>`;
         });
@@ -33,7 +43,10 @@ function defineUI(core) {
             <div id="res-panel-overlay"></div>
             <div id="res-settings-panel" role="dialog" aria-modal="true" aria-labelledby="res-panel-title">
                 <div class="res-settings-header">
-                     <div class="res-header-title" id="res-panel-title">${ICONS.cog} <h2>RumbleX</h2></div>
+                     <div class="res-header-title" id="res-panel-title">
+                        <img src="https://rumble.com/i/favicon-v4.png" alt="RumbleX Logo">
+                        <h2><span class="res-header-brand">RumbleX</span></h2>
+                     </div>
                      <button id="res-close-settings" class="res-header-button" title="Close (Esc)">${ICONS.close}</button>
                 </div>
                 <div class="res-settings-body">
@@ -41,11 +54,17 @@ function defineUI(core) {
                     <div class="res-settings-content">${panesHTML}</div>
                 </div>
                 <div class="res-settings-footer">
-                     <span class="res-version" title="Keyboard Shortcut: Ctrl+Alt+R">v11.5</span>
-                     <label class="res-theme-select"><span>Panel Theme:</span><select id="res-panel-theme-selector">
-                        <option value="dark" ${appState.settings.panelTheme === 'dark' ? 'selected' : ''}>Professional Dark</option>
-                        <option value="light" ${appState.settings.panelTheme === 'light' ? 'selected' : ''}>Professional Light</option>
-                    </select></label>
+                    <div class="res-footer-left">
+                        <a href="https://github.com/SysAdminDoc/RumbleX" target="_blank" class="res-github-link" title="View on GitHub">${ICONS.github}</a>
+                        <span class="res-version" title="Keyboard Shortcut: Ctrl+Alt+R">v11.8</span>
+                    </div>
+                    <label class="res-theme-select">
+                        <span>Panel Theme:</span>
+                        <select id="res-panel-theme-selector">
+                            <option value="dark" ${appState.settings.panelTheme === 'dark' ? 'selected' : ''}>Professional Dark</option>
+                            <option value="light" ${appState.settings.panelTheme === 'light' ? 'selected' : ''}>Professional Light</option>
+                        </select>
+                    </label>
                 </div>
             </div>`;
         $('body').append(panelHTML);
@@ -61,23 +80,17 @@ function defineUI(core) {
         </div>`;
     }
 
-    function buildBlockerPane(features, type) {
-        let html = '';
-        features.filter(feat => !feat.isManagement).forEach(feat => html += buildSettingRow(feat));
-        const managementFeature = features.find(feat => feat.isManagement);
-        html += buildSettingRow(managementFeature);
-        html += `
+    function buildBlockerManagementUI(type) {
+        return `
          <div class="res-blocked-users-container" data-blocker-type="${type}">
             <div class="res-blocked-users-list-header"><h3>Blocked Users</h3><button class="res-button res-button-danger res-unblock-all-btn">Unblock All</button></div>
             <div class="res-blocked-users-list"></div>
          </div>`;
-        return html;
     }
 
     function buildThemePane(features) {
-        let html = '';
         const siteThemeFeature = features.find(f => f.id === 'siteTheme');
-        html += `
+        return `
          <div class="res-setting-row res-management-row" data-feature-id="${siteThemeFeature.id}">
             <div class="res-setting-row-text">
                 <label>${siteThemeFeature.name}</label>
@@ -98,7 +111,6 @@ function defineUI(core) {
                 </label>
             </div>
         </div>`;
-        return html;
     }
 
     function injectControls() {
