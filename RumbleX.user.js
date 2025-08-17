@@ -21,7 +21,7 @@
 // @require      https://raw.githubusercontent.com/SysAdminDoc/RumbleX/refs/heads/main/src/res-features.js
 // @require      https://raw.githubusercontent.com/SysAdminDoc/RumbleX/refs/heads/main/src/res-ui.js
 // @require      https://raw.githubusercontent.com/SysAdminDoc/RumbleX/refs/heads/main/src/res-downloader.js
-// @resource     compactSidebarTheme https://raw.githubusercontent.com/SysAdminDoc/RumbleX/main/src/themes/compact-sidebar.css
+// @resource     compactSidebarTheme https://raw.githubusercontent.com/SysAdminDoc/RumbleX/refs/heads/main/src/themes/compact-sidebar.css
 // @updateURL    https://github.com/SysAdminDoc/RumbleX/raw/refs/heads/main/RumbleX.user.js
 // @run-at       document-start
 // ==/UserScript==
