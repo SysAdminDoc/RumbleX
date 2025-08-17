@@ -151,10 +151,10 @@ const RES_CORE = {
                                 jsonString = jsonString.slice(0, -1);
                             }
                             RES_CORE.appState.videoData = JSON.parse(jsonString);
-                            console.log('[Rumble Suite] Video data successfully parsed:', RES_CORE.appState.videoData);
+                            console.log('[RumbleX] Video data successfully parsed:', RES_CORE.appState.videoData);
                             $(document).trigger('res:videoDataLoaded');
                             return;
-                        } catch (e) { console.error("[Rumble Suite] Failed to parse video data JSON.", e); }
+                        } catch (e) { console.error("[RumbleX] Failed to parse video data JSON.", e); }
                     }
                 }
             }
@@ -164,14 +164,14 @@ const RES_CORE = {
             const videoElement = document.querySelector('#videoPlayer video');
             if (videoElement && videoElement.hls) {
                 RES_CORE.appState.hlsInstance = videoElement.hls;
-                console.log('[Rumble Suite] HLS.js instance found:', RES_CORE.appState.hlsInstance);
+                console.log('[RumbleX] HLS.js instance found:', RES_CORE.appState.hlsInstance);
                 $(document).trigger('res:hlsInstanceFound');
                 return;
             }
             const observer = new MutationObserver(() => {
                 if (videoElement && videoElement.hls) {
                     RES_CORE.appState.hlsInstance = videoElement.hls;
-                    console.log('[Rumble Suite] HLS.js instance found via observer:', RES_CORE.appState.hlsInstance);
+                    console.log('[RumbleX] HLS.js instance found via observer:', RES_CORE.appState.hlsInstance);
                     $(document).trigger('res:hlsInstanceFound');
                     observer.disconnect();
                 }

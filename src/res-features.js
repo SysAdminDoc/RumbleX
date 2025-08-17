@@ -377,7 +377,7 @@ function defineFeatures(core) {
                 if (!hls) return;
                 this.onManifestParsed = () => {
                     if (hls.levels && hls.levels.length > 1) {
-                        console.log('[Rumble Suite] HLS Manifest Parsed, setting best quality.');
+                        console.log('[RumbleX] HLS Manifest Parsed, setting best quality.');
                         hls.nextLevel = hls.levels.length - 1;
                     }
                 };

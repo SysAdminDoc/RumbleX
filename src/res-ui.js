@@ -33,7 +33,7 @@ function defineUI(core) {
             <div id="res-panel-overlay"></div>
             <div id="res-settings-panel" role="dialog" aria-modal="true" aria-labelledby="res-panel-title">
                 <div class="res-settings-header">
-                     <div class="res-header-title" id="res-panel-title">${ICONS.cog} <h2>Rumble Enhancement Suite</h2></div>
+                     <div class="res-header-title" id="res-panel-title">${ICONS.cog} <h2>RumbleX</h2></div>
                      <button id="res-close-settings" class="res-header-button" title="Close (Esc)">${ICONS.close}</button>
                 </div>
                 <div class="res-settings-body">
@@ -102,7 +102,7 @@ function defineUI(core) {
     }
 
     function injectControls() {
-        const gearButtonHTML = `<button id="res-settings-button" title="Rumble Enhancement Suite Settings (Ctrl+Alt+R)">${ICONS.cog}</button>`;
+        const gearButtonHTML = `<button id="res-settings-button" title="RumbleX Settings (Ctrl+Alt+R)">${ICONS.cog}</button>`;
         const addClickListener = () => {
             $('#res-settings-button').off('click').on('click', () => {
                 $('body').addClass('res-panel-open');
