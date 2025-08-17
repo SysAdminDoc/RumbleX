@@ -1,7 +1,7 @@
 // ==UserScript==
-// @name         Rumble Enhancement Suite
-// @namespace    https://github.com/SysAdminDoc/RumbleEnhancementSuite
-// @version      11.6-modular
+// @name         RumbleX
+// @namespace    https://github.com/SysAdminDoc/RumbleX
+// @version      11.6
 // @description  A premium suite of tools to enhance Rumble.com, featuring a downloader, privacy controls, live chat enhancements, a professional UI, and layout controls.
 // @author       Matthew Parker
 // @match        https://rumble.com/*
