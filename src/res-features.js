@@ -76,6 +76,10 @@ function defineFeatures(core) {
             newCategory: 'Navigation',
             init() {
                 const css = `
+                    /* Hide original nav before it's wrapped to prevent flash on load */
+                    body.res-collapse-nav-active nav.navs:not(#res-nav-container nav.navs) {
+                        visibility: hidden !important;
+                    }
                     body.res-collapse-nav-active .main-menu-toggle {
                         display: none !important;
                     }
@@ -234,7 +238,7 @@ function defineFeatures(core) {
             page: 'video',
             _liveObserver: null,
             _resizeListener: null,
-            _standardCss: `body.res-full-width-player nav.navs, body.res-full-width-player aside.media-page-related-media-desktop-sidebar, body.res-full-width-player #player-spacer, body.res-full-width-player #res-nav-container { display: none !important; } body.res-full-width-player main.nav--transition { margin-left: 0 !important; } body.res-full-width-player .main-and-sidebar { max-width: 100% !important; padding: 0 !important; margin: 0 !important; } body.res-full-width-player .main-content, body.res-full-width-player .media-container { width: 100% !important; max-width: 100% !important; } body.res-full-width-player .video-player, body.res-full-width-player [id^='vid_v'] { width: 100vw !important; height: calc(100vw * 9 / 16) !important; max-height: 100vh; } body.res-full-width-player #videoPlayer video { object-fit: contain !important; }`,
+            _standardCss: `body.res-full-width-player aside.media-page-related-media-desktop-sidebar, body.res-full-width-player #player-spacer { display: none !important; } body.res-full-width-player main.nav--transition { margin-left: 0 !important; } body.res-full-width-player .main-and-sidebar { max-width: 100% !important; padding: 0 !important; margin: 0 !important; } body.res-full-width-player .main-content, body.res-full-width-player .media-container { width: 100% !important; max-width: 100% !important; } body.res-full-width-player .video-player, body.res-full-width-player [id^='vid_v'] { width: 100vw !important; height: calc(100vw * 9 / 16) !important; max-height: 100vh; } body.res-full-width-player #videoPlayer video { object-fit: contain !important; }`,
             _liveCss: `
               /* Main grid container for the two-column layout */
               body.res-live-two-col:not(.rumble-player--fullscreen) .main-and-sidebar {
