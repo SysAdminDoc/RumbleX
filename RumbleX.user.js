@@ -13,6 +13,7 @@
 // @grant        GM.xmlHttpRequest
 // @grant        GM_xmlhttpRequest
 // @grant        GM_setClipboard
+// @grant        GM_getResourceText  // <-- ADD THIS
 // @connect      *
 // @require      https://ajax.googleapis.com/ajax/libs/jquery/3.7.1/jquery.min.js
 // @require      https://raw.githubusercontent.com/SysAdminDoc/RumbleX/refs/heads/main/src/res-core.js
@@ -20,6 +21,7 @@
 // @require      https://raw.githubusercontent.com/SysAdminDoc/RumbleX/refs/heads/main/src/res-features.js
 // @require      https://raw.githubusercontent.com/SysAdminDoc/RumbleX/refs/heads/main/src/res-ui.js
 // @require      https://raw.githubusercontent.com/SysAdminDoc/RumbleX/refs/heads/main/src/res-downloader.js
+// @resource     compactSidebarTheme https://raw.githubusercontent.com/SysAdminDoc/RumbleX/main/src/themes/compact-sidebar.css
 // @updateURL    https://github.com/SysAdminDoc/RumbleX/raw/refs/heads/main/RumbleX.user.js
 // @run-at       document-start
 // ==/UserScript==

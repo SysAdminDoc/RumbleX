@@ -1,0 +1,331 @@
+/* =====================================================
+   COLLAPSED HOVER SIDENAV (compact rail) — polished
+   - Cleaner variables
+   - No duplicate rules
+   - Resilient icon coloring
+   - Centered labels + slimmer buttons supported
+   ===================================================== */
+
+/* ---------- Global tokens for this layout ---------- */
+:root {
+  /* Rail geometry */
+  --res-rail: 80px;      /* collapsed rail width */
+  --res-trigger: 20px;   /* hover trigger width on the left */
+
+  /* Visuals */
+  --res-bg: #085e0f;
+  --res-text: #ffffff;
+  --res-muted: rgba(255, 255, 255, 0.72);
+  --res-edge-radius: 22px;
+
+  /* Spacing tokens (tweak these first) */
+  --res-icon: 26px;       /* icon size */
+  --res-label: 13px;      /* label font size */
+  --res-label-line: 18px; /* approx label line-height in px */
+  --res-item-y: 12px;     /* vertical padding inside each item */
+  --res-item-gap: 14px;   /* space between items */
+
+  /* Optional: make cards a bit narrower than the rail */
+  --res-item-maxw: 68px;  /* try 64–72px; set to 100% to match rail width */
+}
+
+/* Hide original nav until moved; hide hamburger; remove content margin */
+body.res-collapse-nav-active nav.navs:not(#res-nav-container nav.navs) { visibility: hidden !important; }
+body.res-collapse-nav-active .main-menu-toggle { display: none !important; }
+body.res-collapse-nav-active main.nav--transition { margin-left: 0 !important; }
+
+/* Hover trigger container: rail + trigger, shifted left by the rail width */
+#res-nav-container {
+  position: fixed;
+  top: 0; left: 0;
+  height: 100vh;
+  width: calc(var(--res-rail) + var(--res-trigger));
+  z-index: 10000;
+  transform: translateX(calc(-1 * var(--res-rail)));
+  transition: transform 0.3s ease-in-out;
+  overscroll-behavior: contain;
+  overflow: visible !important; /* allow shadows */
+}
+#res-nav-container:hover { transform: translateX(0); }
+
+/* Move site nav into our container and reset geometry */
+body.res-collapse-nav-active nav.navs {
+  position: absolute !important;
+  top: 0 !important; left: 0 !important;
+  width: var(--res-rail) !important; height: 100vh !important;
+  display: block !important; visibility: visible !important; opacity: 1 !important;
+  transform: none !important; box-shadow: none !important;
+}
+/* safety: kill any header offset the site may reapply */
+.navs { top: 0 !important; }
+
+/* Rail visuals (outer green panel) */
+#res-nav-container nav.navs {
+  background: var(--res-bg) !important; color: var(--res-text) !important;
+  border-radius: 0 var(--res-edge-radius) var(--res-edge-radius) 0 !important;
+  overflow: visible !important;
+  -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale;
+
+  /* Default soft shadow */
+  box-shadow: 6px 0 18px rgba(0, 0, 0, 0.35),
+              0 6px 12px rgba(0, 0, 0, 0.18) !important;
+  transition: box-shadow 0.3s ease-in-out;
+}
+
+/* Stronger shadow when rail is expanded */
+#res-nav-container:hover nav.navs {
+  box-shadow: 10px 0 28px rgba(0, 0, 0, 0.45),
+              0 10px 20px rgba(0, 0, 0, 0.25) !important;
+}
+
+/* Inner menu inherits rail background */
+div.hover-menu.main-menu-nav { 
+  background-color: transparent !important;
+  filter: none !important; /* remove redundant drop-shadow */
+}
+
+/* Anchor #main-menu to the rail and normalize padding/scroll */
+#main-menu {
+  position: absolute !important; top: 0 !important; bottom: 0 !important; left: 0 !important; right: auto !important;
+  width: var(--res-rail) !important; background: transparent !important;
+
+  display: flex !important; flex-direction: column !important; align-items: center !important; /* center children */
+  justify-content: flex-start !important;
+  padding: 10px 8px 12px 8px !important;
+  gap: 0 !important;
+  font-size: var(--res-label) !important; line-height: 1.25 !important;
+  box-sizing: border-box !important; overflow-y: auto !important;
+  -ms-overflow-style: none !important; scrollbar-width: none !important;
+
+  /* expose icon for mask used above Following */
+  --following-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='currentColor' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.75'%3E%3Cpath d='M10 12.273a5.303 5.303 0 1 0 0-10.606 5.303 5.303 0 0 0 0 10.606Z'/%3E%3Cpath d='m7.129 11.432-.917 6.901L10 16.061l3.788 2.272-.917-6.909'/%3E%3C/svg%3E");
+}
+#main-menu::-webkit-scrollbar { display: none; }
+
+/* Remove promo block and stray margins that create top gap */
+#main-menu > .lg\:hidden.mb-2 { display: none !important; }
+#main-menu > * { margin: 0 !important; }
+
+/* ===========================
+   MAIN NAV ITEMS (icon over label) — centered and compact
+   =========================== */
+
+#main-menu .main-menu-item,
+#main-menu a[href="/followed-channels"],
+#main-menu .main-menu-item-channel {
+  align-self: center !important;
+  width: 100% !important;
+  max-width: var(--res-item-maxw) !important; /* slimmer cards */
+}
+
+#main-menu .main-menu-item {
+  display: flex !important; flex-direction: column !important; align-items: center !important; justify-content: center !important;
+  padding: var(--res-item-y) 6px !important;
+  text-align: center !important; color: var(--res-text) !important;
+  border-radius: 12px !important;
+  transition: background-color 140ms ease, transform 140ms ease !important;
+
+  /* explicit vertical rhythm between items */
+  margin-top: var(--res-item-gap) !important;
+
+  /* ensure icon + label never collide */
+  min-height: calc(var(--res-icon) + var(--res-label-line) + (var(--res-item-y) * 2)) !important;
+}
+#main-menu .main-menu-item:first-of-type { margin-top: 0 !important; }
+
+/* Normalize icon sizes and color inheritance for mixed SVGs */
+#main-menu .main-menu-icon,
+#main-menu .main-menu-item svg,
+#main-menu .main-menu-item img,
+#main-menu .main-menu-item i {
+  width: var(--res-icon) !important; height: var(--res-icon) !important;
+  flex: 0 0 var(--res-icon) !important;
+  display: inline-block !important; line-height: 1 !important; object-fit: contain !important;
+  color: currentColor !important; fill: currentColor !important;
+}
+#main-menu .main-menu-item svg [fill] { fill: currentColor !important; }
+#main-menu .main-menu-item svg [stroke] { stroke: currentColor !important; }
+
+/* Labels — keep to one line in 80px rail */
+#main-menu .main-menu-item .main-menu-item-label,
+#main-menu .main-menu-item span {
+  display: block !important;
+  font-size: var(--res-label) !important;
+  line-height: calc(var(--res-label-line) / var(--res-label)) !important;
+  white-space: nowrap !important; overflow: hidden !important; text-overflow: ellipsis !important;
+  max-width: 100% !important; text-align: center !important;
+  word-break: keep-all !important;
+}
+
+/* Hover + active indicator */
+#main-menu .main-menu-item:hover,
+#main-menu .main-menu-item:focus { background-color: rgba(255,255,255,0.14) !important; transform: translateY(-1px) !important; outline: none !important; }
+#main-menu .main-menu-item.is-active,
+#main-menu .main-menu-item[aria-current="page"],
+#main-menu .main-menu-item.active { background-color: rgba(255,255,255,0.10) !important; position: relative !important; }
+#main-menu .main-menu-item.is-active::after,
+#main-menu .main-menu-item[aria-current="page"]::after,
+#main-menu .main-menu-item.active::after {
+  content: "" !important; position: absolute !important;
+  right: 2px !important; top: 10% !important; bottom: 10% !important;
+  width: 3px !important; border-radius: 3px !important; background: #ffffff !important; opacity: 0.95 !important;
+}
+
+/* ===========================
+   DIVIDER + FOLLOWING SECTION
+   =========================== */
+
+#main-menu .main-menu-divider {
+  height: 1px !important; background: rgba(255,255,255,0.18) !important; border-radius: 999px !important;
+  margin: 10px 6px 6px 6px !important; margin-top: auto !important;
+}
+
+/* Following heading */
+#main-menu .main-menu-heading {
+  border-top: none !important; font-size: 12px !important;
+  padding: 6px 0 4px 0 !important; margin: 4px 0 0 0 !important;
+  color: var(--res-muted) !important; text-transform: uppercase !important; letter-spacing: 0.4px !important; text-align: center !important;
+}
+
+/* Channel items under Following */
+#main-menu .main-menu-item-channel-container { margin: 0 !important; }
+#main-menu .main-menu-item-channel {
+  display: flex !important; align-items: center !important; justify-content: center !important;
+  padding: 8px 6px !important; gap: 6px !important; border-radius: 10px !important; color: #fff !important;
+  margin-top: 12px !important;
+}
+#main-menu .main-menu-item-channel .user-image { width: 24px !important; height: 24px !important; border-radius: 50% !important; }
+#main-menu .main-menu-item-channel .main-menu-item-channel-label { font-size: 12px !important; max-width: 100% !important; white-space: nowrap !important; overflow: hidden !important; text-overflow: ellipsis !important; text-align: center !important; }
+
+/* ===========================
+   Hiding rules you requested
+   =========================== */
+#main-menu .theme-option-group { display: none !important; }
+#main-menu a.theme-option.main-menu-item > span,
+#main-menu .main-menu-item--active.theme-option.main-menu-item,
+#main-menu .content__image,
+#main-menu .main-menu__view-all,
+#main-menu .main-menu__view-all--collapsed,
+#main-menu .theme-option-group > .main-menu-heading { display: none !important; }
+
+#main-menu a.main-menu-item.main-menu-item__nav[href="/playlists/watch-history"],
+#main-menu a.main-menu-item.main-menu-item__nav[href="/playlists/watch-later"],
+#main-menu a.main-menu-item.main-menu-item__nav[href="/editor-picks"],
+#main-menu a.main-menu-item.main-menu-item__nav[href^="https://rumble.store"] { display: none !important; }
+
+#main-menu .main-menu-item-channel-container { display: none !important; }
+
+/* Hide the "View All" link to Followed Channels in the sidebar */
+#main-menu a.main-menu__view-all[href^="/followed-channels"],
+#main-menu a.main-menu__view-all--collapsed[href^="/followed-channels"],
+.navs a.main-menu__view-all[href^="/followed-channels"] { display: none !important; }
+
+/* ===========================
+   Add "Editor Picks" icon above the "Following" link
+   =========================== */
+#main-menu a[href="/followed-channels"] {
+  display: flex !important; flex-direction: column !important; align-items: center !important; justify-content: center !important;
+  padding: var(--res-item-y) 6px !important; margin-top: var(--res-item-gap) !important;
+  border-radius: 12px !important; color: var(--res-text) !important; text-decoration: none !important; text-align: center !important;
+}
+#main-menu a[href="/followed-channels"] .main-menu-heading {
+  margin: 0 !important; padding: 0 !important; border: 0 !important;
+  font-size: var(--res-label) !important; color: var(--res-text) !important; letter-spacing: 0.4px !important; text-transform: uppercase !important;
+}
+#main-menu a[href="/followed-channels"] .main-menu-heading-extra,
+#main-menu a[href="/followed-channels"] .main-menu-item-label-collapsed { display: none !important; }
+#main-menu a[href="/followed-channels"]::before {
+  content: "" !important;
+  width: var(--res-icon) !important; height: var(--res-icon) !important; margin-bottom: 8px !important;
+  background-color: currentColor !important;
+  -webkit-mask-image: var(--following-icon) !important; mask-image: var(--following-icon) !important;
+  -webkit-mask-repeat: no-repeat !important; mask-repeat: no-repeat !important;
+  -webkit-mask-size: contain !important; mask-size: contain !important;
+}
+#main-menu a[href="/followed-channels"]:hover,
+#main-menu a[href="/followed-channels"]:focus { background-color: rgba(255,255,255,0.14) !important; transform: translateY(-1px) !important; outline: none !important; }
+
+/* ===========================
+   Short viewport: auto-compact
+   =========================== */
+@media (max-height: 720px) {
+  :root {
+    --res-item-gap: 10px;
+    --res-item-y: 10px;
+  }
+}
+
+/* ===========================
+   Reduced motion
+   =========================== */
+@media (prefers-reduced-motion: reduce) {
+  #res-nav-container, #res-nav-container nav.navs, #main-menu, #main-menu .main-menu-item { transition: none !important; }
+}
+
+
+/* Center labels perfectly under icons and truly narrow the cards */
+
+/* 1) Center the column of cards in the rail */
+#main-menu { align-items: center !important; }
+
+/* 2) Make cards a fixed, narrower width (including padding) and center them */
+#main-menu .main-menu-item,
+#main-menu a[href="/followed-channels"],
+#main-menu .main-menu-item-channel {
+  width: var(--res-item-maxw, 68px) !important;    /* try 64–72px */
+  max-width: none !important;                     /* avoid fighting width */
+  box-sizing: border-box !important;              /* include padding in width */
+  align-self: center !important;
+}
+
+/* 3) Make sure icon and text are centered within the card box */
+#main-menu .main-menu-item,
+#main-menu a[href="/followed-channels"] {
+  text-align: center !important;
+}
+#main-menu .main-menu-item svg,
+#main-menu .main-menu-item img,
+#main-menu .main-menu-item i {
+  display: block !important;
+  margin-inline: auto !important;                 /* centers the icon exactly */
+}
+#main-menu .main-menu-item .main-menu-item-label,
+#main-menu .main-menu-item span,
+#main-menu .main-menu-item-channel .main-menu-item-channel-label {
+  text-align: center !important;
+  margin-inline: auto !important;                 /* centers the text box */
+}
+
+/* 4) Slightly reduce vertical space between cards (optional) */
+#main-menu .main-menu-item { 
+  margin-top: var(--res-item-gap-tight, 10px) !important; /* was 14px */
+  padding-top: var(--res-item-y-tight, 10px) !important;  /* was 12px */
+  padding-bottom: var(--res-item-y-tight, 10px) !important;
+  min-height: calc(var(--res-icon, 26px) + var(--res-label-line, 18px) + (var(--res-item-y-tight, 10px) * 2)) !important;
+}
+/* channels list to match spacing if you ever unhide it */
+#main-menu .main-menu-item-channel { margin-top: var(--res-item-gap-tight, 10px) !important; }
+
+
+/* ==== Even spacing + "Followed" label injection ==== */
+
+/* 1) Distribute all visible items evenly from top to bottom */
+#main-menu {
+  justify-content: space-evenly !important;       /* try space-between if you prefer tighter top/bottom */
+}
+
+/* 2) Let flex spacing control the rhythm (remove per-item margins) */
+#main-menu .main-menu-item,
+#main-menu a[href="/followed-channels"] {
+  margin-top: 0 !important;
+}
+
+/* 3) Don’t let the divider consume a “slot” in the distribution */
+#main-menu .main-menu-divider { display: none !important; }
+
+/* 4) Ensure cards stay compact so even spacing looks balanced */
+#main-menu .main-menu-item {
+  /* keep your existing min-height formula but make sure padding is consistent */
+  padding-top: var(--res-item-y) !important;
+  padding-bottom: var(--res-item-y) !important;
+}
