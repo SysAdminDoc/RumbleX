@@ -30,23 +30,12 @@ function defineUI(core) {
                         panesHTML += `<h3 class="res-pane-subheader">${subCat}</h3>`;
                         categoryFeatures.filter(f => f.subCategory === subCat).forEach(f => panesHTML += buildSettingRow(f));
                     });
-                } else if (cat === 'Video Comments' || cat === 'Live Chat') {
-                    const blockerType = cat === 'Video Comments' ? 'comment' : 'livechat';
-                    const managementFeature = categoryFeatures.find(f => f.isManagement);
-                    const otherFeatures = categoryFeatures.filter(f => !f.isManagement);
-
-                    if (blockerType === 'livechat') {
-                         otherFeatures.sort((a,b) => a.id === 'cleanLiveChat' ? -1 : 1).forEach(f => panesHTML += buildSettingRow(f));
-                    } else {
-                         otherFeatures.forEach(f => panesHTML += buildSettingRow(f));
-                    }
-                   
-                    if(managementFeature) panesHTML += buildSettingRow(managementFeature);
-                    panesHTML += buildBlockerManagementUI(blockerType);
-
                 } else {
                     categoryFeatures.forEach(f => panesHTML += buildSettingRow(f));
                 }
+
+                if (cat === 'Video Comments') panesHTML += buildBlockerManagementUI('comment');
+                if (cat === 'Live Chat') panesHTML += buildBlockerManagementUI('livechat');
             }
             panesHTML += `</div>`;
         });
@@ -68,7 +57,7 @@ function defineUI(core) {
                 <div class="res-settings-footer">
                     <div class="res-footer-left">
                         <a href="https://github.com/SysAdminDoc/RumbleX" target="_blank" class="res-github-link" title="View on GitHub">${ICONS.github}</a>
-                        <span class="res-version" title="Keyboard Shortcut: Ctrl+Alt+R">v12.0</span>
+                        <span class="res-version" title="Keyboard Shortcut: Ctrl+Alt+R">v11.9</span>
                     </div>
                     <div class="res-footer-right">
                         <div class="res-button-group">

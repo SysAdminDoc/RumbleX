@@ -145,7 +145,7 @@ body.res-panel-open #res-settings-panel { opacity: 1; pointer-events: auto; tran
     gap: 16px;
 }
 .rud-group-box {
-    background-color: var(--rud-bg-secondary);
+    background-color: var(--res-bg-secondary);
     border: 1px solid var(--res-border-color);
     border-radius: 12px;
     padding: 12px;
@@ -176,7 +176,7 @@ body.res-panel-open #res-settings-panel { opacity: 1; pointer-events: auto; tran
 .rud-tar-note {
     font-size: 13px;
     padding: 10px;
-    background-color: var(--rud-bg-secondary);
+    background-color: var(--res-bg-secondary);
     border-radius: 8px;
 }
 `);
