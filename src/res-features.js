@@ -29,12 +29,123 @@ function defineFeatures(core) {
                 }
             },
         },
+        // --- NAVIGATION ---
+        {
+            id: 'autoHideHeader',
+            name: 'Auto-hide Header',
+            description: 'Fades the header out. It fades back in when you move your cursor to the top of the page.',
+            newCategory: 'Navigation',
+            page: 'video', // Only applies to video pages
+            init() {
+                if (!location.pathname.startsWith('/v')) return; // Ensure it only runs on video pages
+                this.handler = (e) => {
+                    if (e.clientY < 80) { // Top trigger zone
+                        document.body.classList.add('res-header-visible');
+                    } else if (!e.target.closest('header.header')) {
+                        document.body.classList.remove('res-header-visible');
+                    }
+                };
+                const css = `
+                    body.res-autohide-header-active header.header {
+                        position: fixed; top: 0; left: 0; right: 0; z-index: 1001;
+                        opacity: 0;
+                        transition: opacity 0.3s ease-in-out;
+                        pointer-events: none;
+                    }
+                    body.res-autohide-header-active.res-header-visible header.header {
+                        opacity: 1; pointer-events: auto;
+                    }
+                    body.res-autohide-header-active { padding-top: 0 !important; }
+                `;
+                styleManager.inject(this.id, css);
+                document.body.classList.add('res-autohide-header-active');
+                document.addEventListener('mousemove', this.handler);
+            },
+            destroy() {
+                if (this.handler) {
+                    document.removeEventListener('mousemove', this.handler);
+                }
+                styleManager.remove(this.id);
+                document.body.classList.remove('res-autohide-header-active', 'res-header-visible');
+            }
+        },
+        {
+            id: 'collapseNavSidebar',
+            name: 'Collapse Navigation Sidebar',
+            description: 'Collapses the sidebar. It slides into view when you move your cursor to the left edge of the page.',
+            newCategory: 'Navigation',
+            init() {
+                const css = `
+                    /* Hide original nav before it's wrapped to prevent flash on load */
+                    body.res-collapse-nav-active nav.navs:not(#res-nav-container nav.navs) {
+                        visibility: hidden !important;
+                    }
+                    body.res-collapse-nav-active .main-menu-toggle {
+                        display: none !important;
+                    }
+                    body.res-collapse-nav-active main.nav--transition {
+                        margin-left: 0 !important;
+                    }
+                    #res-nav-container {
+                        position: fixed;
+                        top: 0;
+                        left: 0;
+                        height: 100vh;
+                        width: 276px; /* Nav width (256px) + Trigger area (20px) */
+                        z-index: 10000;
+                        transform: translateX(-256px); /* Hide the nav part, leaving trigger area */
+                        transition: transform 0.3s ease-in-out;
+                    }
+                    #res-nav-container:hover {
+                        transform: translateX(0);
+                    }
+                    body.res-collapse-nav-active nav.navs {
+                        position: absolute !important; /* Positioned inside the container */
+                        top: 0 !important;
+                        left: 0 !important;
+                        width: 256px !important;
+                        height: 100vh !important;
+                        display: block !important;
+                        visibility: visible !important;
+                        opacity: 1 !important;
+                        transform: none !important; /* No separate transform needed */
+                        box-shadow: none !important; /* Removed dropshadow */
+                    }
+                `;
+                styleManager.inject(this.id, css);
+                $('body').addClass('res-collapse-nav-active');
+
+                // Use waitForElement to ensure nav exists before wrapping it, making it work on video pages.
+                waitForElement('nav.navs', ($nav) => {
+                    // Double-check if it's already wrapped to avoid issues with multiple triggers
+                    if ($nav.parent().is('#res-nav-container')) {
+                        return;
+                    }
+                    $nav.wrap('<div id="res-nav-container"></div>');
+
+                    // Force Rumble's menu state to be "closed" so it doesn't block page content
+                    if (window.mainMenu && typeof window.mainMenu.close === 'function') {
+                        window.mainMenu.close();
+                    }
+                    $('body').removeClass('main-menu-visible');
+                });
+            },
+            destroy() {
+                styleManager.remove(this.id);
+                $('body').removeClass('res-collapse-nav-active');
+                const $nav = $('nav.navs');
+                if ($nav.length && $nav.parent().is('#res-nav-container')) {
+                    $nav.unwrap(); // Remove the container
+                }
+            }
+        },
         {
             id: 'themeCollapsedSidebar',
             name: 'Theme Collapsed Sidebar',
             description: 'Applies a custom, compact, icon-centric theme to the collapsed navigation sidebar. Requires "Collapse Navigation Sidebar" to be enabled.',
-            newCategory: 'Theme & Appearance',
-            css: `
+            newCategory: 'Theme & Appearance', // This controls UI placement
+            init() {
+                const css = `
                 :root {
                   /* Rail geometry */
                   --res-rail: 80px;      /* collapsed rail width */
@@ -282,116 +393,11 @@ function defineFeatures(core) {
                 @media (prefers-reduced-motion: reduce) {
                   #res-nav-container, #res-nav-container nav.navs, #main-menu, #main-menu .main-menu-item { transition: none !important; }
                 }
-            `
-        },
-        // --- NAVIGATION ---
-        {
-            id: 'autoHideHeader',
-            name: 'Auto-hide Header',
-            description: 'Fades the header out. It fades back in when you move your cursor to the top of the page.',
-            newCategory: 'Navigation',
-            page: 'video', // Only applies to video pages
-            init() {
-                if (!location.pathname.startsWith('/v')) return; // Ensure it only runs on video pages
-                this.handler = (e) => {
-                    if (e.clientY < 80) { // Top trigger zone
-                        document.body.classList.add('res-header-visible');
-                    } else if (!e.target.closest('header.header')) {
-                        document.body.classList.remove('res-header-visible');
-                    }
-                };
-                const css = `
-                    body.res-autohide-header-active header.header {
-                        position: fixed; top: 0; left: 0; right: 0; z-index: 1001;
-                        opacity: 0;
-                        transition: opacity 0.3s ease-in-out;
-                        pointer-events: none;
-                    }
-                    body.res-autohide-header-active.res-header-visible header.header {
-                        opacity: 1; pointer-events: auto;
-                    }
-                    body.res-autohide-header-active { padding-top: 0 !important; }
                 `;
                 styleManager.inject(this.id, css);
-                document.body.classList.add('res-autohide-header-active');
-                document.addEventListener('mousemove', this.handler);
-            },
-            destroy() {
-                if (this.handler) {
-                    document.removeEventListener('mousemove', this.handler);
-                }
-                styleManager.remove(this.id);
-                document.body.classList.remove('res-autohide-header-active', 'res-header-visible');
-            }
-        },
-        {
-            id: 'collapseNavSidebar',
-            name: 'Collapse Navigation Sidebar',
-            description: 'Collapses the sidebar. It slides into view when you move your cursor to the left edge of the page.',
-            newCategory: 'Navigation',
-            init() {
-                const css = `
-                    /* Hide original nav before it's wrapped to prevent flash on load */
-                    body.res-collapse-nav-active nav.navs:not(#res-nav-container nav.navs) {
-                        visibility: hidden !important;
-                    }
-                    body.res-collapse-nav-active .main-menu-toggle {
-                        display: none !important;
-                    }
-                    body.res-collapse-nav-active main.nav--transition {
-                        margin-left: 0 !important;
-                    }
-                    #res-nav-container {
-                        position: fixed;
-                        top: 0;
-                        left: 0;
-                        height: 100vh;
-                        width: 276px; /* Nav width (256px) + Trigger area (20px) */
-                        z-index: 10000;
-                        transform: translateX(-256px); /* Hide the nav part, leaving trigger area */
-                        transition: transform 0.3s ease-in-out;
-                    }
-                    #res-nav-container:hover {
-                        transform: translateX(0);
-                    }
-                    body.res-collapse-nav-active nav.navs {
-                        position: absolute !important; /* Positioned inside the container */
-                        top: 0 !important;
-                        left: 0 !important;
-                        width: 256px !important;
-                        height: 100vh !important;
-                        display: block !important;
-                        visibility: visible !important;
-                        opacity: 1 !important;
-                        transform: none !important; /* No separate transform needed */
-                        box-shadow: none !important; /* Removed dropshadow */
-                    }
-                `;
-                styleManager.inject(this.id, css);
-                $('body').addClass('res-collapse-nav-active');
-
-                // Use waitForElement to ensure nav exists before wrapping it, making it work on video pages.
-                waitForElement('nav.navs', ($nav) => {
-                    // Double-check if it's already wrapped to avoid issues with multiple triggers
-                    if ($nav.parent().is('#res-nav-container')) {
-                        return;
-                    }
-                    $nav.wrap('<div id="res-nav-container"></div>');
-
-                    // Force Rumble's menu state to be "closed" so it doesn't block page content
-                    if (window.mainMenu && typeof window.mainMenu.close === 'function') {
-                        window.mainMenu.close();
-                    }
-                    $('body').removeClass('main-menu-visible');
-                });
             },
             destroy() {
                 styleManager.remove(this.id);
-                $('body').removeClass('res-collapse-nav-active');
-                const $nav = $('nav.navs');
-                if ($nav.length && $nav.parent().is('#res-nav-container')) {
-                    $nav.unwrap(); // Remove the container
-                }
             }
         },
         {
