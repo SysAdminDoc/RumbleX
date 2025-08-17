@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         RumbleX
 // @namespace    https://github.com/SysAdminDoc/RumbleX
-// @version      11.9
+// @version      12.0
 // @description  Supercharge your Rumble.com experience.
 // @author       Matthew Parker
 // @match        https://rumble.com/*
@@ -36,10 +36,6 @@
         // --- Phase 1: Pre-DOM Ready ---
         // Load settings into the core state object
         RES_CORE.appState.settings = await RES_CORE.settingsManager.load();
-        $('html').attr('data-res-theme', RES_CORE.appState.settings.panelTheme);
-        if (!localStorage.getItem('rud-theme')) {
-             localStorage.setItem('rud-theme', 'rud-dark');
-        }
 
         // Define modules by passing core dependencies
         const styles = defineStyles(RES_CORE);
