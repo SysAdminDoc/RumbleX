@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         RumbleX
 // @namespace    https://github.com/SysAdminDoc/RumbleX
-// @version      11.6
-// @description  A premium suite of tools to enhance Rumble.com, featuring a downloader, privacy controls, live chat enhancements, a professional UI, and layout controls.
+// @version      11.7
+// @description  Supercharge your Rumble.com experience.
 // @author       Matthew Parker
 // @match        https://rumble.com/*
 // @exclude      https://rumble.com/user/*
@@ -15,11 +15,11 @@
 // @grant        GM_setClipboard
 // @connect      *
 // @require      https://ajax.googleapis.com/ajax/libs/jquery/3.7.1/jquery.min.js
-// @require      https://github.com/SysAdminDoc/RumbleX/blob/main/src/res-core.js
-// @require      https://github.com/SysAdminDoc/RumbleX/blob/main/src/res-styles.js
-// @require      https://github.com/SysAdminDoc/RumbleX/blob/main/src/res-features.js
-// @require      https://github.com/SysAdminDoc/RumbleX/blob/main/src/res-ui.js
-// @require      https://github.com/SysAdminDoc/RumbleX/blob/main/src/res-downloader.js
+// @require      https://raw.githubusercontent.com/SysAdminDoc/RumbleX/refs/heads/main/src/res-core.js
+// @require      https://raw.githubusercontent.com/SysAdminDoc/RumbleX/refs/heads/main/src/res-styles.js
+// @require      https://raw.githubusercontent.com/SysAdminDoc/RumbleX/refs/heads/main/src/res-features.js
+// @require      https://raw.githubusercontent.com/SysAdminDoc/RumbleX/refs/heads/main/src/res-ui.js
+// @require      https://raw.githubusercontent.com/SysAdminDoc/RumbleX/refs/heads/main/src/res-downloader.js
 // @updateURL    https://github.com/SysAdminDoc/RumbleX/raw/refs/heads/main/rumble-enhancement-suite.user.js
 // @downloadURL  https://github.com/SysAdminDoc/RumbleX/raw/refs/heads/main/rumble-enhancement-suite.user.js
 // @run-at       document-start
