@@ -76,32 +76,35 @@ function defineFeatures(core) {
             newCategory: 'Navigation',
             init() {
                 const css = `
+                    body.res-collapse-nav-active .main-menu-toggle { 
+                        display: none !important; 
+                    }
                     body.res-collapse-nav-active nav.navs {
                         position: fixed; top: 0; left: 0;
                         transform: translateX(-100%);
-                        transition: transform 0.3s ease-in-out, opacity 0.3s ease-in-out;
-                        z-index: 1002;
+                        transition: transform 0.3s ease-in-out, box-shadow 0.3s ease-in-out;
+                        z-index: 10000;
                         height: 100vh;
-                        opacity: 0.95;
-                        visibility: hidden;
+                        visibility: visible !important; /* Override Rumble's inline style */
+                        opacity: 1 !important;
                     }
                     body.res-collapse-nav-active main.nav--transition {
                         margin-left: 0 !important;
                     }
                     #res-nav-sidebar-trigger {
-                        position: fixed; top: 80px; left: 0; width: 30px; height: calc(100% - 80px); z-index: 1001;
+                        position: fixed; top: 0; left: 0; width: 20px; height: 100vh; z-index: 9999;
                     }
                     #res-nav-sidebar-trigger:hover + nav.navs,
                     body.res-collapse-nav-active nav.navs:hover {
                         transform: translateX(0);
-                        opacity: 1;
-                        visibility: visible;
+                        box-shadow: 10px 0 30px -10px rgba(0,0,0,0.5);
                     }
                 `;
                 styleManager.inject(this.id, css);
                 $('body').addClass('res-collapse-nav-active');
                 if ($('#res-nav-sidebar-trigger').length === 0) {
-                    $('body').append('<div id="res-nav-sidebar-trigger"></div>');
+                    // Insert trigger div right before the nav element
+                    $('nav.navs').before('<div id="res-nav-sidebar-trigger"></div>');
                 }
             },
             destroy() {
@@ -138,13 +141,13 @@ function defineFeatures(core) {
                 $('a.header-logo').attr('href', '/');
             }
         },
-        // --- MAIN PAGE ---
-        { id: 'widenSearchBar', name: 'Widen Search Bar', description: 'Expands the search bar to fill available header space.', newCategory: 'Main Page Layout', css: `.header .header-div { display: flex; align-items: center; gap: 1rem; padding-right: 1.5rem; box-sizing: border-box; } .header-search { flex-grow: 1; max-width: none !important; } .header-search .header-search-field { width: 100% !important; }` },
-        { id: 'hideUploadIcon', name: 'Hide Upload Icon', description: 'Hides the upload/stream live icon in the header.', newCategory: 'Main Page Layout', css: 'button.header-upload { display: none !important; }' },
-        { id: 'hideHeaderAd', name: 'Hide "Go Ad-Free" Button', description: 'Hides the "Go Ad-Free" button in the header.', newCategory: 'Main Page Layout', css: `span.hidden.lg\\:flex:has(button[hx-get*="premium-value-prop"]) { display: none !important; }` },
-        { id: 'hideProfileBacksplash', name: 'Hide Profile Backsplash', description: 'Hides the large header image on channel profiles.', newCategory: 'Main Page Layout', page: 'profile', css: `div.channel-header--backsplash { display: none; } html.main-menu-mode-permanent { margin-top: 30px !important; }` },
+        // --- MAIN PAGE LAYOUT ---
+        { id: 'widenSearchBar', name: 'Widen Search Bar', description: 'Expands the search bar to fill available header space.', newCategory: 'Main Page Layout', subCategory: 'Main Page (Global/All Pages)', css: `.header .header-div { display: flex; align-items: center; gap: 1rem; padding-right: 1.5rem; box-sizing: border-box; } .header-search { flex-grow: 1; max-width: none !important; } .header-search .header-search-field { width: 100% !important; }` },
+        { id: 'hideUploadIcon', name: 'Hide Upload Icon', description: 'Hides the upload/stream live icon in the header.', newCategory: 'Main Page Layout', subCategory: 'Main Page (Global/All Pages)', css: 'button.header-upload { display: none !important; }' },
+        { id: 'hideHeaderAd', name: 'Hide "Go Ad-Free" Button', description: 'Hides the "Go Ad-Free" button in the header.', newCategory: 'Main Page Layout', subCategory: 'Main Page (Global/All Pages)', css: `span.hidden.lg\\:flex:has(button[hx-get*="premium-value-prop"]) { display: none !important; }` },
+        { id: 'hideFooter', name: 'Hide Footer', description: 'Removes the footer at the bottom of the page.', newCategory: 'Main Page Layout', subCategory: 'Main Page (Global/All Pages)', css: 'footer.page__footer.foot.nav--transition { display: none !important; }' },
         {
-            id: 'hidePremiumVideos', name: 'Hide Premium Videos', description: 'Hides premium-only videos from subscription and channel feeds.', newCategory: 'Main Page Layout',
+            id: 'hidePremiumVideos', name: 'Hide Premium Videos', description: 'Hides premium-only videos from subscription and channel feeds.', newCategory: 'Main Page Layout', subCategory: 'Main Page (Global/All Pages)',
             init() {
                 const hideRule = () => document.querySelectorAll('div.videostream:has(a[href="/premium"])').forEach(el => el.style.display = 'none');
                 this.observer = new MutationObserver(hideRule);
@@ -153,28 +156,28 @@ function defineFeatures(core) {
             },
             destroy() { if (this.observer) this.observer.disconnect(); document.querySelectorAll('div.videostream:has(a[href="/premium"])').forEach(el => el.style.display = ''); }
         },
-        { id: 'hideFeaturedBanner', name: 'Hide Featured Banner', description: 'Hides the top category banner on the home page.', newCategory: 'Main Page Layout', css: 'div.homepage-featured { display: none !important; }', page: 'home' },
-        { id: 'hideEditorPicks', name: "Hide Editor Picks", description: "Hides the main 'Editor Picks' content row on the home page.", newCategory: 'Main Page Layout', css: '#section-editor-picks { display: none !important; }', page: 'home' },
-        { id: 'hideTopLiveCategories', name: "Hide 'Top Live' Row", description: "Hides the 'Top Live Categories' row on the home page.", newCategory: 'Main Page Layout', css: 'section#section-top-live { display: none !important; }', page: 'home' },
-        { id: 'hidePremiumRow', name: "Hide Premium Row", description: "Hides the Rumble Premium row on the home page.", newCategory: 'Main Page Layout', css: 'section#section-premium-videos { display: none !important; }', page: 'home' },
-        { id: 'hideHomepageAd', name: "Hide Ad Section", description: "Hides the ad container on the home page.", newCategory: 'Main Page Layout', css: 'section.homepage-section:has(.js-rac-desktop-container) { display: none !important; }', page: 'home' },
-        { id: 'hideForYouRow', name: "Hide 'For You' Row", description: "Hides 'For You' recommendations on the home page.", newCategory: 'Main Page Layout', css: 'section#section-personal-recommendations { display: none !important; }', page: 'home' },
-        { id: 'hideGamingRow', name: "Hide Gaming Row", description: "Hides the Gaming row on the home page.", newCategory: 'Main Page Layout', css: 'section#section-gaming { display: none !important; }', page: 'home' },
-        { id: 'hideFinanceRow', name: "Hide Finance & Crypto Row", description: "Hides the Finance & Crypto row on the home page.", newCategory: 'Main Page Layout', css: 'section#section-finance { display: none !important; }', page: 'home' },
-        { id: 'hideLiveRow', name: "Hide Live Row", description: "Hides the Live row on the home page.", newCategory: 'Main Page Layout', css: 'section#section-live-videos { display: none !important; }', page: 'home' },
-        { id: 'hideFeaturedPlaylistsRow', name: "Hide Featured Playlists", description: "Hides the Featured Playlists row on the home page.", newCategory: 'Main Page Layout', css: 'section#section-featured-playlists { display: none !important; }', page: 'home' },
-        { id: 'hideSportsRow', name: "Hide Sports Row", description: "Hides the Sports row on the home page.", newCategory: 'Main Page Layout', css: 'section#section-sports { display: none !important; }', page: 'home' },
-        { id: 'hideViralRow', name: "Hide Viral Row", description: "Hides the Viral row on the home page.", newCategory: 'Main Page Layout', css: 'section#section-viral { display: none !important; }', page: 'home' },
-        { id: 'hidePodcastsRow', name: "Hide Podcasts Row", description: "Hides the Podcasts row on the home page.", newCategory: 'Main Page Layout', css: 'section#section-podcasts { display: none !important; }', page: 'home' },
-        { id: 'hideLeaderboardRow', name: "Hide Leaderboard Row", description: "Hides the Leaderboard row on the home page.", newCategory: 'Main Page Layout', css: 'section#section-leaderboard { display: none !important; }', page: 'home' },
-        { id: 'hideVlogsRow', name: "Hide Vlogs Row", description: "Hides the Vlogs row on the home page.", newCategory: 'Main Page Layout', css: 'section#section-vlogs { display: none !important; }', page: 'home' },
-        { id: 'hideNewsRow', name: "Hide News Row", description: "Hides the News row on the home page.", newCategory: 'Main Page Layout', css: 'section#section-news { display: none !important; }', page: 'home' },
-        { id: 'hideScienceRow', name: "Hide Health & Science Row", description: "Hides the Health & Science row on the home page.", newCategory: 'Main Page Layout', css: 'section#section-science { display: none !important; }', page: 'home' },
-        { id: 'hideMusicRow', name: "Hide Music Row", description: "Hides the Music row on the home page.", newCategory: 'Main Page Layout', css: 'section#section-music { display: none !important; }', page: 'home' },
-        { id: 'hideEntertainmentRow', name: "Hide Entertainment Row", description: "Hides the Entertainment row on the home page.", newCategory: 'Main Page Layout', css: 'section#section-entertainment { display: none !important; }', page: 'home' },
-        { id: 'hideCookingRow', name: "Hide Cooking Row", description: "Hides the Cooking row on the home page.", newCategory: 'Main Page Layout', css: 'section#section-cooking { display: none !important; }', page: 'home' },
-        { id: 'hideFooter', name: 'Hide Footer', description: 'Removes the footer at the bottom of the page.', newCategory: 'Main Page Layout', css: 'footer.page__footer.foot.nav--transition { display: none !important; }' },
-
+        { id: 'hideProfileBacksplash', name: 'Hide Profile Backsplash', description: 'Hides the large header image on channel profiles.', newCategory: 'Main Page Layout', subCategory: 'User Profile Page', page: 'profile', css: `div.channel-header--backsplash { display: none; } html.main-menu-mode-permanent { margin-top: 30px !important; }` },
+        { id: 'hideFeaturedBanner', name: 'Hide Featured Banner', description: 'Hides the top category banner on the home page.', newCategory: 'Main Page Layout', subCategory: 'Home Page', css: 'div.homepage-featured { display: none !important; }', page: 'home' },
+        { id: 'hideEditorPicks', name: "Hide Editor Picks", description: "Hides the main 'Editor Picks' content row on the home page.", newCategory: 'Main Page Layout', subCategory: 'Home Page', css: '#section-editor-picks { display: none !important; }', page: 'home' },
+        { id: 'hideTopLiveCategories', name: "Hide 'Top Live' Row", description: "Hides the 'Top Live Categories' row on the home page.", newCategory: 'Main Page Layout', subCategory: 'Home Page', css: 'section#section-top-live { display: none !important; }', page: 'home' },
+        { id: 'hidePremiumRow', name: "Hide Premium Row", description: "Hides the Rumble Premium row on the home page.", newCategory: 'Main Page Layout', subCategory: 'Home Page', css: 'section#section-premium-videos { display: none !important; }', page: 'home' },
+        { id: 'hideHomepageAd', name: "Hide Ad Section", description: "Hides the ad container on the home page.", newCategory: 'Main Page Layout', subCategory: 'Home Page', css: 'section.homepage-section:has(.js-rac-desktop-container) { display: none !important; }', page: 'home' },
+        { id: 'hideForYouRow', name: "Hide 'For You' Row", description: "Hides 'For You' recommendations on the home page.", newCategory: 'Main Page Layout', subCategory: 'Home Page', css: 'section#section-personal-recommendations { display: none !important; }', page: 'home' },
+        { id: 'hideGamingRow', name: "Hide Gaming Row", description: "Hides the Gaming row on the home page.", newCategory: 'Main Page Layout', subCategory: 'Home Page', css: 'section#section-gaming { display: none !important; }', page: 'home' },
+        { id: 'hideFinanceRow', name: "Hide Finance & Crypto Row", description: "Hides the Finance & Crypto row on the home page.", newCategory: 'Main Page Layout', subCategory: 'Home Page', css: 'section#section-finance { display: none !important; }', page: 'home' },
+        { id: 'hideLiveRow', name: "Hide Live Row", description: "Hides the Live row on the home page.", newCategory: 'Main Page Layout', subCategory: 'Home Page', css: 'section#section-live-videos { display: none !important; }', page: 'home' },
+        { id: 'hideFeaturedPlaylistsRow', name: "Hide Featured Playlists", description: "Hides the Featured Playlists row on the home page.", newCategory: 'Main Page Layout', subCategory: 'Home Page', css: 'section#section-featured-playlists { display: none !important; }', page: 'home' },
+        { id: 'hideSportsRow', name: "Hide Sports Row", description: "Hides the Sports row on the home page.", newCategory: 'Main Page Layout', subCategory: 'Home Page', css: 'section#section-sports { display: none !important; }', page: 'home' },
+        { id: 'hideViralRow', name: "Hide Viral Row", description: "Hides the Viral row on the home page.", newCategory: 'Main Page Layout', subCategory: 'Home Page', css: 'section#section-viral { display: none !important; }', page: 'home' },
+        { id: 'hidePodcastsRow', name: "Hide Podcasts Row", description: "Hides the Podcasts row on the home page.", newCategory: 'Main Page Layout', subCategory: 'Home Page', css: 'section#section-podcasts { display: none !important; }', page: 'home' },
+        { id: 'hideLeaderboardRow', name: "Hide Leaderboard Row", description: "Hides the Leaderboard row on the home page.", newCategory: 'Main Page Layout', subCategory: 'Home Page', css: 'section#section-leaderboard { display: none !important; }', page: 'home' },
+        { id: 'hideVlogsRow', name: "Hide Vlogs Row", description: "Hides the Vlogs row on the home page.", newCategory: 'Main Page Layout', subCategory: 'Home Page', css: 'section#section-vlogs { display: none !important; }', page: 'home' },
+        { id: 'hideNewsRow', name: "Hide News Row", description: "Hides the News row on the home page.", newCategory: 'Main Page Layout', subCategory: 'Home Page', css: 'section#section-news { display: none !important; }', page: 'home' },
+        { id: 'hideScienceRow', name: "Hide Health & Science Row", description: "Hides the Health & Science row on the home page.", newCategory: 'Main Page Layout', subCategory: 'Home Page', css: 'section#section-science { display: none !important; }', page: 'home' },
+        { id: 'hideMusicRow', name: "Hide Music Row", description: "Hides the Music row on the home page.", newCategory: 'Main Page Layout', subCategory: 'Home Page', css: 'section#section-music { display: none !important; }', page: 'home' },
+        { id: 'hideEntertainmentRow', name: "Hide Entertainment Row", description: "Hides the Entertainment row on the home page.", newCategory: 'Main Page Layout', subCategory: 'Home Page', css: 'section#section-entertainment { display: none !important; }', page: 'home' },
+        { id: 'hideCookingRow', name: "Hide Cooking Row", description: "Hides the Cooking row on the home page.", newCategory: 'Main Page Layout', subCategory: 'Home Page', css: 'section#section-cooking { display: none !important; }', page: 'home' },
+        
         // --- VIDEO PAGE LAYOUT ---
         {
             id: 'adaptiveLiveLayout', name: 'Adaptive Live Video Layout', description: 'On live streams, expands the player to fill the space next to the live chat.', newCategory: 'Video Page Layout',

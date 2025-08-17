@@ -19,22 +19,23 @@ function defineUI(core) {
             tabsHTML += `<button class="res-tab-btn ${activeClass}" data-tab="${catId}">${cat}</button>`;
             panesHTML += `<div id="res-pane-${catId}" class="res-settings-pane ${activeClass}">`;
 
-            // Special case for Theme pane which has no toggles
             if (cat === 'Theme & Appearance') {
                 panesHTML += buildThemePane(categoryFeatures);
             } else {
-                // Add "Toggle All" to every other category
                 panesHTML += `<div class="res-setting-row res-toggle-all-row" data-category-id="${catId}"><div class="res-setting-row-text"><label for="res-toggle-all-${catId}">Toggle All</label><small>Enable or disable all settings in this category.</small></div><label class="res-switch"><input type="checkbox" id="res-toggle-all-${catId}" class="res-toggle-all-cb"><span class="res-slider"></span></label></div>`;
                 
-                // Add individual feature rows
-                categoryFeatures.forEach(f => panesHTML += buildSettingRow(f));
-
-                // Add blocker management UI if applicable
-                if (cat === 'Video Comments') {
-                    panesHTML += buildBlockerManagementUI('comment');
-                } else if (cat === 'Live Chat') {
-                    panesHTML += buildBlockerManagementUI('livechat');
+                if (cat === 'Main Page Layout') {
+                    const subCategories = ['Main Page (Global/All Pages)', 'User Profile Page', 'Home Page'];
+                    subCategories.forEach(subCat => {
+                        panesHTML += `<h3 class="res-pane-subheader">${subCat}</h3>`;
+                        categoryFeatures.filter(f => f.subCategory === subCat).forEach(f => panesHTML += buildSettingRow(f));
+                    });
+                } else {
+                    categoryFeatures.forEach(f => panesHTML += buildSettingRow(f));
                 }
+
+                if (cat === 'Video Comments') panesHTML += buildBlockerManagementUI('comment');
+                if (cat === 'Live Chat') panesHTML += buildBlockerManagementUI('livechat');
             }
             panesHTML += `</div>`;
         });
@@ -56,15 +57,21 @@ function defineUI(core) {
                 <div class="res-settings-footer">
                     <div class="res-footer-left">
                         <a href="https://github.com/SysAdminDoc/RumbleX" target="_blank" class="res-github-link" title="View on GitHub">${ICONS.github}</a>
-                        <span class="res-version" title="Keyboard Shortcut: Ctrl+Alt+R">v11.8</span>
+                        <span class="res-version" title="Keyboard Shortcut: Ctrl+Alt+R">v11.9</span>
                     </div>
-                    <label class="res-theme-select">
-                        <span>Panel Theme:</span>
-                        <select id="res-panel-theme-selector">
-                            <option value="dark" ${appState.settings.panelTheme === 'dark' ? 'selected' : ''}>Professional Dark</option>
-                            <option value="light" ${appState.settings.panelTheme === 'light' ? 'selected' : ''}>Professional Light</option>
-                        </select>
-                    </label>
+                    <div class="res-footer-right">
+                        <div class="res-button-group">
+                            <button id="res-import-all-settings" class="res-button" title="Import all RumbleX settings from a file">${ICONS.upload} Import</button>
+                            <button id="res-export-all-settings" class="res-button" title="Export all RumbleX settings to a file">${ICONS.download} Export</button>
+                        </div>
+                        <label class="res-theme-select">
+                            <span>Panel Theme:</span>
+                            <select id="res-panel-theme-selector">
+                                <option value="dark" ${appState.settings.panelTheme === 'dark' ? 'selected' : ''}>Professional Dark</option>
+                                <option value="light" ${appState.settings.panelTheme === 'light' ? 'selected' : ''}>Professional Light</option>
+                            </select>
+                        </label>
+                    </div>
                 </div>
             </div>`;
         $('body').append(panelHTML);
@@ -81,9 +88,18 @@ function defineUI(core) {
     }
 
     function buildBlockerManagementUI(type) {
+        const title = type === 'comment' ? 'Comment Block List' : 'Live Chat Block List';
         return `
          <div class="res-blocked-users-container" data-blocker-type="${type}">
-            <div class="res-blocked-users-list-header"><h3>Blocked Users</h3><button class="res-button res-button-danger res-unblock-all-btn">Unblock All</button></div>
+            <div class="res-blocked-users-list-header">
+                <h3>${title}</h3>
+                <input type="search" class="res-input res-blocked-list-search" placeholder="Search users...">
+                <div class="res-button-group">
+                    <button class="res-button res-import-list-btn" title="Import list from file">${ICONS.upload}</button>
+                    <button class="res-button res-export-list-btn" title="Export list to file">${ICONS.download}</button>
+                    <button class="res-button res-button-danger res-unblock-all-btn">Unblock All</button>
+                </div>
+            </div>
             <div class="res-blocked-users-list"></div>
          </div>`;
     }
@@ -143,6 +159,35 @@ function defineUI(core) {
         });
     }
 
+    function handleFileImport(callback) {
+        const fileInput = document.createElement('input');
+        fileInput.type = 'file';
+        fileInput.accept = '.json,application/json';
+        fileInput.onchange = e => {
+            const file = e.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = readerEvent => {
+                const content = readerEvent.target.result;
+                callback(content);
+            };
+            reader.readAsText(file);
+        };
+        fileInput.click();
+    }
+
+    function handleFileExport(filename, content) {
+        const blob = new Blob([content], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+    }
+
     function attachUIEventListeners() {
         const $doc = $(document);
         let isHandlingMutex = false;
@@ -167,14 +212,13 @@ function defineUI(core) {
             const featureId = $this.closest('[data-feature-id]').data('feature-id');
             const isEnabled = $this.is(':checked');
             
-            // --- Mutual Exclusion Logic for Navigation Sidebar ---
             const navSidebarMutex = ['collapseNavSidebar', 'hideNavSidebarCompletely'];
             if (isEnabled && navSidebarMutex.includes(featureId)) {
                 isHandlingMutex = true;
                 const otherFeatureId = navSidebarMutex.find(id => id !== featureId);
                 const $otherCheckbox = $(`#res-toggle-${otherFeatureId}`);
                 if ($otherCheckbox.is(':checked')) {
-                    $otherCheckbox.prop('checked', false).trigger('change');
+                    $otherCheckbox.prop('checked', false).triggerHandler('change');
                 }
                 isHandlingMutex = false;
             }
@@ -193,7 +237,7 @@ function defineUI(core) {
             updateAllToggleStates();
         });
 
-        $doc.on('change', '.res-toggle-all-cb', function() {
+        $doc.on('change', '.res-toggle-all-cb', async function() {
             const $this = $(this);
             const isEnabled = $this.is(':checked');
             const catId = $this.closest('.res-toggle-all-row').data('category-id');
@@ -202,26 +246,21 @@ function defineUI(core) {
             isHandlingMutex = true;
             if (catId === 'Navigation') {
                 if (isEnabled) {
-                    // When turning all ON, default to 'collapse' and turn others on.
-                    $('#res-toggle-collapseNavSidebar').prop('checked', true).trigger('change');
-                    $('#res-toggle-hideNavSidebarCompletely').prop('checked', false); // Don't trigger change, it's handled by the other
-                    appState.settings.hideNavSidebarCompletely = false;
-
-                    $pane.find('.res-feature-cb').not('#res-toggle-collapseNavSidebar, #res-toggle-hideNavSidebarCompletely').prop('checked', true).trigger('change');
+                    $('#res-toggle-collapseNavSidebar').prop('checked', true).triggerHandler('change');
+                    $('#res-toggle-hideNavSidebarCompletely').prop('checked', false).triggerHandler('change');
+                    $pane.find('.res-feature-cb').not('#res-toggle-collapseNavSidebar, #res-toggle-hideNavSidebarCompletely').prop('checked', true).triggerHandler('change');
                 } else {
-                    // When turning all OFF, just turn them all off.
-                    $pane.find('.res-feature-cb').not(':disabled').prop('checked', false).trigger('change');
+                    $pane.find('.res-feature-cb').not(':disabled').prop('checked', false).triggerHandler('change');
                 }
             } else {
-                // Default behavior for other categories
                 $pane.find('.res-feature-cb').not(':disabled').each(function() {
                     if ($(this).is(':checked') !== isEnabled) {
-                        $(this).prop('checked', isEnabled).trigger('change');
+                        $(this).prop('checked', isEnabled).triggerHandler('change');
                     }
                 });
             }
             isHandlingMutex = false;
-            settingsManager.save(appState.settings);
+            await settingsManager.save(appState.settings);
         });
 
         $doc.on('change', '#res-panel-theme-selector', async function() {
@@ -237,6 +276,7 @@ function defineUI(core) {
             core.features.find(f => f.id === 'siteTheme').apply(newTheme);
         });
 
+        // --- Blocker Management ---
         const commentBlocker = core.features.find(f => f.id === 'commentBlocking');
         $doc.on('click', '.res-block-user-btn', function() { commentBlocker?.blockUser($(this).data('username')); });
         $doc.on('click', '.res-blocked-users-container[data-blocker-type="comment"] .res-unblock-btn', function() { commentBlocker?.unblockUser($(this).data('username')); });
@@ -246,6 +286,60 @@ function defineUI(core) {
         $doc.on('click', '.res-live-chat-block-btn', function(e) { e.stopPropagation(); liveChatBlocker?.blockUser($(this).closest('.chat-history--row').data('username')); });
         $doc.on('click', '.res-blocked-users-container[data-blocker-type="livechat"] .res-unblock-btn', function() { liveChatBlocker?.unblockUser($(this).data('username')); });
         $doc.on('click', '.res-blocked-users-container[data-blocker-type="livechat"] .res-unblock-all-btn', function() { if (confirm('Are you sure you want to unblock all live chat users?')) liveChatBlocker?.unblockAllUsers(); });
+
+        $doc.on('keyup', '.res-blocked-list-search', function() {
+            const searchTerm = $(this).val().toLowerCase();
+            const $container = $(this).closest('.res-blocked-users-container');
+            $container.find('.res-blocked-user-item').each(function() {
+                const username = $(this).data('username');
+                $(this).toggle(username.includes(searchTerm));
+            });
+        });
+
+        $doc.on('click', '.res-export-list-btn', async function() {
+            const type = $(this).closest('.res-blocked-users-container').data('blocker-type');
+            const users = await settingsManager.getBlockedUsers(type);
+            handleFileExport(`rumblex_${type}_blocklist.json`, JSON.stringify(users, null, 2));
+        });
+
+        $doc.on('click', '.res-import-list-btn', function() {
+            const type = $(this).closest('.res-blocked-users-container').data('blocker-type');
+            handleFileImport(async (content) => {
+                try {
+                    const importedUsers = JSON.parse(content);
+                    if (!Array.isArray(importedUsers)) throw new Error("Invalid format.");
+                    const currentUsers = await settingsManager.getBlockedUsers(type);
+                    const mergedUsers = [...new Set([...currentUsers, ...importedUsers])];
+                    await settingsManager.saveBlockedUsers(mergedUsers, type);
+                    if (type === 'comment') appState.commentBlockedUsers = mergedUsers;
+                    if (type === 'livechat') appState.liveChatBlockedUsers = mergedUsers;
+                    populateBlockedUsersList(type);
+                    core.features.find(f => f.id === `${type}Blocking`).applyBlockedUsers();
+                    createToast(`Imported ${importedUsers.length} users into ${type} block list.`, 'success');
+                } catch (e) {
+                    createToast(`Import failed: ${e.message}`, 'error');
+                }
+            });
+        });
+
+        // --- Global Settings Import/Export ---
+        $doc.on('click', '#res-export-all-settings', async function() {
+            const configString = await settingsManager.exportAllSettings();
+            handleFileExport('rumblex_settings_backup.json', configString);
+        });
+
+        $doc.on('click', '#res-import-all-settings', function() {
+            handleFileImport(async (content) => {
+                const success = await settingsManager.importAllSettings(content);
+                if (success) {
+                    if (confirm("Settings imported successfully. The page will now reload to apply all changes. OK?")) {
+                        location.reload();
+                    }
+                } else {
+                    createToast('Import failed. The file may be corrupt or in an invalid format.', 'error');
+                }
+            });
+        });
     }
     
     return {

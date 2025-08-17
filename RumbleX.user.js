@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         RumbleX
 // @namespace    https://github.com/SysAdminDoc/RumbleX
-// @version      11.8
+// @version      11.9
 // @description  Supercharge your Rumble.com experience.
 // @author       Matthew Parker
 // @match        https://rumble.com/*
