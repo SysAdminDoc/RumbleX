@@ -105,24 +105,26 @@ function defineFeatures(core) {
                         visibility: visible !important;
                         opacity: 1 !important;
                         transform: none !important; /* No separate transform needed */
-                        box-shadow: 10px 0 30px -10px rgba(0,0,0,0.5);
+                        box-shadow: none !important; /* Removed dropshadow */
                     }
                 `;
                 styleManager.inject(this.id, css);
                 $('body').addClass('res-collapse-nav-active');
 
-                // Wrap the nav in our hover container if it's not already
-                if ($('#res-nav-container').length === 0) {
-                    const $nav = $('nav.navs');
-                    if ($nav.length) {
-                        $nav.wrap('<div id="res-nav-container"></div>');
+                // Use waitForElement to ensure nav exists before wrapping it, making it work on video pages.
+                waitForElement('nav.navs', ($nav) => {
+                    // Double-check if it's already wrapped to avoid issues with multiple triggers
+                    if ($nav.parent().is('#res-nav-container')) {
+                        return;
                     }
-                }
-                // Force Rumble's menu state to be "closed" so it doesn't block page content
-                if (window.mainMenu && typeof window.mainMenu.close === 'function') {
-                    window.mainMenu.close();
-                }
-                $('body').removeClass('main-menu-visible');
+                    $nav.wrap('<div id="res-nav-container"></div>');
+
+                    // Force Rumble's menu state to be "closed" so it doesn't block page content
+                    if (window.mainMenu && typeof window.mainMenu.close === 'function') {
+                        window.mainMenu.close();
+                    }
+                    $('body').removeClass('main-menu-visible');
+                });
             },
             destroy() {
                 styleManager.remove(this.id);
