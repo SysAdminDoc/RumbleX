@@ -64,13 +64,6 @@ function defineUI(core) {
                             <button id="res-import-all-settings" class="res-button" title="Import all RumbleX settings from a file">${ICONS.upload} Import</button>
                             <button id="res-export-all-settings" class="res-button" title="Export all RumbleX settings to a file">${ICONS.download} Export</button>
                         </div>
-                        <label class="res-theme-select">
-                            <span>Panel Theme:</span>
-                            <select id="res-panel-theme-selector">
-                                <option value="dark" ${appState.settings.panelTheme === 'dark' ? 'selected' : ''}>Professional Dark</option>
-                                <option value="light" ${appState.settings.panelTheme === 'light' ? 'selected' : ''}>Professional Light</option>
-                            </select>
-                        </label>
                     </div>
                 </div>
             </div>`;
@@ -134,8 +127,8 @@ function defineUI(core) {
         const addClickListener = () => {
             $('#res-settings-button').off('click').on('click', () => {
                 $('body').addClass('res-panel-open');
-                populateBlockedUsersList('comment');
-                populateBlockedUsersList('livechat');
+                core.populateBlockedUsersList('comment');
+                core.populateBlockedUsersList('livechat');
                 core.features.find(f => f.id === 'siteTheme').sync();
             });
         };
@@ -201,7 +194,7 @@ function defineUI(core) {
             if (e.ctrlKey && e.altKey && e.key.toLowerCase() === 'r') {
                  e.preventDefault(); e.stopPropagation();
                  $('body').toggleClass('res-panel-open');
-                 if ($('body').hasClass('res-panel-open')) { populateBlockedUsersList('comment'); populateBlockedUsersList('livechat'); core.features.find(f => f.id === 'siteTheme').sync(); }
+                 if ($('body').hasClass('res-panel-open')) { core.populateBlockedUsersList('comment'); core.populateBlockedUsersList('livechat'); core.features.find(f => f.id === 'siteTheme').sync(); }
             }
         });
 
@@ -263,12 +256,6 @@ function defineUI(core) {
             await settingsManager.save(appState.settings);
         });
 
-        $doc.on('change', '#res-panel-theme-selector', async function() {
-            appState.settings.panelTheme = $(this).val();
-            await settingsManager.save(appState.settings);
-            $('html').attr('data-res-theme', appState.settings.panelTheme);
-        });
-
         $doc.on('change', '.res-theme-button', async function() {
             const newTheme = $(this).data('theme-value');
             appState.settings.siteTheme = newTheme;
@@ -287,7 +274,7 @@ function defineUI(core) {
         $doc.on('click', '.res-blocked-users-container[data-blocker-type="livechat"] .res-unblock-btn', function() { liveChatBlocker?.unblockUser($(this).data('username')); });
         $doc.on('click', '.res-blocked-users-container[data-blocker-type="livechat"] .res-unblock-all-btn', function() { if (confirm('Are you sure you want to unblock all live chat users?')) liveChatBlocker?.unblockAllUsers(); });
 
-        $doc.on('keyup', '.res-blocked-list-search', function() {
+        $doc.on('input', '.res-blocked-list-search', function() {
             const searchTerm = $(this).val().toLowerCase();
             const $container = $(this).closest('.res-blocked-users-container');
             $container.find('.res-blocked-user-item').each(function() {
@@ -313,7 +300,7 @@ function defineUI(core) {
                     await settingsManager.saveBlockedUsers(mergedUsers, type);
                     if (type === 'comment') appState.commentBlockedUsers = mergedUsers;
                     if (type === 'livechat') appState.liveChatBlockedUsers = mergedUsers;
-                    populateBlockedUsersList(type);
+                    core.populateBlockedUsersList(type);
                     core.features.find(f => f.id === `${type}Blocking`).applyBlockedUsers();
                     createToast(`Imported ${importedUsers.length} users into ${type} block list.`, 'success');
                 } catch (e) {
