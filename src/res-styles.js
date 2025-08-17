@@ -8,6 +8,12 @@ function defineStyles(core) {
 :root { --res-font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji"; }
 html { --res-bg-primary: #181a1b; --res-bg-secondary: #25282a; --res-bg-tertiary: #34383b; --res-bg-hover: #3d4245; --res-text-primary: #e8e6e3; --res-text-secondary: #b3b0aa; --res-border-color: #454a4d; --res-accent: #5a93ff; --res-accent-hover: #7eb0ff; --res-accent-glow: rgba(90, 147, 255, 0.3); --res-success: #22c55e; --res-error: #ef4444; --res-error-hover: #ff5252; --res-header-icon-color: #e8e6e3; --res-header-icon-hover-bg: #31363f; }
 
+/* === NEW: Keyframes for the gradient animation === */
+@keyframes res-gradient-scroll {
+  0% { background-position: 0% center; }
+  100% { background-position: 200% center; }
+}
+
 /* === SITE FIXES & ENHANCEMENTS === */
 html.main-menu-mode-permanent { margin-top: -70px !important; }
 div.border-0.border-b.border-solid.border-background-highlight,
@@ -32,7 +38,14 @@ body.res-panel-open #res-settings-panel { opacity: 1; pointer-events: auto; tran
 .res-header-title { display: flex; align-items: center; gap: 14px; }
 .res-header-title img { width: 32px; height: 32px; }
 .res-header-title h2 { font-size: 22px; font-weight: 700; margin: 0; }
-.res-header-brand { background: linear-gradient(45deg, #8effa1, #5a93ff); -webkit-background-clip: text; -webkit-text-fill-color: transparent; filter: brightness(1.1); }
+/* === MODIFIED: Updated gradient and added animation === */
+.res-header-brand {
+  background: linear-gradient(120deg, #98cb4a, #4cb1e6, #98cb4a);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-size: 200% auto;
+  animation: res-gradient-scroll 4s linear infinite;
+}
 .res-header-button { background: none; border: none; cursor: pointer; padding: 8px; display: flex; align-items: center; justify-content: center; border-radius: 50%; transition: background-color 0.2s ease, transform 0.2s ease; }
 .res-header-button:hover { background: var(--res-bg-secondary); transform: scale(1.1); }
 .res-header-button svg { width: 20px; height: 20px; color: var(--res-text-secondary); }
