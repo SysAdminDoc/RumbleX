@@ -13,7 +13,6 @@ Designed for both casual viewers and power users, RumbleX integrates seamlessly 
 RumbleX is packed with enhancements, all neatly organized and accessible from a single panel.
 
 ### Video Downloader
-![Video Downloader Demo](docs/gifs/downloader.gif)
 
 - **Multi-format support** – Download videos as MP4 or TAR archives (for live stream replays).  
 - **TAR processing built-in** – Combine TAR segments into a playable `.ts` file right in your browser.  
@@ -21,7 +20,6 @@ RumbleX is packed with enhancements, all neatly organized and accessible from a 
 - **Clean UI** – Adds a "Download" button to the video action bar, with a simple panel for formats.
 
 ### Layout & Appearance
-![Custom Layout](docs/images/layout-example.png)
 
 - **Homepage control** – Hide sections like Editor Picks, Live Categories, Gaming, or News.  
 - **Dynamic hiding** – Auto-hide header and navigation, reappear on mouse-over.  
@@ -30,14 +28,12 @@ RumbleX is packed with enhancements, all neatly organized and accessible from a 
 - **Theme management** – Control Rumble’s native theme (System, Dark, Light) directly from RumbleX.
 
 ### Privacy & Moderation
-![Comment Blocking](docs/gifs/comment-block.gif)
 
 - **Comment blocker** – Adds a "Block" button to comments; hide all past and future posts from that user.  
 - **Live chat blocker** – Block users instantly in live chat with a single click.  
 - **Blocked user manager** – View and manage blocked users for both comments and chat from the settings panel.
 
 ### Smarter Player Controls
-![Player Settings](docs/images/player-controls.png)
 
 - **Auto best quality** – Always start videos in the highest available quality.  
 - **Auto-liker** – Optionally auto-"rumble" (like) videos you open.  
@@ -45,16 +41,12 @@ RumbleX is packed with enhancements, all neatly organized and accessible from a 
 - **Cleaner interface** – Remove video action buttons (Share, Repost, Embed, etc.).
 
 ### Live Chat & Comment Enhancements
-![Live Chat Cleanup](docs/gifs/live-chat-clean.gif)
 
 - **Clean chat UI** – Hide pinned messages, headers, and Rant buttons for distraction-free chat.  
 - **Auto-load comments** – Automatically load more as you scroll.  
 - **Improved layout** – Moves the "Reply" button next to like/dislike for a tighter comment section.
 
 ### Settings Panel
-![Settings Panel](assets/images/settings-panel.png)
-
-
 
 - **Quick access** – Open via the new gear icon in the header or **Ctrl + Alt + R**.  
 - **Organized design** – Features grouped into logical tabs (Main Page, Video Page, Player Controls, etc.).  
