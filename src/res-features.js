@@ -188,11 +188,13 @@ function defineFeatures(core) {
         // --- MAIN PAGE LAYOUT ---
         { id: 'widenSearchBar', name: 'Widen Search Bar', description: 'Expands the search bar to fill available header space.', newCategory: 'Main Page Layout', subCategory: 'Main Page (Global/All Pages)', css: `.header .header-div { display: flex; align-items: center; gap: 1rem; padding-right: 1.5rem; box-sizing: border-box; } .header-search { flex-grow: 1; max-width: none !important; } .header-search .header-search-field { width: 100% !important; }` },
         { id: 'hideUploadIcon', name: 'Hide Upload Icon', description: 'Hides the upload/stream live icon in the header.', newCategory: 'Main Page Layout', subCategory: 'Main Page (Global/All Pages)', css: 'button.header-upload { display: none !important; }' },
-        { id: 'hideHeaderAd', name: 'Hide "Go Ad-Free" Button', description: 'Hides the "Go Ad-Free" button in the header.', newCategory: 'Main Page Layout', subCategory: 'Main Page (Global/All Pages)', css: `span.hidden.lg\\:flex:has(button[hx-get*="premium-value-prop"]) { display: none !important; }` },
+        // FIXED: Replaced a very brittle selector that relied on Tailwind CSS classes with a more stable one.
+        { id: 'hideHeaderAd', name: 'Hide "Go Ad-Free" Button', description: 'Hides the "Go Ad-Free" button in the header.', newCategory: 'Main Page Layout', subCategory: 'Main Page (Global/All Pages)', css: `div:has(> button[hx-get*="premium-value-prop"]) { display: none !important; }` },
         { id: 'hideFooter', name: 'Hide Footer', description: 'Removes the footer at the bottom of the page.', newCategory: 'Main Page Layout', subCategory: 'Main Page (Global/All Pages)', css: 'footer.page__footer.foot.nav--transition { display: none !important; }' },
         {
             id: 'hidePremiumVideos', name: 'Hide Premium Videos', description: 'Hides premium-only videos from subscription and channel feeds.', newCategory: 'Main Page Layout', subCategory: 'Main Page (Global/All Pages)',
             init() {
+                // NOTE: This relies on the class 'videostream'. If it breaks, inspect the page for the new container class for video thumbnails.
                 const hideRule = () => document.querySelectorAll('div.videostream:has(a[href="/premium"])').forEach(el => el.style.display = 'none');
                 this.observer = new MutationObserver(hideRule);
                 waitForElement('main', ($main) => this.observer.observe($main[0], { childList: true, subtree: true }));
@@ -406,11 +408,10 @@ function defineFeatures(core) {
 
         // PLAYER CONTROLS
         {
-            id: 'autoBestQuality', name: 'Auto Best Video Quality', description: 'Automatically selects the highest available video quality.', newCategory: 'Player Controls',
-            _uiInterval: null,
-            _lastUrl: '',
-            _clickCount: 0,
-            _maxUiClicksPerUrl: 3,
+            id: 'autoBestQuality', name: 'Auto Best Video Quality', description: 'Automatically selects the highest available video quality. Relies on the HLS.js video stream API.', newCategory: 'Player Controls',
+            // FIXED: Removed the entire UI fallback method ('startUiFallback', 'tryOpenSettingsAndChooseBest').
+            // It relied on extremely fragile, obfuscated class names like '.touched_overlay_item' which are guaranteed to break.
+            // The HLS API method is the only reliable way to perform this action.
             init() {
                 if (!location.pathname.startsWith('/v')) return;
                 if (appState.hlsInstance) {
@@ -418,68 +419,27 @@ function defineFeatures(core) {
                 } else {
                     $(document).on('res:hlsInstanceFound.autoQuality', () => this.setBestQuality(appState.hlsInstance));
                 }
-                this.startUiFallback();
             },
             destroy() {
                 $(document).off('res:hlsInstanceFound.autoQuality');
                 if (appState.hlsInstance && this.onManifestParsed) {
                     appState.hlsInstance.off(Hls.Events.MANIFEST_PARSED, this.onManifestParsed);
                 }
-                this.stopUiFallback();
             },
             setBestQuality(hls) {
                 if (!hls) return;
                 this.onManifestParsed = () => {
                     if (hls.levels && hls.levels.length > 1) {
                         console.log('[RumbleX] HLS Manifest Parsed, setting best quality.');
+                        // hls.nextLevel = -1 would be auto, length - 1 is highest.
                         hls.nextLevel = hls.levels.length - 1;
                     }
                 };
                 hls.on(Hls.Events.MANIFEST_PARSED, this.onManifestParsed);
+                // If manifest is already parsed when this runs, fire it manually.
                 if (hls.levels && hls.levels.length > 1) {
                     this.onManifestParsed();
                 }
-            },
-            startUiFallback() {
-                if (this._uiInterval) return;
-                this._lastUrl = location.href;
-                this._clickCount = 0;
-
-                this._uiInterval = setInterval(() => {
-                    const url = location.href;
-                    if (url !== this._lastUrl) {
-                        this._lastUrl = url;
-                        this._clickCount = 0;
-                    }
-                    if (this._clickCount < this._maxUiClicksPerUrl) {
-                        const acted = this.tryOpenSettingsAndChooseBest();
-                        if (acted) {
-                            this._clickCount++;
-                        }
-                    }
-                }, 500);
-            },
-            stopUiFallback() {
-                if (this._uiInterval) {
-                    clearInterval(this._uiInterval);
-                    this._uiInterval = null;
-                }
-            },
-            tryOpenSettingsAndChooseBest() {
-                try {
-                    const overlayItem = document.getElementsByClassName('touched_overlay_item')[0];
-                    if (!overlayItem) return false;
-                    const playback = overlayItem.nextElementSibling?.lastChild?.lastChild;
-                    if (!playback) return false;
-                    const playback_click = playback.firstChild;
-                    if (playback_click) playback_click.click();
-                    const quality = playback.lastChild?.lastChild?.lastChild;
-                    if (quality) {
-                        quality.click();
-                        return true;
-                    }
-                } catch (e) { /* Silently ignore */ }
-                return false;
             }
         },
         { id: 'autoLike', name: 'Auto Liker', description: 'Automatically likes a video when you open its watch page.', newCategory: 'Player Controls',
@@ -496,6 +456,7 @@ function defineFeatures(core) {
         { id: 'hidePlayerGradient', name: 'Hide Player Control Gradient', description: 'Removes the cloudy gradient overlay from the bottom of the video player for a cleaner look.', newCategory: 'Player Controls', page: 'video', css: `.touched_overlay > div[style*="linear-gradient"] { display: none !important; }` },
 
         // --- VIDEO BUTTONS ---
+        // NOTE: These features rely on data-js hooks which are generally stable. If they break, Rumble has made a significant change.
         { id: 'hideLikeDislikeButton', name: 'Hide Like/Dislike Buttons', description: 'Hides the like and dislike buttons.', newCategory: 'Video Buttons', css: 'div[data-js="media_action_vote_button"] { display: none !important; }', page: 'video' },
         { id: 'hideShareButton', name: 'Hide Share Button', description: 'Hides the share button.', newCategory: 'Video Buttons', css: 'div[data-js="video_action_button_visible_location"][data-type="share"] { display: none !important; }', page: 'video' },
         { id: 'hideRepostButton', name: 'Hide Repost Button', description: 'Hides the repost button.', newCategory: 'Video Buttons', css: 'div[data-js="video_action_button_visible_location"][data-type="reposts"] { display: none !important; }', page: 'video' },
@@ -566,6 +527,7 @@ function defineFeatures(core) {
         // --- LIVE CHAT ---
         {
             id: 'cleanLiveChat', name: 'Clean Live Chat UI', description: 'Hides pinned messages, the header, and Rant buttons for a cleaner, more focused live chat experience.', newCategory: 'Live Chat', page: 'video',
+            // NOTE: The hardcoded pixel values here are fragile and may break with site updates.
             css: `
                 /* Hide pinned messages and their container */
                 div.chat-pinned-ui__pinned-message-container,
