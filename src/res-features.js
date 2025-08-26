@@ -256,42 +256,7 @@ function defineFeatures(core) {
             page: 'video',
             _liveObserver: null,
             _resizeListener: null,
-            _standardCss: `
-              body.res-full-width-player aside.media-page-related-media-desktop-sidebar,
-              body.res-full-width-player #player-spacer {
-                display: none !important;
-              }
-              body.res-full-width-player main.nav--transition {
-                margin-left: 0 !important;
-              }
-              body.res-full-width-player .main-and-sidebar {
-                max-width: 100% !important;
-                padding: 0 !important;
-                margin: 0 !important;
-              }
-              body.res-full-width-player .main-content,
-              body.res-full-width-player .media-container {
-                width: 100% !important;
-                max-width: 100% !important;
-              }
-            
-              /* --- REVISED SECTION --- */
-              /* Use aspect-ratio for a responsive, correctly-sized player */
-              body.res-full-width-player .video-player,
-              body.res-full-width-player [id^='vid_v'] {
-                width: 100% !important;
-                max-width: 100vw !important;
-                height: auto !important;
-                aspect-ratio: 16 / 9;
-                background-color: #000;
-              }
-            
-              /* Ensure the video element fills the correctly-sized container */
-              body.res-full-width-player #videoPlayer video {
-                width: 100% !important;
-                height: 100% !important;
-              }
-            `,
+            _standardCss: `body.res-full-width-player aside.media-page-related-media-desktop-sidebar, body.res-full-width-player #player-spacer { display: none !important; } body.res-full-width-player main.nav--transition { margin-left: 0 !important; } body.res-full-width-player .main-and-sidebar { max-width: 100% !important; padding: 0 !important; margin: 0 !important; } body.res-full-width-player .main-content, body.res-full-width-player .media-container { width: 100% !important; max-width: 100% !important; } body.res-full-width-player .video-player, body.res-full-width-player [id^='vid_v'] { width: 100vw !important; height: calc(100vw * 9 / 16) !important; max-height: 100vh; } body.res-full-width-player #videoPlayer video { object-fit: contain !important; }`,
             _liveCss: `
               /* Main grid container for the two-column layout */
               body.res-live-two-col:not(.rumble-player--fullscreen) .main-and-sidebar {
@@ -602,38 +567,32 @@ function defineFeatures(core) {
         {
             id: 'cleanLiveChat', name: 'Clean Live Chat UI', description: 'Hides pinned messages, the header, and Rant buttons for a cleaner, more focused live chat experience.', newCategory: 'Live Chat', page: 'video',
             css: `
-              /* --- REVISED LIVE CHAT --- */
-              /* Make the main chat sidebar a full-height flex column */
-              aside.media-page-chat-aside-chat {
-                display: flex !important;
-                flex-direction: column !important;
-                height: 100vh;
-              }
-            
-              /* Make the inner chat component fill the available space */
-              section.chat.relative {
-                display: flex !important;
-                flex-direction: column !important;
-                flex-grow: 1 !important; /* Key property to fill height */
-                height: auto !important; /* Remove fixed heights */
-                width: 100% !important; /* Fill parent width */
-                margin-top: 0 !important;
-              }
-            
-              /* Make the message history scrollable and fill its space */
-              .chat-history {
-                flex-grow: 1 !important;
-              }
-            
-              /* Hide unwanted UI elements for a cleaner look */
-              div.chat--header,
-              div.chat-pinned-ui__pinned-message-container,
-              div.chat__pinned-ui-container,
-              div.chat-message-form-section.chat-message-form-section-justify-between,
-              .chat-message-form-section .user-image,
-              button.media-page-chat-container-toggle-btn {
-                display: none !important;
-              }
+                /* Hide pinned messages and their container */
+                div.chat-pinned-ui__pinned-message-container,
+                div.chat__pinned-ui-container {
+                  display: none !important;
+                }
+
+                /* Hide the chat header and adjust the main chat area to fill the space */
+                div.chat--header {
+                  display: none !important;
+                }
+                section.chat.relative {
+                  margin-top: -71px !important;
+                  height: 715px !important;
+                }
+
+                /* Reposition the chat toggle button */
+                button.media-page-chat-container-toggle-btn {
+                  margin-top: 580px !important;
+                  margin-left: -48px !important;
+                }
+
+                /* Hide the Rants/actions section above the chat input and the user's avatar */
+                div.chat-message-form-section.chat-message-form-section-justify-between,
+                .chat-message-form-section .user-image {
+                  display: none !important;
+                }
             `
         },
         {
