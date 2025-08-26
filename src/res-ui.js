@@ -239,7 +239,7 @@ function defineUI(core) {
             const feature = core.features.find(f => f.id === featureId);
 
             if (feature.css) {
-                applyAllCssFeatures(core.features);
+                core.applyAllCssFeatures(core.features);
             } else if (feature.init || feature.destroy) {
                 isEnabled ? feature.init?.() : feature.destroy?.();
             }
