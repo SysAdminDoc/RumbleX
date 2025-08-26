@@ -248,7 +248,7 @@ function defineFeatures(core) {
             destroy() { if (this.observer) this.observer.disconnect(); styleManager.remove('adaptive-live-css'); }
         },
         { id: 'hideRelatedOnLive', name: 'Hide Related Media on Live', description: 'Hides the "Related Media" section below the player on live streams.', newCategory: 'Video Page Layout', css: '.media-page-related-media-desktop-floating { display: none !important; }', page: 'video' },
-        {
+{
             id: 'fullWidthPlayer',
             name: 'Full-Width Player / Live Layout',
             description: "Maximizes player width. Works with 'Auto-hide Header' for a full-screen experience. On live streams, it enables an optimized side-by-side view with chat.",
@@ -342,6 +342,17 @@ function defineFeatures(core) {
               body.res-live-two-col button.media-page-chat-container-toggle-btn {
                 z-index: 2;
               }
+              
+              /* --- ADDED USER CSS --- */
+              section.chat.relative {
+                width: 347px;
+                margin-left: 11px;
+                height: 847px;
+              }
+
+              button.media-page-chat-container-toggle-btn {
+                display: none;
+              }
             `,
             _activateLiveLayout() {
                 const chatSelector = 'aside.media-page-chat-aside-chat';
@@ -360,7 +371,7 @@ function defineFeatures(core) {
                 this._resizeListener = setChatWidthVar;
                 window.addEventListener('resize', this._resizeListener);
                 waitForElement(chatSelector, ($chat) => {
-                    this._liveObserver = new MutationObserver(setChatWidthVar);
+                    this._liveObserver = new MutationObserver(setChatWidthTVar);
                     this._liveObserver.observe($chat[0], { attributes: true, attributeFilter: ['style', 'class'] });
                 });
                 // Watch for chat toggle clicks
@@ -372,6 +383,33 @@ function defineFeatures(core) {
                     }, 50);
                 });
             },
+            init() {
+                setTimeout(() => {
+                    const isLive = !!document.querySelector('.video-header-live-info, .media-header-live-badge, .video-badge--live');
+                    if (isLive) {
+                        styleManager.inject(this.id, this._liveCss);
+                        this._activateLiveLayout();
+                    } else {
+                        styleManager.inject(this.id, this._standardCss);
+                        $('body').addClass('res-full-width-player');
+                    }
+                }, 250);
+            },
+            destroy() {
+                if (this._liveObserver) {
+                    this._liveObserver.disconnect();
+                    this._liveObserver = null;
+                }
+                if (this._resizeListener) {
+                    window.removeEventListener('resize', this._resizeListener);
+                    this._resizeListener = null;
+                }
+                $(document).off('click.resLiveChat');
+                document.documentElement.style.removeProperty('--res-chat-w');
+                styleManager.remove(this.id);
+                $('body').removeClass('res-full-width-player res-live-two-col res-live-chat-collapsed');
+            }
+        },
             init() {
                 setTimeout(() => {
                     const isLive = !!document.querySelector('.video-header-live-info, .media-header-live-badge, .video-badge--live');
