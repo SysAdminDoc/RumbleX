@@ -15,8 +15,8 @@
 // @grant        GM_setClipboard
 // @connect      *
 // @require      https://ajax.googleapis.com/ajax/libs/jquery/3.7.1/jquery.min.js
-// @updateURL    https://github.com/SysAdminDoc/RumbleEnhancementSuite/raw/refs/heads/main/void/old_codebase/RumbleEnhancementSuite-11.0.user.js
-// @downloadURL  https://github.com/SysAdminDoc/RumbleEnhancementSuite/raw/refs/heads/main/void/old_codebase/RumbleEnhancementSuite-11.0.user.js
+// @updateURL    https://github.com/SysAdminDoc/RumbleEnhancementSuite/raw/refs/heads/main/RumbleX.user.js
+// @downloadURL  https://github.com/SysAdminDoc/RumbleEnhancementSuite/raw/refs/heads/main/RumbleX.user.js
 // @run-at       document-start
 // ==/UserScript==
 
