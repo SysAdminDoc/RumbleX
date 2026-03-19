@@ -1,0 +1,47 @@
+{
+  "manifest_version": 2,
+  "name": "RumbleX",
+  "version": "1.7.0",
+  "description": "Rumble enhancement suite - ad/bloat removal, theater split view, video downloads, and dark theme polish.",
+  "author": "SysAdminDoc",
+  "homepage_url": "https://github.com/SysAdminDoc/RumbleX",
+  "icons": {
+    "16": "icons/icon-16x16.png",
+    "32": "icons/icon-32x32.png",
+    "48": "icons/icon-48x48.png",
+    "128": "icons/icon-128x128.png"
+  },
+  "permissions": [
+    "storage",
+    "downloads",
+    "*://*.rumble.com/*",
+    "*://*.1a-1791.com/*"
+  ],
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "rumblex@sysadmindoc",
+      "strict_min_version": "109.0"
+    }
+  },
+  "background": {
+    "scripts": ["background.js"]
+  },
+  "browser_action": {
+    "default_icon": {
+      "16": "icons/icon-16x16.png",
+      "32": "icons/icon-32x32.png"
+    },
+    "default_title": "RumbleX",
+    "default_popup": "pages/popup.html"
+  },
+  "content_scripts": [{
+    "matches": ["*://*.rumble.com/*"],
+    "js": ["content.js"],
+    "run_at": "document_start",
+    "all_frames": false
+  }],
+  "web_accessible_resources": [
+    "lib/mux.min.js",
+    "worker.js"
+  ]
+}
