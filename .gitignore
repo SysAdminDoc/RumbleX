@@ -1,2 +1,4 @@
 *.mhtml
 rumble_decoded.html
+dist/
+*.pem
