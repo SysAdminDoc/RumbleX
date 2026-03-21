@@ -1,9 +1,9 @@
-// RumbleX v1.7.0 - Content Script
+// RumbleX v1.7.1 - Content Script
 // Rumble enhancement suite - Chrome/Firefox extension
 'use strict';
 
 // ── Version ──
-const VERSION = '1.7.0';
+const VERSION = chrome.runtime?.getManifest?.()?.version || '1.7.0';
 
 // ── Settings Manager (chrome.storage.local) ──
 const Settings = {
@@ -23,6 +23,7 @@ const Settings = {
         hidePremium: true,
         speedController: true,
         scrollVolume: true,
+        defaultMaxVolume: false,
         autoMaxQuality: true,
         watchProgress: true,
         channelBlocker: true,
@@ -2204,6 +2205,10 @@ const ScrollVolume = {
         if (saved !== null) {
             video.volume = saved;
             if (saved > 0) video.muted = false;
+        } else if (Settings.get('defaultMaxVolume')) {
+            video.volume = 1;
+            video.muted = false;
+            this._saveVolume(1);
         }
     },
 
@@ -2213,6 +2218,75 @@ const ScrollVolume = {
         this._restoreVolume(video);
         video.addEventListener('loadedmetadata', () => this._restoreVolume(video));
         video.addEventListener('play', () => this._restoreVolume(video), { once: true });
+    },
+
+    _volPinned: false,
+    _volPinTimer: null,
+    _volPopup: null,
+    _volPopupObs: null,
+
+    _isVolPopup(el) {
+        if (!el || el.nodeType !== 1 || el.tagName !== 'DIV') return false;
+        const s = el.style;
+        return s.position === 'absolute' &&
+               s.backdropFilter && s.backdropFilter.includes('blur') &&
+               parseInt(s.width) <= 20 &&
+               parseInt(s.height) >= 60 &&
+               s.bottom;
+    },
+
+    _pinPopup(popup) {
+        if (popup._rxVolBound) return;
+        popup._rxVolBound = true;
+        this._volPopup = popup;
+
+        // Direct hover on popup: pin indefinitely until mouseleave
+        popup.addEventListener('mouseenter', () => {
+            clearTimeout(this._volPinTimer);
+            this._volPinned = true;
+        });
+        popup.addEventListener('mouseleave', () => {
+            this._volPinTimer = setTimeout(() => {
+                this._volPinned = false;
+            }, 300);
+        });
+
+        // Watch for Rumble showing/hiding the popup via inline style changes
+        this._volPopupObs = new MutationObserver(() => {
+            const s = popup.style;
+            const isHidden = s.display === 'none' || s.visibility === 'hidden' || parseFloat(s.opacity) === 0;
+
+            if (!isHidden && !this._volPinned) {
+                // Popup just became visible — grant a grace period to reach it
+                clearTimeout(this._volPinTimer);
+                this._volPinned = true;
+                this._volPinTimer = setTimeout(() => {
+                    if (!popup.matches(':hover')) {
+                        this._volPinned = false;
+                    }
+                }, 800);
+            }
+
+            if (isHidden && this._volPinned) {
+                // Rumble trying to hide while pinned — revert
+                s.display = 'block';
+                s.visibility = 'visible';
+                s.opacity = '1';
+            }
+        });
+        this._volPopupObs.observe(popup, { attributes: true, attributeFilter: ['style'] });
+    },
+
+    _scanForVolPopup() {
+        if (this._volPopup) return;
+        const player = qs('#videoPlayer, .videoPlayer-Rumble-cls');
+        if (!player) return;
+        for (const el of player.querySelectorAll('div[style*="backdrop-filter"]')) {
+            if (this._isVolPopup(el)) {
+                this._pinPopup(el);
+                return;
+            }
+        }
     },
 
     init() {
@@ -2226,16 +2300,26 @@ const ScrollVolume = {
         document.addEventListener('mousedown', this._midclickFn, { capture: true });
 
         for (const v of qsa('video')) this._bindVideo(v);
+
         this._obs = new MutationObserver(() => {
             for (const v of qsa('video')) this._bindVideo(v);
+            if (!this._volPopup) this._scanForVolPopup();
         });
         this._obs.observe(document.documentElement, { childList: true, subtree: true });
+
+        // Also scan after a delay since the player renders async
+        setTimeout(() => this._scanForVolPopup(), 2000);
+        setTimeout(() => this._scanForVolPopup(), 5000);
     },
 
     destroy() {
         this._styleEl?.remove();
         this._obs?.disconnect();
+        this._volPopupObs?.disconnect();
         this._overlayEl?.remove();
+        clearTimeout(this._volPinTimer);
+        this._volPinned = false;
+        this._volPopup = null;
         if (this._wheelFn) document.removeEventListener('wheel', this._wheelFn, { capture: true });
         if (this._midclickFn) document.removeEventListener('mousedown', this._midclickFn, { capture: true });
     }
@@ -2249,6 +2333,12 @@ const AutoMaxQuality = {
     name: 'Auto Max Quality',
     _obs: null,
     _attempted: false,
+    _timers: [],
+
+    _clearTimers() {
+        for (const t of this._timers) clearTimeout(t);
+        this._timers = [];
+    },
 
     _selectBest() {
         if (this._attempted) return;
@@ -2257,6 +2347,8 @@ const AutoMaxQuality = {
         const settingsBtn = qs('.touched_overlay_item + div button, [class*="quality-menu"], .videoPlayer-Rumble-cls button[aria-label*="Settings"]');
         if (settingsBtn) {
             this._attempted = true;
+            this._clearTimers();
+            this._obs?.disconnect();
             this._tryQualitySelect();
             return;
         }
@@ -2273,7 +2365,8 @@ const AutoMaxQuality = {
         const qualityItems = qsa('.quality-menu-item, [data-quality], .videoPlayer-Rumble-cls [class*="quality"]');
         if (qualityItems.length > 0) {
             this._attempted = true;
-            // Click the highest quality (first item is usually highest, or sort by resolution)
+            this._clearTimers();
+            this._obs?.disconnect();
             let best = qualityItems[0];
             for (const item of qualityItems) {
                 const text = item.textContent;
@@ -2326,6 +2419,8 @@ const AutoMaxQuality = {
                     }
                     if (best) {
                         this._attempted = true;
+                        this._clearTimers();
+                        this._obs?.disconnect();
                         best.click();
                     }
                 }
@@ -2359,11 +2454,12 @@ const AutoMaxQuality = {
         this._attempted = false;
 
         // Try multiple times as the player loads async
+        this._timers = [];
         const attempts = [1500, 3000, 5000, 8000];
         for (const delay of attempts) {
-            setTimeout(() => {
+            this._timers.push(setTimeout(() => {
                 if (!this._attempted) this._selectBest();
-            }, delay);
+            }, delay));
         }
 
         // Also watch for player DOM changes
@@ -2376,6 +2472,7 @@ const AutoMaxQuality = {
     },
 
     destroy() {
+        this._clearTimers();
         this._obs?.disconnect();
     }
 };
@@ -2504,19 +2601,23 @@ const WatchProgress = {
         document.body.appendChild(toast);
         requestAnimationFrame(() => toast.classList.add('rx-visible'));
 
-        const resume = () => {
-            video.currentTime = entry.t;
+        let dismissed = false;
+        const dismiss = () => {
+            if (dismissed) return;
+            dismissed = true;
             toast.classList.remove('rx-visible');
             setTimeout(() => toast.remove(), 300);
         };
 
-        toast.addEventListener('click', resume);
+        toast.addEventListener('click', () => {
+            if (video && video.isConnected && isFinite(entry.t)) {
+                video.currentTime = entry.t;
+            }
+            dismiss();
+        });
 
         // Auto-dismiss after 8s
-        setTimeout(() => {
-            toast.classList.remove('rx-visible');
-            setTimeout(() => toast.remove(), 300);
-        }, 8000);
+        setTimeout(dismiss, 8000);
     },
 
     _addProgressBars() {
@@ -3721,7 +3822,7 @@ const MiniPlayer = {
             position: fixed;
             bottom: 24px; right: 24px;
             width: 400px; height: 225px;
-            z-index: 99999;
+            z-index: 9998;
             background: #11111b;
             border: 1px solid #45475a;
             border-radius: 10px;
@@ -3851,11 +3952,12 @@ const MiniPlayer = {
 
         // Watch for video scrolling out of viewport
         waitFor('#videoPlayer, .videoPlayer-Rumble-cls, video').then(playerEl => {
+            // Don't observe if TheaterSplit is active — player is always fullscreen
+            if (TheaterSplit._isActive) return;
             this._obs = new IntersectionObserver((entries) => {
                 for (const entry of entries) {
+                    if (TheaterSplit._isActive) return;
                     if (!entry.isIntersecting) {
-                        // Don't activate mini player in TheaterSplit mode - player is always visible
-                        if (TheaterSplit._isActive) return;
                         const video = qs('video');
                         if (video && !video.paused && !video.ended) {
                             this._show(video);
@@ -5442,6 +5544,7 @@ const RX_CATEGORIES = [
             { id: 'autoTheater', label: 'Auto Theater', desc: 'Auto-enter native theater mode on load' },
             { id: 'speedController', label: 'Speed Control', desc: 'Persistent playback speed with live detection' },
             { id: 'scrollVolume', label: 'Scroll Volume', desc: 'Mouse wheel volume + middle-click mute' },
+            { id: 'defaultMaxVolume', label: 'Default Max Volume', desc: 'Start videos at 100% volume', parent: 'scrollVolume' },
             { id: 'autoMaxQuality', label: 'Auto Max Quality', desc: 'Auto-select highest resolution on load' },
             { id: 'autoplayBlock', label: 'Autoplay Block', desc: 'Prevent auto-play of next video' },
             { id: 'loopControl', label: 'Loop Control', desc: 'Full video loop + A-B segment loop' },
@@ -5742,6 +5845,15 @@ const SettingsPanel = {
         .rx-m-btn-secondary:hover { background: #1e1e22; color: #f0f0f0; }
         .rx-m-reload-note { font-size: 10px; color: rgba(166,173,200,0.5); text-align: center; padding: 12px 0 4px; }
 
+        /* ── Settings toast ── */
+        .rx-m-toast {
+            position: fixed; bottom: 80px; left: 50%; transform: translateX(-50%);
+            background: #313244; color: #a6e3a1; border: 1px solid #a6e3a1;
+            border-radius: 8px; padding: 8px 18px; font: 600 13px/1.4 system-ui, sans-serif;
+            z-index: 100001; opacity: 0; transition: opacity 0.3s; pointer-events: none;
+        }
+        .rx-m-toast.show { opacity: 1; }
+
         /* ── Responsive ── */
         @media (max-width: 700px) {
             #rx-modal { width: 98%; height: 90vh; max-height: none; border-radius: 14px; }
@@ -5751,6 +5863,21 @@ const SettingsPanel = {
             .rx-m-search-wrap { display: none; }
         }
     `,
+
+    _toastEl: null,
+    _toastTimer: null,
+
+    _showToast(msg) {
+        if (!this._toastEl) {
+            this._toastEl = document.createElement('div');
+            this._toastEl.className = 'rx-m-toast';
+            document.body.appendChild(this._toastEl);
+        }
+        this._toastEl.textContent = msg;
+        this._toastEl.classList.add('show');
+        clearTimeout(this._toastTimer);
+        this._toastTimer = setTimeout(() => this._toastEl.classList.remove('show'), 2000);
+    },
 
     _makeSwitch(featureId, catColor) {
         const wrap = document.createElement('label');
@@ -5766,6 +5893,15 @@ const SettingsPanel = {
             const card = wrap.closest('.rx-m-card');
             if (card && !card.classList.contains('rx-m-sub')) card.classList.toggle('rx-m-enabled', input.checked);
             this._updateNavCounts();
+            // Hot-reload: try to toggle the feature without a page reload
+            const feat = features.find(f => f.id === featureId);
+            if (feat && feat.destroy && feat.init) {
+                try { feat.destroy(); } catch {}
+                if (input.checked) { try { feat.init(); } catch {} }
+                this._showToast(input.checked ? 'Enabled' : 'Disabled');
+            } else {
+                this._showToast('Reload page to apply');
+            }
         });
         const track = document.createElement('div');
         track.className = 'rx-m-switch-track';
@@ -5783,7 +5919,13 @@ const SettingsPanel = {
         card.dataset.searchText = (feat.label + ' ' + feat.desc).toLowerCase();
         const info = document.createElement('div');
         info.className = 'rx-m-card-info';
-        info.innerHTML = `<div class="rx-m-card-name">${feat.label}</div><div class="rx-m-card-desc">${feat.desc}</div>`;
+        const nameDiv = document.createElement('div');
+        nameDiv.className = 'rx-m-card-name';
+        nameDiv.textContent = feat.label;
+        const descDiv = document.createElement('div');
+        descDiv.className = 'rx-m-card-desc';
+        descDiv.textContent = feat.desc;
+        info.append(nameDiv, descDiv);
         card.append(info, this._makeSwitch(feat.id, catColor));
         return card;
     },
@@ -5867,11 +6009,15 @@ const SettingsPanel = {
             const chip = document.createElement('div');
             chip.className = 'rx-m-chip' + (id === currentTheme ? ' rx-m-chip-active' : '');
             chip.style.setProperty('--rx-cat-color', color);
-            chip.innerHTML = `<span class="rx-m-theme-dot" style="background:${theme.accent}"></span>${theme.label}`;
+            const dot = document.createElement('span');
+            dot.className = 'rx-m-theme-dot';
+            dot.style.background = theme.accent;
+            chip.append(dot, theme.label);
             chip.addEventListener('click', () => {
                 Settings.set('theme', id);
                 for (const c of grid.querySelectorAll('.rx-m-chip')) c.classList.remove('rx-m-chip-active');
                 chip.classList.add('rx-m-chip-active');
+                SettingsPanel._showToast('Theme changed — reload page to apply');
             });
             grid.appendChild(chip);
         }
@@ -5899,6 +6045,7 @@ const SettingsPanel = {
             label.textContent = speed + 'x';
             Settings.set('playbackSpeed', speed);
             for (const v of qsa('video')) v.playbackRate = speed;
+            SettingsPanel._showToast(`Speed: ${speed}x`);
         });
         row.append(slider, label);
         pane.appendChild(row);
@@ -5923,7 +6070,20 @@ const SettingsPanel = {
             for (const ch of blocked) {
                 const chip = document.createElement('div');
                 chip.className = 'rx-m-chip';
-                chip.innerHTML = `${ch} <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>`;
+                const nameSpan = document.createElement('span');
+                nameSpan.textContent = ch;
+                const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+                svg.setAttribute('viewBox', '0 0 24 24');
+                svg.setAttribute('fill', 'none');
+                svg.setAttribute('stroke', 'currentColor');
+                svg.setAttribute('stroke-width', '2.5');
+                svg.setAttribute('stroke-linecap', 'round');
+                const l1 = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+                l1.setAttribute('x1', '18'); l1.setAttribute('y1', '6'); l1.setAttribute('x2', '6'); l1.setAttribute('y2', '18');
+                const l2 = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+                l2.setAttribute('x1', '6'); l2.setAttribute('y1', '6'); l2.setAttribute('x2', '18'); l2.setAttribute('y2', '18');
+                svg.append(l1, l2);
+                chip.append(nameSpan, svg);
                 chip.title = 'Unblock ' + ch;
                 chip.addEventListener('click', () => {
                     ChannelBlocker._unblockChannel(ch);
@@ -6198,6 +6358,14 @@ const SettingsPanel = {
         this._overlayEl?.remove();
         this._panelEl?.remove();
         this._toolbarEl?.remove();
+        this._toastEl?.remove();
+        clearTimeout(this._toastTimer);
+        this._styleEl = null;
+        this._overlayEl = null;
+        this._panelEl = null;
+        this._toolbarEl = null;
+        this._toastEl = null;
+        this._navBtns = null;
     }
 };
 

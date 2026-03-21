@@ -1,4 +1,4 @@
-// RumbleX v1.7.0 - Popup Script
+// RumbleX v1.7.1 - Popup Script
 'use strict';
 
 const FEATURES = [
@@ -13,6 +13,7 @@ const FEATURES = [
     { id: 'logoToFeed', label: 'Logo to Feed' },
     { id: 'speedController', label: 'Speed Control' },
     { id: 'scrollVolume', label: 'Scroll Volume' },
+    { id: 'defaultMaxVolume', label: 'Default Max Volume' },
     { id: 'autoMaxQuality', label: 'Auto Max Quality' },
     { id: 'watchProgress', label: 'Watch Progress' },
     { id: 'channelBlocker', label: 'Channel Blocker' },
@@ -54,6 +55,7 @@ const DEFAULTS = {
     hidePremium: true,
     speedController: true,
     scrollVolume: true,
+    defaultMaxVolume: false,
     autoMaxQuality: true,
     watchProgress: true,
     channelBlocker: true,
@@ -139,16 +141,20 @@ async function init() {
 
     const themeGrid = document.createElement('div');
     themeGrid.className = 'theme-grid';
+    // Colors must match THEMES[id].accent in content.js
     const themes = [
         { id: 'catppuccin', label: 'Catppuccin Mocha', color: '#89b4fa' },
-        { id: 'youtube', label: 'YouTubify', color: '#ff0000' },
+        { id: 'youtube', label: 'YouTubify', color: '#3ea6ff' },
         { id: 'midnight', label: 'Midnight AMOLED', color: '#818cf8' },
         { id: 'rumbleGreen', label: 'Rumble Green', color: '#85c742' },
     ];
     for (const t of themes) {
         const chip = document.createElement('button');
         chip.className = 'theme-chip' + (settings.theme === t.id ? ' active' : '');
-        chip.innerHTML = `<span class="theme-dot" style="background:${t.color}"></span>${t.label}`;
+        const dot = document.createElement('span');
+        dot.className = 'theme-dot';
+        dot.style.background = t.color;
+        chip.append(dot, t.label);
         chip.addEventListener('click', () => {
             settings.theme = t.id;
             chrome.storage.local.set({ rx_settings: settings });

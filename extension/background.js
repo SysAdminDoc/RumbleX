@@ -1,4 +1,4 @@
-// RumbleX v1.7.0 - Background Service Worker
+// RumbleX v1.7.1 - Background Service Worker
 'use strict';
 
 // Badge update when extension icon clicked

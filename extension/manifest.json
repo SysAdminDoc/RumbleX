@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "RumbleX",
-  "version": "1.7.0",
+  "version": "1.7.1",
   "description": "Rumble enhancement suite - ad/bloat removal, theater split view, video downloads, and dark theme polish.",
   "author": "SysAdminDoc",
   "homepage_url": "https://github.com/SysAdminDoc/RumbleX",

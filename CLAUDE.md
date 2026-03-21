@@ -12,7 +12,7 @@ Rumble enhancement suite - Chrome MV3 extension + Tampermonkey userscript. 35 fe
 - Anti-FOUC pattern: CSS injected at `document_start`
 
 ## Version
-v1.7.0 (all version strings: manifest.json, manifest-firefox.json, content.js `VERSION` const, background.js comment, popup.js comment)
+v1.7.1 (all version strings: manifest.json, manifest-firefox.json, content.js reads from manifest, background.js comment, popup.js comment)
 
 ## Key Files
 - `extension/content.js` - Main content script (~6240 lines). All features as object modules with `init()`/`destroy()` pattern
@@ -157,6 +157,7 @@ Page.isLive()    // has chat or stream-time element
 - **PlaylistQuickSave tries native `[data-playlist-option="watch-later-add"]` first** - Falls back to local bookmarks
 
 ## Version History
+- v1.7.1 - Volume slider pin fix (detect Rumble's inline-styled popup, MutationObserver prevents hide while hovered, 800ms grace period). Default Max Volume setting (sub-feature of ScrollVolume). Security: replaced all innerHTML with textContent/createElement for user-facing data (blocked channels XSS, settings cards, theme chips). Performance: AutoMaxQuality cancels retry timers on success. Bug fixes: WatchProgress resume validates video.isConnected before seeking, MiniPlayer skips IntersectionObserver when TheaterSplit active, MiniPlayer z-index lowered to 9998 to not overlap TheaterSplit. SettingsPanel memory leak fix (null refs in destroy). Hot-reload: toggling features in settings modal calls destroy()/init() without page reload. Settings toast notifications for theme/speed changes. VERSION const reads from manifest.json. Fixed YouTubify popup chip color (#ff0000 → #3ea6ff to match accent).
 - v1.7.0 - Multi-theme engine (4 themes: Catppuccin Mocha, YouTubify, Midnight AMOLED, Rumble Green) with player progress bar coloring via --brand-500 override. Full categorized settings modal (7 categories, sidebar nav, search, enable-all, import/export, Ctrl+Shift+X shortcut). Removed PiP Button and Cinema Mode. Fixed HidePremium hiding live videos (.videostream__views-ppv is live viewer count, not premium). 35 feature modules total.
 - v1.6.0 - Added Shorts Filter (hide from feeds via `#shorts__label` SVG detection), Chat Auto-Scroll (smart pause on scroll-up + jump button), Auto Expand (force descriptions/comments visible), Notification Enhance (Catppuccin dropdown + bell pulse), Playlist Quick Save (Watch Later on thumbnail hover, native API + local fallback). 37 feature modules total.
 - v1.5.0 - Added Comment Navigator (prev/next/expand/collapse/OP-only), Rant Highlight (tier glow + $ tracker), Related Filter (search/hide-watched sidebar), Exact Counts (full numbers from data-views), Share Timestamp (copy URL at time). 32 feature modules total. All selectors verified against MHTML snapshots.
