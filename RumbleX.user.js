@@ -2,6 +2,8 @@
 // @name         RumbleX
 // @namespace    https://github.com/SysAdminDoc/RumbleX
 // @version      0.4.0
+// @updateURL      https://raw.githubusercontent.com/SysAdminDoc/RumbleX/main/RumbleX.user.js
+// @downloadURL    https://raw.githubusercontent.com/SysAdminDoc/RumbleX/main/RumbleX.user.js
 // @description  Rumble enhancement suite - ad/bloat removal, theater split view, and dark theme polish.
 // @author       SysAdminDoc
 // @license      MIT
