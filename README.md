@@ -1,5 +1,7 @@
 # RumbleX
 
+![Version](https://img.shields.io/badge/version-v1.7.1-blue) ![License](https://img.shields.io/badge/license-MIT-green) ![Platform](https://img.shields.io/badge/platform-Chrome%20Extension-lightgrey)
+
 **The ultimate Rumble enhancement suite.** 35 feature modules across 7 categories — ad blocking, theater mode, video downloads, multi-theme engine, playback controls, chat enhancements, and more. Chrome MV3 extension + Firefox support.
 
 ## Features
