@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         RumbleX
 // @namespace    https://github.com/SysAdminDoc/RumbleX
-// @version      0.5.0
+// @version      0.6.0
 // @updateURL      https://raw.githubusercontent.com/SysAdminDoc/RumbleX/main/RumbleX.user.js
 // @downloadURL    https://raw.githubusercontent.com/SysAdminDoc/RumbleX/main/RumbleX.user.js
 // @description  Rumble enhancement suite - ad/bloat removal, theater split view, and dark theme polish.
@@ -25,7 +25,7 @@
     'use strict';
 
     // ── Version ──
-    const VERSION = '0.5.0';
+    const VERSION = '0.6.0';
 
     // ── Settings Manager ──
     const Settings = {
@@ -42,6 +42,12 @@
             hiddenCategories: [],
             channelBlocker: true,
             blockedChannels: [],
+            exactCounts: true,
+            autoplayBlock: true,
+            shareTools: true,
+            keyboardNav: true,
+            speedControl: true,
+            playbackSpeed: 1,
         },
         get(key) {
             if (!this._cache) {
@@ -70,6 +76,34 @@
         isHome: () => location.pathname === '/',
         isEmbed: () => location.pathname.startsWith('/embed/'),
     };
+
+    // ── SPA Router (route-change detection) ──
+    const Router = {
+        _cbs: [],
+        _last: location.pathname,
+        on(fn) { this._cbs.push(fn); },
+        _fire() {
+            const p = location.pathname;
+            if (p === this._last) return;
+            this._last = p;
+            this._cbs.forEach(fn => { try { fn(p); } catch (e) {} });
+        },
+        init() {
+            const wrap = (orig) => function(...args) {
+                const r = orig.apply(this, args);
+                Router._fire();
+                return r;
+            };
+            history.pushState    = wrap(history.pushState);
+            history.replaceState = wrap(history.replaceState);
+            window.addEventListener('popstate', () => Router._fire());
+        },
+    };
+
+    // ── Active video helper ──
+    function getActiveVideo() {
+        return qs('#videoPlayer video') || qs('.video-player video') || qs('video');
+    }
 
     // ── Anti-FOUC: Inject immediately at document-start ──
     const ANTI_FOUC_CSS = `
@@ -395,41 +429,26 @@
         name: 'Channel Blocker',
         _obs: null,
 
-        _authorSelectors: [
-            '.videostream .videostream__author a',
-            '.thumbnail__grid .thumbnail__author a',
-            '.listing-item .author__name',
-        ],
-
-        _containerSelectors: [
-            '.videostream',
-            '.thumbnail__item',
-            '.listing-item',
-        ],
-
-        _getContainer(authorEl) {
-            for (const sel of this._containerSelectors) {
-                const c = authorEl.closest(sel);
-                if (c) return c;
-            }
-            return null;
+        _getSlug(anchorEl) {
+            try {
+                const url = new URL(anchorEl.href);
+                const parts = url.pathname.replace(/^\/+/, '').split('/');
+                // parts[0] = 'c' or 'user', parts[1] = slug
+                return parts[1]?.split('?')[0] || '';
+            } catch { return ''; }
         },
 
         _applyToAll() {
             const blocked = Settings.get('blockedChannels') || [];
             if (!blocked.length) return;
             const blockedLower = blocked.map(c => c.toLowerCase());
-
-            for (const sel of this._authorSelectors) {
-                for (const el of qsa(sel)) {
-                    const name = el.textContent.trim();
-                    if (blockedLower.includes(name.toLowerCase())) {
-                        const container = this._getContainer(el);
-                        if (container) {
-                            container.style.setProperty('display', 'none', 'important');
-                            container.dataset.rxBlocked = '1';
-                        }
-                    }
+            for (const el of qsa('a[rel="author"].channel__link')) {
+                const slug = this._getSlug(el);
+                if (!slug || !blockedLower.includes(slug.toLowerCase())) continue;
+                const container = el.closest('.videostream') || el.closest('.listing-item');
+                if (container) {
+                    container.style.setProperty('display', 'none', 'important');
+                    container.dataset.rxBlocked = '1';
                 }
             }
         },
@@ -468,6 +487,335 @@
             Settings.set('blockedChannels', filtered);
             this._reapply();
         },
+    };
+
+    // ═══════════════════════════════════════════
+    //  FEATURE: Exact Counts
+    // ═══════════════════════════════════════════
+    const ExactCounts = {
+        id: 'exactCounts',
+        name: 'Exact Counts',
+        _obs: null,
+
+        _expand() {
+            for (const el of qsa('.videostream__views[data-views]')) {
+                const exact = el.getAttribute('data-views');
+                if (!exact) continue;
+                const num = parseInt(exact, 10);
+                if (isNaN(num) || num < 1000) continue; // already readable under 1K
+                // find the text node after the SVG icon and replace it
+                for (const node of el.childNodes) {
+                    if (node.nodeType === 3 && node.textContent.trim()) {
+                        const formatted = num.toLocaleString();
+                        node.textContent = ' ' + formatted + ' ';
+                        break;
+                    }
+                }
+            }
+        },
+
+        init() {
+            if (!Settings.get(this.id)) return;
+            this._expand();
+            this._obs = new MutationObserver(() => this._expand());
+            this._obs.observe(document.body, { childList: true, subtree: true });
+        },
+
+        destroy() { this._obs?.disconnect(); this._obs = null; },
+    };
+
+    // ═══════════════════════════════════════════
+    //  FEATURE: Autoplay Block
+    // ═══════════════════════════════════════════
+    const AutoplayBlock = {
+        id: 'autoplayBlock',
+        name: 'Autoplay Block',
+        _styleEl: null,
+        _obs: null,
+
+        _css: `
+            html.rumblex-active .js-player-upcoming-button,
+            html.rumblex-active [data-player-upcoming-button__style-type] {
+                display: none !important;
+            }
+        `,
+
+        init() {
+            if (!Settings.get(this.id)) return;
+            this._styleEl = injectStyle(this._css, 'rx-autoplay-block');
+            // Also observe it becoming visible and re-hide
+            this._obs = new MutationObserver(() => {
+                for (const el of qsa('.js-player-upcoming-button')) {
+                    if (el.style.display !== 'none') {
+                        el.style.setProperty('display', 'none', 'important');
+                    }
+                }
+            });
+            this._obs.observe(document.documentElement, { attributes: true, subtree: true, attributeFilter: ['style'] });
+        },
+
+        destroy() {
+            this._styleEl?.remove();
+            this._obs?.disconnect();
+            this._styleEl = null;
+            this._obs = null;
+        },
+    };
+
+    // ═══════════════════════════════════════════
+    //  FEATURE: Share Tools
+    // ═══════════════════════════════════════════
+    const ShareTools = {
+        id: 'shareTools',
+        name: 'Share Tools',
+        _btn: null,
+
+        _copyTimestamp() {
+            const video = getActiveVideo();
+            const t = video ? Math.floor(video.currentTime) : 0;
+            const url = new URL(location.href);
+            url.searchParams.set('t', t);
+            // Remove tracking params
+            ['utm_source','utm_medium','utm_campaign','utm_term','utm_content','ref','source','e9s'].forEach(p => url.searchParams.delete(p));
+            url.hash = '';
+            navigator.clipboard.writeText(url.toString()).then(() => {
+                ShareTools._showToast('Link copied! (' + ShareTools._fmtTime(t) + ')');
+            }).catch(() => {
+                prompt('Copy this link:', url.toString());
+            });
+        },
+
+        _fmtTime(s) {
+            const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), sec = s % 60;
+            if (h > 0) return h + ':' + String(m).padStart(2,'0') + ':' + String(sec).padStart(2,'0');
+            return m + ':' + String(sec).padStart(2,'0');
+        },
+
+        _showToast(msg) {
+            const t = document.createElement('div');
+            t.style.cssText = 'position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:#313244;color:#cdd6f4;padding:8px 16px;border-radius:8px;font-size:13px;z-index:999999;pointer-events:none;transition:opacity 0.3s';
+            t.textContent = msg;
+            document.body.appendChild(t);
+            setTimeout(() => { t.style.opacity = '0'; setTimeout(() => t.remove(), 300); }, 2500);
+        },
+
+        _stripTracking() {
+            const url = new URL(location.href);
+            let changed = false;
+            ['utm_source','utm_medium','utm_campaign','utm_term','utm_content','ref','source','e9s'].forEach(p => {
+                if (url.searchParams.has(p)) { url.searchParams.delete(p); changed = true; }
+            });
+            if (changed) history.replaceState(null, '', url.toString());
+        },
+
+        _inject() {
+            if (this._btn || !Page.isWatch()) return;
+            const shareBtn = qs('[data-js="media_engage_share"]');
+            if (!shareBtn) return;
+            const btn = document.createElement('button');
+            btn.className = 'round-button media-by-actions-button rx-share-time-btn';
+            btn.title = 'Copy link at current time';
+            btn.innerHTML = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>';
+            btn.style.cssText = 'margin-left:4px;opacity:0.85;';
+            btn.addEventListener('click', () => this._copyTimestamp());
+            shareBtn.parentNode.insertBefore(btn, shareBtn.nextSibling);
+            this._btn = btn;
+        },
+
+        init() {
+            if (!Settings.get(this.id)) return;
+            this._stripTracking();
+            if (Page.isWatch()) {
+                waitFor('[data-js="media_engage_share"]', 8000)
+                    .then(() => this._inject())
+                    .catch(() => {});
+            }
+            Router.on(() => {
+                this._btn = null;
+                if (Page.isWatch()) {
+                    waitFor('[data-js="media_engage_share"]', 8000)
+                        .then(() => this._inject())
+                        .catch(() => {});
+                }
+            });
+        },
+
+        destroy() { this._btn?.remove(); this._btn = null; },
+    };
+
+    // ═══════════════════════════════════════════
+    //  FEATURE: Keyboard Nav
+    // ═══════════════════════════════════════════
+    const KeyboardNav = {
+        id: 'keyboardNav',
+        name: 'Keyboard Nav',
+        _handler: null,
+
+        _toast: null,
+        _toastTimer: null,
+
+        _showOSD(msg) {
+            if (!this._toast) {
+                this._toast = document.createElement('div');
+                this._toast.style.cssText = 'position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:rgba(17,17,27,0.85);color:#cdd6f4;padding:10px 20px;border-radius:10px;font-size:16px;font-weight:600;z-index:999999;pointer-events:none;transition:opacity 0.2s';
+                document.body.appendChild(this._toast);
+            }
+            this._toast.textContent = msg;
+            this._toast.style.opacity = '1';
+            clearTimeout(this._toastTimer);
+            this._toastTimer = setTimeout(() => { if (this._toast) this._toast.style.opacity = '0'; }, 800);
+        },
+
+        _handle(e) {
+            const tag = (document.activeElement?.tagName || '').toLowerCase();
+            const editable = document.activeElement?.isContentEditable;
+            if (tag === 'input' || tag === 'textarea' || tag === 'select' || editable) return;
+
+            const video = getActiveVideo();
+            if (!video) return;
+
+            let handled = true;
+            switch (e.key) {
+                case 'k': case 'K':
+                    if (video.paused) { video.play(); KeyboardNav._showOSD('▶'); }
+                    else { video.pause(); KeyboardNav._showOSD('⏸'); }
+                    break;
+                case 'j': case 'J':
+                    video.currentTime = Math.max(0, video.currentTime - 10);
+                    KeyboardNav._showOSD('« 10s');
+                    break;
+                case 'l': case 'L':
+                    video.currentTime = Math.min(video.duration || Infinity, video.currentTime + 10);
+                    KeyboardNav._showOSD('10s »');
+                    break;
+                case 'ArrowLeft':
+                    if (e.shiftKey || e.ctrlKey || e.altKey) { handled = false; break; }
+                    video.currentTime = Math.max(0, video.currentTime - 5);
+                    KeyboardNav._showOSD('« 5s');
+                    break;
+                case 'ArrowRight':
+                    if (e.shiftKey || e.ctrlKey || e.altKey) { handled = false; break; }
+                    video.currentTime = Math.min(video.duration || Infinity, video.currentTime + 5);
+                    KeyboardNav._showOSD('5s »');
+                    break;
+                case 'ArrowUp':
+                    if (e.shiftKey || e.ctrlKey || e.altKey) { handled = false; break; }
+                    video.volume = Math.min(1, video.volume + 0.1);
+                    KeyboardNav._showOSD('Vol ' + Math.round(video.volume * 100) + '%');
+                    break;
+                case 'ArrowDown':
+                    if (e.shiftKey || e.ctrlKey || e.altKey) { handled = false; break; }
+                    video.volume = Math.max(0, video.volume - 0.1);
+                    KeyboardNav._showOSD('Vol ' + Math.round(video.volume * 100) + '%');
+                    break;
+                case 'm': case 'M':
+                    video.muted = !video.muted;
+                    KeyboardNav._showOSD(video.muted ? '🔇' : '🔊');
+                    break;
+                case 'f': case 'F':
+                    if (document.fullscreenElement) document.exitFullscreen();
+                    else video.requestFullscreen?.();
+                    KeyboardNav._showOSD(document.fullscreenElement ? 'Exit Fullscreen' : 'Fullscreen');
+                    break;
+                case '0': case '1': case '2': case '3': case '4':
+                case '5': case '6': case '7': case '8': case '9': {
+                    const pct = parseInt(e.key, 10) / 10;
+                    if (video.duration && isFinite(video.duration)) {
+                        video.currentTime = video.duration * pct;
+                        KeyboardNav._showOSD((pct * 100) + '%');
+                    } else { handled = false; }
+                    break;
+                }
+                default: handled = false;
+            }
+            if (handled) e.preventDefault();
+        },
+
+        init() {
+            if (!Settings.get(this.id)) return;
+            this._handler = (e) => KeyboardNav._handle(e);
+            document.addEventListener('keydown', this._handler);
+        },
+
+        destroy() {
+            if (this._handler) document.removeEventListener('keydown', this._handler);
+            this._handler = null;
+            this._toast?.remove();
+            this._toast = null;
+        },
+    };
+
+    // ═══════════════════════════════════════════
+    //  FEATURE: Speed Control
+    // ═══════════════════════════════════════════
+    const SpeedControl = {
+        id: 'speedControl',
+        name: 'Speed Control',
+        _SPEEDS: [0.5, 0.75, 1, 1.25, 1.5, 1.75, 2, 2.5, 3],
+        _pill: null,
+
+        _apply() {
+            const video = getActiveVideo();
+            if (!video) return;
+            if (video.duration === Infinity) return; // skip live
+            const speed = Settings.get('playbackSpeed') || 1;
+            video.playbackRate = speed;
+            if (this._pill) this._pill.textContent = speed === 1 ? '1×' : speed + '×';
+        },
+
+        _cycle() {
+            const speeds = this._SPEEDS;
+            const cur = Settings.get('playbackSpeed') || 1;
+            const idx = speeds.indexOf(cur);
+            const next = speeds[(idx + 1) % speeds.length];
+            Settings.set('playbackSpeed', next);
+            this._apply();
+        },
+
+        _inject() {
+            if (this._pill) return;
+            const player = qs('#videoPlayer');
+            if (!player) return;
+            const pill = document.createElement('button');
+            pill.id = 'rx-speed-pill';
+            const speed = Settings.get('playbackSpeed') || 1;
+            pill.textContent = speed === 1 ? '1×' : speed + '×';
+            pill.title = 'Click to cycle playback speed';
+            pill.style.cssText = 'position:absolute;top:8px;right:8px;z-index:9999;background:rgba(17,17,27,0.75);color:#cdd6f4;border:1px solid rgba(137,180,250,0.3);border-radius:6px;padding:2px 8px;font-size:12px;font-weight:600;cursor:pointer;pointer-events:auto;';
+            pill.addEventListener('click', () => SpeedControl._cycle());
+            const container = player.style.position ? player : player.parentElement;
+            if (container) {
+                if (!container.style.position) container.style.position = 'relative';
+                container.appendChild(pill);
+            }
+            this._pill = pill;
+            // Apply persisted speed
+            const video = getActiveVideo();
+            if (video) {
+                video.addEventListener('loadedmetadata', () => SpeedControl._apply(), { once: true });
+                SpeedControl._apply();
+            }
+        },
+
+        init() {
+            if (!Settings.get(this.id)) return;
+            if (Page.isWatch()) {
+                waitFor('#videoPlayer video', 8000)
+                    .then(() => this._inject())
+                    .catch(() => {});
+            }
+            Router.on(() => {
+                this._pill?.remove();
+                this._pill = null;
+                if (Page.isWatch()) {
+                    waitFor('#videoPlayer video', 8000)
+                        .then(() => this._inject())
+                        .catch(() => {});
+                }
+            });
+        },
+
+        destroy() { this._pill?.remove(); this._pill = null; },
     };
 
     // ═══════════════════════════════════════════
@@ -2198,6 +2546,11 @@
             { id: 'videoDownload', label: 'Video Download', desc: 'Download videos as MP4 or TS' },
             { id: 'darkEnhance', label: 'Dark Theme', desc: 'Catppuccin Mocha dark enhancements' },
             { id: 'channelBlocker', label: 'Channel Blocker', desc: 'Hide feed videos from blocked channels' },
+            { id: 'exactCounts', label: 'Exact Counts', desc: 'Show full view numbers instead of 1.2K/3.5M' },
+            { id: 'autoplayBlock', label: 'Autoplay Block', desc: 'Prevent auto-play of next video' },
+            { id: 'shareTools', label: 'Share Tools', desc: 'Copy link at current time + strip tracking params' },
+            { id: 'keyboardNav', label: 'Keyboard Nav', desc: 'J/K/L seek, F fullscreen, M mute, 0-9 seek %, arrows' },
+            { id: 'speedControl', label: 'Speed Control', desc: 'Click the speed pill on the player to cycle playback speed' },
         ],
 
         _createToggle(feature) {
@@ -2442,9 +2795,10 @@
     // ═══════════════════════════════════════════
     //  FEATURE REGISTRY & INIT
     // ═══════════════════════════════════════════
-    const features = [AdNuker, FeedCleanup, CategoryFilter, ChannelBlocker, DarkEnhance, TheaterSplit, VideoDownloader];
+    const features = [AdNuker, FeedCleanup, CategoryFilter, ChannelBlocker, ExactCounts, AutoplayBlock, ShareTools, KeyboardNav, SpeedControl, DarkEnhance, TheaterSplit, VideoDownloader];
 
     onReady(() => {
+        Router.init();
         // Init all features
         for (const feat of features) {
             try { feat.init(); } catch (e) { console.error(`[RumbleX] ${feat.id || feat.name} init failed:`, e); }

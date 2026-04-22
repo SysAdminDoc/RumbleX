@@ -2,7 +2,7 @@
 <p align="center"><img src="icon.png" width="128" alt="Rumble X"></p>
 
 <p align="center">
-  <img alt="Version" src="https://img.shields.io/badge/version-0.5.0-58A6FF?style=for-the-badge">
+  <img alt="Version" src="https://img.shields.io/badge/version-0.6.0-58A6FF?style=for-the-badge">
   <img alt="License" src="https://img.shields.io/badge/license-MIT-4ade80?style=for-the-badge">
   <img alt="Platform" src="https://img.shields.io/badge/platform-Userscript-58A6FF?style=for-the-badge">
 </p>
@@ -10,7 +10,7 @@
 
 # RumbleX
 
-![Version](https://img.shields.io/badge/version-v0.5.0-blue) ![License](https://img.shields.io/badge/license-MIT-green) ![Platform](https://img.shields.io/badge/platform-Chrome%20Extension-lightgrey)
+![Version](https://img.shields.io/badge/version-v0.6.0-blue) ![License](https://img.shields.io/badge/license-MIT-green) ![Platform](https://img.shields.io/badge/platform-Chrome%20Extension-lightgrey)
 
 **The ultimate Rumble enhancement suite.** 35 feature modules across 7 categories — ad blocking, theater mode, video downloads, multi-theme engine, playback controls, chat enhancements, and more. Chrome MV3 extension + Firefox support.
 
