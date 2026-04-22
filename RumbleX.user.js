@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         RumbleX
 // @namespace    https://github.com/SysAdminDoc/RumbleX
-// @version      0.4.0
+// @version      0.5.0
 // @updateURL      https://raw.githubusercontent.com/SysAdminDoc/RumbleX/main/RumbleX.user.js
 // @downloadURL    https://raw.githubusercontent.com/SysAdminDoc/RumbleX/main/RumbleX.user.js
 // @description  Rumble enhancement suite - ad/bloat removal, theater split view, and dark theme polish.
@@ -25,7 +25,7 @@
     'use strict';
 
     // ── Version ──
-    const VERSION = '0.3.0';
+    const VERSION = '0.5.0';
 
     // ── Settings Manager ──
     const Settings = {
@@ -40,6 +40,8 @@
             videoDownload: true,
             splitRatio: 75,
             hiddenCategories: [],
+            channelBlocker: true,
+            blockedChannels: [],
         },
         get(key) {
             if (!this._cache) {
@@ -386,6 +388,89 @@
     };
 
     // ═══════════════════════════════════════════
+    //  FEATURE: Channel Blocker
+    // ═══════════════════════════════════════════
+    const ChannelBlocker = {
+        id: 'channelBlocker',
+        name: 'Channel Blocker',
+        _obs: null,
+
+        _authorSelectors: [
+            '.videostream .videostream__author a',
+            '.thumbnail__grid .thumbnail__author a',
+            '.listing-item .author__name',
+        ],
+
+        _containerSelectors: [
+            '.videostream',
+            '.thumbnail__item',
+            '.listing-item',
+        ],
+
+        _getContainer(authorEl) {
+            for (const sel of this._containerSelectors) {
+                const c = authorEl.closest(sel);
+                if (c) return c;
+            }
+            return null;
+        },
+
+        _applyToAll() {
+            const blocked = Settings.get('blockedChannels') || [];
+            if (!blocked.length) return;
+            const blockedLower = blocked.map(c => c.toLowerCase());
+
+            for (const sel of this._authorSelectors) {
+                for (const el of qsa(sel)) {
+                    const name = el.textContent.trim();
+                    if (blockedLower.includes(name.toLowerCase())) {
+                        const container = this._getContainer(el);
+                        if (container) {
+                            container.style.setProperty('display', 'none', 'important');
+                            container.dataset.rxBlocked = '1';
+                        }
+                    }
+                }
+            }
+        },
+
+        _reapply() {
+            for (const el of qsa('[data-rx-blocked]')) {
+                el.style.removeProperty('display');
+                delete el.dataset.rxBlocked;
+            }
+            this._applyToAll();
+        },
+
+        init() {
+            if (!Settings.get(this.id)) return;
+            this._applyToAll();
+            this._obs = new MutationObserver(() => this._applyToAll());
+            this._obs.observe(document.body, { childList: true, subtree: true });
+        },
+
+        destroy() {
+            this._obs?.disconnect();
+            this._obs = null;
+        },
+
+        block(channelName) {
+            const current = Settings.get('blockedChannels') || [];
+            if (current.some(c => c.toLowerCase() === channelName.toLowerCase())) return;
+            current.push(channelName);
+            Settings.set('blockedChannels', current);
+            this._applyToAll();
+        },
+
+        unblock(channelName) {
+            const current = Settings.get('blockedChannels') || [];
+            const filtered = current.filter(c => c.toLowerCase() !== channelName.toLowerCase());
+            Settings.set('blockedChannels', filtered);
+            this._reapply();
+        },
+    };
+
+    // ═══════════════════════════════════════════
     //  FEATURE: Dark Theme Enhancement
     // ═══════════════════════════════════════════
     const DarkEnhance = {
@@ -451,6 +536,22 @@
             /* Footer */
             html.rumblex-active .page__footer {
                 background: var(--rx-mantle) !important;
+            }
+
+            /* Live page layout fixes */
+            section.chat.relative {
+                width: 345px;
+                margin-left: 15px;
+                height: 900px;
+            }
+            button.media-page-chat-container-toggle-btn {
+                display: none;
+            }
+            h1.h1 {
+                font-size: 16px;
+            }
+            .video-player {
+                margin-top: -35px;
             }
         `,
 
@@ -2022,6 +2123,70 @@
                 background: rgba(30,30,46,0.5);
                 border-color: rgba(255,255,255,0.05);
             }
+
+            /* Blocked channels section */
+            .rx-bc-input-row {
+                display: flex;
+                gap: 6px;
+                padding: 6px 18px 8px;
+            }
+            .rx-bc-input {
+                flex: 1;
+                background: rgba(49,50,68,0.6);
+                border: 1px solid rgba(137,180,250,0.15);
+                border-radius: 6px;
+                padding: 5px 10px;
+                font-size: 12px;
+                color: var(--rx-text, #cdd6f4);
+                outline: none;
+            }
+            .rx-bc-input:focus {
+                border-color: rgba(137,180,250,0.4);
+            }
+            .rx-bc-btn {
+                background: rgba(137,180,250,0.15);
+                border: 1px solid rgba(137,180,250,0.25);
+                border-radius: 6px;
+                padding: 5px 12px;
+                font-size: 12px;
+                color: var(--rx-accent, #89b4fa);
+                cursor: pointer;
+                transition: background 0.15s;
+            }
+            .rx-bc-btn:hover {
+                background: rgba(137,180,250,0.25);
+            }
+            .rx-bc-chip-list {
+                display: flex;
+                flex-wrap: wrap;
+                gap: 6px;
+                padding: 0 18px 12px;
+            }
+            .rx-bc-chip {
+                display: flex;
+                align-items: center;
+                gap: 4px;
+                font-size: 11px;
+                padding: 3px 4px 3px 10px;
+                border-radius: 12px;
+                border: 1px solid rgba(243,139,168,0.25);
+                background: rgba(243,139,168,0.1);
+                color: var(--rx-text, #cdd6f4);
+            }
+            .rx-bc-remove {
+                background: none;
+                border: none;
+                color: var(--rx-red, #f38ba8);
+                cursor: pointer;
+                font-size: 14px;
+                padding: 0 3px;
+                line-height: 1;
+                border-radius: 50%;
+                transition: background 0.15s;
+            }
+            .rx-bc-remove:hover {
+                background: rgba(243,139,168,0.2);
+            }
         `,
 
         _features: [
@@ -2032,6 +2197,7 @@
             { id: 'wideLayout', label: 'Wide Layout', desc: 'Full-width grid with tighter fit on home & subs' },
             { id: 'videoDownload', label: 'Video Download', desc: 'Download videos as MP4 or TS' },
             { id: 'darkEnhance', label: 'Dark Theme', desc: 'Catppuccin Mocha dark enhancements' },
+            { id: 'channelBlocker', label: 'Channel Blocker', desc: 'Hide feed videos from blocked channels' },
         ],
 
         _createToggle(feature) {
@@ -2158,6 +2324,77 @@
             }
             list.appendChild(catGrid);
 
+            // Blocked channels section
+            const bcTitle = document.createElement('div');
+            bcTitle.className = 'rx-cat-section-title';
+            bcTitle.textContent = 'Blocked Channels';
+            list.appendChild(bcTitle);
+
+            const bcInputRow = document.createElement('div');
+            bcInputRow.className = 'rx-bc-input-row';
+
+            const bcInput = document.createElement('input');
+            bcInput.type = 'text';
+            bcInput.placeholder = 'Channel name...';
+            bcInput.className = 'rx-bc-input';
+
+            const bcBlockBtn = document.createElement('button');
+            bcBlockBtn.className = 'rx-bc-btn';
+            bcBlockBtn.textContent = 'Block';
+
+            bcInputRow.appendChild(bcInput);
+            bcInputRow.appendChild(bcBlockBtn);
+            list.appendChild(bcInputRow);
+
+            const bcChipList = document.createElement('div');
+            bcChipList.className = 'rx-bc-chip-list';
+            list.appendChild(bcChipList);
+
+            const renderBcChips = () => {
+                bcChipList.innerHTML = '';
+                const blocked = Settings.get('blockedChannels') || [];
+                for (const ch of blocked) {
+                    const chip = document.createElement('div');
+                    chip.className = 'rx-bc-chip';
+
+                    const label = document.createElement('span');
+                    label.textContent = ch;
+
+                    const removeBtn = document.createElement('button');
+                    removeBtn.className = 'rx-bc-remove';
+                    removeBtn.textContent = '\u00d7';
+                    removeBtn.title = 'Unblock';
+                    removeBtn.addEventListener('click', () => {
+                        ChannelBlocker.unblock(ch);
+                        renderBcChips();
+                    });
+
+                    chip.appendChild(label);
+                    chip.appendChild(removeBtn);
+                    bcChipList.appendChild(chip);
+                }
+            };
+
+            renderBcChips();
+
+            bcBlockBtn.addEventListener('click', () => {
+                const name = bcInput.value.trim();
+                if (!name) return;
+                ChannelBlocker.block(name);
+                bcInput.value = '';
+                renderBcChips();
+            });
+
+            bcInput.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') {
+                    const name = bcInput.value.trim();
+                    if (!name) return;
+                    ChannelBlocker.block(name);
+                    bcInput.value = '';
+                    renderBcChips();
+                }
+            });
+
             // Reload note
             const reloadNote = document.createElement('div');
             reloadNote.style.cssText = 'padding:10px 18px;font-size:10px;color:rgba(166,173,200,0.6);text-align:center;border-top:1px solid rgba(255,255,255,0.04);';
@@ -2205,7 +2442,7 @@
     // ═══════════════════════════════════════════
     //  FEATURE REGISTRY & INIT
     // ═══════════════════════════════════════════
-    const features = [AdNuker, FeedCleanup, CategoryFilter, DarkEnhance, TheaterSplit, VideoDownloader];
+    const features = [AdNuker, FeedCleanup, CategoryFilter, ChannelBlocker, DarkEnhance, TheaterSplit, VideoDownloader];
 
     onReady(() => {
         // Init all features
