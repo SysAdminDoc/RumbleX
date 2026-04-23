@@ -1,0 +1,707 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RumbleX Settings</title>
+    <style>
+        :root {
+            color-scheme: dark;
+            --page-bg: #0a0a0b;
+            --surface: rgba(14, 16, 22, 0.94);
+            --surface-strong: #0e1017;
+            --surface-raised: rgba(255, 255, 255, 0.04);
+            --border: rgba(255, 255, 255, 0.08);
+            --border-hover: rgba(255, 255, 255, 0.14);
+            --text-primary: #f4f6fb;
+            --text-secondary: #c8d2e1;
+            --text-muted: #8894a8;
+            --accent: #89b4fa;
+            --accent-mid: #a6c5fb;
+            --accent-soft: rgba(137, 180, 250, 0.14);
+            --accent-border: rgba(137, 180, 250, 0.35);
+            --info: #74c7ec;
+            --warning: #f9e2af;
+            --success: #a6e3a1;
+            --error: #f38ba8;
+            --radius-sm: 10px;
+            --radius-md: 14px;
+            --radius-lg: 18px;
+            --shadow: 0 16px 40px rgba(0, 0, 0, 0.35);
+            --focus-ring: 0 0 0 2px rgba(10, 10, 11, 0.98), 0 0 0 4px rgba(137, 180, 250, 0.55);
+            --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+            --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+            --font: 'Segoe UI Variable Display', 'Segoe UI', system-ui, -apple-system, 'Avenir Next', sans-serif;
+        }
+
+        * { box-sizing: border-box; }
+
+        body {
+            margin: 0;
+            min-height: 100vh;
+            font-family: var(--font);
+            color: var(--text-primary);
+            background:
+                radial-gradient(ellipse at 0% 0%, rgba(137, 180, 250, 0.07) 0%, transparent 50%),
+                var(--page-bg);
+            padding: 28px 20px 48px;
+        }
+
+        .page-shell { max-width: 960px; margin: 0 auto; }
+
+        /* ── App Bar ── */
+        .app-bar { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 0 0 20px; flex-wrap: wrap; }
+        .app-brand { display: flex; align-items: center; gap: 10px; }
+        .brand-icon-shell {
+            width: 40px; height: 40px; display: grid; place-items: center;
+            border-radius: 13px;
+            background: linear-gradient(145deg, rgba(137, 180, 250, 0.16), rgba(166, 227, 161, 0.05));
+            border: 1px solid var(--border);
+        }
+        .brand-icon-shell svg { display: block; }
+        .brand-name { font-size: 17px; font-weight: 800; letter-spacing: -0.03em; }
+        .brand-version {
+            font-size: 11px; font-weight: 700; color: var(--text-muted); letter-spacing: 0.04em;
+            padding: 3px 7px; border-radius: 999px; background: var(--surface-raised); border: 1px solid var(--border);
+        }
+        .app-status {
+            display: inline-flex; align-items: center; gap: 7px; min-height: 30px; padding: 0 11px;
+            border-radius: 999px; border: 1px solid var(--border); background: var(--surface-raised);
+            color: var(--text-secondary); font-size: 11px; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase;
+        }
+        .app-status::before {
+            content: ''; width: 7px; height: 7px; border-radius: 50%;
+            background: var(--success); box-shadow: 0 0 0 4px rgba(166, 227, 161, 0.1);
+        }
+
+        .options-workspace { display: grid; gap: 12px; }
+
+        /* ── Workspace Command ── */
+        .workspace-command {
+            display: grid; grid-template-columns: minmax(0, 1fr) minmax(240px, 300px);
+            align-items: center; gap: 18px; padding: 18px;
+            border-radius: var(--radius-lg); border: 1px solid var(--border);
+            background:
+                linear-gradient(180deg, rgba(255, 255, 255, 0.045), rgba(255, 255, 255, 0.018)),
+                rgba(12, 14, 20, 0.82);
+            box-shadow: var(--shadow);
+        }
+        .workspace-copy { min-width: 0; }
+        .workspace-eyebrow {
+            display: inline-flex; margin-bottom: 8px; color: #a7c7fa;
+            font-size: 10px; font-weight: 800; letter-spacing: 0.12em; text-transform: uppercase;
+        }
+        .workspace-title {
+            margin: 0; color: var(--text-primary);
+            font-size: clamp(24px, 4vw, 38px); line-height: 1.05; font-weight: 850; letter-spacing: -0.05em;
+            text-wrap: balance;
+        }
+        .workspace-copy p {
+            max-width: 610px; margin: 10px 0 0;
+            color: var(--text-muted); font-size: 13px; line-height: 1.55;
+        }
+
+        /* ── Storage Overview ── */
+        .storage-overview {
+            display: grid; grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); gap: 8px;
+        }
+        .stat-card {
+            min-width: 0; padding: 12px; border-radius: var(--radius-md); border: 1px solid var(--border);
+            background:
+                linear-gradient(180deg, rgba(255, 255, 255, 0.035), rgba(255, 255, 255, 0.012)),
+                rgba(12, 14, 20, 0.72);
+        }
+        .stat-card-value {
+            display: block; color: var(--text-primary); font-size: 20px; font-weight: 850;
+            line-height: 1; letter-spacing: -0.03em; font-variant-numeric: tabular-nums;
+            overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+        }
+        .stat-card-label {
+            display: block; margin-top: 7px; color: var(--text-muted);
+            font-size: 10px; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase;
+        }
+        .storage-note {
+            margin: 0; padding: 10px 12px; border-radius: var(--radius-sm);
+            border: 1px solid rgba(255, 255, 255, 0.06); background: rgba(255, 255, 255, 0.025);
+            color: var(--text-muted); font-size: 12px; line-height: 1.5;
+        }
+
+        /* ── Main Action ── */
+        .main-action { margin: 0; }
+        .cta-button {
+            width: 100%; min-height: 50px; padding: 0 20px;
+            border: 1px solid rgba(137, 180, 250, 0.4); border-radius: var(--radius-md);
+            background: linear-gradient(135deg, rgba(137, 180, 250, 0.26), rgba(116, 199, 236, 0.30));
+            color: #fff; font: inherit; font-size: 14px; font-weight: 800; letter-spacing: -0.02em; cursor: pointer;
+            box-shadow: 0 8px 24px rgba(137, 180, 250, 0.12);
+            transition: background-color 180ms var(--ease-out), box-shadow 180ms var(--ease-out), border-color 180ms var(--ease-out), transform 140ms var(--ease-out);
+            outline: none; touch-action: manipulation;
+        }
+        .cta-button:hover {
+            background: linear-gradient(135deg, rgba(137, 180, 250, 0.34), rgba(116, 199, 236, 0.38));
+            border-color: rgba(137, 180, 250, 0.55);
+            box-shadow: 0 12px 28px rgba(137, 180, 250, 0.18);
+        }
+        .cta-button:active { transform: scale(0.99); }
+        .cta-button:focus-visible { box-shadow: var(--focus-ring); }
+
+        /* ── Actions Row ── */
+        .actions-row {
+            display: flex; align-items: center; gap: 8px; margin: 0 0 4px; padding: 10px;
+            border-radius: var(--radius-md); border: 1px solid rgba(255, 255, 255, 0.06);
+            background: rgba(255, 255, 255, 0.02);
+        }
+        .actions-end { margin-left: auto; }
+
+        button {
+            min-height: 38px; padding: 0 14px;
+            border: 1px solid var(--border); border-radius: var(--radius-sm);
+            background: var(--surface-raised); color: var(--text-primary);
+            font: inherit; font-size: 12px; font-weight: 700; cursor: pointer;
+            transition: border-color 160ms var(--ease-out), background-color 160ms var(--ease-out), box-shadow 160ms var(--ease-out), transform 140ms var(--ease-out);
+            outline: none; touch-action: manipulation; -webkit-tap-highlight-color: transparent;
+        }
+        button:hover { border-color: var(--border-hover); background: rgba(255, 255, 255, 0.07); }
+        button:active:not(:disabled) { transform: scale(0.985); }
+        button:disabled { opacity: 0.42; cursor: not-allowed; pointer-events: none; }
+
+        button[aria-busy="true"] { opacity: 0.9; cursor: progress; }
+        button[aria-busy="true"]::before {
+            content: ''; display: inline-block; width: 11px; height: 11px; margin-right: 7px; vertical-align: -1px;
+            border-radius: 50%; border: 1.5px solid currentColor; border-top-color: transparent;
+            animation: spin 700ms linear infinite;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        button.primary {
+            background: linear-gradient(135deg, rgba(137, 180, 250, 0.26), rgba(116, 199, 236, 0.30));
+            border-color: rgba(137, 180, 250, 0.4);
+            color: #fff; box-shadow: 0 6px 18px rgba(137, 180, 250, 0.12);
+        }
+        button.primary:hover {
+            background: linear-gradient(135deg, rgba(137, 180, 250, 0.34), rgba(116, 199, 236, 0.38));
+            border-color: rgba(137, 180, 250, 0.55);
+            box-shadow: 0 10px 22px rgba(137, 180, 250, 0.18);
+        }
+        button.danger {
+            color: #fff; background: rgba(243, 139, 168, 0.1); border-color: rgba(243, 139, 168, 0.26);
+        }
+        button.danger:hover {
+            background: rgba(243, 139, 168, 0.18); border-color: rgba(243, 139, 168, 0.4);
+        }
+        button:focus-visible { box-shadow: var(--focus-ring); border-color: var(--accent-border); }
+
+        /* ── Page Status ── */
+        .status {
+            padding: 10px 14px; border-radius: var(--radius-sm);
+            font-size: 12px; font-weight: 700; line-height: 1.5; display: none;
+        }
+        .status.success, .status.error, .status.info { animation: fade-down 200ms var(--ease-out) both; }
+        .status.success { display: block; color: #d7ffe8; background: rgba(166, 227, 161, 0.1); border: 1px solid rgba(166, 227, 161, 0.22); }
+        .status.error   { display: block; color: #ffe0e4; background: rgba(243, 139, 168, 0.1);  border: 1px solid rgba(243, 139, 168, 0.22); }
+        .status.info    { display: block; color: #ddecff; background: rgba(116, 199, 236, 0.1); border: 1px solid rgba(116, 199, 236, 0.22); }
+        @keyframes fade-down { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: translateY(0); } }
+
+        /* ── Confirmation Dialog ── */
+        .confirm-shell { position: fixed; inset: 0; z-index: 10020; display: grid; place-items: center; padding: 18px; }
+        .confirm-shell[hidden] { display: none; }
+        .confirm-backdrop { position: absolute; inset: 0; background: rgba(3, 5, 9, 0.74); animation: backdrop-in 180ms var(--ease-out) both; }
+        .confirm-dialog {
+            position: relative; width: min(420px, 100%); padding: 18px;
+            border-radius: var(--radius-lg); border: 1px solid var(--border);
+            background:
+                linear-gradient(180deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.018)),
+                rgba(11, 13, 19, 0.98);
+            box-shadow: 0 28px 70px rgba(0, 0, 0, 0.48);
+            animation: modal-in 200ms var(--ease-out) both;
+        }
+        .confirm-dialog.is-danger { border-color: rgba(243, 139, 168, 0.3); }
+        .confirm-eyebrow {
+            display: inline-flex; margin-bottom: 8px; color: #a7c7fa;
+            font-size: 10px; font-weight: 850; letter-spacing: 0.12em; text-transform: uppercase;
+        }
+        .confirm-dialog.is-danger .confirm-eyebrow { color: #f38ba8; }
+        .confirm-title {
+            margin: 0; color: var(--text-primary);
+            font-size: 18px; line-height: 1.15; font-weight: 850; letter-spacing: -0.035em; text-wrap: balance;
+        }
+        .confirm-copy {
+            margin: 9px 0 0; color: var(--text-muted); font-size: 12.5px; line-height: 1.55;
+        }
+        .confirm-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; }
+
+        /* ── Settings Modal Shell ── */
+        .settings-modal-shell[hidden] { display: none; }
+        .settings-modal-shell { position: fixed; inset: 0; z-index: 9999; }
+        .settings-modal-backdrop {
+            position: absolute; inset: 0; background: rgba(4, 6, 10, 0.78);
+            animation: backdrop-in 200ms var(--ease-out) both;
+        }
+        @keyframes backdrop-in { from { opacity: 0; } to { opacity: 1; } }
+
+        .settings-modal {
+            position: relative; width: min(1120px, calc(100vw - 24px));
+            max-height: calc(100vh - 24px); margin: 12px auto;
+            overflow: hidden; border-radius: 20px; border: 1px solid var(--border);
+            background: rgba(10, 11, 16, 0.98); box-shadow: 0 28px 64px rgba(0, 0, 0, 0.5);
+            display: grid; grid-template-rows: auto auto 1fr;
+            overscroll-behavior: contain; animation: modal-in 240ms var(--ease-out) both;
+        }
+        @keyframes modal-in {
+            from { opacity: 0; transform: translateY(10px) scale(0.985); }
+            to   { opacity: 1; transform: translateY(0) scale(1); }
+        }
+
+        /* ── Modal Header ── */
+        .settings-modal-header {
+            display: flex; align-items: center; gap: 10px;
+            padding: 12px 16px; border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+        }
+        .settings-modal-title {
+            margin: 0; font-size: 15px; font-weight: 800; letter-spacing: -0.03em; flex-shrink: 0;
+        }
+        .settings-chip-row {
+            display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-left: 4px;
+        }
+        .settings-chip {
+            display: inline-flex; align-items: center; gap: 4px;
+            padding: 4px 8px; border-radius: 999px;
+            background: rgba(255, 255, 255, 0.04); border: 1px solid var(--border);
+            color: var(--text-muted); font-size: 10px; font-weight: 700; letter-spacing: 0.04em; white-space: nowrap;
+        }
+        .settings-chip strong { color: var(--text-primary); font-variant-numeric: tabular-nums; letter-spacing: 0; }
+        .settings-chip-problem {
+            color: #ffd4d9; background: rgba(243, 139, 168, 0.1); border-color: rgba(243, 139, 168, 0.22);
+        }
+        .settings-chip-row + .icon-button { margin-left: auto; }
+        .icon-button {
+            display: inline-flex; align-items: center; justify-content: center;
+            width: 32px; height: 32px; min-height: 32px; padding: 0;
+            border-radius: var(--radius-sm); font-size: 18px; line-height: 1;
+            color: var(--text-muted); flex-shrink: 0;
+        }
+        .icon-button:hover { color: var(--text-primary); background: rgba(255, 255, 255, 0.08); border-color: var(--border-hover); }
+
+        /* ── Modal Toolbar ── */
+        .settings-modal-toolbar {
+            display: flex; align-items: center; gap: 8px;
+            padding: 9px 14px; border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+            background: rgba(255, 255, 255, 0.012);
+        }
+        .settings-search-shell { flex: 1; min-width: 0; position: relative; }
+        .settings-search-input {
+            width: 100%; min-height: 34px; padding: 0 34px;
+            border-radius: var(--radius-sm); border: 1px solid var(--border);
+            background: rgba(255, 255, 255, 0.035); color: var(--text-primary);
+            font: inherit; font-size: 12px;
+            transition: border-color 160ms var(--ease-out), background-color 160ms var(--ease-out);
+        }
+        .settings-search-input:hover { background: rgba(255, 255, 255, 0.05); }
+        .settings-search-input::placeholder { color: var(--text-muted); }
+        .settings-search-icon, .settings-search-clear { position: absolute; top: 50%; transform: translateY(-50%); }
+        .settings-search-icon { left: 11px; color: var(--text-muted); pointer-events: none; opacity: 0.7; }
+        .settings-search-clear {
+            right: 6px; width: 22px; height: 22px; min-height: 22px; padding: 0;
+            border-radius: 999px; border: 0; background: transparent; color: var(--text-muted);
+            box-shadow: none; display: flex; align-items: center; justify-content: center;
+        }
+        .settings-search-clear:hover { background: rgba(255, 255, 255, 0.08); color: var(--text-primary); }
+        .settings-toolbar-actions { justify-content: flex-end; }
+
+        /* ── Modal Body ── */
+        .settings-modal-body { display: grid; grid-template-columns: 196px minmax(0, 1fr); min-height: 0; }
+
+        /* ── Sidebar / Group Nav ── */
+        .settings-groups {
+            padding: 8px 6px 8px 8px; border-right: 1px solid rgba(255, 255, 255, 0.055);
+            overflow-y: auto; display: flex; flex-direction: column; gap: 2px;
+            overscroll-behavior: contain;
+            scrollbar-width: thin; scrollbar-color: rgba(255, 255, 255, 0.1) transparent;
+        }
+        .settings-group-button {
+            display: flex; align-items: center; justify-content: space-between; gap: 8px;
+            width: 100%; min-height: 32px; padding: 0 10px;
+            border-radius: 8px; border: 1px solid transparent;
+            background: transparent; text-align: left;
+            color: var(--text-muted); font-size: 11.5px; font-weight: 700; letter-spacing: -0.01em;
+            transition: background-color 160ms var(--ease-out), color 160ms var(--ease-out), border-color 160ms var(--ease-out);
+        }
+        .settings-group-button:hover { color: var(--text-primary); background: rgba(255, 255, 255, 0.04); }
+        .settings-group-button.active {
+            color: var(--text-primary); background: rgba(255, 255, 255, 0.09); border-color: rgba(255, 255, 255, 0.14);
+        }
+        .settings-group-count {
+            padding: 2px 5px; border-radius: 999px; background: rgba(255, 255, 255, 0.06);
+            color: var(--text-muted); font-size: 9px; font-weight: 800; font-variant-numeric: tabular-nums; flex-shrink: 0;
+        }
+
+        /* ── Settings Editor ── */
+        .settings-editor { display: flex; flex-direction: column; min-width: 0; min-height: 0; overflow: hidden; }
+
+        .settings-modal-status {
+            display: none; margin: 8px 10px 0; padding: 8px 12px;
+            border-radius: var(--radius-sm); font-size: 11px; font-weight: 700; line-height: 1.5;
+        }
+        .settings-modal-status.success, .settings-modal-status.error, .settings-modal-status.info { animation: fade-down 200ms var(--ease-out) both; }
+        .settings-modal-status.success { display: block; color: #d7ffe8; background: rgba(166, 227, 161, 0.1); border: 1px solid rgba(166, 227, 161, 0.22); }
+        .settings-modal-status.error   { display: block; color: #ffe0e4; background: rgba(243, 139, 168, 0.1); border: 1px solid rgba(243, 139, 168, 0.22); }
+        .settings-modal-status.info    { display: block; color: #ddecff; background: rgba(116, 199, 236, 0.1); border: 1px solid rgba(116, 199, 236, 0.22); }
+
+        .settings-workspace-banner {
+            display: flex; align-items: center; justify-content: space-between; gap: 8px;
+            margin: 8px 10px 0; padding: 7px 12px;
+            border-radius: 8px; border: 1px solid rgba(255, 255, 255, 0.06); background: rgba(255, 255, 255, 0.025);
+            transition: border-color 220ms var(--ease-out), background-color 220ms var(--ease-out);
+            flex-shrink: 0;
+        }
+        .settings-workspace-copy { display: flex; align-items: baseline; gap: 6px; min-width: 0; flex-wrap: wrap; }
+        .settings-workspace-title {
+            color: var(--text-secondary); font-size: 11px; font-weight: 800; letter-spacing: -0.01em;
+            white-space: nowrap; transition: color 220ms var(--ease-out);
+        }
+        .settings-workspace-note {
+            color: var(--text-muted); font-size: 11px;
+            overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+            transition: color 220ms var(--ease-out);
+        }
+        .settings-workspace-banner.is-warning { border-color: rgba(137, 180, 250, 0.22); background: rgba(137, 180, 250, 0.05); }
+        .settings-workspace-banner.is-warning .settings-workspace-title { color: #c1d6ff; }
+        .settings-workspace-banner.is-error { border-color: rgba(243, 139, 168, 0.24); background: rgba(243, 139, 168, 0.06); }
+        .settings-workspace-banner.is-error .settings-workspace-title { color: #ffe0e4; }
+        .settings-workspace-banner.is-filtered { border-color: rgba(116, 199, 236, 0.18); background: rgba(116, 199, 236, 0.04); }
+        .settings-workspace-banner.is-filtered .settings-workspace-title { color: #ddf3ff; }
+
+        .settings-tertiary-button {
+            min-height: 26px; padding: 0 10px;
+            border-radius: 6px; font-size: 10px; font-weight: 700; letter-spacing: 0.04em;
+            white-space: nowrap; flex-shrink: 0;
+        }
+
+        /* ── Settings List ── */
+        .settings-list {
+            padding: 8px 10px 12px; overflow-y: auto;
+            display: flex; flex-direction: column; gap: 3px;
+            overscroll-behavior: contain;
+            scrollbar-width: thin; scrollbar-color: rgba(255, 255, 255, 0.1) transparent; scrollbar-gutter: stable;
+        }
+
+        /* ── Empty State ── */
+        .settings-empty {
+            display: grid; place-items: center; min-height: 200px; padding: 24px;
+            color: var(--text-muted); text-align: center;
+        }
+        .settings-empty-inner { max-width: 300px; }
+        .settings-empty-eyebrow {
+            display: inline-flex; padding: 4px 8px; border-radius: 999px;
+            background: rgba(116, 199, 236, 0.1); border: 1px solid rgba(116, 199, 236, 0.22);
+            color: #ddf3ff; font-size: 9px; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase;
+        }
+        .settings-empty-title {
+            margin: 10px 0 5px; color: var(--text-primary);
+            font-size: 16px; font-weight: 800; letter-spacing: -0.03em; text-wrap: balance;
+        }
+        .settings-empty-copy { margin: 0 0 12px; font-size: 12px; line-height: 1.55; }
+
+        /* ── Settings Items ── */
+        .settings-item {
+            border-radius: var(--radius-sm); border: 1px solid rgba(255, 255, 255, 0.065);
+            background: rgba(255, 255, 255, 0.025);
+            transition: border-color 180ms var(--ease-out);
+        }
+        .settings-item:hover { border-color: rgba(255, 255, 255, 0.12); }
+        .settings-item:focus-within { border-color: rgba(137, 180, 250, 0.28); }
+        .settings-item.is-dirty { border-color: rgba(137, 180, 250, 0.28); background: rgba(137, 180, 250, 0.05); }
+        .settings-item.is-invalid { border-color: rgba(243, 139, 168, 0.28); background: rgba(243, 139, 168, 0.04); }
+
+        .settings-item.is-toggle {
+            display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap;
+            gap: 10px; padding: 9px 12px; min-height: 38px;
+        }
+        .settings-item.is-toggle .settings-item-title-row {
+            display: flex; align-items: center; gap: 6px; min-width: 0; flex: 1;
+        }
+        .settings-item.is-toggle .settings-item-right {
+            display: flex; align-items: center; gap: 8px; flex-shrink: 0;
+        }
+        .settings-item.is-toggle > .settings-item-footer {
+            flex-basis: 100%; padding-bottom: 3px; margin-top: -4px;
+        }
+
+        .settings-item:not(.is-toggle) {
+            padding: 11px 12px; display: flex; flex-direction: column; gap: 8px;
+        }
+
+        .settings-item-title-row {
+            display: flex; align-items: center; gap: 6px; flex-wrap: wrap; min-width: 0;
+        }
+        .settings-item-title {
+            margin: 0; font-size: 12.5px; font-weight: 700; letter-spacing: -0.02em;
+            overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+        }
+        .settings-item-group {
+            font-size: 9.5px; font-weight: 700; color: var(--text-muted);
+            letter-spacing: 0.05em; text-transform: uppercase; opacity: 0.55; white-space: nowrap;
+        }
+        .settings-item-badge {
+            display: inline-flex; align-items: center; padding: 3px 6px;
+            border-radius: 999px; font-size: 9px; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase;
+        }
+        .settings-item-state {
+            color: #c1d6ff; background: rgba(137, 180, 250, 0.14); border: 1px solid rgba(137, 180, 250, 0.24);
+        }
+        .settings-item-state.is-problem {
+            color: #ffe0e4; background: rgba(243, 139, 168, 0.14); border-color: rgba(243, 139, 168, 0.24);
+        }
+        .settings-item-type {
+            color: #ddf3ff; background: rgba(116, 199, 236, 0.12); border: 1px solid rgba(116, 199, 236, 0.2);
+            padding: 3px 6px; border-radius: 999px; font-size: 9px; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase;
+        }
+        .settings-item-description {
+            margin: 0; color: var(--text-muted); font-size: 11px; line-height: 1.55;
+        }
+
+        /* Controls */
+        .settings-item-control { min-width: 0; }
+        .settings-item-control input[type="text"],
+        .settings-item-control input[type="url"],
+        .settings-item-control input[type="number"],
+        .settings-item-control textarea {
+            width: 100%; border: 1px solid var(--border); border-radius: var(--radius-sm);
+            background: rgba(6, 8, 12, 0.8); color: var(--text-primary);
+            font: inherit; font-size: 12px; padding: 9px 12px;
+            transition: border-color 160ms var(--ease-out), background-color 160ms var(--ease-out);
+        }
+        .settings-item-control input:hover,
+        .settings-item-control textarea:hover { border-color: var(--border-hover); }
+        .settings-item-control textarea { min-height: 108px; resize: vertical; line-height: 1.55; }
+        .settings-item.is-invalid .settings-item-control input,
+        .settings-item.is-invalid .settings-item-control textarea { border-color: rgba(243, 139, 168, 0.3); }
+
+        /* Toggle switch */
+        .settings-item-toggle {
+            display: inline-flex; align-items: center; cursor: pointer; user-select: none; touch-action: manipulation;
+        }
+        .settings-item-toggle input { position: absolute; opacity: 0; pointer-events: none; }
+        .settings-item-toggle-track {
+            position: relative; width: 44px; height: 26px; border-radius: 999px;
+            background: rgba(255, 255, 255, 0.12); border: 1px solid var(--border);
+            transition: background-color 200ms var(--ease-out), border-color 200ms var(--ease-out);
+            flex-shrink: 0;
+        }
+        .settings-item-toggle-track::after {
+            content: ''; position: absolute; top: 2px; left: 2px;
+            width: 20px; height: 20px; border-radius: 50%;
+            background: #fff; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.28);
+            transition: transform 240ms var(--ease-spring);
+        }
+        .settings-item-toggle input:checked + .settings-item-toggle-track {
+            background: linear-gradient(135deg, #a6c5fb, #89b4fa);
+            border-color: transparent;
+        }
+        .settings-item-toggle input:checked + .settings-item-toggle-track::after { transform: translateX(18px); }
+        .settings-item-toggle:hover .settings-item-toggle-track { border-color: var(--border-hover); }
+        .settings-item-toggle input:focus-visible + .settings-item-toggle-track { box-shadow: var(--focus-ring); }
+
+        /* Footer */
+        .settings-item-footer { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; }
+        .settings-item-hint { color: var(--text-muted); font-size: 10px; line-height: 1.5; flex: 1; }
+        .settings-reset-inline {
+            min-height: 26px; padding: 0 9px;
+            border-radius: 6px; font-size: 10px; font-weight: 700; letter-spacing: 0.04em; white-space: nowrap; flex-shrink: 0;
+        }
+
+        input:focus-visible, textarea:focus-visible {
+            outline: none; box-shadow: var(--focus-ring); border-color: var(--accent-border);
+        }
+
+        /* Scrollbars */
+        .settings-groups::-webkit-scrollbar, .settings-list::-webkit-scrollbar { width: 5px; }
+        .settings-groups::-webkit-scrollbar-track, .settings-list::-webkit-scrollbar-track { background: transparent; }
+        .settings-groups::-webkit-scrollbar-thumb, .settings-list::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.1); border-radius: 999px; }
+        .settings-groups::-webkit-scrollbar-thumb:hover, .settings-list::-webkit-scrollbar-thumb:hover { background: rgba(255, 255, 255, 0.2); }
+
+        .sr-only {
+            position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+            overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0;
+        }
+
+        .button-row { display: flex; flex-wrap: wrap; gap: 6px; }
+
+        /* Responsive */
+        @media (max-width: 900px) {
+            .workspace-command { grid-template-columns: 1fr; }
+            .storage-overview { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+            .settings-modal-body { grid-template-columns: 1fr; }
+            .settings-groups {
+                border-right: none; border-bottom: 1px solid rgba(255, 255, 255, 0.055);
+                flex-direction: row; flex-wrap: wrap; max-height: none; padding: 8px; gap: 4px;
+            }
+            .settings-group-button { width: auto; }
+            .settings-modal { width: min(100vw - 16px, 1120px); max-height: calc(100vh - 16px); margin: 8px auto; }
+            .settings-modal-toolbar { flex-direction: column; align-items: stretch; }
+            .settings-toolbar-actions { justify-content: flex-start; }
+            .settings-workspace-banner { flex-direction: column; align-items: stretch; }
+        }
+        @media (max-width: 640px) {
+            body { padding: 18px 14px 32px; }
+            .app-bar { flex-direction: column; align-items: flex-start; }
+            .workspace-command { padding: 16px; }
+            .workspace-title { font-size: 30px; }
+            .storage-overview { grid-template-columns: 1fr; }
+            .actions-row { align-items: stretch; flex-direction: column; }
+            .actions-end { margin-left: 0; }
+            .button-row { width: 100%; }
+            .button-row button, .actions-end button { flex: 1; }
+            .settings-modal { border-radius: 16px; }
+            .settings-modal-header { flex-wrap: wrap; }
+        }
+        @media (prefers-reduced-motion: reduce) {
+            *, *::before, *::after {
+                animation: none !important; transition: none !important; scroll-behavior: auto !important;
+            }
+        }
+        @media (forced-colors: active) {
+            .settings-item, .workspace-command, .stat-card, .storage-note, .actions-row, .confirm-dialog,
+            button, input, textarea {
+                border-color: CanvasText; forced-color-adjust: none;
+                background: Canvas; color: CanvasText;
+            }
+            .settings-item-toggle-track { border: 1px solid CanvasText; background: Canvas; }
+            .settings-item-toggle input:checked + .settings-item-toggle-track { background: Highlight; }
+            .settings-item-toggle-track::after { background: CanvasText; }
+            button:focus-visible, input:focus-visible, textarea:focus-visible {
+                outline: 2px solid Highlight; outline-offset: 2px; box-shadow: none;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="page-shell">
+
+        <header class="app-bar">
+            <div class="app-brand">
+                <div class="brand-icon-shell" aria-hidden="true">
+                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#89b4fa" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M6 4h8a4 4 0 0 1 0 8h-8z"/>
+                        <path d="M6 12l8 8"/>
+                        <path d="M6 4v16"/>
+                    </svg>
+                </div>
+                <span class="brand-name">RumbleX</span>
+                <span class="brand-version" id="version"></span>
+            </div>
+            <div class="app-status" aria-label="Storage status">Local</div>
+        </header>
+
+        <main class="options-workspace" aria-labelledby="options-title">
+            <section class="workspace-command">
+                <div class="workspace-copy">
+                    <span class="workspace-eyebrow">Settings workspace</span>
+                    <h1 class="workspace-title" id="options-title">Settings and local data</h1>
+                    <p>Review every RumbleX toggle, back up your local data, and manage blocked channels, keywords, chatters, and SponsorBlock segments from one control surface.</p>
+                </div>
+                <div class="main-action">
+                    <button id="open-settings-modal-btn" class="cta-button" type="button">Open Settings Editor</button>
+                </div>
+            </section>
+
+            <section class="storage-overview" aria-label="Storage statistics">
+                <div class="stat-card">
+                    <strong class="stat-card-value" id="stat-features">—</strong>
+                    <span class="stat-card-label">Enabled</span>
+                </div>
+                <div class="stat-card">
+                    <strong class="stat-card-value" id="stat-size">—</strong>
+                    <span class="stat-card-label">Storage</span>
+                </div>
+                <div class="stat-card">
+                    <strong class="stat-card-value" id="stat-channels">—</strong>
+                    <span class="stat-card-label">Channels</span>
+                </div>
+                <div class="stat-card">
+                    <strong class="stat-card-value" id="stat-keywords">—</strong>
+                    <span class="stat-card-label">Keywords</span>
+                </div>
+                <div class="stat-card">
+                    <strong class="stat-card-value" id="stat-chatters">—</strong>
+                    <span class="stat-card-label">Chatters</span>
+                </div>
+            </section>
+
+            <p class="storage-note" id="storage-info" aria-live="polite">Reading local storage…</p>
+
+            <nav class="actions-row" aria-label="Data management">
+                <div class="button-row">
+                    <button id="export-btn" type="button">Export Backup</button>
+                    <button id="import-btn" type="button">Import Backup</button>
+                    <input type="file" id="import-file" accept=".json,application/json" hidden>
+                </div>
+                <div class="actions-end">
+                    <button id="reset-btn" class="danger" type="button">Reset All Data</button>
+                </div>
+            </nav>
+
+            <div class="status" id="status" aria-live="polite"></div>
+        </main>
+
+    </div>
+
+    <div class="settings-modal-shell" id="settings-modal-shell" hidden>
+        <div class="settings-modal-backdrop" data-close-settings-modal></div>
+        <section class="settings-modal" role="dialog" aria-modal="true" aria-labelledby="settings-modal-title">
+
+            <header class="settings-modal-header">
+                <h2 class="settings-modal-title" id="settings-modal-title">Settings</h2>
+                <p class="sr-only" id="settings-modal-summary" aria-live="polite"></p>
+                <div class="settings-chip-row">
+                    <div class="settings-chip"><strong id="settings-total-count">0</strong> settings</div>
+                    <div class="settings-chip"><strong id="settings-dirty-count">0</strong> unsaved</div>
+                    <div class="settings-chip settings-chip-problem" id="settings-problem-chip" hidden>
+                        <strong id="settings-problem-count">0</strong> need attention
+                    </div>
+                </div>
+                <button id="close-settings-modal-btn" class="icon-button" type="button" aria-label="Close settings"><svg aria-hidden="true" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="3" y1="3" x2="13" y2="13"/><line x1="13" y1="3" x2="3" y2="13"/></svg></button>
+            </header>
+
+            <div class="settings-modal-toolbar">
+                <div class="settings-search-shell">
+                    <svg class="settings-search-icon" aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                    <input class="settings-search-input" id="settings-search" name="settings-search" type="search" placeholder="Search settings…" aria-label="Search settings" autocomplete="off" spellcheck="false">
+                    <button id="settings-clear-search-btn" class="settings-search-clear" type="button" aria-label="Clear search" hidden><svg aria-hidden="true" width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="1" y1="1" x2="9" y2="9"/><line x1="9" y1="1" x2="1" y2="9"/></svg></button>
+                </div>
+                <div class="button-row settings-toolbar-actions">
+                    <button id="settings-restore-defaults-btn" type="button">Restore Defaults</button>
+                    <button id="settings-discard-btn" type="button">Discard</button>
+                    <button id="settings-save-btn" class="primary" type="button">Save</button>
+                </div>
+            </div>
+
+            <div class="settings-modal-body">
+                <aside class="settings-groups" id="settings-groups" aria-label="Setting groups"></aside>
+                <div class="settings-editor">
+                    <div class="settings-workspace-banner" id="settings-workspace-banner">
+                        <div class="settings-workspace-copy">
+                            <strong class="settings-workspace-title" id="settings-workspace-title">In sync</strong>
+                            <span class="settings-workspace-note" id="settings-workspace-note">Changes stay local until you save.</span>
+                        </div>
+                        <button id="settings-clear-filters-btn" class="settings-tertiary-button" type="button" hidden>Clear Filters</button>
+                    </div>
+                    <div class="settings-modal-status" id="settings-modal-status" aria-live="polite"></div>
+                    <div class="settings-empty" id="settings-empty" hidden>
+                        <div class="settings-empty-inner">
+                            <span class="settings-empty-eyebrow">Filtered View</span>
+                            <h3 class="settings-empty-title">No settings match</h3>
+                            <p class="settings-empty-copy">Try a broader search or switch group.</p>
+                            <button id="settings-empty-reset-btn" class="settings-tertiary-button" type="button">Clear Filters</button>
+                        </div>
+                    </div>
+                    <div class="settings-list" id="settings-list"></div>
+                </div>
+            </div>
+
+        </section>
+    </div>
+
+    <script src="options.js"></script>
+</body>
+</html>

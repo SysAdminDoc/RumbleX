@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         RumbleX
 // @namespace    https://github.com/SysAdminDoc/RumbleX
-// @version      0.6.0
+// @version      1.8.0
 // @updateURL      https://raw.githubusercontent.com/SysAdminDoc/RumbleX/main/RumbleX.user.js
 // @downloadURL    https://raw.githubusercontent.com/SysAdminDoc/RumbleX/main/RumbleX.user.js
 // @description  Rumble enhancement suite - ad/bloat removal, theater split view, and dark theme polish.
@@ -25,7 +25,7 @@
     'use strict';
 
     // ── Version ──
-    const VERSION = '0.6.0';
+    const VERSION = '1.8.0';
 
     // ── Settings Manager ──
     const Settings = {

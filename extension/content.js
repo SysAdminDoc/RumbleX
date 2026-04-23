@@ -1,9 +1,9 @@
-// RumbleX v1.7.1 - Content Script
+// RumbleX v1.9.3 - Content Script
 // Rumble enhancement suite - Chrome/Firefox extension
 'use strict';
 
 // ── Version ──
-const VERSION = chrome.runtime?.getManifest?.()?.version || '1.7.0';
+const VERSION = chrome.runtime?.getManifest?.()?.version || '1.9.3';
 
 // ── Settings Manager (chrome.storage.local) ──
 const Settings = {
@@ -53,10 +53,117 @@ const Settings = {
         playbackSpeed: 1.0,
         blockedChannels: [],
         bookmarks: [],
+        // v1.8.0 additions
+        fullTitles: true,
+        titleFont: false,
+        uniqueChatters: true,
+        chatUserBlock: true,
+        chatSpamDedup: true,
+        chatExport: true,
+        rantPersist: true,
+        commentSort: true,
+        popoutChat: true,
+        keywordFilter: true,
+        autoplayScheduler: false,
+        chapters: true,
+        sponsorBlock: true,
+        videoClips: true,
+        liveDVR: false,
+        subtitleSidecar: true,
+        transcripts: true,
+        audioOnly: true,
+        batchDownload: false,
+        blockedChatters: [],
+        blockedKeywords: [],
+        sponsorSegments: {},
+        autoplayQueue: [],
+        // v1.9.0 — Rumble Enhancement Suite port
+        // Interactive modules
+        autoHideHeader: false,
+        autoHideNavSidebar: false,
+        autoLike: false,
+        autoLoadComments: true,
+        fullWidthPlayer: false,
+        adaptiveLiveLayout: true,
+        commentBlocking: true,
+        siteThemeSync: false,
+        siteTheme: 'system',
+        blockedCommenters: [],
+        // Main Page Layout (CSS hide-X toggles — all default OFF)
+        widenSearchBar: false,
+        hideUploadIcon: false,
+        hideHeaderAd: false,
+        hideProfileBacksplash: false,
+        hideFeaturedBanner: false,
+        hideEditorPicks: false,
+        hideTopLiveCategories: false,
+        hidePremiumRow: false,
+        hideHomepageAd: false,
+        hideForYouRow: false,
+        hideGamingRow: false,
+        hideFinanceRow: false,
+        hideLiveRow: false,
+        hideFeaturedPlaylistsRow: false,
+        hideSportsRow: false,
+        hideViralRow: false,
+        hidePodcastsRow: false,
+        hideLeaderboardRow: false,
+        hideVlogsRow: false,
+        hideNewsRow: false,
+        hideScienceRow: false,
+        hideMusicRow: false,
+        hideEntertainmentRow: false,
+        hideCookingRow: false,
+        hideFooter: false,
+        // Video Page Layout
+        hideRelatedOnLive: false,
+        hideRelatedSidebar: false,
+        widenContent: false,
+        hideVideoDescription: false,
+        hidePausedVideoAds: false,
+        // Player Controls
+        hideRewindButton: false,
+        hideFastForwardButton: false,
+        hideCCButton: false,
+        hideAutoplayButton: false,
+        hideTheaterButton: false,
+        hidePipButton: false,
+        hideFullscreenButton: false,
+        hidePlayerRumbleLogo: false,
+        hidePlayerGradient: false,
+        // Video Buttons
+        hideLikeDislikeButton: false,
+        hideShareButton: false,
+        hideRepostButton: false,
+        hideEmbedButton: false,
+        hideSaveButton: false,
+        hideCommentButton: false,
+        hideReportButton: false,
+        hidePremiumJoinButtons: false,
+        // Comments
+        moveReplyButton: false,
+        hideCommentReportLink: false,
+        // Chat
+        cleanLiveChat: false,
     },
+    _writeTimer: null,
+    _pendingWrite: false,
+    // Tracks keys the user has changed locally but hasn't yet been flushed to
+    // chrome.storage. If an external change arrives inside the debounce
+    // window, we merge external values UNDER these pending keys — otherwise
+    // the user's in-flight toggle would be silently discarded.
+    _pendingKeys: null,
+    // Track the last-known value of rx_settings we either read from or wrote
+    // to storage. Used by the onChanged listener to tell "this change was me"
+    // from "this change was a different tab/window/options page".
+    _lastWritten: null,
+    _externalHandlers: [],
+
     async init() {
         const data = await chrome.storage.local.get('rx_settings');
         this._cache = { ...this._defaults, ...(data.rx_settings || {}) };
+        this._lastWritten = JSON.stringify(this._cache);
+        this._pendingKeys = new Set();
         this._ready = true;
     },
     get(key) {
@@ -64,15 +171,90 @@ const Settings = {
         return this._cache[key];
     },
     set(key, val) {
+        if (!this._cache) this._cache = { ...this._defaults };
         this._cache[key] = val;
-        chrome.storage.local.set({ rx_settings: this._cache });
+        if (!this._pendingKeys) this._pendingKeys = new Set();
+        this._pendingKeys.add(key);
+        this._scheduleWrite();
+    },
+    // Coalesce rapid writes into a single storage.local.set call. Without
+    // this, features that update settings on keystroke (search history,
+    // volume slider, etc.) could thrash storage. 120ms is short enough to
+    // feel instant and long enough to batch bursts.
+    _scheduleWrite() {
+        this._pendingWrite = true;
+        clearTimeout(this._writeTimer);
+        this._writeTimer = setTimeout(() => this._flush(), 120);
+    },
+    _flush() {
+        if (!this._pendingWrite || !this._cache) return;
+        this._pendingWrite = false;
+        const snapshot = JSON.stringify(this._cache);
+        this._lastWritten = snapshot;
+        // Writes confirmed: clear the pending-key set so the NEXT external
+        // event is free to overwrite any key again.
+        this._pendingKeys?.clear();
+        try {
+            chrome.storage.local.set({ rx_settings: this._cache });
+        } catch (e) {
+            console.warn('[RumbleX] settings flush failed:', e);
+        }
     },
     toggle(key) {
         const v = !this.get(key);
         this.set(key, v);
         return v;
-    }
+    },
+    onExternalChange(fn) {
+        this._externalHandlers.push(fn);
+    },
+    // Called by chrome.storage.onChanged when rx_settings changed in another
+    // tab or from the options page. Refreshes our cache in place and fires
+    // subscribers so features can react (show a toast, re-run, etc.).
+    //
+    // `newValue === undefined` means the key was removed (e.g. options-page
+    // reset): reset our cache to defaults instead of silently ignoring so
+    // subsequent Settings.get() calls return the right value without needing
+    // a page reload.
+    _applyExternal(newValue) {
+        const isReset = newValue === undefined;
+        if (!isReset && (!newValue || typeof newValue !== 'object')) return;
+        const incoming = isReset ? '__reset__' : JSON.stringify(newValue);
+        if (incoming === this._lastWritten) return; // our own write, ignore
+
+        if (isReset) {
+            // Reset is explicit user intent: wipe pending too so we don't
+            // resurrect discarded values on the next flush.
+            this._pendingKeys?.clear();
+            this._cache = { ...this._defaults };
+        } else {
+            // Build the merged cache from external, then layer our still-
+            // pending changes ON TOP so an in-flight toggle isn't lost just
+            // because another tab happened to save first.
+            const merged = { ...this._defaults, ...newValue };
+            if (this._cache && this._pendingKeys && this._pendingKeys.size > 0) {
+                for (const k of this._pendingKeys) {
+                    if (k in this._cache) merged[k] = this._cache[k];
+                }
+            }
+            this._cache = merged;
+        }
+        this._lastWritten = incoming;
+        for (const fn of this._externalHandlers) {
+            try { fn(isReset); } catch (e) { console.warn('[RumbleX] external-change handler failed:', e); }
+        }
+    },
 };
+
+if (chrome?.storage?.onChanged) {
+    chrome.storage.onChanged.addListener((changes, areaName) => {
+        if (areaName !== 'local') return;
+        if (!changes.rx_settings) return;
+        Settings._applyExternal(changes.rx_settings.newValue);
+    });
+}
+// Ensure pending writes land before the page unloads.
+window.addEventListener('pagehide', () => Settings._flush(), { capture: true });
 
 // ── Page Detection ──
 const Page = {
@@ -1548,9 +1730,91 @@ const VideoDownloader = {
             color: var(--rx-subtext, #a6adc8);
             margin-top: 2px;
         }
+
+        /* ── Deep scan (RUD) additions ── */
+        .rx-dl-scan-bar {
+            display: flex; align-items: center; gap: 8px;
+            padding: 6px 10px; margin-bottom: 8px;
+            background: rgba(137,180,250,0.08); border: 1px solid rgba(137,180,250,0.18);
+            border-radius: 8px;
+            font: 11px system-ui, sans-serif; color: var(--rx-subtext, #a6adc8);
+        }
+        .rx-dl-scan-bar .rx-dl-scan-label { flex: 1; }
+        .rx-dl-scan-bar .rx-dl-scan-counter {
+            font-variant-numeric: tabular-nums; color: var(--rx-text, #cdd6f4); font-weight: 600;
+        }
+        .rx-dl-scan-bar .rx-dl-scan-mini {
+            width: 60px; height: 3px; background: rgba(255,255,255,0.08); border-radius: 2px; overflow: hidden;
+        }
+        .rx-dl-scan-bar .rx-dl-scan-mini > div {
+            height: 100%; width: 0%; background: var(--rx-accent, #89b4fa);
+            transition: width 0.2s ease;
+        }
+        .rx-dl-scan-bar.done {
+            background: rgba(166,227,161,0.08);
+            border-color: rgba(166,227,161,0.18);
+            color: #a6e3a1;
+        }
+
+        .rx-dl-group-title {
+            font: 700 10px/1 system-ui, sans-serif;
+            color: var(--rx-subtext, #a6adc8);
+            text-transform: uppercase; letter-spacing: 0.08em;
+            padding: 8px 4px 4px;
+        }
+        .rx-dl-group-title:first-child { padding-top: 0; }
+
+        .rx-dl-quality {
+            gap: 8px;
+        }
+        .rx-dl-quality-row-inner {
+            display: flex; align-items: center; gap: 10px; flex: 1; min-width: 0;
+        }
+        .rx-dl-quality-main {
+            flex: 1; min-width: 0;
+        }
+        .rx-dl-type-badge {
+            display: inline-block; padding: 1px 6px; margin-left: 6px;
+            font: 600 9px/1.4 system-ui, sans-serif; letter-spacing: 0.04em; text-transform: uppercase;
+            border-radius: 999px;
+            background: rgba(255,255,255,0.06); color: var(--rx-subtext, #a6adc8);
+        }
+        .rx-dl-type-badge.type-tar {
+            background: rgba(249,226,175,0.14); color: #f9e2af;
+        }
+        .rx-dl-copy-btn {
+            background: transparent; border: 0; padding: 4px; margin: 0;
+            color: var(--rx-subtext, #a6adc8); cursor: pointer; opacity: 0;
+            transition: opacity 0.12s, color 0.12s;
+            border-radius: 4px; display: flex; align-items: center; justify-content: center;
+        }
+        .rx-dl-quality:hover .rx-dl-copy-btn { opacity: 0.7; }
+        .rx-dl-copy-btn:hover { opacity: 1; color: var(--rx-text, #cdd6f4); background: rgba(255,255,255,0.06); }
+        .rx-dl-copy-btn.copied { color: #a6e3a1; opacity: 1; }
+        .rx-dl-copy-btn svg { width: 12px; height: 12px; }
+
+        .rx-dl-tar-note {
+            margin-top: 6px; padding: 8px 10px;
+            background: rgba(249,226,175,0.06); border: 1px solid rgba(249,226,175,0.16);
+            border-radius: 6px;
+            font: 10px/1.5 system-ui, sans-serif; color: var(--rx-subtext, #a6adc8);
+        }
+        .rx-dl-tar-note strong { color: #f9e2af; }
     `,
 
     _downloadSVG: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>',
+    _copySVG: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>',
+    _checkSVG: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>',
+
+    // ── RUD (Rumble Universal Downloader) constants ──
+    _CDN_HOST: 'https://hugh.cdn.rumble.cloud',
+    _TOKEN_LABELS: { haa: '1080p', gaa: '720p', caa: '480p', baa: '360p', oaa: '240p' },
+    _TOKENS: ['haa', 'gaa', 'caa', 'baa', 'oaa'],
+    _EMBED_UNITS: ['u0', 'u1', 'u2', 'u3', 'u4'],
+    _PROBE_CONCURRENCY: 6,
+    _PROBE_TIMEOUT_MS: 12000,
+    _scanController: null,
+    _scanSeq: 0, // guards against late results after the user navigates away
 
     _getEmbedId() {
         const player = qs('[id^="vid_v"]');
@@ -1717,11 +1981,115 @@ const VideoDownloader = {
     },
 
     _showDownloadTab() {
-        TheaterSplit._switchTab('download');
-        const panel = qs('#rx-tab-download');
-        if (!panel || panel.dataset.loaded) return;
-        panel.dataset.loaded = '1';
+        // Preferred path: the TheaterSplit side panel owns a #rx-tab-download.
+        // If TheaterSplit is enabled and initialized, route there.
+        if (Settings.get('theaterSplit') && qs('#rx-tab-download')) {
+            TheaterSplit._switchTab('download');
+            const panel = qs('#rx-tab-download');
+            if (panel && !panel.dataset.loaded) {
+                panel.dataset.loaded = '1';
+                this._loadQualities();
+            }
+            return;
+        }
+        // Fallback: TheaterSplit is disabled. Mount a standalone overlay so
+        // the download feature is still useful on its own.
+        this._showDownloadOverlay();
+    },
+
+    _showDownloadOverlay() {
+        // Idempotent — reopening just re-focuses the existing overlay.
+        const existing = qs('#rx-download-overlay');
+        if (existing) {
+            existing.classList.add('open');
+            return;
+        }
+        injectStyle(`
+            #rx-download-overlay {
+                position: fixed; inset: 0; z-index: 80010;
+                background: rgba(0,0,0,0.65);
+                display: none; align-items: center; justify-content: center;
+                backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px);
+            }
+            #rx-download-overlay.open { display: flex; }
+            #rx-download-overlay .rx-dl-card {
+                width: min(560px, calc(100vw - 32px));
+                max-height: calc(100vh - 64px); overflow-y: auto;
+                background: #0e1017; color: #cdd6f4;
+                border: 1px solid rgba(255,255,255,0.08); border-radius: 14px;
+                box-shadow: 0 24px 64px rgba(0,0,0,0.55);
+                font-family: system-ui, sans-serif;
+            }
+            #rx-download-overlay .rx-dl-card-header {
+                display: flex; align-items: center; justify-content: space-between;
+                padding: 12px 16px; border-bottom: 1px solid rgba(255,255,255,0.06);
+            }
+            #rx-download-overlay .rx-dl-card-header h2 {
+                margin: 0; font-size: 15px; font-weight: 700; letter-spacing: -0.01em;
+            }
+            #rx-download-overlay .rx-dl-card-close {
+                background: transparent; border: 0; color: #a6adc8; cursor: pointer;
+                padding: 6px; border-radius: 6px; display: flex;
+            }
+            #rx-download-overlay .rx-dl-card-close:hover {
+                background: rgba(255,255,255,0.06); color: #fff;
+            }
+            #rx-download-overlay .rx-dl-body { padding: 14px 16px; }
+        `, 'rx-download-overlay-css');
+
+        const overlay = document.createElement('div');
+        overlay.id = 'rx-download-overlay';
+        overlay.className = 'open';
+        const card = document.createElement('div');
+        card.className = 'rx-dl-card';
+
+        const header = document.createElement('div');
+        header.className = 'rx-dl-card-header';
+        const title = document.createElement('h2');
+        title.textContent = 'Download Video';
+        const closeBtn = document.createElement('button');
+        closeBtn.type = 'button';
+        closeBtn.className = 'rx-dl-card-close';
+        closeBtn.setAttribute('aria-label', 'Close');
+        closeBtn.innerHTML = '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="3" y1="3" x2="13" y2="13"/><line x1="13" y1="3" x2="3" y2="13"/></svg>';
+        closeBtn.addEventListener('click', () => this._closeDownloadOverlay());
+
+        // We need an element with id `rx-tab-download` containing `.rx-dl-body`
+        // because the rest of VideoDownloader's code queries those selectors.
+        // Re-using the existing selector contract avoids a broader refactor.
+        const tab = document.createElement('div');
+        tab.id = 'rx-tab-download';
+        const body = document.createElement('div');
+        body.className = 'rx-dl-body';
+        tab.appendChild(body);
+
+        header.append(title, closeBtn);
+        card.append(header, tab);
+        overlay.appendChild(card);
+        document.body.appendChild(overlay);
+
+        overlay.addEventListener('click', (e) => {
+            if (e.target === overlay) this._closeDownloadOverlay();
+        });
+        this._overlayKeyHandler = (e) => {
+            if (e.key === 'Escape') this._closeDownloadOverlay();
+        };
+        document.addEventListener('keydown', this._overlayKeyHandler);
+
         this._loadQualities();
+    },
+
+    _closeDownloadOverlay() {
+        // Aborts in-flight deep scan so probes don't keep firing in the
+        // background after the user closes the dialog.
+        this._scanController?.abort();
+        this._scanController = null;
+        this._scanSeq++;
+        if (this._overlayKeyHandler) {
+            document.removeEventListener('keydown', this._overlayKeyHandler);
+            this._overlayKeyHandler = null;
+        }
+        qs('#rx-download-overlay')?.remove();
     },
 
     _getBody() {
@@ -1734,97 +2102,598 @@ const VideoDownloader = {
         return body;
     },
 
+    // Safe-by-default alternative used for any content that includes data
+    // we didn't author (error messages, HLS hostnames, API responses). This
+    // avoids accidentally rendering a crafted string as HTML.
+    _setBodyText(className, text) {
+        const body = this._getBody();
+        if (!body) return null;
+        body.textContent = ''; // clear without innerHTML
+        const el = document.createElement('div');
+        if (className) el.className = className;
+        el.textContent = text == null ? '' : String(text);
+        body.appendChild(el);
+        return body;
+    },
+
+    // ───────────────────────────────────────────────────────────
+    //  RUD helpers — direct port from "Rumble Enhancement Suite"
+    //  v11 with extension-native fetch instead of GM_xmlhttpRequest.
+    //  Used by _loadQualities() for progressive CDN probing once the
+    //  fast embedJS path has rendered.
+    // ───────────────────────────────────────────────────────────
+    _tokenToLabel(t) {
+        const low = String(t || '').toLowerCase();
+        if (!low || low === 'faa') return null;
+        return this._TOKEN_LABELS[low] || low;
+    },
+    _tokenRank(t) {
+        switch (String(t || '').toLowerCase()) {
+            case 'haa': return 50;
+            case 'gaa': return 40;
+            case 'caa': return 30;
+            case 'baa': return 20;
+            case 'oaa': return 10;
+            default: return 0;
+        }
+    },
+    _typeFromUrl(u) { return /\.tar(\?|$)/i.test(u) ? 'tar' : 'mp4'; },
+    _extractTokenFromUrl(u) {
+        const m = u.match(/\.([A-Za-z]{3})(?:\.rec)?\.(?:mp4|tar)\b/i);
+        return m ? m[1] : null;
+    },
+    _parseSize(headers) {
+        const cr = headers.get('content-range');
+        if (cr) {
+            const m = cr.match(/bytes\s+\d+-\d+\/(\d+)/i);
+            if (m) return Number(m[1]);
+        }
+        const cl = headers.get('content-length');
+        if (cl) return Number(cl);
+        return undefined;
+    },
+
+    async _probeUrl(url) {
+        const signal = this._scanController?.signal;
+        if (signal?.aborted) return { ok: false };
+        const timed = () => {
+            // Compose per-probe timeout with the scan-wide abort signal.
+            if (typeof AbortSignal?.any === 'function' && signal) {
+                return AbortSignal.any([signal, AbortSignal.timeout(this._PROBE_TIMEOUT_MS)]);
+            }
+            return AbortSignal.timeout(this._PROBE_TIMEOUT_MS);
+        };
+        // HEAD first — cheapest and most accurate.
+        try {
+            const r = await fetch(url, { method: 'HEAD', signal: timed() });
+            if (r.ok || r.status === 206) return { ok: true, size: this._parseSize(r.headers) };
+        } catch {}
+        if (signal?.aborted) return { ok: false };
+        // HEAD may be blocked or unsupported — fall back to a 1-byte Range GET.
+        try {
+            const r = await fetch(url, {
+                method: 'GET',
+                headers: { Range: 'bytes=0-0' },
+                signal: timed(),
+            });
+            // Release the body immediately; we only wanted the headers.
+            r.body?.cancel?.();
+            if (r.ok || r.status === 206) return { ok: true, size: this._parseSize(r.headers) };
+        } catch {}
+        return { ok: false };
+    },
+
+    // Try every known embedJS endpoint. Each returns slightly different
+    // metadata; together they cover variants a single URL misses.
+    //
+    // `primedJson` — the embedJS response the caller already fetched
+    // (via _fetchEmbedData). Passing it through lets us skip the duplicate
+    // HTTP round-trip for the u3 endpoint _loadQualities already hit.
+    async _fetchAllEmbeds(embedId, primedJson) {
+        const primedUrl = `https://rumble.com/embedJS/u3/?request=video&ver=2&v=${encodeURIComponent(embedId)}`;
+        const urls = new Set();
+        for (const unit of this._EMBED_UNITS) {
+            if (unit === 'u3') continue; // we already have the base u3 response from _loadQualities
+            urls.add(`https://rumble.com/embedJS/${unit}/?request=video&v=${encodeURIComponent(embedId)}`);
+        }
+        urls.add(`https://rumble.com/embedJS/u3/?ifr=0&dref=rumble.com&request=video&ver=2&v=${encodeURIComponent(embedId)}`);
+        const signal = this._scanController?.signal;
+
+        // Fire all requests in parallel. `allSettled` so one 404 doesn't
+        // abort the rest, and aborts produce a resolved (failed) entry
+        // rather than an unhandled rejection.
+        const fetchOne = async (url) => {
+            if (signal?.aborted) return null;
+            try {
+                const r = await fetch(url, { signal });
+                if (!r.ok) return null;
+                const j = await r.json();
+                return j && typeof j === 'object' ? j : null;
+            } catch { return null; }
+        };
+        const results = (await Promise.allSettled([...urls].map(fetchOne)))
+            .map((s) => (s.status === 'fulfilled' ? s.value : null))
+            .filter(Boolean);
+        if (primedJson && typeof primedJson === 'object') results.unshift(primedJson);
+        return results;
+    },
+
+    _collectMediaUrlsFromEmbed(json) {
+        const out = new Set();
+        const add = (u) => { if (u && /\/video\/.+\.(?:mp4|tar)\b/i.test(u)) out.add(u); };
+        try {
+            if (json.u) { add(json.u.tar?.url); add(json.u.timeline?.url); }
+            if (json.ua) {
+                for (const group of Object.values(json.ua)) {
+                    if (group && typeof group === 'object') {
+                        for (const v of Object.values(group)) add(v?.url);
+                    } else if (typeof group === 'string') add(group);
+                }
+            }
+        } catch {}
+        return [...out];
+    },
+
+    _collectMediaUrlsFromDom() {
+        const out = new Set();
+        const addAbs = (u) => {
+            if (!u) return;
+            try { out.add(new URL(u, location.href).href); } catch {}
+        };
+        const isMedia = (u) => /\/video\/.+\.(?:mp4|tar)(?:\?|$)/i.test(u);
+        for (const el of qsa('[src], [href]')) {
+            const v = el.getAttribute('src') || el.getAttribute('href') || '';
+            if (isMedia(v)) addAbs(v);
+        }
+        for (const el of qsa('video, source')) {
+            const v = el.src || '';
+            if (isMedia(v)) addAbs(v);
+        }
+        const scriptRe = /https?:\/\/[^\s"'<>]+\/video\/[^\s"'<>]+\.(?:mp4|tar)\b[^\s"'<>]*/gi;
+        for (const s of qsa('script')) {
+            const text = (s.textContent || '').slice(0, 300000);
+            let m;
+            while ((m = scriptRe.exec(text))) addAbs(m[0]);
+        }
+        return [...out];
+    },
+
+    // Derive {pathPart, baseId, token, isLive} from any direct media URL.
+    // Once we have these, we can synthesize URLs for every quality token.
+    _deriveParts(urls) {
+        const parsePathFile = (u) => {
+            try {
+                const uo = new URL(u, location.href);
+                const m = uo.pathname.match(/\/video\/(.+?)\/([^\/]+)$/i);
+                return m ? { pathPart: m[1], file: m[2] } : null;
+            } catch { return null; }
+        };
+        const tar = urls.find((u) => /\.tar(\?|$)/i.test(u));
+        if (tar) {
+            const pp = parsePathFile(tar);
+            if (pp) {
+                const fm = pp.file.match(/^([A-Za-z0-9_-]+)\.([A-Za-z]{3})(?:\.rec)?\.tar$/i);
+                if (fm) return { pathPart: pp.pathPart, baseId: fm[1], token: fm[2], isLive: /\.rec\.tar$/i.test(pp.file) };
+            }
+        }
+        const mp4 = urls.find((u) => /\.mp4(\?|$)/i.test(u));
+        if (mp4) {
+            const pp = parsePathFile(mp4);
+            if (pp) {
+                const fm = pp.file.match(/^([A-Za-z0-9_-]+)\.([A-Za-z]{3})(?:\.rec)?\.mp4$/);
+                if (fm) return { pathPart: pp.pathPart, baseId: fm[1], token: fm[2], isLive: /\.rec\.mp4$/i.test(pp.file) };
+            }
+        }
+        return null;
+    },
+
+    _buildCdnUrl(pathPart, baseId, token, kind, live) {
+        if (kind === 'tar') {
+            const rec = live ? '.rec' : '';
+            return `${this._CDN_HOST}/video/${pathPart}/${baseId}.${token}${rec}.tar`;
+        }
+        return `${this._CDN_HOST}/video/${pathPart}/${baseId}.${token}.mp4`;
+    },
+
+    // Generate candidate URLs for every token × (mp4,tar) × (live,vod) combo,
+    // both case variants. Sorted so the highest-quality probes fire first.
+    _generateCandidates(parts) {
+        const { pathPart, baseId, isLive } = parts;
+        const triesLive = isLive == null ? [true, false] : [!!isLive];
+        const out = [];
+        for (const live of triesLive) {
+            for (const t of this._TOKENS) {
+                const cap = t[0].toUpperCase() + t.slice(1);
+                out.push({ url: this._buildCdnUrl(pathPart, baseId, t, 'tar', live), type: 'tar', token: t, pri: live ? 1 : 3 });
+                out.push({ url: this._buildCdnUrl(pathPart, baseId, cap, 'tar', live), type: 'tar', token: t, pri: live ? 1 : 3 });
+                if (!live) {
+                    out.push({ url: this._buildCdnUrl(pathPart, baseId, t, 'mp4', false), type: 'mp4', token: t, pri: 2 });
+                    out.push({ url: this._buildCdnUrl(pathPart, baseId, cap, 'mp4', false), type: 'mp4', token: t, pri: 2 });
+                }
+            }
+        }
+        out.sort((a, b) => a.pri - b.pri || this._tokenRank(b.token) - this._tokenRank(a.token));
+        return out;
+    },
+
+    // Run the full deep scan with the given abort-signal seq. Invokes
+    // `onResult({ label, type, url, size, token })` each time a probe succeeds.
+    //
+    // `primedJson` — the embedJS response the caller already obtained. We pass
+    // it through `_fetchAllEmbeds` so the deep scan doesn't duplicate that
+    // HTTP request (Rumble's u3 endpoint is rate-sensitive).
+    async _deepScan(embedId, seq, onResult, primedJson) {
+        const isAlive = () => seq === this._scanSeq && !this._scanController?.signal?.aborted;
+
+        // Step 1: harvest URLs from every embedJS endpoint and the live DOM.
+        const jsons = await this._fetchAllEmbeds(embedId, primedJson);
+        if (!isAlive()) return { done: 0, total: 0 };
+        const embedUrls = jsons.flatMap((j) => this._collectMediaUrlsFromEmbed(j));
+        const domUrls = this._collectMediaUrlsFromDom();
+        const directUrls = [...new Set([...embedUrls, ...domUrls])]
+            .filter((u) => /\/video\/.+\.(?:mp4|tar)\b/i.test(u));
+
+        // Step 2: derive base pattern and generate every candidate.
+        const parts = this._deriveParts(directUrls);
+        const generated = parts ? this._generateCandidates(parts) : [];
+
+        // Step 3: combine. Direct URLs get priority 0/4 depending on host score.
+        const directTargets = directUrls.map((u) => ({
+            url: u,
+            type: this._typeFromUrl(u),
+            token: String(this._extractTokenFromUrl(u) || '').toLowerCase(),
+            pri: u.includes('hugh.cdn.rumble.cloud') ? 0 : 4,
+        })).filter((t) => t.token !== 'faa');
+        const combined = [...directTargets, ...generated];
+        const seenUrls = new Set();
+        const targets = [];
+        for (const t of combined) {
+            if (!t.url || seenUrls.has(t.url)) continue;
+            seenUrls.add(t.url);
+            targets.push(t);
+        }
+        if (!targets.length) return { done: 0, total: 0 };
+
+        // Step 4: concurrent probe. Skip quality/type pairs we've already verified.
+        const satisfied = new Set();
+        const queue = [...targets];
+        let done = 0;
+        const total = targets.length;
+        const worker = async () => {
+            while (queue.length && isAlive()) {
+                const t = queue.shift();
+                const key = `${t.token}|${t.type}`;
+                if (satisfied.has(key)) { done++; onResult?.(null, done, total); continue; }
+                const result = await this._probeUrl(t.url);
+                done++;
+                if (result.ok && isAlive()) {
+                    const label = this._tokenToLabel(t.token) || 'detected';
+                    satisfied.add(key);
+                    onResult?.({ label, type: t.type, url: t.url, size: result.size, token: t.token }, done, total);
+                } else {
+                    onResult?.(null, done, total);
+                }
+            }
+        };
+        await Promise.all(
+            Array.from({ length: Math.min(this._PROBE_CONCURRENCY, total) }, () => worker())
+        );
+        return { done, total };
+    },
+
+    _copyToClipboard(text) {
+        try {
+            navigator.clipboard.writeText(text);
+            return true;
+        } catch {
+            // Legacy fallback for older contexts.
+            try {
+                const ta = document.createElement('textarea');
+                ta.value = text;
+                ta.style.position = 'fixed';
+                ta.style.left = '-9999px';
+                document.body.appendChild(ta);
+                ta.select();
+                document.execCommand('copy');
+                ta.remove();
+                return true;
+            } catch { return false; }
+        }
+    },
+
+    // Build a single result row. Works for both the initial embedJS rows and
+    // progressive deep-scan additions — the shape is the same. Uses DOM APIs
+    // rather than innerHTML so label/dims are rendered as text regardless of
+    // what the upstream API hands us.
+    _makeRow(q, title) {
+        const row = document.createElement('div');
+        row.className = 'rx-dl-quality';
+        row.dataset.key = `${String(q.label || '').toLowerCase()}|${q.type || 'mp4'}`;
+        row.dataset.token = String(q.token || '').toLowerCase();
+
+        const inner = document.createElement('div');
+        inner.className = 'rx-dl-quality-row-inner';
+
+        const main = document.createElement('div');
+        main.className = 'rx-dl-quality-main';
+
+        const label = document.createElement('div');
+        label.className = 'rx-dl-quality-label';
+        label.textContent = q.label || 'detected';
+        if (Number.isFinite(q.height) && q.height >= 720) {
+            label.appendChild(document.createTextNode(' (HD)'));
+        }
+        const badge = document.createElement('span');
+        badge.className = 'rx-dl-type-badge' + (q.type === 'tar' ? ' type-tar' : '');
+        badge.textContent = q.type === 'tar' ? 'TAR' : (q.directUrl ? 'MP4' : 'HLS');
+        label.appendChild(badge);
+        main.appendChild(label);
+
+        const metaParts = [];
+        if (q.width && q.height) metaParts.push(`${q.width}×${q.height}`);
+        else if (q.label) metaParts.push(q.label);
+        if (q.bitrate) metaParts.push(`${q.bitrate} kbps`);
+        if (q.size) metaParts.push(`~${this._formatSize(q.size)}`);
+        const meta = document.createElement('div');
+        meta.className = 'rx-dl-quality-meta';
+        meta.textContent = metaParts.join(' · ');
+        main.appendChild(meta);
+
+        inner.appendChild(main);
+        row.appendChild(inner);
+
+        // Copy-link button (works for anything with a directUrl)
+        if (q.directUrl) {
+            const copyBtn = document.createElement('button');
+            copyBtn.type = 'button';
+            copyBtn.className = 'rx-dl-copy-btn';
+            copyBtn.title = 'Copy link';
+            copyBtn.innerHTML = this._copySVG;
+            copyBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                if (this._copyToClipboard(q.directUrl)) {
+                    copyBtn.classList.add('copied');
+                    copyBtn.innerHTML = this._checkSVG;
+                    setTimeout(() => {
+                        copyBtn.classList.remove('copied');
+                        copyBtn.innerHTML = this._copySVG;
+                    }, 1500);
+                }
+            });
+            row.appendChild(copyBtn);
+        }
+
+        row.addEventListener('click', () => this._showFormatPicker(q, title));
+        return row;
+    },
+
     async _loadQualities() {
         const embedId = this._getEmbedId();
         if (!embedId) { this._setBody('<div class="rx-dl-error">Could not find video embed ID</div>'); return; }
 
+        // Cancel any previous scan before starting a new one.
+        this._scanController?.abort();
+        this._scanController = new AbortController();
+        const seq = ++this._scanSeq;
+
         try {
             const data = await this._fetchEmbedData(embedId);
+            if (seq !== this._scanSeq) return; // user already kicked off another scan
             this._embedData = data;
-            console.log('[RumbleX] Embed API response:', JSON.stringify(data.ua || data.u, null, 2));
-            this._hlsUrl = data.u?.hls?.auto?.url || data.ua?.hls?.auto?.url || `https://rumble.com/hls-vod/${embedId.replace('v','')}/playlist.m3u8`;
+            this._hlsUrl = data.u?.hls?.auto?.url || data.ua?.hls?.auto?.url || `https://rumble.com/hls-vod/${embedId.replace('v', '')}/playlist.m3u8`;
             const qualities = this._parseQualities(data);
-
-            if (!qualities.length) { this._setBody('<div class="rx-dl-error">No downloadable qualities found</div>'); return; }
 
             const body = this._setBody('');
             const title = this._getTitle();
 
+            // Track rows by "{label}|{type}" so deep-scan can upgrade them in place
+            // rather than duplicating when it re-discovers the same quality.
+            const rowByKey = new Map();
+            const upsert = (q) => {
+                const key = `${(q.label || '').toLowerCase()}|${q.type || 'mp4'}`;
+                const existing = rowByKey.get(key);
+                if (existing) {
+                    // Already have this quality. Prefer the entry with a real
+                    // size — the probe result is more accurate than the API's
+                    // claimed number.
+                    const prev = existing.q;
+                    const better = (q.size || 0) > (prev.size || 0) || (!prev.directUrl && q.directUrl);
+                    if (better) {
+                        const replacement = this._makeRow(q, title);
+                        existing.row.replaceWith(replacement);
+                        rowByKey.set(key, { row: replacement, q });
+                    }
+                    return;
+                }
+                const row = this._makeRow(q, title);
+                // Insert in quality-descending order so new rows slot in correctly.
+                const rank = this._tokenRank(q.token || '');
+                let placed = false;
+                for (const child of body.children) {
+                    if (!child.classList || !child.classList.contains('rx-dl-quality')) continue;
+                    const childRank = this._tokenRank(child.dataset.token || '');
+                    if (rank > childRank) { body.insertBefore(row, child); placed = true; break; }
+                }
+                if (!placed) body.appendChild(row);
+                rowByKey.set(key, { row, q });
+            };
+
+            // ── Initial rows from the embed API ──
             for (const q of qualities) {
-                const row = document.createElement('div');
-                row.className = 'rx-dl-quality';
-                const sizeInfo = q.size ? ` - ~${this._formatSize(q.size)}` : '';
-                const bitrateInfo = q.bitrate ? ` - ${q.bitrate} kbps` : '';
-                const dimInfo = q.width ? `${q.width}x${q.height}` : `${q.height}p`;
-                const directBadge = q.directUrl ? ' (Direct MP4)' : ' (HLS)';
-                row.innerHTML = `
-                    <div>
-                        <div class="rx-dl-quality-label">${q.label} ${q.height >= 720 ? '(HD)' : ''}${directBadge}</div>
-                        <div class="rx-dl-quality-meta">${dimInfo}${bitrateInfo}${sizeInfo}</div>
-                    </div>`;
-                row.addEventListener('click', () => this._showFormatPicker(q, title));
-                body.appendChild(row);
+                // Normalize token (the API-provided entries don't always carry one).
+                if (q.directUrl && !q.token) q.token = String(this._extractTokenFromUrl(q.directUrl) || '').toLowerCase();
+                if (!q.type) q.type = q.directUrl ? this._typeFromUrl(q.directUrl) : 'mp4';
+                upsert(q);
             }
+
+            // Empty-state placeholder: dismissed automatically as soon as the
+            // first row (from embed API OR deep scan) lands, so users never
+            // see "scanning the CDN…" next to actual results.
+            let emptyEl = null;
+            if (rowByKey.size === 0) {
+                emptyEl = document.createElement('div');
+                emptyEl.className = 'rx-dl-status';
+                emptyEl.textContent = 'No qualities from the embed API yet — scanning the CDN…';
+                body.appendChild(emptyEl);
+            }
+            const dismissEmpty = () => {
+                if (emptyEl) { emptyEl.remove(); emptyEl = null; }
+            };
+
+            // ── Deep-scan progress bar ──
+            // Built via DOM APIs rather than innerHTML so nothing user- or
+            // network-influenced ever reaches the HTML parser here.
+            const scanBar = document.createElement('div');
+            scanBar.className = 'rx-dl-scan-bar';
+            const scanLabel = document.createElement('span');
+            scanLabel.className = 'rx-dl-scan-label';
+            scanLabel.textContent = 'Deep scan for more qualities';
+            const scanCounter = document.createElement('span');
+            scanCounter.className = 'rx-dl-scan-counter';
+            scanCounter.textContent = '0 / 0';
+            const scanMini = document.createElement('div');
+            scanMini.className = 'rx-dl-scan-mini';
+            const scanFill = document.createElement('div');
+            scanMini.appendChild(scanFill);
+            scanBar.append(scanLabel, scanCounter, scanMini);
+            body.prepend(scanBar);
+
+            // ── Run deep scan (fire-and-forget; updates live) ──
+            this._deepScan(embedId, seq, (hit, done, total) => {
+                if (seq !== this._scanSeq) return;
+                scanCounter.textContent = `${done} / ${total}`;
+                scanFill.style.width = total ? `${Math.round((done / total) * 100)}%` : '0%';
+                if (hit) {
+                    dismissEmpty();
+                    // Fake a `directUrl` + `height` from the token label for display.
+                    const heightFromLabel = parseInt(String(hit.label).match(/(\d+)/)?.[1] || '0', 10) || undefined;
+                    upsert({
+                        label: hit.label,
+                        type: hit.type,
+                        directUrl: hit.url,
+                        size: hit.size,
+                        height: heightFromLabel,
+                        token: hit.token,
+                    });
+                }
+            }, data).then(({ done, total }) => {
+                if (seq !== this._scanSeq) return;
+                scanBar.classList.add('done');
+                scanLabel.textContent = total
+                    ? `Deep scan complete · probed ${total} candidate${total === 1 ? '' : 's'}`
+                    : 'Deep scan found nothing extra to probe';
+                setTimeout(() => { if (seq === this._scanSeq) scanBar.remove(); }, 2800);
+
+                // If nothing showed up anywhere, replace the "scanning…" text
+                // with an honest dead-end message so the panel isn't empty.
+                if (rowByKey.size === 0 && emptyEl) {
+                    emptyEl.textContent = 'No downloads found. Try playing the video first, then reopen this panel.';
+                }
+
+                // Any TAR rows present? Append a "how to play" note at the bottom.
+                const hasTar = body.querySelector('.rx-dl-quality[data-key*="|tar"]');
+                if (hasTar && !body.querySelector('.rx-dl-tar-note')) {
+                    const note = document.createElement('div');
+                    note.className = 'rx-dl-tar-note';
+                    // Build with textContent + span hierarchy rather than innerHTML.
+                    const strong1 = document.createElement('strong');
+                    strong1.textContent = 'TAR archives';
+                    const strong2 = document.createElement('strong');
+                    strong2.textContent = '.m3u8';
+                    note.append(
+                        strong1,
+                        document.createTextNode(' are live-replay bundles. Extract with 7-Zip, then drag the '),
+                        strong2,
+                        document.createTextNode(' file into VLC.'),
+                    );
+                    body.appendChild(note);
+                }
+            }).catch((e) => {
+                if (seq !== this._scanSeq) return;
+                scanLabel.textContent = 'Deep scan failed — using embed-API results only';
+                console.warn('[RumbleX] deep scan failed:', e);
+            });
         } catch (e) {
-            this._setBody(`<div class="rx-dl-error">Failed to load video data: ${e.message}</div>`);
+            this._setBodyText('rx-dl-error', 'Failed to load video data: ' + (e?.message || e));
         }
     },
 
     _showFormatPicker(quality, title) {
-        // If direct MP4 URL available, skip format picker and download directly
+        // Direct CDN URL (MP4 or TAR) — straight to browser download.
         if (quality.directUrl) {
             this._startDirectDownload(quality, title);
             return;
         }
 
-        const body = this._setBody(`
-            <div class="rx-dl-status">Selected: ${quality.label} (${quality.width}x${quality.height})</div>
-            <div class="rx-dl-format-row"></div>`);
+        const dimsLabel = quality.width && quality.height
+            ? `${quality.label} (${quality.width}x${quality.height})`
+            : (quality.label || 'Selected');
+        const body = this._getBody();
+        if (!body) return;
+        body.textContent = '';
+        const status = document.createElement('div');
+        status.className = 'rx-dl-status';
+        status.textContent = 'Selected: ' + dimsLabel;
+        body.appendChild(status);
+        const row = document.createElement('div');
+        row.className = 'rx-dl-format-row';
+        body.appendChild(row);
 
-        const row = body.querySelector('.rx-dl-format-row');
-
-        const mp4Btn = document.createElement('button');
-        mp4Btn.className = 'rx-dl-format-btn';
-        mp4Btn.innerHTML = 'MP4<small>Converted in browser</small>';
-        mp4Btn.addEventListener('click', () => this._startDownload(quality, title, 'mp4'));
-
-        const tsBtn = document.createElement('button');
-        tsBtn.className = 'rx-dl-format-btn';
-        tsBtn.innerHTML = 'TS<small>Raw stream (fast)</small>';
-        tsBtn.addEventListener('click', () => this._startDownload(quality, title, 'ts'));
-
-        row.appendChild(mp4Btn);
-        row.appendChild(tsBtn);
+        const makeBtn = (main, note, onClick) => {
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'rx-dl-format-btn';
+            btn.appendChild(document.createTextNode(main));
+            if (note) {
+                const small = document.createElement('small');
+                small.textContent = note;
+                btn.appendChild(small);
+            }
+            btn.addEventListener('click', onClick);
+            return btn;
+        };
+        row.appendChild(makeBtn('MP4', 'Converted in browser', () => this._startDownload(quality, title, 'mp4')));
+        row.appendChild(makeBtn('TS', 'Raw stream (fast)', () => this._startDownload(quality, title, 'ts')));
     },
 
     async _startDirectDownload(quality, title) {
-        const filename = `${title} - ${quality.label}.mp4`;
-        console.log('[RumbleX] Direct download:', quality.directUrl, filename);
+        // Honour a per-quality extension — RUD results may be .tar archives.
+        const ext = quality.type === 'tar' ? 'tar' : (quality.ext || 'mp4');
+        const filename = `${title} - ${quality.label}.${ext}`;
 
-        this._setBody(`
-            <div class="rx-dl-progress-wrap">
-                <div class="rx-dl-status">Starting download via browser...</div>
-            </div>`);
+        // Build progress block with DOM APIs so no response text or error
+        // message can ever reach the HTML parser.
+        const body = this._getBody();
+        if (!body) return;
+        body.textContent = '';
+        const wrap = document.createElement('div');
+        wrap.className = 'rx-dl-progress-wrap';
+        const status = document.createElement('div');
+        status.className = 'rx-dl-status';
+        status.textContent = 'Starting download via browser…';
+        wrap.appendChild(status);
+        body.appendChild(wrap);
 
         try {
-            // Use chrome.downloads API via background script for proper cookie/redirect handling
             chrome.runtime.sendMessage({
                 action: 'download',
-                data: { url: quality.directUrl, filename }
+                data: { url: quality.directUrl, filename },
             }, (resp) => {
                 if (chrome.runtime.lastError) {
                     console.error('[RumbleX] Download message error:', chrome.runtime.lastError);
-                    this._setBody(`<div class="rx-dl-error">Download failed: ${chrome.runtime.lastError.message}</div>`);
+                    this._setBodyText('rx-dl-error', 'Download failed: ' + chrome.runtime.lastError.message);
                     return;
                 }
-                if (resp?.downloadId) {
-                    this._setBody('<div class="rx-dl-done">Download started! Check your browser downloads.</div>');
+                if (resp?.error) {
+                    this._setBodyText('rx-dl-error', 'Download rejected: ' + resp.error);
+                } else if (resp?.downloadId) {
+                    this._setBodyText('rx-dl-done', 'Download started! Check your browser downloads.');
                 } else {
-                    this._setBody('<div class="rx-dl-error">Download failed to start</div>');
+                    this._setBodyText('rx-dl-error', 'Download failed to start');
                 }
             });
         } catch (e) {
-            this._setBody(`<div class="rx-dl-error">Error: ${e.message}</div>`);
+            this._setBodyText('rx-dl-error', 'Error: ' + (e?.message || e));
             console.error('[RumbleX] Direct download failed:', e);
         }
     },
@@ -1930,6 +2799,12 @@ const VideoDownloader = {
     },
 
     destroy() {
+        // Cancel any deep-scan probes in flight so they don't resolve into
+        // a now-detached DOM and so we stop pinging the CDN after disable.
+        this._scanController?.abort();
+        this._scanController = null;
+        this._scanSeq++;
+        this._closeDownloadOverlay?.();
         this._styleEl?.remove();
         this._worker?.terminate();
     }
@@ -2448,23 +3323,67 @@ const AutoMaxQuality = {
         }, 500);
     },
 
+    // Preferred path (ported from Rumble Enhancement Suite v11): directly ask
+    // hls.js for the top level once the manifest is parsed. Much more reliable
+    // than clicking through the overlay when the player exposes an hls.js
+    // instance on the <video> element. We retain a reference to the bound
+    // listener so destroy() can unhook it instead of leaving a handler
+    // attached to the hls instance for the life of the page.
+    _hlsInstances: null, // WeakRef-less Set — hls instances we've bound to
+    _hlsApply: null,
+
+    _tryHlsDirect() {
+        if (this._attempted) return false;
+        const video = qs('#videoPlayer video, video');
+        const hls = video?.hls;
+        if (!hls) return false;
+        const apply = () => {
+            if (Array.isArray(hls.levels) && hls.levels.length > 1) {
+                try {
+                    hls.nextLevel = hls.levels.length - 1;
+                    this._attempted = true;
+                    this._clearTimers();
+                    this._obs?.disconnect();
+                    return true;
+                } catch {}
+            }
+            return false;
+        };
+        if (apply()) return true;
+        // If the manifest isn't parsed yet, hook the event. hls.js exposes
+        // Hls.Events.MANIFEST_PARSED === 'hlsManifestParsed' — use the string
+        // so we don't depend on a global Hls binding.
+        try {
+            hls.on?.('hlsManifestParsed', apply);
+            this._hlsInstances = this._hlsInstances || new Set();
+            this._hlsInstances.add({ hls, apply });
+        } catch {}
+        return false;
+    },
+
     init() {
         if (!Settings.get(this.id)) return;
         if (!Page.isWatch()) return;
         this._attempted = false;
+        this._hlsInstances = new Set();
 
-        // Try multiple times as the player loads async
+        // Try the hls.js direct path immediately, and retry a few times as
+        // the player hot-swaps its <video> element during loading.
         this._timers = [];
-        const attempts = [1500, 3000, 5000, 8000];
+        const attempts = [500, 1500, 3000, 5000, 8000];
         for (const delay of attempts) {
             this._timers.push(setTimeout(() => {
-                if (!this._attempted) this._selectBest();
+                if (this._attempted) return;
+                if (this._tryHlsDirect()) return;
+                this._selectBest();
             }, delay));
         }
 
         // Also watch for player DOM changes
         this._obs = new MutationObserver(() => {
-            if (!this._attempted) this._selectBest();
+            if (this._attempted) return;
+            if (this._tryHlsDirect()) return;
+            this._selectBest();
         });
         waitFor('#videoPlayer, .videoPlayer-Rumble-cls').then(el => {
             this._obs.observe(el, { childList: true, subtree: true });
@@ -2474,6 +3393,14 @@ const AutoMaxQuality = {
     destroy() {
         this._clearTimers();
         this._obs?.disconnect();
+        // Detach each hls.js listener we bound, so we don't leave handlers
+        // hanging on the player after the feature is disabled.
+        if (this._hlsInstances) {
+            for (const entry of this._hlsInstances) {
+                try { entry.hls.off?.('hlsManifestParsed', entry.apply); } catch {}
+            }
+            this._hlsInstances.clear();
+        }
     }
 };
 
@@ -3069,8 +3996,40 @@ const LiveChatEnhance = {
         for (const el of textEls) {
             if (el.dataset.rxMentionDone) continue;
             el.dataset.rxMentionDone = '1';
-            // Highlight @mentions
-            el.innerHTML = el.innerHTML.replace(/@(\w+)/g, '<span class="rx-chat-mention">@$1</span>');
+            // Walk the element's text nodes and replace @mentions *in place*.
+            // Previously we did `el.innerHTML = el.innerHTML.replace(...)` which
+            // re-parses the whole subtree — accidentally re-triggering any
+            // markup side-effects (e.g. <img onerror>) that Rumble's chat
+            // renderer happened to have emitted. Text-node walking keeps us
+            // strictly inside Text nodes, so any existing HTML is untouched.
+            const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+            const targets = [];
+            while (walker.nextNode()) {
+                const node = walker.currentNode;
+                if (!node.nodeValue || !/@\w+/.test(node.nodeValue)) continue;
+                // Skip text inside nodes we already wrapped or inside elements
+                // that shouldn't carry mention styling (links, our own span).
+                const parent = node.parentElement;
+                if (!parent || parent.classList?.contains('rx-chat-mention')) continue;
+                targets.push(node);
+            }
+            for (const node of targets) {
+                const frag = document.createDocumentFragment();
+                const text = node.nodeValue;
+                let lastIdx = 0;
+                const re = /@(\w+)/g;
+                let m;
+                while ((m = re.exec(text)) !== null) {
+                    if (m.index > lastIdx) frag.appendChild(document.createTextNode(text.slice(lastIdx, m.index)));
+                    const span = document.createElement('span');
+                    span.className = 'rx-chat-mention';
+                    span.textContent = '@' + m[1];
+                    frag.appendChild(span);
+                    lastIdx = m.index + m[0].length;
+                }
+                if (lastIdx < text.length) frag.appendChild(document.createTextNode(text.slice(lastIdx)));
+                node.parentNode?.replaceChild(frag, node);
+            }
         }
     },
 
@@ -3786,23 +4745,39 @@ const SearchHistory = {
 
             input.addEventListener('focus', () => this._showDropdown(input.value));
             input.addEventListener('input', () => this._showDropdown(input.value));
-            document.addEventListener('click', (e) => {
-                if (!wrapper.contains(e.target)) this._dropdown.classList.remove('show');
-            });
+            // Store the bound handler so destroy() can actually remove it.
+            // Previously this was anonymous and leaked forever after the
+            // feature was disabled, holding references to `wrapper` + `_dropdown`.
+            this._outsideClickHandler = (e) => {
+                if (this._dropdown && !wrapper.contains(e.target)) {
+                    this._dropdown.classList.remove('show');
+                }
+            };
+            document.addEventListener('click', this._outsideClickHandler);
 
             // Record on form submit
             const form = input.closest('form');
             if (form) {
-                form.addEventListener('submit', () => {
-                    this._recordSearch(input.value);
-                });
+                this._formSubmitHandler = () => this._recordSearch(input.value);
+                form.addEventListener('submit', this._formSubmitHandler);
+                this._boundForm = form;
             }
         }).catch(() => {});
     },
 
     destroy() {
+        if (this._outsideClickHandler) {
+            document.removeEventListener('click', this._outsideClickHandler);
+            this._outsideClickHandler = null;
+        }
+        if (this._boundForm && this._formSubmitHandler) {
+            this._boundForm.removeEventListener('submit', this._formSubmitHandler);
+        }
+        this._boundForm = null;
+        this._formSubmitHandler = null;
         this._styleEl?.remove();
         this._dropdown?.remove();
+        this._dropdown = null;
     }
 };
 
@@ -3920,24 +4895,28 @@ const MiniPlayer = {
     _esc(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; },
 
     _initDrag() {
-        this._mini.addEventListener('mousedown', (e) => {
+        // Store bound handlers so destroy() can actually remove them.
+        this._dragMousedown = (e) => {
             if (e.target.closest('.rx-miniplayer-close')) return;
             this._dragState = {
                 x: e.clientX - this._mini.offsetLeft,
-                y: e.clientY - this._mini.offsetTop
+                y: e.clientY - this._mini.offsetTop,
             };
             e.preventDefault();
-        });
-        document.addEventListener('mousemove', (e) => {
-            if (!this._dragState) return;
+        };
+        this._dragMousemove = (e) => {
+            if (!this._dragState || !this._mini) return;
             const x = Math.max(0, Math.min(window.innerWidth - this._mini.offsetWidth, e.clientX - this._dragState.x));
             const y = Math.max(0, Math.min(window.innerHeight - this._mini.offsetHeight, e.clientY - this._dragState.y));
             this._mini.style.left = x + 'px';
             this._mini.style.top = y + 'px';
             this._mini.style.right = 'auto';
             this._mini.style.bottom = 'auto';
-        });
-        document.addEventListener('mouseup', () => { this._dragState = null; });
+        };
+        this._dragMouseup = () => { this._dragState = null; };
+        this._mini.addEventListener('mousedown', this._dragMousedown);
+        document.addEventListener('mousemove', this._dragMousemove);
+        document.addEventListener('mouseup', this._dragMouseup);
     },
 
     init() {
@@ -3973,9 +4952,15 @@ const MiniPlayer = {
 
     destroy() {
         this._hide();
+        if (this._dragMousemove) document.removeEventListener('mousemove', this._dragMousemove);
+        if (this._dragMouseup) document.removeEventListener('mouseup', this._dragMouseup);
+        this._dragMousemove = this._dragMouseup = this._dragMousedown = null;
+        this._dragState = null;
         this._styleEl?.remove();
         this._mini?.remove();
+        this._mini = null;
         this._obs?.disconnect();
+        this._obs = null;
     }
 };
 
@@ -5269,9 +6254,13 @@ const AutoExpand = {
         if (!Page.isWatch()) return;
         this._styleEl = injectStyle(this._css, 'rx-auto-expand-css');
 
-        // Also click any "Show more" button that exists
+        // Also click any "Show more" button that exists. Track the timer so
+        // destroy() can cancel — otherwise disabling the feature within the
+        // 1500 ms window still fires the click against a page where the user
+        // has explicitly turned AutoExpand off.
         waitFor('.media-description-section').then(() => {
-            setTimeout(() => {
+            this._timer = setTimeout(() => {
+                this._timer = null;
                 const showMore = qs('[data-js="media_description_show_more"]') ||
                     qs('.media-description-section .show-more-toggle') ||
                     qs('.media-description-section button[class*="show-more"]');
@@ -5283,6 +6272,7 @@ const AutoExpand = {
     },
 
     destroy() {
+        if (this._timer) { clearTimeout(this._timer); this._timer = null; }
         this._styleEl?.remove();
     }
 };
@@ -5534,6 +6524,7 @@ const RX_CATEGORIES = [
             { id: 'hideReposts', label: 'Hide Reposts', desc: 'Hide reposted videos from feeds', parent: 'feedCleanup' },
             { id: 'hidePremium', label: 'Hide Premium', desc: 'Hide premium/PPV videos from feeds' },
             { id: 'shortsFilter', label: 'Shorts Filter', desc: 'Hide Shorts from all feeds' },
+            { id: 'sponsorBlock', label: 'SponsorBlock', desc: 'Local per-video segments with auto-skip' },
         ],
     },
     {
@@ -5551,6 +6542,8 @@ const RX_CATEGORIES = [
             { id: 'miniPlayer', label: 'Mini Player', desc: 'Floating draggable video when scrolling away' },
             { id: 'keyboardNav', label: 'Keyboard Nav', desc: 'YouTube-style hotkeys (J/K/L, F, M, 0-9)' },
             { id: 'videoStats', label: 'Video Stats', desc: 'Resolution, codec, buffer, frames overlay' },
+            { id: 'chapters', label: 'Chapters', desc: 'Parse description timestamps + seekbar markers' },
+            { id: 'autoplayScheduler', label: 'Autoplay Queue', desc: 'Queue Rumble URLs, auto-advance at end' },
         ],
     },
     {
@@ -5562,6 +6555,8 @@ const RX_CATEGORIES = [
             { id: 'logoToFeed', label: 'Logo to Feed', desc: 'Rumble logo navigates to Subscriptions' },
             { id: 'autoExpand', label: 'Auto Expand', desc: 'Auto-expand descriptions & comments' },
             { id: 'notifEnhance', label: 'Notif Enhance', desc: 'Themed notification dropdown + bell pulse' },
+            { id: 'fullTitles', label: 'Full Titles', desc: 'Remove title truncation on video cards' },
+            { id: 'titleFont', label: 'Title Font', desc: 'Unbold + normalize title typography' },
         ],
     },
     {
@@ -5569,8 +6564,14 @@ const RX_CATEGORIES = [
         icon: '<path d="M12 3a1 1 0 011 1v9.59l3.3-3.3a1 1 0 011.4 1.42l-5 5a1 1 0 01-1.4 0l-5-5a1 1 0 011.4-1.42L11 13.59V4a1 1 0 011-1zM5 19a1 1 0 100 2h14a1 1 0 100-2H5z"/>',
         features: [
             { id: 'videoDownload', label: 'Video Download', desc: 'Download as direct MP4 or HLS-to-MP4/TS' },
+            { id: 'audioOnly', label: 'Low-Bitrate MP4', desc: 'Download smallest video variant for listening (saved as .mp4)' },
+            { id: 'videoClips', label: 'Video Clips', desc: 'Mark In/Out and export clip as MP4' },
+            { id: 'liveDVR', label: 'Live DVR', desc: 'Save the last N seconds of a live stream' },
+            { id: 'batchDownload', label: 'Batch Download', desc: 'Multi-select thumbnails from feeds to download' },
             { id: 'screenshotBtn', label: 'Screenshot', desc: 'Capture current video frame as PNG' },
             { id: 'shareTimestamp', label: 'Share@Time', desc: 'Copy video URL at current playback time' },
+            { id: 'subtitleSidecar', label: 'Subtitle Sidecar', desc: 'Load local SRT/VTT and overlay captions' },
+            { id: 'transcripts', label: 'Transcripts', desc: 'Clickable transcript panel synced to player' },
         ],
     },
     {
@@ -5590,9 +6591,21 @@ const RX_CATEGORIES = [
         features: [
             { id: 'liveChatEnhance', label: 'Chat Enhance', desc: '@mention highlights, message filter bar' },
             { id: 'chatAutoScroll', label: 'Chat Scroll', desc: 'Smart auto-scroll with pause on scroll-up' },
+            { id: 'uniqueChatters', label: 'Unique Chatters', desc: 'Live counter of unique chatters + messages' },
+            { id: 'chatUserBlock', label: 'User Block', desc: 'Per-user chat hide (click "block" on message)' },
+            { id: 'chatSpamDedup', label: 'Spam Dedup', desc: 'Hide recently-repeated identical messages' },
+            { id: 'chatExport', label: 'Chat Export', desc: 'Export chat as TXT (click) or JSON (shift-click)' },
+            { id: 'popoutChat', label: 'Popout Chat', desc: 'Open chat in separate resizable window' },
             { id: 'videoTimestamps', label: 'Timestamps', desc: 'Clickable timestamps in comments/description' },
             { id: 'commentNav', label: 'Comment Nav', desc: 'Navigate, expand/collapse, OP-only filter' },
+            { id: 'commentSort', label: 'Comment Sort', desc: 'Sort comments: Top / New / Oldest / Controversial' },
             { id: 'rantHighlight', label: 'Rant Highlight', desc: 'Glow rants by tier + running $ total' },
+            { id: 'rantPersist', label: 'Rant Persist', desc: 'Keep rants visible past expiry + export JSON' },
+            { id: 'commentBlocking', label: 'Comment Blocking', desc: 'Block users from the comment section' },
+            { id: 'autoLoadComments', label: 'Auto Load Comments', desc: 'Auto-click "Show more comments" on scroll' },
+            { id: 'moveReplyButton', label: 'Move Reply Button', desc: 'Move Reply next to like/dislike on comments' },
+            { id: 'hideCommentReportLink', label: 'Hide Comment Report', desc: 'Hide the "report" link on comments' },
+            { id: 'cleanLiveChat', label: 'Clean Live Chat UI', desc: 'Hide pinned messages + chat header + rant UI' },
         ],
     },
     {
@@ -5600,8 +6613,93 @@ const RX_CATEGORIES = [
         icon: '<path d="M3 5a1 1 0 011-1h16a1 1 0 010 2H4a1 1 0 01-1-1zm3 5a1 1 0 011-1h10a1 1 0 010 2H7a1 1 0 01-1-1zm5 5a1 1 0 011-1h4a1 1 0 010 2h-4a1 1 0 01-1-1z"/>',
         features: [
             { id: 'channelBlocker', label: 'Channel Blocker', desc: 'Block/hide channels from all feeds' },
+            { id: 'keywordFilter', label: 'Keyword Filter', desc: 'Hide videos whose titles match blocked keywords' },
             { id: 'relatedFilter', label: 'Related Filter', desc: 'Search & filter related sidebar videos' },
             { id: 'exactCounts', label: 'Exact Counts', desc: 'Show full numbers instead of 1.2K/3.5M' },
+        ],
+    },
+    // ── v1.9.0 — Rumble Enhancement Suite port ──
+    {
+        id: 'nav-chrome', label: 'Navigation & Chrome', color: '#94e2d5',
+        icon: '<path d="M4 6h16v2H4zM4 11h16v2H4zM4 16h10v2H4z"/>',
+        features: [
+            { id: 'autoHideHeader', label: 'Auto-hide Header', desc: 'Fade header out; shows on top-edge hover' },
+            { id: 'autoHideNavSidebar', label: 'Auto-hide Nav Sidebar', desc: 'Hide sidebar; slides in on left-edge hover' },
+            { id: 'widenSearchBar', label: 'Widen Search Bar', desc: 'Expand the header search bar' },
+            { id: 'hideUploadIcon', label: 'Hide Upload Icon', desc: 'Hide the upload/stream icon in the header' },
+            { id: 'hideHeaderAd', label: 'Hide "Go Ad-Free"', desc: 'Hide the Go-Ad-Free button in the header' },
+            { id: 'hideProfileBacksplash', label: 'Hide Profile Backsplash', desc: 'Hide the large channel header image' },
+            { id: 'hideFooter', label: 'Hide Footer', desc: 'Hide the site footer entirely' },
+            { id: 'siteThemeSync', label: 'Sync Site Theme', desc: "Mirror Rumble's native system/dark/light toggle" },
+        ],
+    },
+    {
+        id: 'main-page', label: 'Main Page Rows', color: '#b4befe',
+        icon: '<path d="M3 4h18v4H3zM3 10h18v4H3zM3 16h18v4H3z"/>',
+        features: [
+            { id: 'hideFeaturedBanner', label: 'Featured Banner', desc: 'Top homepage banner' },
+            { id: 'hideEditorPicks', label: 'Editor Picks', desc: 'Editor Picks row' },
+            { id: 'hideTopLiveCategories', label: 'Top Live', desc: 'Top Live Categories row' },
+            { id: 'hidePremiumRow', label: 'Premium Row', desc: 'Rumble Premium row' },
+            { id: 'hideHomepageAd', label: 'Homepage Ad', desc: 'Ad container on home page' },
+            { id: 'hideForYouRow', label: 'For You', desc: 'For-You recommendations row' },
+            { id: 'hideLiveRow', label: 'Live Row', desc: 'Live videos row' },
+            { id: 'hideGamingRow', label: 'Gaming', desc: 'Gaming row' },
+            { id: 'hideFinanceRow', label: 'Finance', desc: 'Finance & Crypto row' },
+            { id: 'hideFeaturedPlaylistsRow', label: 'Featured Playlists', desc: 'Featured Playlists row' },
+            { id: 'hideSportsRow', label: 'Sports', desc: 'Sports row' },
+            { id: 'hideViralRow', label: 'Viral', desc: 'Viral row' },
+            { id: 'hidePodcastsRow', label: 'Podcasts', desc: 'Podcasts row' },
+            { id: 'hideLeaderboardRow', label: 'Leaderboard', desc: 'Leaderboard row' },
+            { id: 'hideVlogsRow', label: 'Vlogs', desc: 'Vlogs row' },
+            { id: 'hideNewsRow', label: 'News', desc: 'News row' },
+            { id: 'hideScienceRow', label: 'Science', desc: 'Health & Science row' },
+            { id: 'hideMusicRow', label: 'Music', desc: 'Music row' },
+            { id: 'hideEntertainmentRow', label: 'Entertainment', desc: 'Entertainment row' },
+            { id: 'hideCookingRow', label: 'Cooking', desc: 'Cooking row' },
+        ],
+    },
+    {
+        id: 'video-page', label: 'Video Page Layout', color: '#f5c2e7',
+        icon: '<path d="M4 5h16v11H4zM4 18h8v2H4zM14 18h6v2h-6z"/>',
+        features: [
+            { id: 'fullWidthPlayer', label: 'Full-Width Player', desc: 'Maximize player width; live = side-by-side chat' },
+            { id: 'adaptiveLiveLayout', label: 'Adaptive Live Layout', desc: 'On live, expand main content when chat is visible' },
+            { id: 'hideRelatedSidebar', label: 'Hide Related Sidebar', desc: 'Hide the related-videos sidebar' },
+            { id: 'hideRelatedOnLive', label: 'Hide Related on Live', desc: 'Hide related media under the player on live' },
+            { id: 'widenContent', label: 'Widen Content', desc: 'Expand main content (pair with hidden sidebar)' },
+            { id: 'hideVideoDescription', label: 'Hide Description', desc: 'Hide description, tags, and views block' },
+            { id: 'hidePausedVideoAds', label: 'Hide Paused Ads', desc: 'Hide pause-overlay ads on the player' },
+        ],
+    },
+    {
+        id: 'player-controls', label: 'Player Controls', color: '#fab387',
+        icon: '<path d="M5 4v16l4-4v-8zM15 4v16l4-4v-8z"/>',
+        features: [
+            { id: 'autoLike', label: 'Auto Like', desc: 'Auto-like a video when its watch page opens' },
+            { id: 'hideRewindButton', label: 'Hide Rewind', desc: 'Hide the rewind button' },
+            { id: 'hideFastForwardButton', label: 'Hide Fast Forward', desc: 'Hide the fast-forward button' },
+            { id: 'hideCCButton', label: 'Hide CC', desc: 'Hide the closed-captions button' },
+            { id: 'hideAutoplayButton', label: 'Hide Autoplay Toggle', desc: 'Hide the autoplay toggle switch' },
+            { id: 'hideTheaterButton', label: 'Hide Theater Button', desc: 'Hide the theater-mode button' },
+            { id: 'hidePipButton', label: 'Hide PiP Button', desc: 'Hide the picture-in-picture button' },
+            { id: 'hideFullscreenButton', label: 'Hide Fullscreen Button', desc: 'Hide the fullscreen button' },
+            { id: 'hidePlayerRumbleLogo', label: 'Hide Player Logo', desc: 'Hide the Rumble logo in the player' },
+            { id: 'hidePlayerGradient', label: 'Hide Player Gradient', desc: 'Remove the cloudy gradient at the bottom' },
+        ],
+    },
+    {
+        id: 'video-buttons', label: 'Video Buttons', color: '#f38ba8',
+        icon: '<path d="M4 8h16v2H4zM4 14h16v2H4z"/>',
+        features: [
+            { id: 'hideLikeDislikeButton', label: 'Hide Like/Dislike', desc: 'Hide like and dislike buttons' },
+            { id: 'hideShareButton', label: 'Hide Share', desc: 'Hide the share button' },
+            { id: 'hideRepostButton', label: 'Hide Repost', desc: 'Hide the repost button' },
+            { id: 'hideEmbedButton', label: 'Hide Embed', desc: 'Hide the embed button' },
+            { id: 'hideSaveButton', label: 'Hide Save', desc: 'Hide the save-to-playlist button' },
+            { id: 'hideCommentButton', label: 'Hide Comment', desc: 'Hide the main comment button' },
+            { id: 'hideReportButton', label: 'Hide 3-dot Menu', desc: 'Hide the 3-dot menu (report link lives here)' },
+            { id: 'hidePremiumJoinButtons', label: 'Hide Premium/Join', desc: 'Hide Rumble Premium and Join buttons' },
         ],
     },
 ];
@@ -5990,10 +7088,86 @@ const SettingsPanel = {
         // Special sections per category
         if (cat.id === 'theme-layout') this._buildThemeSection(pane, cat.color);
         if (cat.id === 'video-player') this._buildSpeedSection(pane);
-        if (cat.id === 'feed-controls') this._buildBlockedSection(pane);
+        if (cat.id === 'feed-controls') { this._buildBlockedSection(pane); this._buildKeywordSection(pane); }
         if (cat.id === 'ad-blocking') this._buildCategorySection(pane);
+        if (cat.id === 'comments-chat') { this._buildBlockedChattersSection(pane); this._buildBlockedCommentersSection(pane); }
 
         return pane;
+    },
+
+    _buildListSection(pane, titleText, emptyText, placeholder, settingsKey) {
+        const title = document.createElement('div');
+        title.className = 'rx-m-section-title';
+        title.textContent = titleText;
+        pane.appendChild(title);
+
+        const input = document.createElement('input');
+        input.type = 'text';
+        input.placeholder = placeholder;
+        input.style.cssText = 'width:100%;background:rgba(49,50,68,0.5);border:1px solid rgba(255,255,255,0.08);border-radius:6px;padding:6px 10px;color:#cdd6f4;font-size:12px;margin-bottom:8px;outline:none;';
+        pane.appendChild(input);
+
+        const grid = document.createElement('div');
+        grid.className = 'rx-m-chip-grid';
+        pane.appendChild(grid);
+
+        const renderEmpty = () => {
+            const empty = document.createElement('span');
+            empty.className = 'rx-m-empty';
+            empty.textContent = emptyText;
+            grid.appendChild(empty);
+        };
+
+        const render = () => {
+            grid.innerHTML = '';
+            const list = Settings.get(settingsKey) || [];
+            if (!list.length) { renderEmpty(); return; }
+            for (const item of list) {
+                const chip = document.createElement('div');
+                chip.className = 'rx-m-chip';
+                const nameSpan = document.createElement('span');
+                nameSpan.textContent = item;
+                const close = document.createElement('span');
+                close.textContent = '×';
+                close.style.cssText = 'margin-left:6px;cursor:pointer;color:#f38ba8;font-weight:700;';
+                chip.append(nameSpan, close);
+                chip.addEventListener('click', () => {
+                    const cur = Settings.get(settingsKey) || [];
+                    const idx = cur.indexOf(item);
+                    if (idx >= 0) cur.splice(idx, 1);
+                    Settings.set(settingsKey, cur);
+                    render();
+                });
+                grid.appendChild(chip);
+            }
+        };
+
+        input.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' && input.value.trim()) {
+                const val = input.value.trim().toLowerCase();
+                const cur = Settings.get(settingsKey) || [];
+                if (!cur.includes(val)) {
+                    cur.push(val);
+                    Settings.set(settingsKey, cur);
+                }
+                input.value = '';
+                render();
+            }
+        });
+
+        render();
+    },
+
+    _buildKeywordSection(pane) {
+        this._buildListSection(pane, 'Blocked Keywords', 'No keywords blocked', 'Add keyword (Enter to save)...', 'blockedKeywords');
+    },
+
+    _buildBlockedChattersSection(pane) {
+        this._buildListSection(pane, 'Blocked Chatters', 'No chatters blocked', 'Add username (Enter to save)...', 'blockedChatters');
+    },
+
+    _buildBlockedCommentersSection(pane) {
+        this._buildListSection(pane, 'Blocked Commenters', 'No commenters blocked', 'Add username (Enter to save)...', 'blockedCommenters');
     },
 
     _buildThemeSection(pane, color) {
@@ -6370,9 +7544,2850 @@ const SettingsPanel = {
 };
 
 // ═══════════════════════════════════════════
+//  FEATURE: Full Titles (no truncation)
+// ═══════════════════════════════════════════
+const FullTitles = {
+    id: 'fullTitles',
+    name: 'Full Titles',
+    _styleEl: null,
+    _css: `
+        html.rumblex-active .thumbnail__title,
+        html.rumblex-active .videostream__title,
+        html.rumblex-active .mediaList-heading,
+        html.rumblex-active .media-item__title,
+        html.rumblex-active h3.thumbnail__title {
+            -webkit-line-clamp: unset !important;
+            line-clamp: unset !important;
+            display: block !important;
+            overflow: visible !important;
+            white-space: normal !important;
+            text-overflow: clip !important;
+            max-height: none !important;
+        }
+    `,
+    init() {
+        if (!Settings.get(this.id)) return;
+        this._styleEl = injectStyle(this._css, 'rx-fulltitles-css');
+    },
+    destroy() { this._styleEl?.remove(); }
+};
+
+// ═══════════════════════════════════════════
+//  FEATURE: Title Font Override
+// ═══════════════════════════════════════════
+const TitleFont = {
+    id: 'titleFont',
+    name: 'Title Font',
+    _styleEl: null,
+    _css: `
+        html.rumblex-active .thumbnail__title,
+        html.rumblex-active .videostream__title,
+        html.rumblex-active .mediaList-heading,
+        html.rumblex-active .video-header-container__title,
+        html.rumblex-active h1.video-header-container__title {
+            font-weight: 500 !important;
+            font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif !important;
+            letter-spacing: 0 !important;
+        }
+    `,
+    init() {
+        if (!Settings.get(this.id)) return;
+        this._styleEl = injectStyle(this._css, 'rx-titlefont-css');
+    },
+    destroy() { this._styleEl?.remove(); }
+};
+
+// ═══════════════════════════════════════════
+//  FEATURE: Unique Chatters / Message Count
+// ═══════════════════════════════════════════
+const UniqueChatters = {
+    id: 'uniqueChatters',
+    name: 'Unique Chatters',
+    _styleEl: null,
+    _obs: null,
+    _bar: null,
+    _users: null,
+    _msgCount: 0,
+
+    _css: `
+        .rx-chatter-bar {
+            display: flex; gap: 14px; padding: 6px 10px;
+            background: rgba(30,30,46,0.85);
+            border-bottom: 1px solid rgba(255,255,255,0.05);
+            font: 600 11px/1 system-ui, sans-serif;
+            color: #cdd6f4; flex-shrink: 0;
+        }
+        .rx-chatter-bar .rx-cb-label { color: #a6adc8; font-weight: 500; }
+        .rx-chatter-bar .rx-cb-val { color: var(--rx-accent, #89b4fa); }
+    `,
+
+    _msgSel: '#chat-history-list li, .chat--message-container',
+
+    _rescan() {
+        this._users = new Set();
+        this._msgCount = 0;
+        for (const m of qsa(this._msgSel)) {
+            const u = rxReadUsername(m);
+            if (u) { this._users.add(u); this._msgCount++; }
+        }
+        this._paint();
+    },
+
+    _paint() {
+        if (!this._bar) return;
+        this._bar.querySelector('.rx-cb-users').textContent = this._users?.size || 0;
+        this._bar.querySelector('.rx-cb-msgs').textContent = this._msgCount;
+    },
+
+    _mount(chatEl) {
+        if (this._bar) return;
+        const bar = document.createElement('div');
+        bar.className = 'rx-chatter-bar';
+        bar.innerHTML = `
+            <span><span class="rx-cb-label">Chatters:</span> <span class="rx-cb-val rx-cb-users">0</span></span>
+            <span><span class="rx-cb-label">Messages:</span> <span class="rx-cb-val rx-cb-msgs">0</span></span>`;
+        chatEl.parentNode?.insertBefore(bar, chatEl);
+        this._bar = bar;
+    },
+
+    init() {
+        if (!Settings.get(this.id) || !Page.isWatch()) return;
+        this._styleEl = injectStyle(this._css, 'rx-chatters-css');
+        waitFor('#chat-history-list').then((chatEl) => {
+            this._mount(chatEl);
+            this._rescan();
+            // Debounce — a full re-scan on every message mutation is O(n) and
+            // high-traffic streams can fire many mutations per second.
+            this._obs = new MutationObserver(() => {
+                clearTimeout(this._t);
+                this._t = setTimeout(() => this._rescan(), 250);
+            });
+            this._obs.observe(chatEl, { childList: true, subtree: true });
+        }).catch(() => {});
+    },
+
+    destroy() {
+        this._styleEl?.remove();
+        this._obs?.disconnect();
+        clearTimeout(this._t);
+        this._bar?.remove();
+        this._bar = null;
+    }
+};
+
+// ═══════════════════════════════════════════
+//  Shared chat helpers (used by ChatUserBlock / UniqueChatters / ChatExport)
+// ═══════════════════════════════════════════
+// Defensive username reader: honour data-username first, otherwise read the
+// element's own text BUT strip any RX-injected children (block button, rant
+// badge). Without this, ChatUserBlock's own button text would be appended to
+// the username and break exact-match blocking.
+function rxReadUsername(msg) {
+    const el = msg.querySelector('.chat-history--username, .chat--message-username, [data-username]');
+    if (!el) return null;
+    if (el.dataset && el.dataset.username) return el.dataset.username.trim().toLowerCase();
+    const clone = el.cloneNode(true);
+    clone.querySelectorAll('.rx-chat-block-btn, .rx-rant-persist-badge').forEach((n) => n.remove());
+    return (clone.textContent || '').trim().toLowerCase();
+}
+
+// ═══════════════════════════════════════════
+//  FEATURE: Chat User Block (per-user hide)
+// ═══════════════════════════════════════════
+const ChatUserBlock = {
+    id: 'chatUserBlock',
+    name: 'Chat User Block',
+    _styleEl: null,
+    _obs: null,
+
+    _css: `
+        .rx-blocked-msg { display: none !important; }
+        /* Rendered inline AFTER the username element so username readers don't
+           see the button's text. Shown only on hover. */
+        .rx-chat-block-btn {
+            margin-left: 6px; cursor: pointer; opacity: 0; transition: opacity .15s;
+            font: 600 9px/1.4 system-ui, sans-serif; color: #f38ba8;
+            background: rgba(243,139,168,0.1); border: 1px solid rgba(243,139,168,0.3);
+            border-radius: 4px; padding: 1px 5px; vertical-align: baseline;
+        }
+        #chat-history-list li:hover .rx-chat-block-btn,
+        .chat--message-container:hover .rx-chat-block-btn { opacity: 1; }
+        .rx-chat-block-btn:hover { background: rgba(243,139,168,0.25); }
+    `,
+
+    _blocked() {
+        return new Set((Settings.get('blockedChatters') || []).map((u) => String(u).toLowerCase()));
+    },
+
+    _process() {
+        const blocked = this._blocked();
+        const sel = '#chat-history-list li, .chat--message-container';
+        for (const msg of qsa(sel)) {
+            const u = rxReadUsername(msg);
+            if (!u) continue;
+            msg.classList.toggle('rx-blocked-msg', blocked.has(u));
+            if (msg.dataset.rxBlockBtn) continue;
+            const nameEl = msg.querySelector('.chat-history--username, .chat--message-username');
+            if (!nameEl) continue; // retry on next tick — don't mark as processed yet
+            msg.dataset.rxBlockBtn = '1';
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'rx-chat-block-btn';
+            btn.textContent = 'block';
+            btn.title = `Block ${u} in chat`;
+            btn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                e.preventDefault();
+                const list = Settings.get('blockedChatters') || [];
+                if (!list.map((x) => String(x).toLowerCase()).includes(u)) {
+                    list.push(u);
+                    Settings.set('blockedChatters', list);
+                }
+                this._process();
+            });
+            // Insert AFTER the username element, not inside it, so other modules
+            // (rxReadUsername / ChatExport) don't read "username block" as the name.
+            nameEl.insertAdjacentElement('afterend', btn);
+        }
+    },
+
+    init() {
+        if (!Settings.get(this.id) || !Page.isWatch()) return;
+        this._styleEl = injectStyle(this._css, 'rx-chatuserblock-css');
+        waitFor('#chat-history-list').then((chatEl) => {
+            this._process();
+            this._obs = new MutationObserver(() => this._process());
+            this._obs.observe(chatEl, { childList: true, subtree: true });
+        }).catch(() => {});
+    },
+
+    destroy() {
+        this._styleEl?.remove();
+        this._obs?.disconnect();
+    }
+};
+
+// ═══════════════════════════════════════════
+//  FEATURE: Chat Spam Dedup
+// ═══════════════════════════════════════════
+const ChatSpamDedup = {
+    id: 'chatSpamDedup',
+    name: 'Chat Spam Dedup',
+    _styleEl: null,
+    _obs: null,
+    _last: [],
+    _MAX_WINDOW: 30,
+
+    _css: `.rx-spam-dup { display: none !important; }`,
+
+    _textOf(msg) {
+        const el = msg.querySelector('.chat--message-text, .chat--message, .chat-history--message');
+        return (el ? el.textContent : msg.textContent || '').trim().toLowerCase();
+    },
+
+    _process() {
+        for (const msg of qsa('#chat-history-list li, .chat--message-container')) {
+            if (msg.dataset.rxDedupSeen) continue;
+            msg.dataset.rxDedupSeen = '1';
+            const t = this._textOf(msg);
+            if (t && t.length >= 3 && this._last.includes(t)) {
+                msg.classList.add('rx-spam-dup');
+            }
+            this._last.push(t);
+            if (this._last.length > this._MAX_WINDOW) this._last.shift();
+        }
+    },
+
+    init() {
+        if (!Settings.get(this.id) || !Page.isWatch()) return;
+        this._styleEl = injectStyle(this._css, 'rx-spamdedup-css');
+        waitFor('#chat-history-list').then(chatEl => {
+            this._process();
+            this._obs = new MutationObserver(() => this._process());
+            this._obs.observe(chatEl, { childList: true, subtree: true });
+        }).catch(() => {});
+    },
+
+    destroy() {
+        this._styleEl?.remove();
+        this._obs?.disconnect();
+        this._last = [];
+    }
+};
+
+// ═══════════════════════════════════════════
+//  FEATURE: Chat Export
+// ═══════════════════════════════════════════
+const ChatExport = {
+    id: 'chatExport',
+    name: 'Chat Export',
+    _styleEl: null,
+    _btn: null,
+
+    _css: `
+        .rx-chat-export-btn {
+            background: rgba(49,50,68,0.5); border: 1px solid rgba(137,180,250,0.25);
+            color: #cdd6f4; border-radius: 6px; padding: 4px 10px; cursor: pointer;
+            font: 600 11px/1 system-ui, sans-serif; margin-left: 6px;
+            transition: background .15s, border-color .15s;
+        }
+        .rx-chat-export-btn:hover { background: rgba(49,50,68,0.8); border-color: rgba(137,180,250,0.5); }
+    `,
+
+    _collect() {
+        const out = [];
+        for (const msg of qsa('#chat-history-list li, .chat--message-container')) {
+            if (msg.classList.contains('rx-blocked-msg') || msg.classList.contains('rx-spam-dup')) continue;
+            const textEl = msg.querySelector('.chat--message-text, .chat-history--message');
+            const timeEl = msg.querySelector('.chat-history--timestamp, time');
+            const rantEl = msg.querySelector('.chat-history--rant-price');
+            // Use the shared reader so RX-injected button/badge text doesn't
+            // leak into the exported username.
+            const user = rxReadUsername(msg) || '';
+            // For readable text, strip known RX classes the same way.
+            let text = '';
+            if (textEl) text = textEl.textContent.trim();
+            else {
+                const cl = msg.cloneNode(true);
+                cl.querySelectorAll('.rx-chat-block-btn, .rx-rant-persist-badge').forEach((n) => n.remove());
+                text = (cl.textContent || '').trim();
+            }
+            out.push({
+                time: timeEl ? timeEl.textContent.trim() : '',
+                user,
+                text,
+                rant: rantEl ? rantEl.textContent.trim() : null,
+            });
+        }
+        return out;
+    },
+
+    _download(format) {
+        const msgs = this._collect();
+        const title = (qs('.video-header-container__title') || qs('h1'))?.textContent?.trim() || 'rumble';
+        const safe = title.replace(/[<>:"/\\|?*]/g, '_').substring(0, 80);
+        let blob;
+        if (format === 'json') {
+            blob = new Blob([JSON.stringify(msgs, null, 2)], { type: 'application/json' });
+        } else {
+            const txt = msgs.map(m => `[${m.time}] ${m.user}${m.rant ? ' (' + m.rant + ')' : ''}: ${m.text}`).join('\n');
+            blob = new Blob([txt], { type: 'text/plain' });
+        }
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = `${safe} - chat.${format === 'json' ? 'json' : 'txt'}`;
+        a.click();
+        setTimeout(() => URL.revokeObjectURL(a.href), 60000);
+    },
+
+    _mount() {
+        const header = qs('.chat--header');
+        if (!header || qs('.rx-chat-export-btn')) return;
+        const btn = document.createElement('button');
+        btn.className = 'rx-chat-export-btn';
+        btn.textContent = 'Export';
+        btn.title = 'Export chat (click: TXT, shift-click: JSON)';
+        btn.addEventListener('click', (e) => this._download(e.shiftKey ? 'json' : 'txt'));
+        header.appendChild(btn);
+        this._btn = btn;
+    },
+
+    init() {
+        if (!Settings.get(this.id) || !Page.isWatch()) return;
+        this._styleEl = injectStyle(this._css, 'rx-chatexport-css');
+        waitFor('.chat--header').then(() => this._mount()).catch(() => {});
+    },
+
+    destroy() {
+        this._styleEl?.remove();
+        this._btn?.remove();
+    }
+};
+
+// ═══════════════════════════════════════════
+//  FEATURE: Rant Persist (keep rants past expiry + export)
+// ═══════════════════════════════════════════
+const RantPersist = {
+    id: 'rantPersist',
+    name: 'Rant Persist',
+    _styleEl: null,
+    _obs: null,
+    _cached: [],
+
+    _css: `
+        .chat-history--rant.rx-rant-persist {
+            animation: none !important;
+            opacity: 1 !important;
+            filter: none !important;
+            display: flex !important;
+            visibility: visible !important;
+        }
+        .rx-rant-persist-badge {
+            display: inline-block; margin-left: 6px; padding: 1px 5px;
+            background: rgba(249,226,175,0.15); color: #f9e2af;
+            border-radius: 4px; font: 600 9px/1.4 system-ui, sans-serif;
+        }
+        .rx-rant-export-btn {
+            position: absolute; top: 4px; right: 4px;
+            background: rgba(30,30,46,0.9); border: 1px solid rgba(249,226,175,0.3);
+            color: #f9e2af; border-radius: 5px; padding: 2px 8px; cursor: pointer;
+            font: 600 10px/1 system-ui, sans-serif; opacity: 0.8;
+        }
+        .rx-rant-export-btn:hover { opacity: 1; }
+    `,
+
+    _MAX_PER_VIDEO: 500,
+    _MAX_KEPT_VIDEOS: 100,
+
+    _videoKey() {
+        const m = location.pathname.match(/^\/(v[a-z0-9]+)/);
+        return m ? 'rx_rants_' + m[1] : null;
+    },
+
+    // Keep localStorage growth bounded. Same pattern as WatchProgress /
+    // WatchHistory: prune the oldest rx_rants_* keys when we exceed the cap.
+    _pruneGlobal() {
+        try {
+            const keys = [];
+            for (let i = 0; i < localStorage.length; i++) {
+                const k = localStorage.key(i);
+                if (k && k.startsWith('rx_rants_')) keys.push(k);
+            }
+            if (keys.length <= this._MAX_KEPT_VIDEOS) return;
+            // Sort by max ts in each entry (fallback to 0). Oldest first.
+            const scored = keys.map((k) => {
+                let maxTs = 0;
+                try {
+                    const arr = JSON.parse(localStorage.getItem(k)) || [];
+                    for (const e of arr) if (e && e.ts > maxTs) maxTs = e.ts;
+                } catch {}
+                return { k, maxTs };
+            }).sort((a, b) => a.maxTs - b.maxTs);
+            const drop = scored.slice(0, keys.length - this._MAX_KEPT_VIDEOS);
+            for (const { k } of drop) localStorage.removeItem(k);
+        } catch {}
+    },
+
+    _cache(rantEl) {
+        const priceEl = rantEl.querySelector('.chat-history--rant-price');
+        const userEl = rantEl.querySelector('.chat-history--username');
+        const textEl = rantEl.querySelector('.chat--message, .chat-history--message');
+        const level = rantEl.getAttribute('data-level') || '1';
+        // Strip RX-injected children when reading the username so the cache
+        // stores the real chatter name (consistent with rxReadUsername).
+        let user = '';
+        if (userEl) {
+            const clone = userEl.cloneNode(true);
+            clone.querySelectorAll('.rx-chat-block-btn, .rx-rant-persist-badge').forEach((n) => n.remove());
+            user = (clone.textContent || '').trim();
+        }
+        const entry = {
+            price: priceEl ? priceEl.textContent.trim() : '',
+            user,
+            text: textEl ? textEl.textContent.trim() : '',
+            level, ts: Date.now(),
+        };
+        if (this._cached.some((c) => c.user === entry.user && c.text === entry.text && c.price === entry.price)) return;
+        this._cached.push(entry);
+        // Cap per-video so one stream can't hog localStorage on its own.
+        if (this._cached.length > this._MAX_PER_VIDEO) {
+            this._cached.splice(0, this._cached.length - this._MAX_PER_VIDEO);
+        }
+        const key = this._videoKey();
+        if (!key) return;
+        try {
+            localStorage.setItem(key, JSON.stringify(this._cached));
+        } catch {
+            // QuotaExceeded — prune and retry once
+            this._pruneGlobal();
+            try { localStorage.setItem(key, JSON.stringify(this._cached)); } catch {}
+        }
+    },
+
+    _persist() {
+        for (const r of qsa('.chat-history--rant')) {
+            if (r.dataset.rxPersisted) {
+                if (!r.classList.contains('rx-rant-persist')) r.classList.add('rx-rant-persist');
+                continue;
+            }
+            r.dataset.rxPersisted = '1';
+            r.classList.add('rx-rant-persist');
+            const userEl = r.querySelector('.chat-history--username');
+            if (userEl && !r.querySelector('.rx-rant-persist-badge')) {
+                const badge = document.createElement('span');
+                badge.className = 'rx-rant-persist-badge';
+                badge.textContent = 'RX';
+                // Insert as sibling AFTER the username element so username readers
+                // in other modules (ChatUserBlock/UniqueChatters/ChatExport) don't
+                // pick up the badge text as part of the username.
+                userEl.insertAdjacentElement('afterend', badge);
+            }
+            this._cache(r);
+        }
+    },
+
+    _export() {
+        const blob = new Blob([JSON.stringify(this._cached, null, 2)], { type: 'application/json' });
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = 'rumble-rants.json';
+        a.click();
+        setTimeout(() => URL.revokeObjectURL(a.href), 60000);
+    },
+
+    init() {
+        if (!Settings.get(this.id) || !Page.isWatch()) return;
+        this._styleEl = injectStyle(this._css, 'rx-rantpersist-css');
+        // Run global prune at most once per page-load to bound growth over time.
+        this._pruneGlobal();
+        const key = this._videoKey();
+        if (key) {
+            try {
+                const raw = localStorage.getItem(key);
+                if (raw) this._cached = JSON.parse(raw) || [];
+            } catch {}
+        }
+        waitFor('#chat-history-list, .chat-history').then(chatEl => {
+            this._persist();
+            this._obs = new MutationObserver(() => this._persist());
+            // childList+subtree is enough — we override fade-out via !important CSS,
+            // so we don't need to react to attribute/class changes (expensive).
+            this._obs.observe(chatEl, { childList: true, subtree: true });
+            const tracker = qs('.rx-rant-tracker');
+            if (tracker && !tracker.querySelector('.rx-rant-export-btn')) {
+                const btn = document.createElement('button');
+                btn.className = 'rx-rant-export-btn';
+                btn.textContent = 'Export';
+                btn.addEventListener('click', () => this._export());
+                tracker.style.position = 'relative';
+                tracker.appendChild(btn);
+            }
+        }).catch(() => {});
+    },
+
+    destroy() {
+        this._styleEl?.remove();
+        this._obs?.disconnect();
+    }
+};
+
+// ═══════════════════════════════════════════
+//  FEATURE: Comment Sort
+// ═══════════════════════════════════════════
+const CommentSort = {
+    id: 'commentSort',
+    name: 'Comment Sort',
+    _styleEl: null,
+    _bar: null,
+
+    _css: `
+        .rx-comment-sort-bar {
+            display: flex; gap: 6px; padding: 8px 0; margin-bottom: 8px;
+            border-bottom: 1px solid rgba(255,255,255,0.06);
+        }
+        .rx-comment-sort-btn {
+            background: rgba(49,50,68,0.4); border: 1px solid rgba(255,255,255,0.06);
+            color: #a6adc8; border-radius: 14px; padding: 4px 12px; cursor: pointer;
+            font: 600 11px/1 system-ui, sans-serif; transition: all .15s;
+        }
+        .rx-comment-sort-btn:hover { background: rgba(49,50,68,0.8); }
+        .rx-comment-sort-btn.active {
+            background: rgba(137,180,250,0.15); color: var(--rx-accent, #89b4fa);
+            border-color: rgba(137,180,250,0.4);
+        }
+    `,
+
+    // Looks at the item's direct vote widget only — not nested replies'.
+    _parseVotes(item) {
+        const widget = item.querySelector(':scope > .comment-actions, :scope > .comments-meta, :scope .comment-actions')
+            || item;
+        const up = widget.querySelector('.comment-vote-count, .rumbles-vote--value');
+        if (!up) return 0;
+        const n = parseInt((up.textContent || '0').replace(/[^\d-]/g, ''), 10);
+        return Number.isFinite(n) ? n : 0;
+    },
+
+    _parseTime(item) {
+        const t = item.querySelector('time, .comment-meta--time');
+        if (!t) return 0;
+        const dt = t.getAttribute('datetime') || t.dataset?.time;
+        if (dt) { const n = Date.parse(dt); if (!Number.isNaN(n)) return n; }
+        return 0;
+    },
+
+    // Sort only TOP-LEVEL comments. Nested replies stay in place under each
+    // parent so the thread structure is preserved.
+    _sort(mode) {
+        const container = qs('#video-comments, .media-page-comments-container');
+        if (!container) return;
+        // Rumble typically puts comments inside `<ul>` — top-level items are
+        // direct children of that list. Fall back to the container itself.
+        const listRoot = container.querySelector(':scope > ul') || container;
+        const items = Array.from(
+            listRoot.querySelectorAll(':scope > li.comment-item[data-comment-id], :scope > li.comment-item')
+        );
+        if (items.length < 2) return;
+        const scored = items.map((el) => ({
+            el, votes: this._parseVotes(el), time: this._parseTime(el),
+        }));
+        if (mode === 'top') scored.sort((a, b) => b.votes - a.votes);
+        else if (mode === 'new') scored.sort((a, b) => b.time - a.time);
+        else if (mode === 'old') scored.sort((a, b) => a.time - b.time);
+        else if (mode === 'controversial') scored.sort((a, b) => Math.abs(a.votes) - Math.abs(b.votes));
+        const frag = document.createDocumentFragment();
+        for (const s of scored) frag.appendChild(s.el);
+        listRoot.appendChild(frag);
+    },
+
+    _mount() {
+        const container = qs('#video-comments, .media-page-comments-container');
+        if (!container || qs('.rx-comment-sort-bar')) return;
+        const bar = document.createElement('div');
+        bar.className = 'rx-comment-sort-bar';
+        const modes = [
+            { id: 'top', label: 'Top' },
+            { id: 'new', label: 'New' },
+            { id: 'old', label: 'Oldest' },
+            { id: 'controversial', label: 'Controversial' },
+        ];
+        for (const m of modes) {
+            const btn = document.createElement('button');
+            btn.className = 'rx-comment-sort-btn';
+            btn.textContent = m.label;
+            btn.addEventListener('click', () => {
+                for (const b of bar.querySelectorAll('.rx-comment-sort-btn')) b.classList.remove('active');
+                btn.classList.add('active');
+                this._sort(m.id);
+            });
+            bar.appendChild(btn);
+        }
+        container.prepend(bar);
+        this._bar = bar;
+    },
+
+    init() {
+        if (!Settings.get(this.id) || !Page.isWatch()) return;
+        this._styleEl = injectStyle(this._css, 'rx-commentsort-css');
+        waitFor('#video-comments, .media-page-comments-container').then(() => {
+            setTimeout(() => this._mount(), 1200);
+        }).catch(() => {});
+    },
+
+    destroy() {
+        this._styleEl?.remove();
+        this._bar?.remove();
+    }
+};
+
+// ═══════════════════════════════════════════
+//  FEATURE: Popout Chat
+// ═══════════════════════════════════════════
+const PopoutChat = {
+    id: 'popoutChat',
+    name: 'Popout Chat',
+    _styleEl: null,
+    _btn: null,
+
+    _css: `
+        .rx-popout-chat-btn {
+            background: rgba(49,50,68,0.5); border: 1px solid rgba(137,180,250,0.25);
+            color: #cdd6f4; border-radius: 6px; padding: 4px 10px; cursor: pointer;
+            font: 600 11px/1 system-ui, sans-serif; margin-left: 6px;
+            transition: background .15s, border-color .15s;
+        }
+        .rx-popout-chat-btn:hover { background: rgba(49,50,68,0.8); border-color: rgba(137,180,250,0.5); }
+    `,
+
+    _popout() {
+        // Prefer Rumble's own chat popup control if the page exposes it —
+        // clicking it toggles the native in-page popup chat overlay.
+        const native = qs('#chat-toggle-popup');
+        if (native instanceof HTMLElement) {
+            native.click();
+            return;
+        }
+        // If the page exposes an explicit chat popout link/anchor, open it.
+        const link = qs('a[href*="chat/popup" i], a[href*="chat_popout" i]');
+        if (link instanceof HTMLAnchorElement && link.href) {
+            window.open(link.href, 'rumblex_chat_popout', 'width=420,height=720,resizable=yes,scrollbars=yes');
+            return;
+        }
+        // Last-resort fallback: open the current watch URL in a narrow window.
+        // Not a true chat-only window, but at least it doesn't 404 on users.
+        window.open(location.href, 'rumblex_chat_popout', 'width=460,height=820,resizable=yes,scrollbars=yes');
+    },
+
+    _mount() {
+        const header = qs('.chat--header');
+        if (!header || qs('.rx-popout-chat-btn')) return;
+        const btn = document.createElement('button');
+        btn.className = 'rx-popout-chat-btn';
+        btn.textContent = 'Popout';
+        btn.title = 'Open chat in separate window';
+        btn.addEventListener('click', () => this._popout());
+        header.appendChild(btn);
+        this._btn = btn;
+    },
+
+    init() {
+        if (!Settings.get(this.id) || !Page.isWatch()) return;
+        this._styleEl = injectStyle(this._css, 'rx-popoutchat-css');
+        waitFor('.chat--header').then(() => this._mount()).catch(() => {});
+    },
+
+    destroy() {
+        this._styleEl?.remove();
+        this._btn?.remove();
+    }
+};
+
+// ═══════════════════════════════════════════
+//  FEATURE: Keyword Filter (hide videos by title keyword)
+// ═══════════════════════════════════════════
+const KeywordFilter = {
+    id: 'keywordFilter',
+    name: 'Keyword Filter',
+    _styleEl: null,
+    _obs: null,
+
+    _css: `.rx-kw-hidden { display: none !important; }`,
+
+    _keywords() {
+        return (Settings.get('blockedKeywords') || []).map(k => k.toLowerCase()).filter(Boolean);
+    },
+
+    _process() {
+        const kws = this._keywords();
+        if (!kws.length) {
+            for (const el of qsa('.rx-kw-hidden')) el.classList.remove('rx-kw-hidden');
+            return;
+        }
+        const cards = qsa('.videostream, .video-item, article.video-item, .mediaList-item, .thumbnail__grid-item');
+        for (const card of cards) {
+            const titleEl = card.querySelector(
+                '.thumbnail__title, .videostream__title, .mediaList-heading, .media-item__title'
+            );
+            if (!titleEl) {
+                // No title element — leave the card alone rather than match
+                // against the entire card text (which would false-positive on
+                // channel names, view counts, timestamps, etc).
+                card.classList.remove('rx-kw-hidden');
+                continue;
+            }
+            const t = titleEl.textContent.toLowerCase();
+            const hit = kws.some((k) => k.length > 0 && t.includes(k));
+            card.classList.toggle('rx-kw-hidden', hit);
+        }
+    },
+
+    init() {
+        if (!Settings.get(this.id)) return;
+        this._styleEl = injectStyle(this._css, 'rx-keywordfilter-css');
+        this._process();
+        this._obs = new MutationObserver(() => {
+            clearTimeout(this._t);
+            this._t = setTimeout(() => this._process(), 150);
+        });
+        this._obs.observe(document.body, { childList: true, subtree: true });
+    },
+
+    destroy() {
+        this._styleEl?.remove();
+        this._obs?.disconnect();
+        clearTimeout(this._t);
+    }
+};
+
+// ═══════════════════════════════════════════
+//  FEATURE: Autoplay Scheduler / Queue
+// ═══════════════════════════════════════════
+const AutoplayScheduler = {
+    id: 'autoplayScheduler',
+    name: 'Autoplay Scheduler',
+    _styleEl: null,
+    _panel: null,
+    _endHandler: null,
+
+    _css: `
+        .rx-queue-fab {
+            position: fixed; bottom: 20px; right: 74px; z-index: 10008;
+            width: 42px; height: 42px; border-radius: 50%;
+            background: rgba(30,30,46,0.9); border: 1px solid rgba(137,180,250,0.25);
+            color: rgba(255,255,255,0.7); cursor: pointer;
+            display: flex; align-items: center; justify-content: center;
+            backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+            box-shadow: 0 4px 16px rgba(0,0,0,0.4);
+        }
+        .rx-queue-fab:hover { border-color: rgba(137,180,250,0.6); }
+        html.rx-theater .rx-queue-fab { display: none; }
+        .rx-queue-panel {
+            position: fixed; bottom: 76px; right: 20px; z-index: 10009;
+            width: 320px; max-height: 420px; overflow-y: auto;
+            background: rgba(17,17,27,0.98); border: 1px solid rgba(137,180,250,0.2);
+            border-radius: 12px; padding: 12px;
+            color: #cdd6f4; font: 12px system-ui, sans-serif;
+            box-shadow: 0 12px 40px rgba(0,0,0,0.6);
+            backdrop-filter: blur(16px); display: none;
+        }
+        .rx-queue-panel.open { display: block; }
+        .rx-queue-header {
+            display: flex; justify-content: space-between; align-items: center;
+            margin-bottom: 8px; padding-bottom: 8px; border-bottom: 1px solid rgba(255,255,255,0.06);
+        }
+        .rx-queue-title { font-weight: 700; font-size: 13px; color: #f0f0f0; }
+        .rx-queue-add {
+            display: flex; gap: 6px; margin-bottom: 8px;
+        }
+        .rx-queue-add input {
+            flex: 1; background: rgba(49,50,68,0.5); border: 1px solid rgba(255,255,255,0.08);
+            border-radius: 6px; padding: 5px 8px; color: #cdd6f4; font-size: 11px; outline: none;
+        }
+        .rx-queue-add button {
+            background: rgba(137,180,250,0.15); border: 1px solid rgba(137,180,250,0.3);
+            color: var(--rx-accent, #89b4fa); border-radius: 6px; padding: 4px 10px;
+            cursor: pointer; font-weight: 600; font-size: 11px;
+        }
+        .rx-queue-item {
+            display: flex; align-items: center; gap: 6px; padding: 6px;
+            border-radius: 6px; margin-bottom: 4px; background: rgba(49,50,68,0.3);
+        }
+        .rx-queue-item .rx-qi-url { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; }
+        .rx-queue-item button {
+            background: transparent; border: none; color: #f38ba8; cursor: pointer; font-size: 14px;
+        }
+        .rx-queue-empty { padding: 16px; text-align: center; color: #6c7086; font-size: 11px; }
+    `,
+
+    _queue() {
+        return Settings.get('autoplayQueue') || [];
+    },
+
+    _saveQueue(q) {
+        Settings.set('autoplayQueue', q);
+    },
+
+    _addCurrent() {
+        const q = this._queue();
+        if (!q.includes(location.href)) {
+            q.push(location.href);
+            this._saveQueue(q);
+            this._renderList();
+        }
+    },
+
+    _addUrl(url) {
+        url = (url || '').trim();
+        if (!url || !/^https:\/\/(www\.)?rumble\.com\//.test(url)) return;
+        const q = this._queue();
+        if (!q.includes(url)) {
+            q.push(url);
+            this._saveQueue(q);
+            this._renderList();
+        }
+    },
+
+    _playNext() {
+        const q = this._queue();
+        if (!q.length) return;
+        const next = q.shift();
+        this._saveQueue(q);
+        location.href = next;
+    },
+
+    _renderList() {
+        if (!this._panel) return;
+        const list = this._panel.querySelector('.rx-queue-list');
+        const q = this._queue();
+        list.innerHTML = '';
+        if (!q.length) {
+            list.innerHTML = '<div class="rx-queue-empty">Queue is empty. Add video URLs above.</div>';
+            return;
+        }
+        q.forEach((url, i) => {
+            const row = document.createElement('div');
+            row.className = 'rx-queue-item';
+            const span = document.createElement('span');
+            span.className = 'rx-qi-url';
+            span.textContent = url.replace('https://rumble.com/', '');
+            const del = document.createElement('button');
+            del.textContent = '×';
+            del.title = 'Remove';
+            del.addEventListener('click', () => {
+                const nq = this._queue();
+                nq.splice(i, 1);
+                this._saveQueue(nq);
+                this._renderList();
+            });
+            row.append(span, del);
+            list.appendChild(row);
+        });
+    },
+
+    _build() {
+        const fab = document.createElement('button');
+        fab.className = 'rx-queue-fab';
+        fab.title = 'Autoplay Queue';
+        fab.innerHTML = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="14" y2="18"/><polygon points="18 15 24 18 18 21" fill="currentColor"/></svg>';
+        document.body.appendChild(fab);
+
+        const panel = document.createElement('div');
+        panel.className = 'rx-queue-panel';
+        panel.innerHTML = `
+            <div class="rx-queue-header">
+                <span class="rx-queue-title">Autoplay Queue</span>
+                <button class="rx-queue-add-current" title="Add current video">+ current</button>
+            </div>
+            <div class="rx-queue-add">
+                <input type="text" placeholder="Paste Rumble URL..." />
+                <button>Add</button>
+            </div>
+            <div class="rx-queue-list"></div>`;
+        document.body.appendChild(panel);
+        this._panel = panel;
+
+        fab.addEventListener('click', () => {
+            panel.classList.toggle('open');
+            if (panel.classList.contains('open')) this._renderList();
+        });
+
+        panel.querySelector('.rx-queue-add-current').addEventListener('click', () => {
+            if (Page.isWatch()) this._addCurrent();
+        });
+        const input = panel.querySelector('input');
+        const addBtn = panel.querySelector('.rx-queue-add button');
+        const doAdd = () => { this._addUrl(input.value); input.value = ''; };
+        addBtn.addEventListener('click', doAdd);
+        input.addEventListener('keydown', (e) => { if (e.key === 'Enter') doAdd(); });
+
+        // Style buttons in header
+        const headerBtn = panel.querySelector('.rx-queue-add-current');
+        headerBtn.style.cssText = 'background:rgba(137,180,250,0.15);border:1px solid rgba(137,180,250,0.3);color:var(--rx-accent,#89b4fa);border-radius:6px;padding:3px 8px;cursor:pointer;font-size:10px;font-weight:600;';
+    },
+
+    _hookVideoEnd() {
+        const video = qs('video');
+        if (!video || video.dataset.rxQueueBound) return;
+        video.dataset.rxQueueBound = '1';
+        this._endHandler = () => this._playNext();
+        video.addEventListener('ended', this._endHandler);
+    },
+
+    init() {
+        if (!Settings.get(this.id)) return;
+        this._styleEl = injectStyle(this._css, 'rx-autoplayscheduler-css');
+        onReady(() => this._build());
+        if (Page.isWatch()) {
+            waitFor('video', 12000).then(() => this._hookVideoEnd()).catch(() => {});
+        }
+    },
+
+    destroy() {
+        this._styleEl?.remove();
+        this._panel?.remove();
+        qs('.rx-queue-fab')?.remove();
+        const v = qs('video');
+        if (v && this._endHandler) v.removeEventListener('ended', this._endHandler);
+    }
+};
+
+// ═══════════════════════════════════════════
+//  FEATURE: Chapters (parse description timestamps)
+// ═══════════════════════════════════════════
+const Chapters = {
+    id: 'chapters',
+    name: 'Chapters',
+    _styleEl: null,
+    _markers: null,
+    _list: null,
+    _chapters: [],
+    _obs: null,
+
+    _css: `
+        .rx-chapter-markers {
+            position: absolute; left: 0; right: 0; bottom: 0;
+            height: 4px; pointer-events: none; z-index: 5;
+        }
+        .rx-chapter-mark {
+            position: absolute; top: 0; bottom: 0; width: 2px;
+            background: rgba(255,255,255,0.75);
+            box-shadow: 0 0 4px rgba(0,0,0,0.5);
+            pointer-events: auto; cursor: pointer;
+        }
+        .rx-chapter-mark:hover { background: #fff; width: 3px; }
+        .rx-chapter-tooltip {
+            position: absolute; bottom: 12px; left: 50%; transform: translateX(-50%);
+            background: rgba(0,0,0,0.92); color: #fff; padding: 4px 8px;
+            border-radius: 4px; font: 600 11px/1.2 system-ui, sans-serif;
+            white-space: nowrap; opacity: 0; pointer-events: none;
+            transition: opacity .15s;
+        }
+        .rx-chapter-mark:hover .rx-chapter-tooltip { opacity: 1; }
+        .rx-chapters-panel {
+            margin: 12px 0; padding: 10px 12px;
+            background: rgba(30,30,46,0.5); border: 1px solid rgba(137,180,250,0.12);
+            border-radius: 8px;
+        }
+        .rx-chapters-title {
+            font: 700 12px/1 system-ui, sans-serif; color: #a6adc8;
+            margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.5px;
+        }
+        .rx-chapters-list { display: flex; flex-direction: column; gap: 2px; }
+        .rx-chapters-item {
+            display: flex; gap: 8px; padding: 5px 8px; cursor: pointer;
+            border-radius: 5px; font-size: 12px; color: #cdd6f4;
+            transition: background .15s;
+        }
+        .rx-chapters-item:hover { background: rgba(137,180,250,0.1); }
+        .rx-chapters-item .rx-ci-time {
+            color: var(--rx-accent, #89b4fa); font-weight: 600; font-variant-numeric: tabular-nums;
+            min-width: 52px;
+        }
+    `,
+
+    _tsToSec(ts) {
+        const p = ts.split(':').map(n => parseInt(n, 10));
+        if (p.length === 3) return p[0] * 3600 + p[1] * 60 + p[2];
+        if (p.length === 2) return p[0] * 60 + p[1];
+        return 0;
+    },
+
+    _parseDescription() {
+        const desc = qs('.media-description, [data-js="media_description"]');
+        if (!desc) return [];
+        // innerText honours <br> and display-aware line breaks; fall back to
+        // textContent which always exists but mushes everything together.
+        const text = desc.innerText || desc.textContent || '';
+        const chapters = [];
+        const seen = new Set();
+        for (const raw of text.split(/\r?\n/)) {
+            const line = raw.trim();
+            if (!line) continue;
+            // Anchored to line start so we don't match incidental timestamps
+            // that appear mid-sentence in body text.
+            const m = line.match(/^(?:(\d{1,2}):)?(\d{1,2}):(\d{2})\s*[-–—:.]?\s+(.{1,120})$/);
+            if (!m) continue;
+            const ts = (m[1] ? m[1] + ':' : '') + m[2] + ':' + m[3];
+            const label = (m[4] || '').trim();
+            if (!label) continue;
+            const time = this._tsToSec(ts);
+            const key = time + '|' + label;
+            if (seen.has(key)) continue;
+            seen.add(key);
+            chapters.push({ time, label: label.substring(0, 80) });
+        }
+        return chapters.sort((a, b) => a.time - b.time);
+    },
+
+    _seek(t) {
+        const v = qs('video');
+        if (v) { v.currentTime = t; v.play().catch(() => {}); }
+    },
+
+    _findSeekbar() {
+        // Prefer specific seekbar/progress selectors. Do NOT fall back to the
+        // video container — overlaying markers on the video frame is wrong
+        // and confusing.
+        return qs(
+            '.video-player-seekbar, .progress-bar__container, [class*="progress-bar"], [class*="seekbar"]'
+        );
+    },
+
+    _renderMarkers(duration) {
+        const bar = this._findSeekbar();
+        if (!bar || !duration || !Number.isFinite(duration)) return;
+        this._markers?.remove();
+        const wrap = document.createElement('div');
+        wrap.className = 'rx-chapter-markers';
+        for (const c of this._chapters) {
+            if (c.time > duration) continue;
+            const pct = (c.time / duration) * 100;
+            const m = document.createElement('div');
+            m.className = 'rx-chapter-mark';
+            m.style.left = pct + '%';
+            m.title = c.label;
+            const tip = document.createElement('div');
+            tip.className = 'rx-chapter-tooltip';
+            tip.textContent = c.label;
+            m.appendChild(tip);
+            m.addEventListener('click', (e) => { e.stopPropagation(); this._seek(c.time); });
+            wrap.appendChild(m);
+        }
+        if (getComputedStyle(bar).position === 'static') bar.style.position = 'relative';
+        bar.appendChild(wrap);
+        this._markers = wrap;
+    },
+
+    _renderPanel() {
+        const desc = qs('.media-description-section, .media-description');
+        if (!desc || this._list) return;
+        const panel = document.createElement('div');
+        panel.className = 'rx-chapters-panel';
+        panel.innerHTML = `<div class="rx-chapters-title">Chapters (${this._chapters.length})</div><div class="rx-chapters-list"></div>`;
+        const list = panel.querySelector('.rx-chapters-list');
+        for (const c of this._chapters) {
+            const row = document.createElement('div');
+            row.className = 'rx-chapters-item';
+            const ts = document.createElement('span');
+            ts.className = 'rx-ci-time';
+            const h = Math.floor(c.time / 3600), mm = Math.floor((c.time % 3600) / 60), ss = c.time % 60;
+            ts.textContent = (h ? h + ':' + String(mm).padStart(2, '0') : mm) + ':' + String(ss).padStart(2, '0');
+            const lbl = document.createElement('span');
+            lbl.textContent = c.label;
+            row.append(ts, lbl);
+            row.addEventListener('click', () => this._seek(c.time));
+            list.appendChild(row);
+        }
+        desc.prepend(panel);
+        this._list = panel;
+    },
+
+    async _run() {
+        const chapters = this._parseDescription();
+        if (!chapters.length) return;
+        this._chapters = chapters;
+        try {
+            const v = await waitFor('video', 10000);
+            const drawOnce = () => {
+                if (!v.duration || isNaN(v.duration)) return;
+                this._renderMarkers(v.duration);
+                this._renderPanel();
+            };
+            if (v.duration) drawOnce();
+            else v.addEventListener('loadedmetadata', drawOnce, { once: true });
+        } catch (e) {}
+    },
+
+    init() {
+        if (!Settings.get(this.id) || !Page.isWatch()) return;
+        this._styleEl = injectStyle(this._css, 'rx-chapters-css');
+        waitFor('.media-description, .media-description-section', 10000).then(() => {
+            setTimeout(() => this._run(), 800);
+        }).catch(() => {});
+    },
+
+    destroy() {
+        this._styleEl?.remove();
+        this._markers?.remove();
+        this._list?.remove();
+        this._obs?.disconnect();
+    }
+};
+
+// ═══════════════════════════════════════════
+//  FEATURE: SponsorBlock (local segments, skip sponsors)
+// ═══════════════════════════════════════════
+const SponsorBlockRX = {
+    id: 'sponsorBlock',
+    name: 'SponsorBlock',
+    _styleEl: null,
+    _panel: null,
+    _segments: [],
+    _skipHandler: null,
+    _markerEl: null,
+
+    _css: `
+        .rx-sb-markers {
+            position: absolute; left: 0; right: 0; bottom: 0; height: 4px;
+            pointer-events: none; z-index: 4;
+        }
+        .rx-sb-segment {
+            position: absolute; top: 0; height: 100%;
+            background: rgba(255,188,42,0.7); border-radius: 1px;
+        }
+        .rx-sb-segment.category-intro { background: rgba(137,180,250,0.7); }
+        .rx-sb-segment.category-outro { background: rgba(249,226,175,0.7); }
+        .rx-sb-segment.category-selfpromo { background: rgba(203,166,247,0.7); }
+        .rx-sb-segment.category-sponsor { background: rgba(243,139,168,0.75); }
+        .rx-sb-notice {
+            position: fixed; bottom: 90px; left: 50%; transform: translateX(-50%);
+            padding: 8px 16px; background: rgba(30,30,46,0.95);
+            border: 1px solid rgba(243,139,168,0.4); border-radius: 8px;
+            color: #f38ba8; font: 600 12px/1 system-ui, sans-serif;
+            z-index: 10020; box-shadow: 0 6px 20px rgba(0,0,0,0.5);
+            opacity: 0; transition: opacity .3s;
+        }
+        .rx-sb-notice.visible { opacity: 1; }
+
+        .rx-sb-panel {
+            margin: 8px 0; padding: 10px;
+            background: rgba(243,139,168,0.08); border: 1px solid rgba(243,139,168,0.2);
+            border-radius: 8px;
+        }
+        .rx-sb-title { font: 700 11px/1 system-ui, sans-serif; color: #f38ba8; margin-bottom: 6px; text-transform: uppercase; }
+        .rx-sb-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 6px; }
+        .rx-sb-btn {
+            background: rgba(49,50,68,0.4); border: 1px solid rgba(255,255,255,0.06);
+            color: #cdd6f4; border-radius: 5px; padding: 4px 10px; cursor: pointer;
+            font: 600 11px/1 system-ui, sans-serif;
+        }
+        .rx-sb-btn:hover { background: rgba(49,50,68,0.7); }
+        .rx-sb-list { display: flex; flex-direction: column; gap: 3px; font-size: 11px; }
+        .rx-sb-item {
+            display: flex; gap: 6px; align-items: center; padding: 3px 6px;
+            background: rgba(49,50,68,0.3); border-radius: 4px;
+        }
+        .rx-sb-item select {
+            background: rgba(30,30,46,0.8); color: #cdd6f4;
+            border: 1px solid rgba(255,255,255,0.08); border-radius: 4px;
+            font-size: 10px; padding: 1px 4px;
+        }
+        .rx-sb-item button { background: transparent; border: none; color: #f38ba8; cursor: pointer; }
+    `,
+
+    _videoKey() {
+        const m = location.pathname.match(/^\/(v[a-z0-9]+)/);
+        return m ? m[1] : null;
+    },
+
+    _loadSegments() {
+        const key = this._videoKey();
+        if (!key) return;
+        const all = Settings.get('sponsorSegments') || {};
+        this._segments = all[key] || [];
+    },
+
+    _saveSegments() {
+        const key = this._videoKey();
+        if (!key) return;
+        const all = Settings.get('sponsorSegments') || {};
+        all[key] = this._segments;
+        Settings.set('sponsorSegments', all);
+    },
+
+    _fmt(t) {
+        t = Math.max(0, Math.floor(t));
+        const h = Math.floor(t / 3600), m = Math.floor((t % 3600) / 60), s = t % 60;
+        return (h ? h + ':' + String(m).padStart(2, '0') : m) + ':' + String(s).padStart(2, '0');
+    },
+
+    _notice(msg) {
+        let el = qs('.rx-sb-notice');
+        if (!el) {
+            el = document.createElement('div');
+            el.className = 'rx-sb-notice';
+            document.body.appendChild(el);
+        }
+        el.textContent = msg;
+        el.classList.add('visible');
+        clearTimeout(this._noticeT);
+        this._noticeT = setTimeout(() => el.classList.remove('visible'), 2200);
+    },
+
+    _findSeekbar() {
+        return qs(
+            '.video-player-seekbar, .progress-bar__container, [class*="progress-bar"], [class*="seekbar"]'
+        );
+    },
+
+    _renderMarkers(duration) {
+        const bar = this._findSeekbar();
+        if (!bar || !duration || !Number.isFinite(duration)) return;
+        this._markerEl?.remove();
+        const wrap = document.createElement('div');
+        wrap.className = 'rx-sb-markers';
+        for (const s of this._segments) {
+            const seg = document.createElement('div');
+            seg.className = 'rx-sb-segment category-' + (s.category || 'sponsor');
+            seg.style.left = (s.start / duration * 100) + '%';
+            seg.style.width = Math.max(0.3, (s.end - s.start) / duration * 100) + '%';
+            seg.title = `${s.category}: ${this._fmt(s.start)} → ${this._fmt(s.end)}`;
+            wrap.appendChild(seg);
+        }
+        if (getComputedStyle(bar).position === 'static') bar.style.position = 'relative';
+        bar.appendChild(wrap);
+        this._markerEl = wrap;
+    },
+
+    _attachSkip() {
+        const v = qs('video');
+        if (!v || v.dataset.rxSbBound) return;
+        v.dataset.rxSbBound = '1';
+        this._skipHandler = () => {
+            const t = v.currentTime;
+            for (const s of this._segments) {
+                if (t >= s.start && t < s.end - 0.5) {
+                    v.currentTime = s.end;
+                    this._notice(`Skipped ${s.category}`);
+                    return;
+                }
+            }
+        };
+        v.addEventListener('timeupdate', this._skipHandler);
+        v.addEventListener('loadedmetadata', () => this._renderMarkers(v.duration), { once: true });
+        if (v.duration) this._renderMarkers(v.duration);
+    },
+
+    _addSegment(start, end, category = 'sponsor') {
+        if (end <= start) return;
+        this._segments.push({ start, end, category });
+        this._segments.sort((a, b) => a.start - b.start);
+        this._saveSegments();
+        this._refreshPanel();
+        const v = qs('video');
+        if (v?.duration) this._renderMarkers(v.duration);
+    },
+
+    _refreshPanel() {
+        if (!this._panel) return;
+        const list = this._panel.querySelector('.rx-sb-list');
+        list.innerHTML = '';
+        if (!this._segments.length) {
+            list.innerHTML = '<div style="color:#6c7086;font-size:11px;padding:4px;">No segments yet. Use Mark Start / Mark End.</div>';
+            return;
+        }
+        this._segments.forEach((s, i) => {
+            const row = document.createElement('div');
+            row.className = 'rx-sb-item';
+            const range = document.createElement('span');
+            range.style.flex = '1';
+            range.textContent = `${this._fmt(s.start)} → ${this._fmt(s.end)}`;
+            const sel = document.createElement('select');
+            for (const c of ['sponsor', 'intro', 'outro', 'selfpromo', 'interaction']) {
+                const o = document.createElement('option'); o.value = c; o.textContent = c;
+                if (c === (s.category || 'sponsor')) o.selected = true;
+                sel.appendChild(o);
+            }
+            sel.addEventListener('change', () => { s.category = sel.value; this._saveSegments(); });
+            const del = document.createElement('button');
+            del.textContent = '×';
+            del.addEventListener('click', () => {
+                this._segments.splice(i, 1);
+                this._saveSegments();
+                this._refreshPanel();
+                const v = qs('video');
+                if (v?.duration) this._renderMarkers(v.duration);
+            });
+            row.append(range, sel, del);
+            list.appendChild(row);
+        });
+    },
+
+    _renderPanel() {
+        const host = qs('.media-description-section, .media-description');
+        if (!host || this._panel) return;
+        const panel = document.createElement('div');
+        panel.className = 'rx-sb-panel';
+        panel.innerHTML = `
+            <div class="rx-sb-title">SponsorBlock (local)</div>
+            <div class="rx-sb-actions">
+                <button class="rx-sb-btn rx-sb-start">Mark Start</button>
+                <button class="rx-sb-btn rx-sb-end">Mark End</button>
+                <button class="rx-sb-btn rx-sb-export">Export</button>
+                <button class="rx-sb-btn rx-sb-import">Import</button>
+            </div>
+            <div class="rx-sb-list"></div>`;
+        host.prepend(panel);
+        this._panel = panel;
+
+        let pending = null;
+        panel.querySelector('.rx-sb-start').addEventListener('click', () => {
+            const v = qs('video'); if (!v) return;
+            pending = v.currentTime;
+            this._notice(`Start: ${this._fmt(pending)}`);
+        });
+        panel.querySelector('.rx-sb-end').addEventListener('click', () => {
+            const v = qs('video'); if (!v || pending == null) { this._notice('Mark start first'); return; }
+            this._addSegment(pending, v.currentTime, 'sponsor');
+            pending = null;
+        });
+        panel.querySelector('.rx-sb-export').addEventListener('click', () => {
+            const blob = new Blob([JSON.stringify(this._segments, null, 2)], { type: 'application/json' });
+            const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
+            a.download = 'sponsorblock-' + (this._videoKey() || 'rumble') + '.json'; a.click();
+            setTimeout(() => URL.revokeObjectURL(a.href), 60000);
+        });
+        panel.querySelector('.rx-sb-import').addEventListener('click', () => {
+            const input = document.createElement('input'); input.type = 'file'; input.accept = '.json';
+            input.addEventListener('change', () => {
+                const f = input.files[0]; if (!f) return;
+                const r = new FileReader();
+                r.onload = () => {
+                    try {
+                        const data = JSON.parse(r.result);
+                        if (Array.isArray(data)) { this._segments = data; this._saveSegments(); this._refreshPanel();
+                            const v = qs('video'); if (v?.duration) this._renderMarkers(v.duration);
+                        }
+                    } catch (e) { this._notice('Invalid JSON'); }
+                };
+                r.readAsText(f);
+            });
+            input.click();
+        });
+        this._refreshPanel();
+    },
+
+    init() {
+        if (!Settings.get(this.id) || !Page.isWatch()) return;
+        this._styleEl = injectStyle(this._css, 'rx-sponsorblock-css');
+        this._loadSegments();
+        waitFor('video', 12000).then(() => this._attachSkip()).catch(() => {});
+        waitFor('.media-description, .media-description-section', 12000).then(() => {
+            setTimeout(() => this._renderPanel(), 800);
+        }).catch(() => {});
+    },
+
+    destroy() {
+        this._styleEl?.remove();
+        this._panel?.remove();
+        this._markerEl?.remove();
+        const v = qs('video');
+        if (v && this._skipHandler) v.removeEventListener('timeupdate', this._skipHandler);
+    }
+};
+
+// ═══════════════════════════════════════════
+//  FEATURE: Video Clips (mark in/out, export segment)
+// ═══════════════════════════════════════════
+const VideoClips = {
+    id: 'videoClips',
+    name: 'Video Clips',
+    _styleEl: null,
+    _panel: null,
+    _inT: null, _outT: null,
+    _busy: false,
+
+    _css: `
+        .rx-clip-panel {
+            margin: 8px 0; padding: 10px;
+            background: rgba(166,227,161,0.06); border: 1px solid rgba(166,227,161,0.2);
+            border-radius: 8px;
+        }
+        .rx-clip-title { font: 700 11px/1 system-ui, sans-serif; color: #a6e3a1; margin-bottom: 6px; text-transform: uppercase; }
+        .rx-clip-row { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 4px; }
+        .rx-clip-btn {
+            background: rgba(49,50,68,0.4); border: 1px solid rgba(255,255,255,0.06);
+            color: #cdd6f4; border-radius: 5px; padding: 4px 10px; cursor: pointer;
+            font: 600 11px/1 system-ui, sans-serif;
+        }
+        .rx-clip-btn:hover { background: rgba(49,50,68,0.7); }
+        .rx-clip-btn.primary { background: rgba(166,227,161,0.15); color: #a6e3a1; border-color: rgba(166,227,161,0.3); }
+        .rx-clip-info { font: 11px/1.4 system-ui, sans-serif; color: #a6adc8; margin: 4px 0; font-variant-numeric: tabular-nums; }
+        .rx-clip-status { font: 11px/1.4 system-ui, sans-serif; color: var(--rx-accent, #89b4fa); margin-top: 4px; }
+        .rx-clip-bar-bg { height: 4px; background: rgba(49,50,68,0.5); border-radius: 2px; overflow: hidden; margin-top: 4px; }
+        .rx-clip-bar-fill { height: 100%; width: 0%; background: linear-gradient(90deg,#a6e3a1,#89b4fa); transition: width .2s; }
+    `,
+
+    _fmt(t) {
+        t = Math.max(0, Math.floor(t));
+        const h = Math.floor(t / 3600), m = Math.floor((t % 3600) / 60), s = t % 60;
+        return (h ? h + ':' + String(m).padStart(2, '0') : m) + ':' + String(s).padStart(2, '0');
+    },
+
+    _updateInfo() {
+        const info = this._panel?.querySelector('.rx-clip-info');
+        if (!info) return;
+        const inS = this._inT != null ? this._fmt(this._inT) : '—';
+        const outS = this._outT != null ? this._fmt(this._outT) : '—';
+        const len = (this._inT != null && this._outT != null) ? ` (${this._fmt(this._outT - this._inT)})` : '';
+        info.textContent = `In: ${inS}   Out: ${outS}${len}`;
+    },
+
+    _setStatus(msg, pct) {
+        const s = this._panel?.querySelector('.rx-clip-status');
+        if (s) s.textContent = msg || '';
+        if (pct != null) {
+            const bar = this._panel?.querySelector('.rx-clip-bar-fill');
+            if (bar) bar.style.width = pct + '%';
+        }
+    },
+
+    async _export() {
+        if (this._busy) { this._setStatus('Export already running…'); return; }
+        if (this._inT == null || this._outT == null || this._outT <= this._inT) {
+            this._setStatus('Set In and Out first'); return;
+        }
+        this._busy = true;
+        const exportBtn = this._panel?.querySelector('.rx-clip-export');
+        if (exportBtn) exportBtn.disabled = true;
+        try {
+            this._setStatus('Fetching playlist...', 2);
+            const embedId = VideoDownloader._getEmbedId();
+            if (!embedId) throw new Error('No embed id');
+            if (!VideoDownloader._hlsUrl) {
+                const data = await VideoDownloader._fetchEmbedData(embedId);
+                VideoDownloader._hlsUrl = data.u?.hls?.auto?.url || data.ua?.hls?.auto?.url ||
+                    `https://rumble.com/hls-vod/${embedId.replace('v','')}/playlist.m3u8`;
+            }
+            const masterResp = await fetch(VideoDownloader._hlsUrl);
+            const variants = VideoDownloader._parseMasterPlaylist(await masterResp.text(), VideoDownloader._hlsUrl);
+            const variant = variants.sort((a, b) => b.height - a.height)[0];
+            if (!variant) throw new Error('No variant');
+            this._setStatus('Parsing segments...', 5);
+            const variantResp = await fetch(variant.url);
+            const vtxt = await variantResp.text();
+            const segUrls = VideoDownloader._parseSegmentPlaylist(vtxt, variant.url);
+            const segDurs = [];
+            for (const line of vtxt.split('\n')) {
+                const m = line.match(/^#EXTINF:([\d.]+)/);
+                if (m) segDurs.push(parseFloat(m[1]));
+            }
+            let acc = 0, inIdx = 0, outIdx = segUrls.length - 1;
+            for (let i = 0; i < segDurs.length; i++) {
+                if (acc <= this._inT) inIdx = i;
+                if (acc < this._outT) outIdx = i;
+                acc += segDurs[i];
+            }
+            const picked = segUrls.slice(inIdx, outIdx + 1);
+            const title = VideoDownloader._getTitle();
+            const CONCURRENT = 6;
+            const buffers = [];
+            for (let i = 0; i < picked.length; i += CONCURRENT) {
+                const batch = picked.slice(i, i + CONCURRENT);
+                const results = await Promise.all(batch.map(u => fetch(u).then(r => r.arrayBuffer())));
+                buffers.push(...results);
+                this._setStatus(`Downloading ${buffers.length}/${picked.length}...`, 5 + (buffers.length / picked.length) * 70);
+            }
+            this._setStatus('Converting to MP4...', 80);
+            const blob = await VideoDownloader._transmuxWithWorker(buffers);
+            this._setStatus('Saving clip...', 100);
+            VideoDownloader._triggerSave(blob, `${title} - clip ${this._fmt(this._inT)}-${this._fmt(this._outT)}.mp4`, 'video/mp4');
+            this._setStatus('Clip saved!', 100);
+        } catch (e) {
+            this._setStatus('Error: ' + e.message);
+        } finally {
+            this._busy = false;
+            const btn = this._panel?.querySelector('.rx-clip-export');
+            if (btn) btn.disabled = false;
+        }
+    },
+
+    _mount() {
+        const host = qs('.media-description-section, .media-description');
+        if (!host || this._panel) return;
+        const panel = document.createElement('div');
+        panel.className = 'rx-clip-panel';
+        panel.innerHTML = `
+            <div class="rx-clip-title">Create Clip</div>
+            <div class="rx-clip-row">
+                <button class="rx-clip-btn rx-clip-in">Mark In</button>
+                <button class="rx-clip-btn rx-clip-out">Mark Out</button>
+                <button class="rx-clip-btn primary rx-clip-export">Export MP4</button>
+                <button class="rx-clip-btn rx-clip-reset">Reset</button>
+            </div>
+            <div class="rx-clip-info">In: —   Out: —</div>
+            <div class="rx-clip-status"></div>
+            <div class="rx-clip-bar-bg"><div class="rx-clip-bar-fill"></div></div>`;
+        host.prepend(panel);
+        this._panel = panel;
+        panel.querySelector('.rx-clip-in').addEventListener('click', () => {
+            const v = qs('video'); if (v) { this._inT = v.currentTime; this._updateInfo(); }
+        });
+        panel.querySelector('.rx-clip-out').addEventListener('click', () => {
+            const v = qs('video'); if (v) { this._outT = v.currentTime; this._updateInfo(); }
+        });
+        panel.querySelector('.rx-clip-export').addEventListener('click', () => this._export());
+        panel.querySelector('.rx-clip-reset').addEventListener('click', () => {
+            this._inT = this._outT = null; this._updateInfo(); this._setStatus('', 0);
+        });
+    },
+
+    init() {
+        if (!Settings.get(this.id) || !Page.isWatch()) return;
+        this._styleEl = injectStyle(this._css, 'rx-clips-css');
+        waitFor('.media-description, .media-description-section', 12000).then(() => {
+            setTimeout(() => this._mount(), 900);
+        }).catch(() => {});
+    },
+
+    destroy() {
+        this._styleEl?.remove();
+        this._panel?.remove();
+    }
+};
+
+// ═══════════════════════════════════════════
+//  FEATURE: Live DVR (save last N seconds of live stream)
+// ═══════════════════════════════════════════
+const LiveDVR = {
+    id: 'liveDVR',
+    name: 'Live DVR',
+    _styleEl: null,
+    _panel: null,
+    _busy: false,
+
+    _css: `
+        .rx-dvr-panel {
+            margin: 8px 0; padding: 10px;
+            background: rgba(249,226,175,0.06); border: 1px solid rgba(249,226,175,0.22);
+            border-radius: 8px;
+        }
+        .rx-dvr-title { font: 700 11px/1 system-ui, sans-serif; color: #f9e2af; margin-bottom: 6px; text-transform: uppercase; }
+        .rx-dvr-row { display: flex; flex-wrap: wrap; gap: 6px; }
+        .rx-dvr-btn {
+            background: rgba(49,50,68,0.4); border: 1px solid rgba(255,255,255,0.06);
+            color: #cdd6f4; border-radius: 5px; padding: 4px 10px; cursor: pointer;
+            font: 600 11px/1 system-ui, sans-serif;
+        }
+        .rx-dvr-btn:hover { background: rgba(49,50,68,0.7); }
+        .rx-dvr-status { font: 11px/1.4 system-ui, sans-serif; color: var(--rx-accent, #89b4fa); margin-top: 4px; }
+    `,
+
+    _setStatus(msg) {
+        const s = this._panel?.querySelector('.rx-dvr-status');
+        if (s) s.textContent = msg || '';
+    },
+
+    async _save(seconds) {
+        if (this._busy) { this._setStatus('Save already running…'); return; }
+        this._busy = true;
+        const buttons = this._panel?.querySelectorAll('.rx-dvr-btn') || [];
+        buttons.forEach((b) => { b.disabled = true; });
+        try {
+            this._setStatus(`Fetching live playlist...`);
+            const embedId = VideoDownloader._getEmbedId();
+            if (!embedId) throw new Error('No embed id');
+            const data = await VideoDownloader._fetchEmbedData(embedId);
+            const hls = data.u?.hls?.auto?.url || data.ua?.hls?.auto?.url;
+            if (!hls) throw new Error('No HLS URL');
+            const master = await fetch(hls).then(r => r.text());
+            const variants = VideoDownloader._parseMasterPlaylist(master, hls);
+            const variant = variants.sort((a, b) => b.height - a.height)[0];
+            if (!variant) throw new Error('No variant');
+            const vtxt = await fetch(variant.url).then(r => r.text());
+            const segUrls = VideoDownloader._parseSegmentPlaylist(vtxt, variant.url);
+            const segDurs = [];
+            for (const line of vtxt.split('\n')) {
+                const m = line.match(/^#EXTINF:([\d.]+)/);
+                if (m) segDurs.push(parseFloat(m[1]));
+            }
+            let acc = 0, startIdx = 0;
+            for (let i = segDurs.length - 1; i >= 0; i--) {
+                acc += segDurs[i];
+                if (acc >= seconds) { startIdx = i; break; }
+            }
+            const picked = segUrls.slice(startIdx);
+            this._setStatus(`Downloading ${picked.length} segments (~${Math.round(acc)}s)...`);
+            const CONCURRENT = 6;
+            const buffers = [];
+            for (let i = 0; i < picked.length; i += CONCURRENT) {
+                const batch = picked.slice(i, i + CONCURRENT);
+                const results = await Promise.all(batch.map(u => fetch(u).then(r => r.arrayBuffer())));
+                buffers.push(...results);
+                this._setStatus(`Downloading ${buffers.length}/${picked.length}...`);
+            }
+            this._setStatus('Converting to MP4...');
+            const blob = await VideoDownloader._transmuxWithWorker(buffers);
+            const title = VideoDownloader._getTitle();
+            VideoDownloader._triggerSave(blob, `${title} - last ${seconds}s.mp4`, 'video/mp4');
+            this._setStatus(`Saved last ${seconds}s!`);
+        } catch (e) {
+            this._setStatus('Error: ' + e.message);
+        } finally {
+            this._busy = false;
+            buttons.forEach((b) => { b.disabled = false; });
+        }
+    },
+
+    _mount() {
+        const host = qs('.media-description-section, .media-description');
+        if (!host || this._panel || !Page.isLive()) return;
+        const panel = document.createElement('div');
+        panel.className = 'rx-dvr-panel';
+        panel.innerHTML = `
+            <div class="rx-dvr-title">Live DVR</div>
+            <div class="rx-dvr-row">
+                <button class="rx-dvr-btn" data-sec="30">Save last 30s</button>
+                <button class="rx-dvr-btn" data-sec="60">Save last 1m</button>
+                <button class="rx-dvr-btn" data-sec="300">Save last 5m</button>
+                <button class="rx-dvr-btn" data-sec="600">Save last 10m</button>
+            </div>
+            <div class="rx-dvr-status"></div>`;
+        host.prepend(panel);
+        this._panel = panel;
+        for (const b of panel.querySelectorAll('.rx-dvr-btn')) {
+            b.addEventListener('click', () => this._save(parseInt(b.dataset.sec, 10)));
+        }
+    },
+
+    init() {
+        if (!Settings.get(this.id) || !Page.isWatch()) return;
+        this._styleEl = injectStyle(this._css, 'rx-livedvr-css');
+        waitFor('.media-description, .media-description-section', 12000).then(() => {
+            setTimeout(() => this._mount(), 1000);
+        }).catch(() => {});
+    },
+
+    destroy() {
+        this._styleEl?.remove();
+        this._panel?.remove();
+    }
+};
+
+// ═══════════════════════════════════════════
+//  FEATURE: Subtitle Sidecar (load SRT/VTT file, overlay captions)
+// ═══════════════════════════════════════════
+const SubtitleSidecar = {
+    id: 'subtitleSidecar',
+    name: 'Subtitle Sidecar',
+    _styleEl: null,
+    _panel: null,
+    _cues: [],
+    _overlayEl: null,
+    _timeHandler: null,
+
+    _css: `
+        .rx-sub-panel {
+            margin: 8px 0; padding: 10px;
+            background: rgba(137,180,250,0.06); border: 1px solid rgba(137,180,250,0.2);
+            border-radius: 8px;
+        }
+        .rx-sub-title { font: 700 11px/1 system-ui, sans-serif; color: var(--rx-accent,#89b4fa); margin-bottom: 6px; text-transform: uppercase; }
+        .rx-sub-row { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+        .rx-sub-btn {
+            background: rgba(49,50,68,0.4); border: 1px solid rgba(255,255,255,0.06);
+            color: #cdd6f4; border-radius: 5px; padding: 4px 10px; cursor: pointer;
+            font: 600 11px/1 system-ui, sans-serif;
+        }
+        .rx-sub-btn:hover { background: rgba(49,50,68,0.7); }
+        .rx-sub-status { font: 11px system-ui; color: #a6adc8; }
+        .rx-sub-overlay {
+            position: absolute; left: 50%; bottom: 12%; transform: translateX(-50%);
+            max-width: 85%; padding: 6px 14px;
+            background: rgba(0,0,0,0.78); color: #fff;
+            font: 600 18px/1.3 system-ui, sans-serif; text-align: center;
+            border-radius: 4px; pointer-events: none; z-index: 20;
+            text-shadow: 0 1px 2px rgba(0,0,0,0.8);
+            white-space: pre-line;
+        }
+    `,
+
+    _tsToSec(ts) {
+        const m = ts.match(/(?:(\d+):)?(\d+):(\d+)[.,](\d+)/);
+        if (!m) return 0;
+        return (parseInt(m[1] || '0') * 3600) + (parseInt(m[2]) * 60) + parseInt(m[3]) + (parseInt(m[4]) / 1000);
+    },
+
+    _parse(text) {
+        text = text.replace(/^WEBVTT.*\n/, '').replace(/\r/g, '');
+        const blocks = text.split(/\n\n+/);
+        const cues = [];
+        for (const b of blocks) {
+            const line = b.split('\n').find(l => l.includes('-->'));
+            if (!line) continue;
+            const [a, c] = line.split('-->').map(s => s.trim());
+            const lines = b.split('\n');
+            const idx = lines.findIndex(l => l.includes('-->'));
+            const content = lines.slice(idx + 1).join('\n').trim();
+            if (content) cues.push({ start: this._tsToSec(a), end: this._tsToSec(c), text: content });
+        }
+        return cues.sort((a, b) => a.start - b.start);
+    },
+
+    _attach() {
+        const v = qs('video');
+        if (!v) return;
+        if (!this._overlayEl) {
+            const overlay = document.createElement('div');
+            overlay.className = 'rx-sub-overlay';
+            overlay.style.display = 'none';
+            const parent = v.parentElement || v.closest('[id^="vid_v"]') || document.body;
+            parent.style.position = parent.style.position || 'relative';
+            parent.appendChild(overlay);
+            this._overlayEl = overlay;
+        }
+        if (!this._timeHandler) {
+            this._timeHandler = () => {
+                const t = v.currentTime;
+                const active = this._cues.find(c => t >= c.start && t <= c.end);
+                if (active) {
+                    this._overlayEl.textContent = active.text;
+                    this._overlayEl.style.display = 'block';
+                } else {
+                    this._overlayEl.style.display = 'none';
+                }
+            };
+            v.addEventListener('timeupdate', this._timeHandler);
+        }
+    },
+
+    _load(text) {
+        this._cues = this._parse(text);
+        const s = this._panel?.querySelector('.rx-sub-status');
+        if (s) s.textContent = `${this._cues.length} cues loaded`;
+        this._attach();
+        Transcripts?._loadExternalCues?.(this._cues);
+    },
+
+    _mount() {
+        const host = qs('.media-description-section, .media-description');
+        if (!host || this._panel) return;
+        const panel = document.createElement('div');
+        panel.className = 'rx-sub-panel';
+        panel.innerHTML = `
+            <div class="rx-sub-title">Subtitles</div>
+            <div class="rx-sub-row">
+                <button class="rx-sub-btn rx-sub-upload">Load SRT/VTT...</button>
+                <button class="rx-sub-btn rx-sub-clear">Clear</button>
+                <span class="rx-sub-status"></span>
+            </div>`;
+        host.prepend(panel);
+        this._panel = panel;
+        panel.querySelector('.rx-sub-upload').addEventListener('click', () => {
+            const input = document.createElement('input');
+            input.type = 'file'; input.accept = '.vtt,.srt,.txt';
+            input.addEventListener('change', () => {
+                const f = input.files[0]; if (!f) return;
+                const r = new FileReader();
+                r.onload = () => this._load(r.result);
+                r.readAsText(f);
+            });
+            input.click();
+        });
+        panel.querySelector('.rx-sub-clear').addEventListener('click', () => {
+            this._cues = [];
+            if (this._overlayEl) this._overlayEl.style.display = 'none';
+            const s = panel.querySelector('.rx-sub-status'); if (s) s.textContent = '';
+            Transcripts?._loadExternalCues?.([]);
+        });
+    },
+
+    init() {
+        if (!Settings.get(this.id) || !Page.isWatch()) return;
+        this._styleEl = injectStyle(this._css, 'rx-subsidecar-css');
+        waitFor('.media-description, .media-description-section', 12000).then(() => {
+            setTimeout(() => this._mount(), 900);
+        }).catch(() => {});
+    },
+
+    destroy() {
+        this._styleEl?.remove();
+        this._panel?.remove();
+        this._overlayEl?.remove();
+        const v = qs('video');
+        if (v && this._timeHandler) v.removeEventListener('timeupdate', this._timeHandler);
+    }
+};
+
+// ═══════════════════════════════════════════
+//  FEATURE: Transcripts (clickable transcript panel)
+// ═══════════════════════════════════════════
+const Transcripts = {
+    id: 'transcripts',
+    name: 'Transcripts',
+    _styleEl: null,
+    _panel: null,
+    _cues: [],
+
+    _css: `
+        .rx-trans-panel {
+            margin: 8px 0; padding: 10px;
+            background: rgba(203,166,247,0.06); border: 1px solid rgba(203,166,247,0.22);
+            border-radius: 8px;
+        }
+        .rx-trans-title { font: 700 11px/1 system-ui, sans-serif; color: #cba6f7; margin-bottom: 6px; text-transform: uppercase; }
+        .rx-trans-hint { font: 11px system-ui; color: #6c7086; margin-bottom: 6px; }
+        .rx-trans-list { max-height: 300px; overflow-y: auto; display: flex; flex-direction: column; gap: 2px; }
+        .rx-trans-row {
+            display: flex; gap: 8px; padding: 4px 6px; cursor: pointer;
+            border-radius: 4px; font: 12px/1.4 system-ui;
+        }
+        .rx-trans-row:hover { background: rgba(203,166,247,0.1); }
+        .rx-trans-row .rx-tr-time {
+            color: #cba6f7; font-weight: 600; font-variant-numeric: tabular-nums;
+            min-width: 52px; flex-shrink: 0;
+        }
+        .rx-trans-search {
+            width: 100%; background: rgba(49,50,68,0.5);
+            border: 1px solid rgba(255,255,255,0.08); border-radius: 6px;
+            padding: 5px 8px; color: #cdd6f4; font-size: 11px; margin-bottom: 6px; outline: none;
+        }
+    `,
+
+    _fmt(t) {
+        t = Math.max(0, Math.floor(t));
+        const h = Math.floor(t / 3600), m = Math.floor((t % 3600) / 60), s = t % 60;
+        return (h ? h + ':' + String(m).padStart(2, '0') : m) + ':' + String(s).padStart(2, '0');
+    },
+
+    _render() {
+        if (!this._panel) return;
+        const list = this._panel.querySelector('.rx-trans-list');
+        list.innerHTML = '';
+        if (!this._cues.length) {
+            list.innerHTML = '<div class="rx-trans-hint">No transcript loaded. Load a VTT/SRT via the Subtitles panel.</div>';
+            return;
+        }
+        for (const c of this._cues) {
+            const row = document.createElement('div');
+            row.className = 'rx-trans-row';
+            const ts = document.createElement('span'); ts.className = 'rx-tr-time'; ts.textContent = this._fmt(c.start);
+            const tx = document.createElement('span'); tx.textContent = c.text;
+            row.append(ts, tx);
+            row.addEventListener('click', () => {
+                const v = qs('video');
+                if (v) { v.currentTime = c.start; v.play().catch(() => {}); }
+            });
+            list.appendChild(row);
+        }
+    },
+
+    _filter(q) {
+        q = (q || '').toLowerCase();
+        const rows = this._panel?.querySelectorAll('.rx-trans-row') || [];
+        for (const row of rows) {
+            const t = row.textContent.toLowerCase();
+            row.style.display = !q || t.includes(q) ? '' : 'none';
+        }
+    },
+
+    _loadExternalCues(cues) {
+        this._cues = cues || [];
+        this._render();
+    },
+
+    _mount() {
+        const host = qs('.media-description-section, .media-description');
+        if (!host || this._panel) return;
+        const panel = document.createElement('div');
+        panel.className = 'rx-trans-panel';
+        panel.innerHTML = `
+            <div class="rx-trans-title">Transcript</div>
+            <input type="text" class="rx-trans-search" placeholder="Search transcript...">
+            <div class="rx-trans-list"></div>`;
+        host.prepend(panel);
+        this._panel = panel;
+        panel.querySelector('.rx-trans-search').addEventListener('input', (e) => this._filter(e.target.value));
+        this._render();
+    },
+
+    init() {
+        if (!Settings.get(this.id) || !Page.isWatch()) return;
+        this._styleEl = injectStyle(this._css, 'rx-transcripts-css');
+        waitFor('.media-description, .media-description-section', 12000).then(() => {
+            setTimeout(() => this._mount(), 950);
+        }).catch(() => {});
+    },
+
+    destroy() {
+        this._styleEl?.remove();
+        this._panel?.remove();
+    }
+};
+
+// ═══════════════════════════════════════════
+//  FEATURE: Low-Bitrate MP4 (for background listening)
+// ═══════════════════════════════════════════
+// Note: true audio-only extraction from a TS/HLS source requires an audio
+// demuxer (e.g. ffmpeg.wasm) we don't ship. Instead we fetch the lowest
+// bandwidth variant which is full-video-but-tiny, suitable for listening.
+// The setting key stays `audioOnly` for compatibility with saved settings.
+const AudioOnly = {
+    id: 'audioOnly',
+    name: 'Low-Bitrate MP4',
+    _styleEl: null,
+    _obs: null,
+    _busy: false,
+
+    _css: `
+        .rx-dl-audio-btn {
+            display: block; width: 100%; margin-top: 8px;
+            background: rgba(249,226,175,0.12); border: 1px solid rgba(249,226,175,0.3);
+            color: #f9e2af; border-radius: 8px; padding: 10px; cursor: pointer;
+            font: 600 12px/1 system-ui, sans-serif;
+            transition: background .15s;
+        }
+        .rx-dl-audio-btn:hover { background: rgba(249,226,175,0.2); }
+        .rx-dl-audio-btn:disabled { opacity: 0.55; cursor: progress; }
+        .rx-dl-audio-note {
+            font: 10px/1.4 system-ui, sans-serif; color: var(--rx-subtext, #a6adc8);
+            margin-top: 4px; padding: 0 4px;
+        }
+    `,
+
+    async _extractAudio() {
+        if (this._busy) return;
+        const panel = qs('#rx-tab-download .rx-dl-body');
+        if (!panel) return;
+        this._busy = true;
+        const btn = qs('.rx-dl-audio-btn');
+        if (btn) btn.disabled = true;
+
+        const status = document.createElement('div');
+        status.className = 'rx-dl-status';
+        panel.appendChild(status);
+        const setStatus = (m) => { status.textContent = m; };
+        try {
+            setStatus('Fetching embed data...');
+            const embedId = VideoDownloader._getEmbedId();
+            if (!embedId) throw new Error('No embed id');
+            const data = VideoDownloader._embedData || await VideoDownloader._fetchEmbedData(embedId);
+            VideoDownloader._embedData = data;
+            const hls = data.u?.hls?.auto?.url || data.ua?.hls?.auto?.url ||
+                `https://rumble.com/hls-vod/${embedId.replace('v', '')}/playlist.m3u8`;
+            const master = await fetch(hls).then((r) => r.text());
+            const variants = VideoDownloader._parseMasterPlaylist(master, hls);
+            const variant = [...variants].sort((a, b) => (a.bandwidth || 0) - (b.bandwidth || 0))[0];
+            if (!variant) throw new Error('No stream variant found');
+            const vtxt = await fetch(variant.url).then((r) => r.text());
+            const segUrls = VideoDownloader._parseSegmentPlaylist(vtxt, variant.url);
+            if (!segUrls.length) throw new Error('No segments in playlist');
+
+            const buffers = [];
+            const CONCURRENT = 6;
+            for (let i = 0; i < segUrls.length; i += CONCURRENT) {
+                const batch = segUrls.slice(i, i + CONCURRENT);
+                const results = await Promise.all(batch.map((u) => fetch(u).then((r) => r.arrayBuffer())));
+                buffers.push(...results);
+                setStatus(`Downloading ${buffers.length}/${segUrls.length}...`);
+            }
+            setStatus('Packaging MP4...');
+            const blob = await VideoDownloader._transmuxWithWorker(buffers);
+            const title = VideoDownloader._getTitle();
+            const tag = variant.height ? `${variant.height}p` : 'lo';
+            VideoDownloader._triggerSave(blob, `${title} - ${tag}.mp4`, 'video/mp4');
+            setStatus('Saved. Low-bitrate MP4 is full video at the smallest size — good for listening.');
+        } catch (e) {
+            setStatus('Error: ' + e.message);
+        } finally {
+            this._busy = false;
+            if (btn) btn.disabled = false;
+        }
+    },
+
+    _mountBtn() {
+        const body = qs('#rx-tab-download .rx-dl-body');
+        if (!body || qs('.rx-dl-audio-btn')) return;
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'rx-dl-audio-btn';
+        btn.textContent = 'Low-Bitrate MP4 (for listening)';
+        btn.addEventListener('click', () => this._extractAudio());
+        body.appendChild(btn);
+        const note = document.createElement('div');
+        note.className = 'rx-dl-audio-note';
+        note.textContent = 'Fetches the smallest video variant. Not audio-only — saves as .mp4 at lowest quality.';
+        body.appendChild(note);
+    },
+
+    init() {
+        if (!Settings.get(this.id) || !Page.isWatch()) return;
+        this._styleEl = injectStyle(this._css, 'rx-audioonly-css');
+        this._obs = new MutationObserver(() => {
+            const body = qs('#rx-tab-download .rx-dl-body');
+            if (body && body.children.length && !body.querySelector('.rx-dl-audio-btn')) {
+                this._mountBtn();
+            }
+        });
+        this._obs.observe(document.body, { childList: true, subtree: true });
+    },
+
+    destroy() {
+        this._styleEl?.remove();
+        this._obs?.disconnect();
+    }
+};
+
+// ═══════════════════════════════════════════
+//  FEATURE: Batch Download (multi-select from feed)
+// ═══════════════════════════════════════════
+const BatchDownload = {
+    id: 'batchDownload',
+    name: 'Batch Download',
+    _styleEl: null,
+    _obs: null,
+    _queue: null,
+    _selected: null,
+    _busy: false,
+
+    _css: `
+        .rx-batch-chk {
+            position: absolute; top: 6px; left: 6px; z-index: 4;
+            width: 20px; height: 20px; border-radius: 4px;
+            background: rgba(0,0,0,0.7); border: 2px solid rgba(255,255,255,0.5);
+            cursor: pointer; display: flex; align-items: center; justify-content: center;
+            opacity: 0; transition: opacity .15s;
+        }
+        .videostream:hover .rx-batch-chk,
+        .rx-batch-mode .rx-batch-chk { opacity: 1; }
+        .rx-batch-chk.checked {
+            background: var(--rx-accent, #89b4fa); border-color: var(--rx-accent, #89b4fa);
+        }
+        .rx-batch-chk.checked::after { content: '✓'; color: #0f0f0f; font: 700 12px system-ui; }
+
+        .rx-batch-bar {
+            position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
+            z-index: 10020; display: flex; gap: 10px; align-items: center;
+            background: rgba(30,30,46,0.97); border: 1px solid rgba(137,180,250,0.3);
+            border-radius: 12px; padding: 10px 14px;
+            font: 600 12px system-ui, sans-serif; color: #cdd6f4;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+            opacity: 0; pointer-events: none; transition: opacity .2s, transform .2s;
+        }
+        .rx-batch-bar.visible { opacity: 1; pointer-events: auto; transform: translateX(-50%) translateY(0); }
+        .rx-batch-bar button {
+            background: rgba(137,180,250,0.15); border: 1px solid rgba(137,180,250,0.3);
+            color: var(--rx-accent, #89b4fa); border-radius: 6px; padding: 5px 10px;
+            cursor: pointer; font: 600 11px system-ui;
+        }
+        .rx-batch-bar button:hover { background: rgba(137,180,250,0.25); }
+        .rx-batch-bar .rx-batch-clear { color: #f38ba8; border-color: rgba(243,139,168,0.3); background: rgba(243,139,168,0.1); }
+    `,
+
+    _attachToCard(card) {
+        if (card.dataset.rxBatch) return;
+        card.dataset.rxBatch = '1';
+        card.style.position = card.style.position || 'relative';
+        const chk = document.createElement('div');
+        chk.className = 'rx-batch-chk';
+        chk.addEventListener('click', (e) => {
+            e.preventDefault(); e.stopPropagation();
+            chk.classList.toggle('checked');
+            const a = card.querySelector('a[href*="/v"]');
+            const url = a ? a.href : '';
+            if (!url) return;
+            if (chk.classList.contains('checked')) this._selected.add(url);
+            else this._selected.delete(url);
+            this._updateBar();
+        });
+        card.appendChild(chk);
+    },
+
+    _scan() {
+        for (const c of qsa('.videostream, article.video-item')) this._attachToCard(c);
+    },
+
+    _updateBar() {
+        if (!this._queue) return;
+        const bar = this._queue;
+        const count = this._selected.size;
+        bar.querySelector('.rx-batch-count').textContent = `${count} selected`;
+        bar.classList.toggle('visible', count > 0);
+    },
+
+    _extractEmbedId(url) {
+        try {
+            const u = new URL(url, location.origin);
+            const m = u.pathname.match(/^\/(v[a-z0-9]+)/i);
+            return m ? m[1] : null;
+        } catch { return null; }
+    },
+
+    _titleFromUrl(url) {
+        try {
+            const u = new URL(url, location.origin);
+            const slug = u.pathname
+                .replace(/^\/v[a-z0-9]+-?/i, '')
+                .replace(/\.html?$/i, '');
+            const decoded = decodeURIComponent(slug || 'rumble_video');
+            return decoded.replace(/[<>:"/\\|?*\u0000-\u001f]/g, '_').substring(0, 80) || 'rumble_video';
+        } catch { return 'rumble_video'; }
+    },
+
+    async _downloadOne(url) {
+        const embedId = this._extractEmbedId(url);
+        if (!embedId) throw new Error('Not a Rumble video URL');
+        const data = await VideoDownloader._fetchEmbedData(embedId);
+        const qualities = VideoDownloader._parseQualities(data);
+        // Prefer a direct MP4 (fastest); HLS-only variants need transmux which
+        // is too expensive to run in a batch.
+        const pick = qualities.find((q) => q.directUrl);
+        if (!pick) throw new Error('No direct MP4 available');
+        const title = this._titleFromUrl(url);
+        await new Promise((resolve) => {
+            chrome.runtime.sendMessage({
+                action: 'download',
+                data: { url: pick.directUrl, filename: `${title} - ${pick.label}.mp4` },
+            }, () => resolve());
+        });
+    },
+
+    async _downloadAll() {
+        if (this._busy) return;
+        const items = [...this._selected];
+        if (!items.length) return;
+        const status = this._queue.querySelector('.rx-batch-status');
+        const CONCURRENT = 3;
+        this._busy = true;
+        let done = 0;
+        let failed = 0;
+        const queue = [...items];
+        const render = () => { status.textContent = `Downloading ${done + failed}/${items.length}...`; };
+        render();
+
+        const worker = async () => {
+            while (queue.length) {
+                const url = queue.shift();
+                try {
+                    await this._downloadOne(url);
+                    done++;
+                } catch (err) {
+                    failed++;
+                    console.warn('[RumbleX] batch item failed:', url, err);
+                }
+                render();
+            }
+        };
+        try {
+            await Promise.all(
+                Array.from({ length: Math.min(CONCURRENT, items.length) }, () => worker())
+            );
+        } finally {
+            this._busy = false;
+        }
+        status.textContent = failed
+            ? `Done: ${done} saved, ${failed} failed (see console for details)`
+            : `Done: ${done} saved`;
+        setTimeout(() => {
+            this._selected.clear();
+            for (const c of qsa('.rx-batch-chk.checked')) c.classList.remove('checked');
+            this._updateBar();
+            status.textContent = '';
+        }, 3500);
+    },
+
+    _mountBar() {
+        if (this._queue) return;
+        const bar = document.createElement('div');
+        bar.className = 'rx-batch-bar';
+        bar.innerHTML = `
+            <span class="rx-batch-count">0 selected</span>
+            <button class="rx-batch-go">Download all</button>
+            <button class="rx-batch-clear">Clear</button>
+            <span class="rx-batch-status" style="color:#a6adc8;font-size:11px;"></span>`;
+        document.body.appendChild(bar);
+        bar.querySelector('.rx-batch-go').addEventListener('click', () => this._downloadAll());
+        bar.querySelector('.rx-batch-clear').addEventListener('click', () => {
+            this._selected.clear();
+            for (const c of qsa('.rx-batch-chk.checked')) c.classList.remove('checked');
+            this._updateBar();
+        });
+        this._queue = bar;
+    },
+
+    init() {
+        if (!Settings.get(this.id)) return;
+        if (!Page.isFeed() && !Page.isChannel() && !Page.isSearch() && !Page.isHome()) return;
+        this._styleEl = injectStyle(this._css, 'rx-batch-css');
+        this._selected = new Set();
+        this._mountBar();
+        this._scan();
+        this._obs = new MutationObserver(() => {
+            clearTimeout(this._t);
+            this._t = setTimeout(() => this._scan(), 150);
+        });
+        this._obs.observe(document.body, { childList: true, subtree: true });
+    },
+
+    destroy() {
+        this._styleEl?.remove();
+        this._obs?.disconnect();
+        this._queue?.remove();
+        for (const c of qsa('.rx-batch-chk')) c.remove();
+        clearTimeout(this._t);
+    }
+};
+
+// ═══════════════════════════════════════════
+//  RES PORT — CSS-toggle registry + factory
+// ═══════════════════════════════════════════
+// Ported from "Rumble Enhancement Suite" userscript (v11.0 by Matthew Parker).
+// Every entry here becomes its own RumbleX feature module with identical
+// init/destroy semantics as the handwritten modules. Consolidating them
+// into a registry keeps the file readable while still giving each feature
+// a dedicated setting key, panel card, and hot-reload hook.
+//
+// Shape: { id, label, desc, css, page?, default? }
+//   page: 'watch' | 'feed' | 'home' | 'channel' | 'live' (optional gate)
+//   default: defaults to `false` — all hide-X toggles ship opt-in so the
+//   port doesn't silently change the user's feed on update.
+const RX_CSS_TOGGLES = [
+    // ── Main Page Layout ────────────────────────────────────
+    { id: 'widenSearchBar', label: 'Widen Search Bar', desc: 'Expand the search bar to fill available header space.',
+        css: `.header .header-div { display: flex; align-items: center; gap: 1rem; padding-right: 1.5rem; box-sizing: border-box; } .header-search { flex-grow: 1; max-width: none !important; } .header-search .header-search-field { width: 100% !important; }` },
+    { id: 'hideUploadIcon', label: 'Hide Upload Icon', desc: 'Hide the upload/stream-live icon in the header.',
+        css: `button.header-upload { display: none !important; }` },
+    { id: 'hideHeaderAd', label: 'Hide "Go Ad-Free" Button', desc: 'Hide the "Go Ad-Free" button in the header.',
+        css: `span.hidden.lg\\:flex:has(button[hx-get*="premium-value-prop"]) { display: none !important; }` },
+    { id: 'hideProfileBacksplash', label: 'Hide Profile Backsplash', desc: 'Hide the large header image on channel profiles.',
+        css: `div.channel-header--backsplash { display: none !important; } html.main-menu-mode-permanent { margin-top: 30px !important; }`, page: 'channel' },
+    { id: 'hideFeaturedBanner', label: 'Hide Featured Banner', desc: 'Hide the top category banner on the home page.',
+        css: `div.homepage-featured { display: none !important; }`, page: 'home' },
+    { id: 'hideEditorPicks', label: "Hide Editor Picks", desc: "Hide the main 'Editor Picks' row on the home page.",
+        css: `#section-editor-picks { display: none !important; }`, page: 'home' },
+    { id: 'hideTopLiveCategories', label: "Hide 'Top Live' Row", desc: "Hide the 'Top Live Categories' row on the home page.",
+        css: `section#section-top-live { display: none !important; }`, page: 'home' },
+    { id: 'hidePremiumRow', label: "Hide Premium Row", desc: "Hide the Rumble Premium row on the home page.",
+        css: `section#section-premium-videos { display: none !important; }`, page: 'home' },
+    { id: 'hideHomepageAd', label: "Hide Ad Section (home)", desc: "Hide the ad container on the home page.",
+        css: `section.homepage-section:has(.js-rac-desktop-container) { display: none !important; }`, page: 'home' },
+    { id: 'hideForYouRow', label: "Hide 'For You' Row", desc: "Hide 'For You' recommendations on the home page.",
+        css: `section#section-personal-recommendations { display: none !important; }`, page: 'home' },
+    { id: 'hideGamingRow', label: "Hide Gaming Row", desc: "Hide the Gaming row on the home page.",
+        css: `section#section-gaming { display: none !important; }`, page: 'home' },
+    { id: 'hideFinanceRow', label: "Hide Finance & Crypto Row", desc: "Hide the Finance & Crypto row on the home page.",
+        css: `section#section-finance { display: none !important; }`, page: 'home' },
+    { id: 'hideLiveRow', label: "Hide Live Row", desc: "Hide the Live row on the home page.",
+        css: `section#section-live-videos { display: none !important; }`, page: 'home' },
+    { id: 'hideFeaturedPlaylistsRow', label: "Hide Featured Playlists", desc: "Hide the Featured Playlists row on the home page.",
+        css: `section#section-featured-playlists { display: none !important; }`, page: 'home' },
+    { id: 'hideSportsRow', label: "Hide Sports Row", desc: "Hide the Sports row on the home page.",
+        css: `section#section-sports { display: none !important; }`, page: 'home' },
+    { id: 'hideViralRow', label: "Hide Viral Row", desc: "Hide the Viral row on the home page.",
+        css: `section#section-viral { display: none !important; }`, page: 'home' },
+    { id: 'hidePodcastsRow', label: "Hide Podcasts Row", desc: "Hide the Podcasts row on the home page.",
+        css: `section#section-podcasts { display: none !important; }`, page: 'home' },
+    { id: 'hideLeaderboardRow', label: "Hide Leaderboard Row", desc: "Hide the Leaderboard row on the home page.",
+        css: `section#section-leaderboard { display: none !important; }`, page: 'home' },
+    { id: 'hideVlogsRow', label: "Hide Vlogs Row", desc: "Hide the Vlogs row on the home page.",
+        css: `section#section-vlogs { display: none !important; }`, page: 'home' },
+    { id: 'hideNewsRow', label: "Hide News Row", desc: "Hide the News row on the home page.",
+        css: `section#section-news { display: none !important; }`, page: 'home' },
+    { id: 'hideScienceRow', label: "Hide Health & Science Row", desc: "Hide the Health & Science row on the home page.",
+        css: `section#section-science { display: none !important; }`, page: 'home' },
+    { id: 'hideMusicRow', label: "Hide Music Row", desc: "Hide the Music row on the home page.",
+        css: `section#section-music { display: none !important; }`, page: 'home' },
+    { id: 'hideEntertainmentRow', label: "Hide Entertainment Row", desc: "Hide the Entertainment row on the home page.",
+        css: `section#section-entertainment { display: none !important; }`, page: 'home' },
+    { id: 'hideCookingRow', label: "Hide Cooking Row", desc: "Hide the Cooking row on the home page.",
+        css: `section#section-cooking { display: none !important; }`, page: 'home' },
+    { id: 'hideFooter', label: 'Hide Footer', desc: 'Remove the site footer entirely.',
+        css: `footer.page__footer.foot.nav--transition { display: none !important; }` },
+
+    // ── Video Page Layout ────────────────────────────────────
+    { id: 'hideRelatedOnLive', label: 'Hide Related Media on Live', desc: 'Hide the "Related Media" section below the player on live streams.',
+        css: `.media-page-related-media-desktop-floating { display: none !important; }`, page: 'watch' },
+    { id: 'hideRelatedSidebar', label: 'Hide Related Sidebar', desc: 'Hide the related-videos sidebar for a focused view.',
+        css: `aside.media-page-related-media-desktop-sidebar { display: none !important; }`, page: 'watch' },
+    { id: 'widenContent', label: 'Widen Content Area', desc: 'Expand the main content area. Best used with the related sidebar hidden.',
+        css: `body:has(aside.media-page-related-media-desktop-sidebar[style*="display: none"]) .main-and-sidebar .main-content { width: 100% !important; max-width: 100% !important; }`, page: 'watch' },
+    { id: 'hideVideoDescription', label: 'Hide Video Description', desc: 'Hide the description, tags, and views block.',
+        css: `.media-description-section { display: none !important; }`, page: 'watch' },
+    { id: 'hidePausedVideoAds', label: 'Hide Paused-Video Ads', desc: 'Hide the ad overlay that appears when you pause a video.',
+        css: `canvas#pause-ads__canvas { display: none !important; }`, page: 'watch' },
+
+    // ── Player Controls (hide-X) ─────────────────────────────
+    { id: 'hideRewindButton', label: 'Hide Rewind Button', desc: 'Hide the rewind button in the player controls.',
+        css: `div[title="Rewind"] { display: none !important; }`, page: 'watch' },
+    { id: 'hideFastForwardButton', label: 'Hide Fast Forward', desc: 'Hide the fast-forward button in the player controls.',
+        css: `div[title="Fast forward"] { display: none !important; }`, page: 'watch' },
+    { id: 'hideCCButton', label: 'Hide Closed Captions', desc: 'Hide the (CC) button in the player controls.',
+        css: `div[title="Toggle closed captions"] { display: none !important; }`, page: 'watch' },
+    { id: 'hideAutoplayButton', label: 'Hide Autoplay Toggle', desc: 'Hide the autoplay-toggle switch in player controls.',
+        css: `div[title="Autoplay"] { display: none !important; }`, page: 'watch' },
+    { id: 'hideTheaterButton', label: 'Hide Theater Button', desc: 'Hide the theater-mode button in player controls.',
+        css: `div[title="Toggle theater mode"] { display: none !important; }`, page: 'watch' },
+    { id: 'hidePipButton', label: 'Hide Picture-in-Picture', desc: 'Hide the PiP button in player controls.',
+        css: `div[title="Toggle picture-in-picture mode"] { display: none !important; }`, page: 'watch' },
+    { id: 'hideFullscreenButton', label: 'Hide Fullscreen Button', desc: 'Hide the fullscreen button in player controls.',
+        css: `div[title="Toggle fullscreen"] { display: none !important; }`, page: 'watch' },
+    { id: 'hidePlayerRumbleLogo', label: 'Hide Rumble Logo (player)', desc: 'Hide the Rumble logo inside the player.',
+        css: `div:has(> div > svg[viewBox="0 0 140 35"]) { display: none !important; }`, page: 'watch' },
+    { id: 'hidePlayerGradient', label: 'Hide Player Gradient', desc: 'Remove the cloudy gradient at the bottom of the player.',
+        css: `.touched_overlay > div[style*="linear-gradient"] { display: none !important; }`, page: 'watch' },
+
+    // ── Video Buttons (hide-X) ───────────────────────────────
+    { id: 'hideLikeDislikeButton', label: 'Hide Like/Dislike', desc: 'Hide the like and dislike buttons below the player.',
+        css: `div[data-js="media_action_vote_button"] { display: none !important; }`, page: 'watch' },
+    { id: 'hideShareButton', label: 'Hide Share Button', desc: 'Hide the share button below the player.',
+        css: `div[data-js="video_action_button_visible_location"][data-type="share"] { display: none !important; }`, page: 'watch' },
+    { id: 'hideRepostButton', label: 'Hide Repost Button', desc: 'Hide the repost button below the player.',
+        css: `div[data-js="video_action_button_visible_location"][data-type="reposts"] { display: none !important; }`, page: 'watch' },
+    { id: 'hideEmbedButton', label: 'Hide Embed Button', desc: 'Hide the embed button below the player.',
+        css: `div[data-js="video_action_button_visible_location"][data-type="embed"] { display: none !important; }`, page: 'watch' },
+    { id: 'hideSaveButton', label: 'Hide Save Button', desc: 'Hide the save-to-playlist button below the player.',
+        css: `div[data-js="video_action_button_visible_location"][data-type="playlist"] { display: none !important; }`, page: 'watch' },
+    { id: 'hideCommentButton', label: 'Hide Comment Button', desc: 'Hide the main comment button below the player.',
+        css: `div[data-js="video_action_button_visible_location"][data-type="comments"] { display: none !important; }`, page: 'watch' },
+    { id: 'hideReportButton', label: 'Hide 3-dot Menu', desc: 'Hide the 3-dot menu containing the report option.',
+        css: `.video-action-sub-menu-wrapper { display: none !important; }`, page: 'watch' },
+    { id: 'hidePremiumJoinButtons', label: 'Hide Premium/Join', desc: 'Hide the "Rumble Premium" and "Join" buttons.',
+        css: `button[hx-get*="premium-value-prop"], button[data-js="locals-subscription-button"] { display: none !important; }`, page: 'watch' },
+
+    // ── Comments ─────────────────────────────────────────────
+    { id: 'moveReplyButton', label: 'Move Reply Button', desc: 'Move the reply button next to the like/dislike buttons.',
+        css: `.comment-actions-wrapper { display: flex; align-items: center; } .comment-actions-wrapper .comment-actions { margin-left: 12px; }`, page: 'watch' },
+    { id: 'hideCommentReportLink', label: 'Hide Comment Report Link', desc: 'Hide the "report" link on user comments.',
+        css: `.comments-action-report.comments-action { display: none !important; }`, page: 'watch' },
+
+    // ── Chat ─────────────────────────────────────────────────
+    { id: 'cleanLiveChat', label: 'Clean Live Chat UI', desc: 'Hide pinned messages, chat header, and Rant buttons for a cleaner live-chat look.',
+        css: `
+            div.chat-pinned-ui__pinned-message-container,
+            div.chat__pinned-ui-container { display: none !important; }
+            div.chat--header { display: none !important; }
+            section.chat.relative { margin-top: -71px !important; height: 715px !important; }
+            button.media-page-chat-container-toggle-btn { margin-top: 580px !important; margin-left: -48px !important; }
+            div.chat-message-form-section.chat-message-form-section-justify-between,
+            .chat-message-form-section .user-image { display: none !important; }
+        `, page: 'watch' },
+];
+
+// Factory — turns an RX_CSS_TOGGLES entry into a feature module object with
+// RumbleX's standard init/destroy interface.
+function makeCssToggleFeature(entry) {
+    const pagePredicates = {
+        watch: () => Page.isWatch(),
+        home: () => Page.isHome(),
+        feed: () => Page.isFeed(),
+        channel: () => Page.isChannel(),
+        live: () => Page.isLive(),
+    };
+    return {
+        id: entry.id,
+        name: entry.label,
+        _styleEl: null,
+        init() {
+            if (!Settings.get(this.id)) return;
+            if (entry.page && pagePredicates[entry.page] && !pagePredicates[entry.page]()) return;
+            this._styleEl = injectStyle(entry.css, 'rx-css-' + entry.id);
+        },
+        destroy() {
+            this._styleEl?.remove();
+            this._styleEl = null;
+        },
+    };
+}
+
+// Materialize all CSS-toggle modules eagerly — they're cheap and referenced
+// by the features[] array below.
+const RX_CSS_FEATURES = RX_CSS_TOGGLES.map(makeCssToggleFeature);
+
+// ═══════════════════════════════════════════
+//  RES PORT — Auto-hide Header
+// ═══════════════════════════════════════════
+const AutoHideHeader = {
+    id: 'autoHideHeader',
+    name: 'Auto-hide Header',
+    _styleEl: null,
+    _handler: null,
+
+    _css: `
+        body.rx-autohide-header-active header.header {
+            position: fixed; top: 0; left: 0; right: 0; z-index: 1001;
+            opacity: 0; transition: opacity 0.3s ease-in-out; pointer-events: none;
+        }
+        body.rx-autohide-header-active.rx-header-visible header.header {
+            opacity: 1; pointer-events: auto;
+        }
+        body.rx-autohide-header-active { padding-top: 0 !important; }
+    `,
+
+    init() {
+        if (!Settings.get(this.id)) return;
+        this._styleEl = injectStyle(this._css, 'rx-autohide-header-css');
+        document.body.classList.add('rx-autohide-header-active');
+        this._handler = (e) => {
+            if (e.clientY < 80) {
+                document.body.classList.add('rx-header-visible');
+            } else if (!e.target.closest || !e.target.closest('header.header')) {
+                document.body.classList.remove('rx-header-visible');
+            }
+        };
+        document.addEventListener('mousemove', this._handler);
+    },
+    destroy() {
+        if (this._handler) document.removeEventListener('mousemove', this._handler);
+        this._handler = null;
+        this._styleEl?.remove();
+        document.body.classList.remove('rx-autohide-header-active', 'rx-header-visible');
+    },
+};
+
+// ═══════════════════════════════════════════
+//  RES PORT — Auto-hide Navigation Sidebar
+// ═══════════════════════════════════════════
+const AutoHideNavSidebar = {
+    id: 'autoHideNavSidebar',
+    name: 'Auto-hide Nav Sidebar',
+    _styleEl: null,
+    _trigger: null,
+
+    _css: `
+        body.rx-autohide-nav-active nav.navs {
+            position: fixed; top: 0; left: 0;
+            transform: translateX(-100%);
+            transition: transform 0.3s ease-in-out, opacity 0.3s ease-in-out;
+            z-index: 1002; height: 100vh; opacity: 0.95; visibility: hidden;
+        }
+        body.rx-autohide-nav-active main.nav--transition { margin-left: 0 !important; }
+        #rx-nav-sidebar-trigger {
+            position: fixed; top: 80px; left: 0; width: 30px; height: calc(100% - 80px); z-index: 1001;
+        }
+        #rx-nav-sidebar-trigger:hover + nav.navs,
+        body.rx-autohide-nav-active nav.navs:hover {
+            transform: translateX(0); opacity: 1; visibility: visible;
+        }
+    `,
+
+    init() {
+        if (!Settings.get(this.id)) return;
+        this._styleEl = injectStyle(this._css, 'rx-autohide-nav-css');
+        document.body.classList.add('rx-autohide-nav-active');
+        if (!qs('#rx-nav-sidebar-trigger')) {
+            const trigger = document.createElement('div');
+            trigger.id = 'rx-nav-sidebar-trigger';
+            document.body.appendChild(trigger);
+            this._trigger = trigger;
+        }
+    },
+    destroy() {
+        this._styleEl?.remove();
+        document.body.classList.remove('rx-autohide-nav-active');
+        qs('#rx-nav-sidebar-trigger')?.remove();
+        this._trigger = null;
+    },
+};
+
+// ═══════════════════════════════════════════
+//  RES PORT — Auto-like
+// ═══════════════════════════════════════════
+const AutoLike = {
+    id: 'autoLike',
+    name: 'Auto Like',
+    _clicked: false,
+    // Generation counter guards against a late `waitFor` resolution firing a
+    // click after the feature has been destroyed and re-initialised (or just
+    // disabled). Each `init()` bumps `_gen`; the promise callback checks that
+    // it still matches before acting.
+    _gen: 0,
+
+    init() {
+        if (!Settings.get(this.id) || !Page.isWatch()) return;
+        this._clicked = false;
+        const myGen = ++this._gen;
+        waitFor('button.rumbles-vote-pill-up', 15000).then((btn) => {
+            if (myGen !== this._gen || this._clicked) return;
+            if (!btn.classList.contains('active')) {
+                btn.click();
+                this._clicked = true;
+            }
+        }).catch(() => {});
+    },
+    destroy() {
+        this._gen++; // invalidates any still-pending waitFor promise
+        this._clicked = false;
+    },
+};
+
+// ═══════════════════════════════════════════
+//  RES PORT — Auto Load Comments
+// ═══════════════════════════════════════════
+const AutoLoadComments = {
+    id: 'autoLoadComments',
+    name: 'Auto Load Comments',
+    _handler: null,
+
+    init() {
+        if (!Settings.get(this.id) || !Page.isWatch()) return;
+        const isInView = (el) => {
+            if (!el) return false;
+            const r = el.getBoundingClientRect();
+            return r.top <= (window.innerHeight || document.documentElement.clientHeight);
+        };
+        this._handler = () => {
+            const btn = qs('li.show-more-comments > button');
+            if (btn && isInView(btn)) btn.click();
+        };
+        window.addEventListener('scroll', this._handler, { passive: true });
+    },
+    destroy() {
+        if (this._handler) window.removeEventListener('scroll', this._handler);
+        this._handler = null;
+    },
+};
+
+// ═══════════════════════════════════════════
+//  RES PORT — Full-Width Player (with live two-column mode)
+// ═══════════════════════════════════════════
+const FullWidthPlayer = {
+    id: 'fullWidthPlayer',
+    name: 'Full-Width Player',
+    _styleEl: null,
+    _liveObs: null,
+    _resizeHandler: null,
+    _chatToggleHandler: null,
+
+    _standardCss: `
+        body.rx-full-width-player nav.navs,
+        body.rx-full-width-player aside.media-page-related-media-desktop-sidebar,
+        body.rx-full-width-player #player-spacer { display: none !important; }
+        body.rx-full-width-player main.nav--transition { margin-left: 0 !important; }
+        body.rx-full-width-player .main-and-sidebar { max-width: 100% !important; padding: 0 !important; margin: 0 !important; }
+        body.rx-full-width-player .main-content,
+        body.rx-full-width-player .media-container { width: 100% !important; max-width: 100% !important; }
+        body.rx-full-width-player .video-player,
+        body.rx-full-width-player [id^="vid_v"] {
+            width: 100vw !important;
+            height: calc(100vw * 9 / 16) !important;
+            max-height: 100vh;
+        }
+        body.rx-full-width-player #videoPlayer video { object-fit: contain !important; }
+    `,
+
+    _liveCss: `
+        body.rx-live-two-col:not(.rumble-player--fullscreen) .main-and-sidebar {
+            display: grid !important;
+            grid-template-columns: minmax(0, 1fr) var(--rx-chat-w, 360px);
+            width: 100vw; max-width: 100vw; margin: 0; padding: 0; align-items: stretch;
+        }
+        body.rx-live-two-col:not(.rumble-player--fullscreen) .main-and-sidebar .main-content {
+            display: flex; flex-direction: column;
+        }
+        body.rx-live-two-col:not(.rumble-player--fullscreen) .media-container { flex-grow: 1; }
+        body.rx-live-two-col:not(.rumble-player--fullscreen) aside.media-page-chat-aside-chat {
+            width: var(--rx-chat-w, 360px) !important;
+            min-width: var(--rx-chat-w, 360px) !important;
+            max-width: clamp(320px, var(--rx-chat-w, 360px), 480px) !important;
+            position: relative; z-index: 1;
+        }
+        body.rx-live-two-col:not(.rumble-player--fullscreen) .video-player { margin-top: -30px; }
+        body.rx-live-two-col:not(.rumble-player--fullscreen) .video-player,
+        body.rx-live-two-col:not(.rumble-player--fullscreen) #videoPlayer,
+        body.rx-live-two-col:not(.rumble-player--fullscreen) #videoPlayer > div,
+        body.rx-live-two-col:not(.rumble-player--fullscreen) [id^="vid_v"] {
+            width: 100% !important; height: 100% !important; max-height: none !important; background-color: #000;
+        }
+        body.rx-live-two-col:not(.rumble-player--fullscreen) #videoPlayer video {
+            width: 100% !important; height: 100% !important; object-fit: contain;
+        }
+        body.rx-live-two-col.rx-live-chat-collapsed:not(.rumble-player--fullscreen) .main-and-sidebar {
+            display: block !important;
+        }
+        body.rx-live-two-col.rx-live-chat-collapsed:not(.rumble-player--fullscreen) .video-player,
+        body.rx-live-two-col.rx-live-chat-collapsed:not(.rumble-player--fullscreen) [id^="vid_v"] {
+            width: 100vw !important; height: calc(100vw * 9 / 16) !important; max-height: 100vh !important; margin-top: 0;
+        }
+        @media (max-width: 1100px) {
+            body.rx-live-two-col:not(.rumble-player--fullscreen) .main-and-sidebar {
+                grid-template-columns: 1fr; align-items: start; width: auto; max-width: 100%;
+            }
+            body.rx-live-two-col:not(.rumble-player--fullscreen) aside.media-page-chat-aside-chat {
+                width: 100% !important; min-width: 0 !important; max-width: none !important; height: 70vh;
+            }
+            body.rx-live-two-col:not(.rumble-player--fullscreen) .video-player { margin-top: 0; }
+        }
+        body.rx-live-two-col button.media-page-chat-container-toggle-btn { z-index: 2; }
+    `,
+
+    _activateLive() {
+        document.body.classList.add('rx-live-two-col');
+        const setChatWidthVar = () => {
+            const chat = qs('aside.media-page-chat-aside-chat');
+            let w = 360;
+            if (chat && getComputedStyle(chat).display !== 'none') {
+                const rect = chat.getBoundingClientRect();
+                w = Math.max(320, Math.min(Math.round(rect.width || 360), 480));
+            }
+            document.documentElement.style.setProperty('--rx-chat-w', `${w}px`);
+        };
+        setChatWidthVar();
+        this._resizeHandler = setChatWidthVar;
+        window.addEventListener('resize', this._resizeHandler);
+        waitFor('aside.media-page-chat-aside-chat', 15000).then((chat) => {
+            this._liveObs = new MutationObserver(setChatWidthVar);
+            this._liveObs.observe(chat, { attributes: true, attributeFilter: ['style', 'class'] });
+        }).catch(() => {});
+        this._chatToggleHandler = (e) => {
+            const btn = e.target.closest('[data-js="media_page_chat_container_toggle_btn"]');
+            if (!btn) return;
+            setTimeout(() => {
+                const chat = qs('aside.media-page-chat-aside-chat');
+                const hidden = chat && getComputedStyle(chat).display === 'none';
+                document.body.classList.toggle('rx-live-chat-collapsed', !!hidden);
+            }, 50);
+        };
+        document.addEventListener('click', this._chatToggleHandler, true);
+    },
+
+    init() {
+        if (!Settings.get(this.id) || !Page.isWatch()) return;
+        // Defer so the page's live badge renders first.
+        setTimeout(() => {
+            const isLive = !!qs('.video-header-live-info, .media-header-live-badge, .video-badge--live') || Page.isLive();
+            if (isLive) {
+                this._styleEl = injectStyle(this._liveCss, 'rx-fullwidth-css');
+                this._activateLive();
+            } else {
+                this._styleEl = injectStyle(this._standardCss, 'rx-fullwidth-css');
+                document.body.classList.add('rx-full-width-player');
+            }
+        }, 250);
+    },
+    destroy() {
+        this._liveObs?.disconnect();
+        this._liveObs = null;
+        if (this._resizeHandler) window.removeEventListener('resize', this._resizeHandler);
+        this._resizeHandler = null;
+        if (this._chatToggleHandler) document.removeEventListener('click', this._chatToggleHandler, true);
+        this._chatToggleHandler = null;
+        document.documentElement.style.removeProperty('--rx-chat-w');
+        this._styleEl?.remove();
+        document.body.classList.remove('rx-full-width-player', 'rx-live-two-col', 'rx-live-chat-collapsed');
+    },
+};
+
+// ═══════════════════════════════════════════
+//  RES PORT — Adaptive Live Layout
+// ═══════════════════════════════════════════
+// On live pages, widens the main content whenever chat is visible. Plays
+// nicely with FullWidthPlayer's live mode — but either is usable alone.
+const AdaptiveLiveLayout = {
+    id: 'adaptiveLiveLayout',
+    name: 'Adaptive Live Layout',
+    _obs: null,
+    _styleId: 'rx-adaptive-live-css',
+
+    _applyStyles(isChatVisible) {
+        const css = isChatVisible
+            ? `body:not(.rx-full-width-player):not(.rx-live-two-col) .main-and-sidebar .main-content { width: calc(100% - 350px) !important; max-width: none !important; }`
+            : '';
+        injectStyle(css, this._styleId);
+    },
+
+    init() {
+        if (!Settings.get(this.id) || !Page.isWatch()) return;
+        if (!qs('.video-header-live-info')) return;
+        waitFor('aside.media-page-chat-aside-chat', 15000).then((chat) => {
+            this._obs = new MutationObserver((mutations) => {
+                for (const m of mutations) {
+                    if (m.attributeName === 'style') {
+                        const visible = getComputedStyle(m.target).display !== 'none';
+                        this._applyStyles(visible);
+                    }
+                }
+            });
+            this._obs.observe(chat, { attributes: true, attributeFilter: ['style'] });
+            this._applyStyles(getComputedStyle(chat).display !== 'none');
+        }).catch(() => {});
+    },
+    destroy() {
+        this._obs?.disconnect();
+        this._obs = null;
+        document.getElementById(this._styleId)?.remove();
+    },
+};
+
+// ═══════════════════════════════════════════
+//  RES PORT — Comment Blocking (parallel to ChatUserBlock for comments)
+// ═══════════════════════════════════════════
+const CommentBlocking = {
+    id: 'commentBlocking',
+    name: 'Comment Blocking',
+    _styleEl: null,
+    _obs: null,
+
+    _css: `
+        .rx-blocked-comment { display: none !important; }
+        .rx-comment-block-btn {
+            margin-left: 8px; padding: 2px 8px;
+            background: rgba(243,139,168,0.12); border: 1px solid rgba(243,139,168,0.3);
+            color: #f38ba8; border-radius: 4px; cursor: pointer; opacity: 0;
+            font: 600 10px/1.2 system-ui, sans-serif;
+            transition: opacity .15s, background .15s;
+        }
+        .comment-item:hover .rx-comment-block-btn { opacity: 1; }
+        .rx-comment-block-btn:hover { background: rgba(243,139,168,0.25); }
+    `,
+
+    _blocked() {
+        return new Set((Settings.get('blockedCommenters') || []).map((u) => String(u).toLowerCase()));
+    },
+
+    _apply() {
+        const blocked = this._blocked();
+        for (const c of qsa('li.comment-item[data-username]')) {
+            const u = (c.dataset.username || '').toLowerCase();
+            c.classList.toggle('rx-blocked-comment', !!u && blocked.has(u));
+            if (c.dataset.rxBlockBtn) continue;
+            const meta = c.querySelector('.comments-meta');
+            if (!meta) continue;
+            c.dataset.rxBlockBtn = '1';
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'rx-comment-block-btn';
+            btn.textContent = 'Block';
+            btn.title = `Block ${u} from comments`;
+            btn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                e.preventDefault();
+                const list = Settings.get('blockedCommenters') || [];
+                if (!list.map((x) => String(x).toLowerCase()).includes(u) && u) {
+                    list.push(u);
+                    Settings.set('blockedCommenters', list);
+                }
+                this._apply();
+            });
+            meta.appendChild(btn);
+        }
+    },
+
+    init() {
+        if (!Settings.get(this.id) || !Page.isWatch()) return;
+        this._styleEl = injectStyle(this._css, 'rx-commentblock-css');
+        waitFor('#video-comments, .media-page-comments-container', 15000).then((root) => {
+            this._apply();
+            this._obs = new MutationObserver(() => this._apply());
+            this._obs.observe(root, { childList: true, subtree: true });
+        }).catch(() => {});
+    },
+    destroy() {
+        this._obs?.disconnect();
+        this._obs = null;
+        this._styleEl?.remove();
+        for (const c of qsa('li.comment-item[data-rx-block-btn]')) delete c.dataset.rxBlockBtn;
+        for (const b of qsa('.rx-comment-block-btn')) b.remove();
+    },
+};
+
+// ═══════════════════════════════════════════
+//  RES PORT — Site Theme sync (mirror Rumble's native light/dark/system)
+// ═══════════════════════════════════════════
+const SiteTheme = {
+    id: 'siteTheme',
+    name: 'Site Theme Sync',
+    _obs: null,
+
+    // Settings.get('siteTheme') is a string: 'system' | 'dark' | 'light'
+    _apply(themeValue) {
+        const target = qs(`a.main-menu-item.theme-option[data-theme-option="${themeValue}"]`);
+        if (target instanceof HTMLElement && !target.classList.contains('main-menu-item--active')) {
+            try { target.click(); } catch {}
+        }
+    },
+
+    _sync() {
+        const activeEl = qs('a.main-menu-item.theme-option.main-menu-item--active');
+        const active = activeEl?.dataset?.themeOption || 'system';
+        if (Settings.get('siteTheme') !== active) {
+            Settings.set('siteTheme', active);
+        }
+    },
+
+    init() {
+        if (!Settings.get('siteThemeSync')) return;
+        this._apply(Settings.get('siteTheme') || 'system');
+        waitFor('.theme-option-group', 15000).then((el) => {
+            this._obs = new MutationObserver(() => this._sync());
+            this._obs.observe(el, { attributes: true, subtree: true, attributeFilter: ['class'] });
+        }).catch(() => {});
+    },
+    destroy() {
+        this._obs?.disconnect();
+        this._obs = null;
+    },
+};
+
+// ═══════════════════════════════════════════
 //  FEATURE REGISTRY & INIT
 // ═══════════════════════════════════════════
-const features = [AdNuker, FeedCleanup, HidePremium, CategoryFilter, DarkEnhance, TheaterSplit, VideoDownloader, LogoToFeed, SpeedController, ScrollVolume, AutoMaxQuality, WatchProgress, ChannelBlocker, KeyboardNav, AutoTheater, LiveChatEnhance, VideoTimestamps, ScreenshotBtn, WatchHistoryFeature, AutoplayBlock, SearchHistory, MiniPlayer, VideoStats, LoopControl, QuickBookmark, CommentNav, RantHighlight, RelatedFilter, ExactCounts, ShareTimestamp, ShortsFilter, ChatAutoScroll, AutoExpand, NotifEnhance, PlaylistQuickSave];
+const features = [
+    AdNuker, FeedCleanup, HidePremium, CategoryFilter, DarkEnhance, TheaterSplit,
+    VideoDownloader, LogoToFeed, SpeedController, ScrollVolume, AutoMaxQuality,
+    WatchProgress, ChannelBlocker, KeyboardNav, AutoTheater, LiveChatEnhance,
+    VideoTimestamps, ScreenshotBtn, WatchHistoryFeature, AutoplayBlock,
+    SearchHistory, MiniPlayer, VideoStats, LoopControl, QuickBookmark, CommentNav,
+    RantHighlight, RelatedFilter, ExactCounts, ShareTimestamp, ShortsFilter,
+    ChatAutoScroll, AutoExpand, NotifEnhance, PlaylistQuickSave,
+    // v1.8.0 additions
+    FullTitles, TitleFont, UniqueChatters, ChatUserBlock, ChatSpamDedup,
+    ChatExport, RantPersist, CommentSort, PopoutChat, KeywordFilter,
+    AutoplayScheduler, Chapters, SponsorBlockRX, VideoClips, LiveDVR,
+    SubtitleSidecar, Transcripts, AudioOnly, BatchDownload,
+    // v1.9.0 — Rumble Enhancement Suite port
+    AutoHideHeader, AutoHideNavSidebar, AutoLike, AutoLoadComments,
+    FullWidthPlayer, AdaptiveLiveLayout, CommentBlocking, SiteTheme,
+    ...RX_CSS_FEATURES,
+];
 
 async function boot() {
     await Settings.init();
@@ -6382,15 +10397,126 @@ async function boot() {
             try { feat.init(); } catch (e) { console.error(`[RumbleX] ${feat.id || feat.name} init failed:`, e); }
         }
         try { SettingsPanel.init(); } catch (e) { console.error('[RumbleX] Settings panel init failed:', e); }
+
+        // Surface cross-tab / options-page saves. We don't silently hot-reload
+        // features here because most of them stash state in their init path;
+        // the user-visible toast prompts a reload so the new config actually
+        // takes effect. (Hot-reload still works from the in-page modal via
+        // the Switch change-handler, which destroys + re-inits per feature.)
+        Settings.onExternalChange((isReset) => {
+            try {
+                SettingsPanel._showToast?.(isReset
+                    ? 'RumbleX was reset — reload to see defaults'
+                    : 'Settings changed elsewhere — reload to apply');
+            } catch {}
+        });
+
         console.log(`[RumbleX] v${VERSION} loaded - ${features.filter(f => Settings.get(f.id)).map(f => f.name).join(', ')}`);
     });
 }
 
 boot();
 
-// Listen for popup messages
-chrome.runtime.onMessage.addListener((msg) => {
+// The per-feature localStorage keys we write on Rumble's origin. Kept in one
+// place so the options-page "Reset All Data" action can actually wipe them —
+// the options page lives in the extension origin and cannot touch Rumble's
+// localStorage directly. On reset it messages the active tab to self-clear.
+const RX_LOCAL_STORAGE_KEYS = [
+    'rx_volume',
+    'rx_watch_progress',
+    'rx_watch_history',
+    'rx_search_history',
+    'rx_bookmarks',
+];
+// Plus any key starting with these prefixes (per-video caches).
+const RX_LOCAL_STORAGE_PREFIXES = ['rx_rants_'];
+
+function rxClearLocalStorage() {
+    let cleared = 0;
+    try {
+        for (const k of RX_LOCAL_STORAGE_KEYS) {
+            if (localStorage.getItem(k) !== null) { localStorage.removeItem(k); cleared++; }
+        }
+        // Collect prefix-matched keys first (removing while iterating shifts
+        // indices) then delete.
+        const toDrop = [];
+        for (let i = 0; i < localStorage.length; i++) {
+            const k = localStorage.key(i);
+            if (k && RX_LOCAL_STORAGE_PREFIXES.some((p) => k.startsWith(p))) toDrop.push(k);
+        }
+        for (const k of toDrop) { localStorage.removeItem(k); cleared++; }
+    } catch (e) {
+        console.warn('[RumbleX] localStorage clear failed:', e);
+    }
+    return cleared;
+}
+
+// Read every RumbleX-owned localStorage key on this origin into a plain
+// object. Used by the options page to include per-site data (bookmarks,
+// watch progress, rant archives…) in Export Backup so a reset/restore
+// cycle actually round-trips the user's full state.
+function rxReadLocalStorage() {
+    const out = {};
+    try {
+        for (const k of RX_LOCAL_STORAGE_KEYS) {
+            const v = localStorage.getItem(k);
+            if (v !== null) out[k] = v;
+        }
+        for (let i = 0; i < localStorage.length; i++) {
+            const k = localStorage.key(i);
+            if (!k) continue;
+            if (RX_LOCAL_STORAGE_PREFIXES.some((p) => k.startsWith(p))) {
+                out[k] = localStorage.getItem(k);
+            }
+        }
+    } catch (e) {
+        console.warn('[RumbleX] localStorage read failed:', e);
+    }
+    return out;
+}
+
+// Restore values written by rxReadLocalStorage. Only accepts string values
+// and keys that match our known list or prefixes, so an imported file can't
+// smuggle unrelated keys onto rumble.com's origin.
+function rxWriteLocalStorage(data) {
+    if (!data || typeof data !== 'object') return 0;
+    let written = 0;
+    const allowed = (k) => RX_LOCAL_STORAGE_KEYS.includes(k)
+        || RX_LOCAL_STORAGE_PREFIXES.some((p) => k.startsWith(p));
+    try {
+        for (const [k, v] of Object.entries(data)) {
+            if (typeof k !== 'string' || typeof v !== 'string') continue;
+            if (!allowed(k)) continue;
+            // chrome.storage.local has no quota on file; localStorage does
+            // (5–10 MB). If we blow it, stop writing rather than throw.
+            try { localStorage.setItem(k, v); written++; } catch { break; }
+        }
+    } catch (e) {
+        console.warn('[RumbleX] localStorage write failed:', e);
+    }
+    return written;
+}
+
+// Listen for control messages from popup / background / options.
+chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+    if (!msg || typeof msg !== 'object') return;
     if (msg.action === 'openSettingsModal') {
         document.body.classList.add('rx-panel-open');
+        return;
+    }
+    if (msg.action === 'clearLocalData') {
+        const cleared = rxClearLocalStorage();
+        sendResponse({ ok: true, cleared });
+        return true; // keep the channel open for async sendResponse
+    }
+    if (msg.action === 'getLocalData') {
+        const data = rxReadLocalStorage();
+        sendResponse({ ok: true, data, keys: Object.keys(data).length });
+        return true;
+    }
+    if (msg.action === 'setLocalData') {
+        const written = rxWriteLocalStorage(msg.data);
+        sendResponse({ ok: true, written });
+        return true;
     }
 });
