@@ -1,8 +1,8 @@
 # RumbleX Roadmap
 
-Version: 4.14 — v3.15 Watch History export (SW-fetch + regex parse, no new permissions)
+Version: 4.15 — v3.16 RantStats panel (closes v3.3 acceptance criterion)
 Date: 2026-05-19
-Current shipped: v3.15.0 (extension), v1.8.0 (userscript)
+Current shipped: v3.16.0 (extension), v1.8.0 (userscript)
 
 This roadmap supersedes the v2026-05-19 v3.0 plan. It is the result of a fresh repo audit plus a 60+ source external research sweep (see [Appendix C — Sources](#appendix-c--sources)). It tracks shipped work in the [Recently shipped](#recently-shipped) summary, then prioritises the next ~12 months of work into **Now / Next / Later / Under Consideration / Rejected** tiers with every claim traceable to a source.
 
@@ -91,7 +91,7 @@ Items must be Now-tier if (a) source confirms a fresh platform surface change, O
 ### v3.3 — Side panel + context menus + RantStats-parity panel
 
 - [x] **`chrome.sidePanel` for the Rant panel + Settings panel.** *(v3.7.0 — `sidePanel` permission + `side_panel.default_path: pages/options.html` in manifest. New `sidePanelEnabled` setting (default OFF, opt-in). When ON, `chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true })` redirects the toolbar icon to open the panel instead of the popup. Live re-sync via `chrome.storage.onChanged` — no reload needed. Chrome/Edge only — Firefox MV2 manifest unchanged. Hosts the existing options UI verbatim, so future v3.x sub-views mount inside the same host without touching the manifest.)* Source: [Chrome sidePanel API](https://developer.chrome.com/docs/extensions/reference/api/sidePanel) · [Chrome sidePanel launch blog](https://developer.chrome.com/blog/extension-side-panel-launch).
-- [ ] **`rantStatsPanel` module shipped.** Bring the side panel + RantStats-parity feature shipped in setting key only at v2.0. Cached-rant list, totals footer, mark-read toggle, CSV+JSON export. The single Chrome competitor [RantStats v1.5.3 (May 2026)](https://chromewebstore.google.com/detail/rantstats-extension-for-r/liahjgfmodjgeakahommamnmbjgicpmh) implements all of these — match parity, then beat them on local-only-by-default + scoped color schemes.
+- [x] **`rantStatsPanel` module shipped.** *(v3.16.0 — RantPersist mirrors every cached rant into `chrome.storage.local` under `rx_rant_stats_mirror` (30-video × 200-rant cap, debounced). New "Rant stats" section on the options page reads the mirror directly: per-video cards with title/rant-count/aggregate-USD/last-seen, mark-read toggle, per-video Remove, JSON + CSV export, footer totals (rants + USD aggregate + unique chatters), live refresh via `chrome.storage.onChanged`. Beats the single Chrome competitor [RantStats v1.5.3](https://chromewebstore.google.com/detail/rantstats-extension-for-r/liahjgfmodjgeakahommamnmbjgicpmh) on local-only-by-default + integration with the rest of RumbleX (uses existing RantPersist cache instead of a parallel scrape pipeline).)*
 - [x] **`chrome.contextMenus` integration.** *(v3.5.0 — three entries scoped to `*://*.rumble.com/*` via `documentUrlPatterns`: **Copy clean URL** (strips e9s/utm_*/ref/fbclid/etc. — same v2.4 allowlist; SW-side so it covers right-clicked links the content script never saw), **Copy URL at current time** (asks content script for `video.currentTime`, builds `?start=` link matching Rumble's native format and v1.x shareTimestamp), **Open RumbleX settings**. Toggleable live via new `contextMenusEnabled` setting (default ON); `chrome.storage.onChanged` re-syncs without reload. Copy helper uses `chrome.scripting.executeScript` for in-tab clipboard write with `execCommand` fallback.)* Source: [Chrome contextMenus API](https://developer.chrome.com/docs/extensions/reference/api/contextMenus). **Partial:** "Block this channel from feeds" entry shipped in v3.14.0 (extracts slug from `/c/` or `/user/` link, appends to `blockedChannels` array, in-page toast confirmation via the new `rxShowToast` message). Chat-username submenu still deferred — needs the live chat-MHTML capture from v3.3 RantStats panel work.
 
 ### v3.4 ✓ partially shipped 2026-05-19 — Regression harness + Playwright E2E
@@ -242,6 +242,13 @@ Tier placement above is per-feature; the workstreams below are themes the team s
 ## Recently shipped
 
 Compressed history. Detail per release lives in `CHANGELOG.md`.
+
+### v3.16.0 — RantStats panel (2026-05-19)
+
+- `RantPersist._cache()` mirrors each cached rant to `chrome.storage.local` under `rx_rant_stats_mirror` (debounced, 30-video × 200-rant cap). Source-of-truth localStorage cache unchanged.
+- New "Rant stats" options-page section: per-video cards (title, rant count, aggregate USD, last-seen, read state), Open / Mark read / Remove per-row, JSON + CSV export, footer totals (rants + USD + unique chatters).
+- Live refresh via `chrome.storage.onChanged` — open options tabs auto-update when new rants stream in on rumble.com.
+- Closes the v3.3 Now-tier `rantStatsPanel` acceptance criterion. Catalog parity 201/201/201/201 unchanged.
 
 ### v3.15.0 — Watch History export (2026-05-19)
 

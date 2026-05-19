@@ -2,6 +2,34 @@
 
 All notable changes to RumbleX will be documented in this file.
 
+## [3.16.0] - 2026-05-19
+
+### v3.16.0 — RantStats panel (closes the v3.3 Now-tier acceptance criterion)
+
+Materializes the `rantStatsPanel` setting key shipped in v2.0 into an actual feature. Beats the single Chrome competitor ([RantStats v1.5.3](https://chromewebstore.google.com/detail/rantstats-extension-for-r/liahjgfmodjgeakahommamnmbjgicpmh)) on local-only-by-default + integration with the rest of RumbleX (uses the existing RantPersist cache instead of standing up a parallel scrape pipeline).
+
+**Content-script side (RantPersist mirror)**
+- `RantPersist._cache()` now debounce-mirrors each cached rant to `chrome.storage.local` under a single `rx_rant_stats_mirror` key. Per-video cap of 200 rants × 30 videos (vs. localStorage's 500 × 100 source-of-truth cap) — keeps the mirror well under Chrome's default 10 MB local-storage quota.
+- Mirror shape: `{ videos: { "<videoId>": { title, url, lastTs, read, rants:[...] } } }`. `title` resolved from `<meta property="og:title">` first, falls back to `<title>` minus the trailing `— Rumble` suffix.
+- Existing localStorage `rx_rants_<videoId>` cache is unchanged — preserves v2.4 `RX_LOCAL_STORAGE_KEYS` backup-import allowlist behavior.
+
+**Options-page side (RantStats panel)**
+- New "Rant stats" section above the v3.10 multi-profile section. Reads the mirror directly via `chrome.storage.local.get` — no new background message handlers needed.
+- Per-video cards: title + rant count + aggregate USD + last-seen timestamp + read indicator. Sorted newest-first by `lastTs`.
+- Per-video actions: "Open" (deep-links to the watch page in a new tab), "Mark read" / "Mark unread", "Remove" (deletes the video from the mirror).
+- Footer totals row: total rants across all videos, aggregate USD (price-string parsed via `[\d.]+` regex — handles `$5`, `$25.00`, `5 USD`, `€5`), unique chatter count.
+- Top-row buttons: "Refresh", "Export JSON", "Export CSV", "Clear all".
+- JSON export: structured payload with `exportedAt`, per-video drill-down. Same `downloadJsonBlob` path as v3.10 OPML / v3.11 comment / v3.15 watch-history exports.
+- CSV export: nine columns (`videoId`, `videoTitle`, `videoUrl`, `ts`, `tier`, `price`, `priceUsd`, `user`, `text`). Standard CSV quoting (double-up internal quotes, wrap fields containing `, " \n \r`).
+- Live refresh: `chrome.storage.onChanged` listener auto-refreshes the panel when the content-script mirror updates, so an open options tab sees fresh data without manual reload.
+
+**No new permissions, no new settings keys.** Catalog parity 201/201/201/201 unchanged. Selector harness: 85 pass / 17 fixtures unchanged. `node --check` clean across all four JS files.
+
+### Deferred to v3.17+
+
+- **Side-panel target swap** — currently the RantStats panel lives in the options page (which is also the side-panel default-path). A future `pages/rantstats.html` could be a dedicated lightweight side-panel target via `chrome.sidePanel.setOptions({ path })`. The options-page section already covers the v3.3 acceptance criterion.
+- **BulkRemoveFromHistory** — still pending. The v3.14 `history.itemMenuTrigger` selectors stay reserved.
+
 ## [3.15.0] - 2026-05-19
 
 ### v3.15.0 — Watch History export (account-data round-trip)

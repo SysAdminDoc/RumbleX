@@ -240,6 +240,26 @@
         }
         .notifier-input:focus { outline: none; border-color: var(--accent, #89b4fa); }
         .notifier-error-row { color: #ffb4be; }
+        /* v3.16.0 — RantStats totals row */
+        .rant-stats-totals {
+            margin: 10px 0 6px;
+            padding: 8px 10px;
+            background: rgba(249, 226, 175, 0.08);
+            border: 1px solid rgba(249, 226, 175, 0.18);
+            border-radius: 6px;
+            color: var(--text-1, #ecedee);
+            font: 600 12px/1.4 inherit;
+        }
+        .rant-stats-totals:empty { display: none; }
+        .snapshot-list .snapshot-link {
+            font-size: 12px;
+            color: var(--accent, #89b4fa);
+            text-decoration: none;
+            padding: 4px 8px;
+            border: 1px solid rgba(137, 180, 250, 0.3);
+            border-radius: 6px;
+        }
+        .snapshot-list .snapshot-link:hover { background: rgba(137, 180, 250, 0.1); }
 
         .privacy-report-pre {
             margin: 10px 0 0;
@@ -753,6 +773,29 @@
                     <div class="button-row">
                         <button id="export-watch-history-btn" type="button">Export Watch History</button>
                     </div>
+                </details>
+            </section>
+
+            <!-- v3.16.0 — RantStats panel. Reads the chrome.storage.local
+                 mirror written by RantPersist on rumble.com watch pages.
+                 Per-video summary + drill-down + JSON/CSV export. Beats
+                 the single RantStats Chrome competitor on local-only-by-
+                 default + integration with the rest of RumbleX. -->
+            <section class="data-section" id="rant-stats-section" aria-labelledby="rant-stats-heading">
+                <details class="data-section-details">
+                    <summary class="data-section-summary">
+                        <h2 class="data-section-title" id="rant-stats-heading">Rant stats</h2>
+                        <span class="data-section-hint" id="rant-stats-summary">Loading…</span>
+                    </summary>
+                    <p class="data-section-copy">Cached rants from every Rumble watch page you visited while Rant Persist was enabled. Up to 30 videos × 200 rants kept. Local-only — never uploaded.</p>
+                    <div class="button-row">
+                        <button id="rant-stats-refresh-btn" type="button">Refresh</button>
+                        <button id="rant-stats-export-json-btn" type="button">Export JSON</button>
+                        <button id="rant-stats-export-csv-btn" type="button">Export CSV</button>
+                        <button id="rant-stats-clear-btn" type="button" class="danger">Clear all</button>
+                    </div>
+                    <div class="rant-stats-totals" id="rant-stats-totals" aria-live="polite"></div>
+                    <ul class="snapshot-list" id="rant-stats-list" aria-live="polite"></ul>
                 </details>
             </section>
 

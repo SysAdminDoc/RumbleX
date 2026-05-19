@@ -1,9 +1,9 @@
-// RumbleX v3.15.0 - Content Script
+// RumbleX v3.16.0 - Content Script
 // Rumble enhancement suite - Chrome/Firefox extension
 'use strict';
 
 // ── Version ──
-const VERSION = chrome.runtime?.getManifest?.()?.version || '3.15.0';
+const VERSION = chrome.runtime?.getManifest?.()?.version || '3.16.0';
 const SCHEMA_VERSION = 2;
 
 // ── Settings Manager (chrome.storage.local) ──
@@ -8725,10 +8725,72 @@ const RantPersist = {
 
     _MAX_PER_VIDEO: 500,
     _MAX_KEPT_VIDEOS: 100,
+    _MIRROR_KEY: 'rx_rant_stats_mirror',
+    _MIRROR_MAX_VIDEOS: 30,
+    _MIRROR_MAX_PER_VIDEO: 200,
+    _mirrorWriteTimer: null,
 
     _videoKey() {
         const m = location.pathname.match(/^\/(v[a-z0-9]+)/);
         return m ? 'rx_rants_' + m[1] : null;
+    },
+
+    _videoIdRaw() {
+        const m = location.pathname.match(/^\/(v[a-z0-9]+)/);
+        return m ? m[1] : null;
+    },
+
+    _videoTitle() {
+        const og = document.querySelector('meta[property="og:title"]');
+        const ogContent = og ? (og.getAttribute('content') || '').trim() : '';
+        if (ogContent) return ogContent;
+        const t = (document.title || '').trim();
+        return t.replace(/\s*[-—|]\s*Rumble\s*$/i, '').trim();
+    },
+
+    // RantStats panel mirror — chrome.storage.local copy of the per-video rant
+    // cache so the options page (which can't reach rumble.com localStorage)
+    // can render history across all watched videos. Debounced to avoid hammering
+    // storage during high-volume rant streams.
+    _scheduleMirrorWrite() {
+        if (!chrome?.storage?.local) return;
+        if (this._mirrorWriteTimer) return;
+        this._mirrorWriteTimer = setTimeout(() => {
+            this._mirrorWriteTimer = null;
+            this._flushMirror();
+        }, 1500);
+    },
+
+    _flushMirror() {
+        const videoId = this._videoIdRaw();
+        if (!videoId) return;
+        if (!chrome?.storage?.local) return;
+        try {
+            chrome.storage.local.get([this._MIRROR_KEY], (got) => {
+                const root = (got && got[this._MIRROR_KEY] && typeof got[this._MIRROR_KEY] === 'object') ? got[this._MIRROR_KEY] : { videos: {} };
+                if (!root.videos || typeof root.videos !== 'object') root.videos = {};
+                const slice = (this._cached || []).slice(-this._MIRROR_MAX_PER_VIDEO);
+                const prev = root.videos[videoId] || {};
+                const lastTs = slice.length ? slice[slice.length - 1].ts || Date.now() : Date.now();
+                root.videos[videoId] = {
+                    title: prev.title || this._videoTitle() || videoId,
+                    url: location.origin + location.pathname,
+                    lastTs,
+                    read: prev.read === true ? true : false,
+                    rants: slice,
+                };
+                // Cap total videos kept — drop the oldest by lastTs.
+                const ids = Object.keys(root.videos);
+                if (ids.length > this._MIRROR_MAX_VIDEOS) {
+                    const sorted = ids
+                        .map((id) => ({ id, ts: root.videos[id].lastTs || 0 }))
+                        .sort((a, b) => a.ts - b.ts);
+                    const drop = sorted.slice(0, ids.length - this._MIRROR_MAX_VIDEOS);
+                    for (const { id } of drop) delete root.videos[id];
+                }
+                try { chrome.storage.local.set({ [this._MIRROR_KEY]: root }); } catch {}
+            });
+        } catch {}
     },
 
     // Keep localStorage growth bounded. Same pattern as WatchProgress /
@@ -8789,6 +8851,8 @@ const RantPersist = {
             this._pruneGlobal();
             try { localStorage.setItem(key, JSON.stringify(this._cached)); } catch {}
         }
+        // Debounced mirror to chrome.storage.local for the options-page RantStats panel.
+        this._scheduleMirrorWrite();
     },
 
     _persist() {

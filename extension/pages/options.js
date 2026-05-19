@@ -1,4 +1,4 @@
-// RumbleX v3.15.0 - Options Page
+// RumbleX v3.16.0 - Options Page
 // Standalone settings management via chrome.storage.local (rx_settings key).
 // Mirrors Astra Deck's settings page pattern: dirty-draft workflow with
 // search, group nav, stats overview, and export/import/reset.
@@ -584,6 +584,14 @@
         profileList: document.getElementById('profile-list'),
         // v3.15.0 — Account data export UI
         exportWatchHistoryBtn: document.getElementById('export-watch-history-btn'),
+        // v3.16.0 — RantStats panel UI
+        rantStatsSummary: document.getElementById('rant-stats-summary'),
+        rantStatsTotals: document.getElementById('rant-stats-totals'),
+        rantStatsList: document.getElementById('rant-stats-list'),
+        rantStatsRefreshBtn: document.getElementById('rant-stats-refresh-btn'),
+        rantStatsExportJsonBtn: document.getElementById('rant-stats-export-json-btn'),
+        rantStatsExportCsvBtn: document.getElementById('rant-stats-export-csv-btn'),
+        rantStatsClearBtn: document.getElementById('rant-stats-clear-btn'),
     };
 
     const state = {
@@ -2153,6 +2161,212 @@
         }
     }
 
+    // v3.16.0 — RantStats panel. Reads the chrome.storage.local mirror
+    // written by the content-script RantPersist module on rumble.com
+    // watch pages. Renders per-video summary cards with totals + a
+    // drill-down toggle. JSON + CSV export. Local-only — no network.
+    const RANT_STATS_MIRROR_KEY = 'rx_rant_stats_mirror';
+
+    function _parseRantPrice(raw) {
+        if (!raw) return 0;
+        // Rumble rants show prices like "$5", "$25.00", "5 USD", "€5".
+        // Strip everything non-numeric / non-decimal and parse as float.
+        const m = String(raw).match(/[\d.]+/);
+        return m ? parseFloat(m[0]) : 0;
+    }
+
+    async function _loadRantMirror() {
+        return new Promise((resolve) => {
+            try {
+                chrome.storage.local.get([RANT_STATS_MIRROR_KEY], (got) => {
+                    const root = got && got[RANT_STATS_MIRROR_KEY];
+                    resolve((root && typeof root === 'object' && root.videos) ? root : { videos: {} });
+                });
+            } catch { resolve({ videos: {} }); }
+        });
+    }
+
+    async function _saveRantMirror(root) {
+        return new Promise((resolve) => {
+            try { chrome.storage.local.set({ [RANT_STATS_MIRROR_KEY]: root }, () => resolve(true)); }
+            catch { resolve(false); }
+        });
+    }
+
+    function _flattenRants(root) {
+        const flat = [];
+        for (const [videoId, v] of Object.entries(root.videos || {})) {
+            for (const r of (v.rants || [])) {
+                flat.push({
+                    videoId,
+                    videoTitle: v.title || videoId,
+                    videoUrl: v.url || '',
+                    price: r.price || '',
+                    priceNumeric: _parseRantPrice(r.price),
+                    user: r.user || '',
+                    text: r.text || '',
+                    level: r.level || '',
+                    ts: r.ts || 0,
+                });
+            }
+        }
+        return flat;
+    }
+
+    function _videosSorted(root) {
+        return Object.entries(root.videos || {})
+            .map(([id, v]) => ({ id, ...v }))
+            .sort((a, b) => (b.lastTs || 0) - (a.lastTs || 0));
+    }
+
+    async function refreshRantStats() {
+        const root = await _loadRantMirror();
+        const videos = _videosSorted(root);
+        const flat = _flattenRants(root);
+        const totalRants = flat.length;
+        const totalDollars = flat.reduce((sum, r) => sum + (r.priceNumeric || 0), 0);
+        const uniqueChatters = new Set(flat.map((r) => r.user).filter(Boolean)).size;
+        const unreadVideos = videos.filter((v) => !v.read).length;
+
+        if (elements.rantStatsSummary) {
+            elements.rantStatsSummary.textContent = videos.length === 0
+                ? 'No cached rants yet — visit a watch page with Rant Persist enabled.'
+                : `${videos.length} video${videos.length === 1 ? '' : 's'} · ${totalRants} rant${totalRants === 1 ? '' : 's'} · ${unreadVideos} unread`;
+        }
+        if (elements.rantStatsTotals) {
+            if (videos.length === 0) {
+                elements.rantStatsTotals.textContent = '';
+            } else {
+                elements.rantStatsTotals.textContent =
+                    `Totals: ${totalRants} rants · ~$${totalDollars.toFixed(2)} aggregate · ${uniqueChatters} unique chatters`;
+            }
+        }
+        if (elements.rantStatsList) {
+            const list = elements.rantStatsList;
+            list.textContent = '';
+            for (const v of videos) {
+                const li = document.createElement('li');
+                li.className = 'snapshot-item';
+                const meta = document.createElement('div');
+                meta.className = 'snapshot-meta';
+                const title = document.createElement('div');
+                title.className = 'snapshot-reason';
+                title.textContent = v.title || v.id;
+                const sub = document.createElement('div');
+                sub.className = 'snapshot-time';
+                const videoTotal = (v.rants || []).reduce((s, r) => s + _parseRantPrice(r.price), 0);
+                const lastTsLabel = v.lastTs ? new Date(v.lastTs).toLocaleString() : '—';
+                sub.textContent = `${(v.rants || []).length} rant${(v.rants || []).length === 1 ? '' : 's'} · ~$${videoTotal.toFixed(2)} · last ${lastTsLabel}${v.read ? ' · read' : ''}`;
+                meta.append(title, sub);
+                const row = document.createElement('div');
+                row.className = 'snapshot-actions';
+                const openLink = document.createElement('a');
+                openLink.textContent = 'Open';
+                openLink.href = v.url || ('https://rumble.com/' + v.id);
+                openLink.target = '_blank';
+                openLink.rel = 'noopener noreferrer';
+                openLink.className = 'snapshot-link';
+                const readBtn = document.createElement('button');
+                readBtn.type = 'button';
+                readBtn.textContent = v.read ? 'Mark unread' : 'Mark read';
+                readBtn.addEventListener('click', async () => {
+                    readBtn.disabled = true;
+                    const cur = await _loadRantMirror();
+                    if (cur.videos && cur.videos[v.id]) {
+                        cur.videos[v.id].read = !cur.videos[v.id].read;
+                        await _saveRantMirror(cur);
+                    }
+                    await refreshRantStats();
+                });
+                const delBtn = document.createElement('button');
+                delBtn.type = 'button';
+                delBtn.className = 'danger';
+                delBtn.textContent = 'Remove';
+                delBtn.addEventListener('click', async () => {
+                    delBtn.disabled = true;
+                    const cur = await _loadRantMirror();
+                    if (cur.videos) delete cur.videos[v.id];
+                    await _saveRantMirror(cur);
+                    showStatus('Removed ' + v.id + ' from rant stats.', 'success');
+                    await refreshRantStats();
+                });
+                row.append(openLink, readBtn, delBtn);
+                li.append(meta, row);
+                list.appendChild(li);
+            }
+        }
+    }
+
+    async function exportRantStatsJson() {
+        const root = await _loadRantMirror();
+        const videos = _videosSorted(root);
+        if (videos.length === 0) { showStatus('No cached rants to export.', 'info'); return; }
+        const flat = _flattenRants(root);
+        const payload = {
+            exportedAt: new Date().toISOString(),
+            videoCount: videos.length,
+            rantCount: flat.length,
+            aggregateUsd: flat.reduce((s, r) => s + (r.priceNumeric || 0), 0),
+            videos: videos.map((v) => ({
+                videoId: v.id,
+                title: v.title,
+                url: v.url,
+                lastTs: v.lastTs,
+                read: !!v.read,
+                rants: v.rants || [],
+            })),
+        };
+        const ts = new Date().toISOString().slice(0, 10);
+        downloadJsonBlob('rumblex-rant-stats-' + ts + '.json', payload);
+        showStatus('Exported ' + flat.length + ' rant' + (flat.length === 1 ? '' : 's') + ' across ' + videos.length + ' video' + (videos.length === 1 ? '' : 's') + '.', 'success');
+    }
+
+    function _csvField(s) {
+        const str = String(s == null ? '' : s);
+        if (/[",\n\r]/.test(str)) return '"' + str.replace(/"/g, '""') + '"';
+        return str;
+    }
+
+    async function exportRantStatsCsv() {
+        const root = await _loadRantMirror();
+        const flat = _flattenRants(root);
+        if (flat.length === 0) { showStatus('No cached rants to export.', 'info'); return; }
+        const header = ['videoId', 'videoTitle', 'videoUrl', 'ts', 'tier', 'price', 'priceUsd', 'user', 'text'];
+        const lines = [header.join(',')];
+        for (const r of flat) {
+            lines.push([
+                r.videoId,
+                r.videoTitle,
+                r.videoUrl,
+                r.ts ? new Date(r.ts).toISOString() : '',
+                r.level,
+                r.price,
+                r.priceNumeric.toFixed(2),
+                r.user,
+                r.text,
+            ].map(_csvField).join(','));
+        }
+        const blob = new Blob([lines.join('\n')], { type: 'text/csv' });
+        const ts = new Date().toISOString().slice(0, 10);
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = 'rumblex-rant-stats-' + ts + '.csv';
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        setTimeout(() => URL.revokeObjectURL(a.href), 60000);
+        showStatus('Exported ' + flat.length + ' rant' + (flat.length === 1 ? '' : 's') + ' to CSV.', 'success');
+    }
+
+    async function clearRantStats() {
+        const root = await _loadRantMirror();
+        const had = Object.keys(root.videos || {}).length;
+        if (had === 0) { showStatus('Nothing to clear.', 'info'); return; }
+        await _saveRantMirror({ videos: {} });
+        showStatus('Cleared rant stats for ' + had + ' video' + (had === 1 ? '' : 's') + '.', 'success');
+        await refreshRantStats();
+    }
+
     async function saveCurrentAsProfile() {
         const name = (elements.profileNameInput?.value || '').trim();
         if (!name) { showStatus('Profile name required.', 'error'); return; }
@@ -2178,6 +2392,7 @@
         void refreshPrivacyReport();
         void refreshNotifierList();
         void refreshProfileList();
+        void refreshRantStats();
     }, 250);
 
     // ── Event wiring ──
@@ -2206,6 +2421,22 @@
 
     // v3.15.0 — Account data export wiring.
     if (elements.exportWatchHistoryBtn) elements.exportWatchHistoryBtn.addEventListener('click', () => void exportWatchHistoryAction());
+
+    // v3.16.0 — RantStats panel wiring.
+    if (elements.rantStatsRefreshBtn) elements.rantStatsRefreshBtn.addEventListener('click', () => void refreshRantStats());
+    if (elements.rantStatsExportJsonBtn) elements.rantStatsExportJsonBtn.addEventListener('click', () => void exportRantStatsJson());
+    if (elements.rantStatsExportCsvBtn) elements.rantStatsExportCsvBtn.addEventListener('click', () => void exportRantStatsCsv());
+    if (elements.rantStatsClearBtn) elements.rantStatsClearBtn.addEventListener('click', () => void clearRantStats());
+
+    // Live-refresh the panel when the content-script mirror updates so an
+    // open options tab sees fresh data without manual refresh.
+    try {
+        chrome.storage.onChanged.addListener((changes, area) => {
+            if (area === 'local' && changes && changes[RANT_STATS_MIRROR_KEY]) {
+                void refreshRantStats();
+            }
+        });
+    } catch {}
 
     // v3.10.0 — Multi-profile UI wiring.
     if (elements.profileSaveBtn) elements.profileSaveBtn.addEventListener('click', () => void saveCurrentAsProfile());
