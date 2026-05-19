@@ -1,9 +1,9 @@
-// RumbleX v3.13.0 - Content Script
+// RumbleX v3.14.0 - Content Script
 // Rumble enhancement suite - Chrome/Firefox extension
 'use strict';
 
 // ── Version ──
-const VERSION = chrome.runtime?.getManifest?.()?.version || '3.13.0';
+const VERSION = chrome.runtime?.getManifest?.()?.version || '3.14.0';
 const SCHEMA_VERSION = 2;
 
 // ── Settings Manager (chrome.storage.local) ──
@@ -479,6 +479,22 @@ const Selectors = {
         'account.followedChannelsItem':     { stable: 'li.followed-channel[data-type="channel"]', fallback: 'li.followed-channel' },
         'account.followedChannelsItemLink': { stable: 'li.followed-channel a[href*="/c/"], li.followed-channel a[href*="/user/"]', fallback: 'a.channel__link[href*="/c/"]' },
         'account.followedChannelsItemName': { stable: 'li.followed-channel a span.line-clamp-2', fallback: 'li.followed-channel .line-clamp-2' },
+        // v3.14.0 — Account library / watch history / watch later / profile surfaces.
+        // Discovered in 2026-05-19 MHTML batch (Watch History.mhtml, Watch
+        // Later.mhtml, My Library.mhtml, Profile.mhtml). Wiring these into
+        // features lands in v3.15+; registering now so the harness covers
+        // them and the registry is the one source of truth.
+        'library.watchHistorySection':      { stable: '[data-js="section_playlist_watch-history"]', fallback: 'section[id*="watch-history"]' },
+        'library.watchLaterSection':        { stable: '[data-js="section_playlist_watch-later"]', fallback: 'section[id*="watch-later"]' },
+        'library.userPlaylistsSection':     { stable: '[data-js="section_playlist_playlists"]', fallback: 'section[id*="playlists"]' },
+        'library.videoGrid':                { stable: '[data-js="section_video_grid"]', fallback: '.video-grid' },
+        'history.clearAllBtn':              { stable: 'button[data-js="playlist_control_panel_delete_playlist_button"]', fallback: 'button[class*="clear-history"]' },
+        'history.pauseToggleBtn':           { stable: 'button[data-js="playlist_control_panel_toggle_watch_history_button"]', fallback: 'button[class*="toggle-history"]' },
+        'history.videoList':                { stable: '[data-js="videostream_list"]', fallback: '.videostream-list' },
+        'history.videoDetails':             { stable: '[data-js="videostream_details"]', fallback: '.videostream__details' },
+        'history.itemMenuTrigger':          { stable: 'button[data-js="playlist_menu_button"]', fallback: '[data-js="playlist_menu_button"]' },
+        'history.itemMenuOption':           { stable: '[data-js="playlist_menu_option"]', fallback: '.playlist-menu__option' },
+        'profile.followingBtn':             { stable: 'button[data-js="button__following"]', fallback: 'button[class*="button__following"]' },
     },
     _telemetry: [],
     find(key, root) {
@@ -12261,6 +12277,17 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     }
     if (msg.action === 'restoreSnapshot') {
         rxRestoreSnapshot(msg.indexOrAt).then(sendResponse);
+        return true;
+    }
+    // v3.14.0 — Background-initiated in-page toast. Lets the SW surface
+    // result/status text (e.g. "Blocked channel X" after a context-menu
+    // click) without opening a popup or browser-notification — keeps the
+    // confirmation on the same page the user is interacting with.
+    if (msg.action === 'rxShowToast') {
+        try {
+            SettingsPanel._showToast?.(String(msg.text || ''));
+            sendResponse({ ok: true });
+        } catch (e) { sendResponse({ ok: false, reason: String(e?.message || e) }); }
         return true;
     }
     // v3.5.0 — chrome.contextMenus probe. Background SW asks the active

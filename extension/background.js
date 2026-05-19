@@ -112,6 +112,7 @@ async function rxSyncSidePanel() {
 const RX_CM_IDS = {
     copyClean: 'rx-copy-clean-url',
     copyAtTime: 'rx-copy-url-at-time',
+    blockChannel: 'rx-block-channel',
     openSettings: 'rx-open-settings',
 };
 
@@ -143,12 +144,38 @@ async function rxSyncContextMenus() {
         contexts: ['page', 'video'],
         documentUrlPatterns: docPatterns,
     });
+    // v3.14.0 — Block-channel entry. Shows up on right-click of any
+    // /c/<slug> or /user/<slug> link, or on the watch page itself when
+    // right-clicked on the channel link. The slug-extraction logic in the
+    // click handler accepts both link context (info.linkUrl) and page
+    // context (tab.url for a watch page) and falls through gracefully
+    // when neither has a usable /c/ or /user/ path.
+    chrome.contextMenus.create({
+        id: RX_CM_IDS.blockChannel,
+        title: 'Block this channel from feeds',
+        contexts: ['link', 'page'],
+        documentUrlPatterns: docPatterns,
+        targetUrlPatterns: ['*://rumble.com/c/*', '*://rumble.com/user/*', '*://*.rumble.com/c/*', '*://*.rumble.com/user/*'],
+    });
     chrome.contextMenus.create({
         id: RX_CM_IDS.openSettings,
         title: 'Open RumbleX settings',
         contexts: ['page', 'action'],
         documentUrlPatterns: docPatterns,
     });
+}
+
+// v3.14.0 — Extract the channel slug (`/c/<slug>` or `/user/<slug>`) from
+// a URL. Returns the lowercase slug or null. Used by the block-channel
+// context-menu entry — ChannelBlocker normalizes lowercase already so we
+// match its storage shape exactly.
+function rxExtractChannelSlug(href) {
+    try {
+        const u = new URL(href);
+        if (!/(^|\.)rumble\.com$/i.test(u.hostname)) return null;
+        const m = u.pathname.match(/^\/(?:c|user)\/([^/?#]+)/);
+        return m ? decodeURIComponent(m[1]).toLowerCase() : null;
+    } catch { return null; }
 }
 
 // React to the user toggling `contextMenusEnabled`, `sidePanelEnabled`, or
@@ -431,6 +458,44 @@ if (chrome.contextMenus) {
                     }
                     await rxCopyToActiveTab(tabId, out);
                 });
+                return;
+            }
+            case RX_CM_IDS.blockChannel: {
+                // Prefer the link target — that's the channel the user
+                // right-clicked on. Fall back to the page URL when they
+                // right-clicked on a channel page itself.
+                const candidate = info.linkUrl || info.pageUrl || tab.url || '';
+                const slug = rxExtractChannelSlug(candidate);
+                if (!slug) {
+                    // The targetUrlPatterns filter on the entry should
+                    // prevent this, but guard anyway: a creator's display
+                    // name (Killstream) is NOT the channel slug
+                    // (KillstreamLive) — extracting from the URL is the
+                    // only reliable path.
+                    return;
+                }
+                const s = await rxGetSettings();
+                const list = Array.isArray(s.blockedChannels) ? s.blockedChannels.slice() : [];
+                if (list.includes(slug)) {
+                    // No-op when already blocked. Try to surface via a
+                    // page-level toast through the existing in-content
+                    // settings panel — only if the user is on a Rumble tab.
+                    try {
+                        chrome.tabs.sendMessage(tabId, {
+                            action: 'rxShowToast',
+                            text: `Channel "${slug}" already blocked`,
+                        }, () => { void chrome.runtime.lastError; });
+                    } catch {}
+                    return;
+                }
+                list.push(slug);
+                await rxSetSettings({ blockedChannels: list });
+                try {
+                    chrome.tabs.sendMessage(tabId, {
+                        action: 'rxShowToast',
+                        text: `Blocked channel "${slug}" (${list.length} total). Reload feed to apply.`,
+                    }, () => { void chrome.runtime.lastError; });
+                } catch {}
                 return;
             }
             case RX_CM_IDS.openSettings: {

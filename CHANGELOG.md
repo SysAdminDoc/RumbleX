@@ -2,6 +2,31 @@
 
 All notable changes to RumbleX will be documented in this file.
 
+## [3.14.0] - 2026-05-19
+
+### v3.14.0 — "Block this channel" context-menu entry + 11 new Selectors from MHTML batch
+
+**New context-menu entry: "Block this channel from feeds"**
+- Extends the v3.5 contextMenus integration. Appears on right-click of any `/c/<slug>` or `/user/<slug>` link, or on a channel page itself. Scoped via `targetUrlPatterns` so it doesn't appear on non-channel links.
+- Extracts the channel slug from the URL (lowercase, matching the existing `ChannelBlocker` storage shape). Appends to the `blockedChannels` array. No-ops with toast when already blocked.
+- Confirmation surfaces as an in-page toast via the new `rxShowToast` message — keeps the result on the same page the user just acted on instead of opening a popup or browser notification.
+
+**11 new Selectors registry entries** (now 51 total, up from 37)
+- `library.watchHistorySection` / `library.watchLaterSection` / `library.userPlaylistsSection` / `library.videoGrid` — `/library` page surfaces.
+- `history.clearAllBtn` / `history.pauseToggleBtn` — bulk-action buttons on `/account/playlists/watch-history`.
+- `history.videoList` / `history.videoDetails` / `history.itemMenuTrigger` / `history.itemMenuOption` — per-item watch-history surfaces (foundation for the future BulkRemoveFromHistory feature).
+- `profile.followingBtn` — follow/unfollow toggle on `/c/<channel>` profile pages.
+- All sourced from the 2026-05-19 MHTML batch (Watch History / Watch Later / My Library / Profile fixtures).
+
+**Regression harness:** 85 passes across 17 fixtures (was 75). All 11 new selectors verified against their target captures.
+
+**Catalog parity:** 201/201/201/201. New `rxShowToast` message handler in content.js. No new manifest permissions (uses existing `contextMenus` + `scripting`).
+
+### Deferred to v3.15+
+
+- **BulkRemoveFromHistory** module — `history.itemMenuTrigger` selectors registered but no consumer yet. The watch-history rows open a menu (popout) on click that contains the "Remove" option — the bulk pattern is more involved than BulkUnsubscribe (which has a direct row-button). Worth ~half a release on its own.
+- **Profile follow-toggle automation** — `profile.followingBtn` registered. Could feed a "channel auto-follow on first visit" feature. Niche; defer.
+
 ## [3.13.0] - 2026-05-19
 
 ### v3.13.0 — Import followed channels into the notifier
