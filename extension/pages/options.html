@@ -739,6 +739,23 @@
                 </details>
             </section>
 
+            <!-- v3.15.0 — Account data export. Reads user-account-only
+                 surfaces (watch history, eventually watch later /
+                 playlists) and serializes them to JSON for backup, since
+                 Rumble doesn't natively offer this. -->
+            <section class="data-section" id="account-export-section" aria-labelledby="account-export-heading">
+                <details class="data-section-details">
+                    <summary class="data-section-summary">
+                        <h2 class="data-section-title" id="account-export-heading">Account data export</h2>
+                        <span class="data-section-hint" id="account-export-summary">Local-only export. Requires you to be signed in to Rumble.</span>
+                    </summary>
+                    <p class="data-section-copy">Pulls account-only surfaces (watch history, follow list) into structured JSON. The export never leaves your browser — it lands in your Downloads folder. Rumble doesn't natively offer these exports today.</p>
+                    <div class="button-row">
+                        <button id="export-watch-history-btn" type="button">Export Watch History</button>
+                    </div>
+                </details>
+            </section>
+
             <!-- v3.10.0 — Multi-profile settings. Profiles are named full
                  snapshots of rx_settings stored separately from the v3.0
                  backup-snapshot history. Switching a profile snapshots

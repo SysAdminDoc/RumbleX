@@ -2,6 +2,29 @@
 
 All notable changes to RumbleX will be documented in this file.
 
+## [3.15.0] - 2026-05-19
+
+### v3.15.0 — Watch History export (account-data round-trip)
+
+Completes the v3.13 "import" / v3.14 "block" pair with the missing read-side: structured export of the user's own watch-history feed. Local-only, no third-party network, no telemetry.
+
+**New "Export Watch History" button** (new "Account data export" section on the options page, placed above the v3.10 multi-profile section)
+- Background SW fetches `https://rumble.com/account/playlists/watch-history` with `credentials: 'include'` — same SW-fetch pattern as v3.13's `importFollowedChannels`.
+- Regex-parses every `<li class="videostream__details" data-video-id="…">` row in the response into a structured row: `videoId`, `title`, `url` (canonical, query-stripped), `duration`, `watchedPercentage`, `thumbnail`, `channelUrl`, `channelName`.
+- Downloads the result as `rumblex-watch-history-<ISO>.json` via the existing `downloadJsonBlob()` helper — same delivery path as the v3.10 OPML export and v3.11 comment export.
+- Detects logged-out responses by absence of the `videostream_details` / `data-playlist="watch-history"` markers. Toast suggests sign-in.
+
+**New message API**: `exportWatchHistory` → `{ ok, count, exportedAt, items: [...] }` or `{ ok: false, reason: 'not-logged-in' | 'http-XXX' | <error string> }`.
+
+**No new permissions, no new settings keys, no new selectors** — the `history.*` selectors registered in v3.14 are reserved for the future in-tab BulkRemoveFromHistory module; this release uses the v3.13 SW-fetch + regex-parse strategy because it does not require an open tab.
+
+**Catalog parity:** 201/201/201/201 unchanged. Selector harness: 85 passes across 17 fixtures unchanged. `node --check` clean across all three JS files.
+
+### Deferred to v3.16+
+
+- **BulkRemoveFromHistory** — still pending. Tab-side menu automation through `history.itemMenuTrigger` + `history.itemMenuOption`. The SW-fetch export shipped here covers the read use case; bulk-delete is the orthogonal write use case.
+- **Profile follow-toggle automation**, **Studio scene tools**, **chat-username submenu context-menu entry**, **chrome.declarativeNetRequest autoplay rules** — all still blocked on missing live captures or multi-day rewrites; see ROADMAP.
+
 ## [3.14.0] - 2026-05-19
 
 ### v3.14.0 — "Block this channel" context-menu entry + 11 new Selectors from MHTML batch

@@ -1,4 +1,4 @@
-// RumbleX v3.14.0 - Options Page
+// RumbleX v3.15.0 - Options Page
 // Standalone settings management via chrome.storage.local (rx_settings key).
 // Mirrors Astra Deck's settings page pattern: dirty-draft workflow with
 // search, group nav, stats overview, and export/import/reset.
@@ -582,6 +582,8 @@
         profileNameInput: document.getElementById('profile-name-input'),
         profileSaveBtn: document.getElementById('profile-save-btn'),
         profileList: document.getElementById('profile-list'),
+        // v3.15.0 — Account data export UI
+        exportWatchHistoryBtn: document.getElementById('export-watch-history-btn'),
     };
 
     const state = {
@@ -2114,6 +2116,43 @@
         }
     }
 
+    // v3.15.0 — Watch History export. Pulls the account-only data via the
+    // SW (which carries session cookies via credentials: include).
+    async function exportWatchHistoryAction() {
+        const btn = elements.exportWatchHistoryBtn;
+        if (btn) { btn.disabled = true; btn.dataset.idleLabel = btn.dataset.idleLabel || btn.textContent; btn.textContent = 'Exporting…'; }
+        try {
+            const resp = await chrome.runtime.sendMessage({ action: 'exportWatchHistory' });
+            if (!resp?.ok) {
+                if (resp?.reason === 'not-logged-in') {
+                    showStatus('Not logged in to Rumble — sign in first, then retry.', 'error');
+                } else {
+                    showStatus('Watch History export failed: ' + (resp?.reason || 'unknown'), 'error');
+                }
+                return;
+            }
+            if (resp.count === 0) {
+                showStatus('Watch history is empty.', 'info');
+                return;
+            }
+            const ts = new Date().toISOString().slice(0, 10);
+            const filename = 'rumblex-watch-history-' + ts + '.json';
+            downloadJsonBlob(filename, {
+                exportedAt: resp.exportedAt,
+                count: resp.count,
+                items: resp.items,
+            });
+            showStatus('Exported ' + resp.count + ' watch-history item' + (resp.count === 1 ? '' : 's') + ' to ' + filename + '.', 'success');
+        } catch (e) {
+            showStatus('Watch History export failed: ' + String(e?.message || e), 'error');
+        } finally {
+            if (btn) {
+                btn.disabled = false;
+                if (btn.dataset.idleLabel) btn.textContent = btn.dataset.idleLabel;
+            }
+        }
+    }
+
     async function saveCurrentAsProfile() {
         const name = (elements.profileNameInput?.value || '').trim();
         if (!name) { showStatus('Profile name required.', 'error'); return; }
@@ -2164,6 +2203,9 @@
             if (e.key === 'Enter') { e.preventDefault(); void addWatchedChannel(); }
         });
     }
+
+    // v3.15.0 — Account data export wiring.
+    if (elements.exportWatchHistoryBtn) elements.exportWatchHistoryBtn.addEventListener('click', () => void exportWatchHistoryAction());
 
     // v3.10.0 — Multi-profile UI wiring.
     if (elements.profileSaveBtn) elements.profileSaveBtn.addEventListener('click', () => void saveCurrentAsProfile());

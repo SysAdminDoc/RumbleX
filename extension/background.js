@@ -800,6 +800,79 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     //     channels and the toast suggests opening a Rumble tab + signing in
     //   - 0 entries on a logged-in account → fine, toast says so
     //   - fetch error → toast with HTTP status
+    // v3.15.0 — Watch History export.
+    // Fetches /account/playlists/watch-history with the user's session,
+    // parses each <li class="videostream__details" data-video-id="..."> row,
+    // returns a structured JSON dump. Rumble doesn't natively offer this.
+    //
+    // Failure modes:
+    //   - not logged in   → page returns logged-out shell with no items
+    //   - empty history   → 0-row response, ok:true
+    //   - HTTP error      → returned as { ok:false, reason:'http-NNN' }
+    if (message.action === 'exportWatchHistory') {
+        (async () => {
+            try {
+                const resp = await fetch('https://rumble.com/account/playlists/watch-history', {
+                    method: 'GET', credentials: 'include',
+                });
+                if (!resp.ok) { sendResponse({ ok: false, reason: 'http-' + resp.status }); return; }
+                const html = await resp.text();
+                // Guard: the logged-out shell omits videostream__list/details
+                // entirely, so we can detect "not logged in" by absence of
+                // the watch-history playlist data marker.
+                if (!html.includes('data-playlist="watch-history"') && !html.includes('videostream_details')) {
+                    sendResponse({ ok: false, reason: 'not-logged-in' });
+                    return;
+                }
+                // Pull each <li class="videostream__details" data-video-id="...">.
+                // Tolerate attribute-order variation by anchoring on the class
+                // marker, then a non-greedy capture up to </li>.
+                const rows = [];
+                const re = /<li[^>]*\bvideostream__details\b[^>]*\bdata-video-id="(\d+)"[\s\S]*?<\/li>/g;
+                let m;
+                while ((m = re.exec(html))) {
+                    const block = m[0];
+                    const videoId = m[1];
+                    const titleMatch = block.match(/<h3[^>]*\bthumbnail__title\b[^>]*title="([^"]*)"/) || block.match(/<h3[^>]*\bthumbnail__title\b[^>]*>([^<]+)/);
+                    const urlMatch = block.match(/<a[^>]*videostream__link[^>]*href="([^"]+)"/) || block.match(/<a[^>]*title__link[^>]*href="([^"]+)"/);
+                    const durMatch = block.match(/videostream__status--duration[^>]*>\s*([^<]+?)\s*</);
+                    const pctMatch = block.match(/--watched-percentage:\s*([\d.]+)%/);
+                    const thumbMatch = block.match(/<img[^>]*\bthumbnail__image\b[^>]*src="([^"]+)"/);
+                    const channelMatch = block.match(/<a[^>]*\bchannel__link\b[^>]*href="([^"]+)"[^>]*>([^<]+)</);
+                    // Clean URL: strip e9s/playlist_id query so the export is
+                    // canonical (consistent with v2.4 StripTrackingParams).
+                    let cleanUrl = urlMatch ? urlMatch[1] : null;
+                    if (cleanUrl) {
+                        try {
+                            const u = new URL(cleanUrl, 'https://rumble.com');
+                            for (const k of ['e9s', 'playlist_id']) u.searchParams.delete(k);
+                            cleanUrl = u.toString();
+                        } catch {}
+                    }
+                    rows.push({
+                        videoId,
+                        title: titleMatch ? titleMatch[1].trim() : null,
+                        url: cleanUrl,
+                        duration: durMatch ? durMatch[1].trim() : null,
+                        watchedPercentage: pctMatch ? Number(pctMatch[1]) : null,
+                        thumbnail: thumbMatch ? thumbMatch[1] : null,
+                        channelUrl: channelMatch ? channelMatch[1] : null,
+                        channelName: channelMatch ? channelMatch[2].trim() : null,
+                    });
+                }
+                sendResponse({
+                    ok: true,
+                    count: rows.length,
+                    exportedAt: new Date().toISOString(),
+                    items: rows,
+                });
+            } catch (e) {
+                sendResponse({ ok: false, reason: String(e?.message || e) });
+            }
+        })();
+        return true;
+    }
+
     if (message.action === 'importFollowedChannels') {
         (async () => {
             try {

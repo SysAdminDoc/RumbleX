@@ -1,8 +1,8 @@
 # RumbleX Roadmap
 
-Version: 4.13 — v3.14 Block-channel context menu + 11 new selectors
+Version: 4.14 — v3.15 Watch History export (SW-fetch + regex parse, no new permissions)
 Date: 2026-05-19
-Current shipped: v3.14.0 (extension), v1.8.0 (userscript)
+Current shipped: v3.15.0 (extension), v1.8.0 (userscript)
 
 This roadmap supersedes the v2026-05-19 v3.0 plan. It is the result of a fresh repo audit plus a 60+ source external research sweep (see [Appendix C — Sources](#appendix-c--sources)). It tracks shipped work in the [Recently shipped](#recently-shipped) summary, then prioritises the next ~12 months of work into **Now / Next / Later / Under Consideration / Rejected** tiers with every claim traceable to a source.
 
@@ -242,6 +242,21 @@ Tier placement above is per-feature; the workstreams below are themes the team s
 ## Recently shipped
 
 Compressed history. Detail per release lives in `CHANGELOG.md`.
+
+### v3.15.0 — Watch History export (2026-05-19)
+
+- `exportWatchHistory` message handler: background SW fetches `/account/playlists/watch-history` with `credentials: 'include'`, regex-parses every `<li class="videostream__details" data-video-id="…">` row into structured JSON (videoId/title/url/duration/watchedPercentage/thumbnail/channel).
+- "Export Watch History" button in a new "Account data export" options section, above the v3.10 multi-profile section. Downloads as `rumblex-watch-history-<ISO>.json` via the v3.10 `downloadJsonBlob` path.
+- No new permissions, no new settings keys, no new selectors — uses the v3.13 SW-fetch + regex-parse strategy. Catalog parity 201/201/201/201. Selector harness 85/17 unchanged.
+
+### v3.10–v3.14 — Account-data round-trips (2026-05-19)
+
+Five rapid-fire releases against the 2026-05-19 MHTML capture batch:
+- **v3.10** — OPML export of watched channels + multi-profile settings UI.
+- **v3.11** — `CommentExport` module (closes the v2.0 `commentExport` setting key).
+- **v3.12** — `BulkUnsubscribe` over `/account/following` + selectors hardened from new MHTML.
+- **v3.13** — `importFollowedChannels` SW-fetch + parse → notifier auto-population.
+- **v3.14** — `rxBlockChannel` context-menu entry on `/c/<slug>` / `/user/<slug>` links + 11 new selectors (library.*/history.*/profile.*).
 
 ### v3.0.0 — Privacy report + backup snapshots + selector telemetry + README refresh (2026-05-19)
 
