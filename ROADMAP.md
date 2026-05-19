@@ -1,8 +1,8 @@
 # RumbleX Roadmap
 
-Version: 4.6 — v3.7 chrome.sidePanel shipped
+Version: 4.7 — v3.8 axe-core a11y regression spec shipped
 Date: 2026-05-19
-Current shipped: v3.7.0 (extension), v1.8.0 (userscript)
+Current shipped: v3.8.0 (extension), v1.8.0 (userscript)
 
 This roadmap supersedes the v2026-05-19 v3.0 plan. It is the result of a fresh repo audit plus a 60+ source external research sweep (see [Appendix C — Sources](#appendix-c--sources)). It tracks shipped work in the [Recently shipped](#recently-shipped) summary, then prioritises the next ~12 months of work into **Now / Next / Later / Under Consideration / Rejected** tiers with every claim traceable to a source.
 
@@ -175,7 +175,7 @@ Tier placement above is per-feature; the workstreams below are themes the team s
 ### Accessibility (WCAG 2.2)
 
 - **Now:** aria-live toast region, target-size audit, aria-pressed/expanded sweep, focus return on modal close.
-- **Next:** Screen-reader pass with NVDA on Windows + VoiceOver on macOS (per [TestParty modal accessibility guidance](https://testparty.ai/blog/modal-dialog-accessibility)). Color-contrast pass with axe DevTools.
+- **Next:** Screen-reader pass with NVDA on Windows + VoiceOver on macOS (per [TestParty modal accessibility guidance](https://testparty.ai/blog/modal-dialog-accessibility)). ~~Color-contrast pass with axe DevTools.~~ *(v3.8.0 — `tests/e2e/a11y.spec.js` runs axe-core against options page + settings modal + popup with the `wcag2a/2aa/21a/21aa/22aa/best-practice` ruleset; fails build on any critical or serious violation.)*
 - **Later:** WCAG 3.0 readiness once a stable draft ships.
 
 ### Internationalization (i18n) / Localization

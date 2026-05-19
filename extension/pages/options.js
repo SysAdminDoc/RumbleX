@@ -1,4 +1,4 @@
-// RumbleX v3.7.0 - Options Page
+// RumbleX v3.8.0 - Options Page
 // Standalone settings management via chrome.storage.local (rx_settings key).
 // Mirrors Astra Deck's settings page pattern: dirty-draft workflow with
 // search, group nav, stats overview, and export/import/reset.

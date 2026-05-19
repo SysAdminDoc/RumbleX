@@ -2,6 +2,29 @@
 
 All notable changes to RumbleX will be documented in this file.
 
+## [3.8.0] - 2026-05-19
+
+### v3.8.0 — axe-core accessibility regression spec
+
+Closes the v4.0 ROADMAP cross-cutting **Accessibility** workstream "Next" item: "Color-contrast pass with axe DevTools."
+
+**axe-core Playwright spec (`tests/e2e/a11y.spec.js`)**
+- Three test cases scan the static extension pages with the standard `wcag2a, wcag2aa, wcag21a, wcag21aa, wcag22aa, best-practice` ruleset:
+  1. **Options page** — landed-state with v3.1 snapshot + privacy sections rendered.
+  2. **Options settings modal** — dirty-draft workspace with every settings card rendered.
+  3. **Popup** — feature groups + toggles.
+- **Fail policy**: any `critical` or `serious` impact violation fails the build. `moderate`/`minor` are logged as a warning summary for hand-triage each release.
+- Targeted rule changes: `region` rule disabled (popup is intentionally a single 320 px landmark).
+
+**Dependencies**
+- `@axe-core/playwright@^4.10` + `axe-core@^4.10` added to `package.json` devDependencies.
+- New `npm run test:e2e:a11y` script for local-only a11y runs.
+
+**CI**
+- The opt-in `.github/workflows/e2e.yml` workflow gains an `Accessibility audit (axe-core)` step after the main E2E suite. Same opt-in `workflow_dispatch` trigger — doesn't burn CI minutes on every push.
+
+**Catalog parity:** 199/199/199/199 unchanged (a11y is a test-only addition).
+
 ## [3.7.0] - 2026-05-19
 
 ### v3.7.0 — chrome.sidePanel integration
