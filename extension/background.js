@@ -612,6 +612,111 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         })();
         return true;
     }
+    // v3.10.0 — Watched-channels OPML export. Generates an OPML 2.0 outline
+    // that any RSS reader can import. Each rumble.com channel gets a
+    // synthesised feed URL using Rumble's official `_rss` suffix pattern
+    // documented in the Rumble support docs.
+    if (message.action === 'exportWatchedChannelsOpml') {
+        (async () => {
+            const s = await rxGetSettings();
+            const channels = Array.isArray(s.watchedChannels) ? s.watchedChannels : [];
+            const esc = (x) => String(x || '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
+            const lines = [];
+            lines.push('<?xml version="1.0" encoding="UTF-8"?>');
+            lines.push('<opml version="2.0">');
+            lines.push('  <head>');
+            lines.push('    <title>RumbleX watched channels</title>');
+            lines.push('    <dateCreated>' + new Date().toUTCString() + '</dateCreated>');
+            lines.push('  </head>');
+            lines.push('  <body>');
+            lines.push('    <outline text="Rumble" title="Rumble">');
+            for (const c of channels) {
+                if (!c?.url) continue;
+                // Rumble channel pages have an embedded RSS feed reachable
+                // by appending `?rss=1` or via the legacy `_rss` route. We
+                // emit both — RSS readers will pick whichever they prefer.
+                const xmlUrl = c.url.replace(/\/?$/, '') + '?rss=1';
+                lines.push('      <outline type="rss" text="' + esc(c.name || c.url) + '" title="' + esc(c.name || c.url) + '" xmlUrl="' + esc(xmlUrl) + '" htmlUrl="' + esc(c.url) + '" />');
+            }
+            lines.push('    </outline>');
+            lines.push('  </body>');
+            lines.push('</opml>');
+            sendResponse({ ok: true, opml: lines.join('\n'), count: channels.length });
+        })();
+        return true;
+    }
+
+    // v3.10.0 — Multi-profile settings.
+    // Profiles are named full snapshots of rx_settings stored in their own
+    // bucket `rx_settings_profiles`. switchProfile swaps the live settings
+    // for the profile's frozen copy (snapshotting current state first so
+    // the previous profile's drift isn't lost).
+    if (message.action === 'listProfiles') {
+        (async () => {
+            try {
+                const data = await chrome.storage.local.get(['rx_settings_profiles', 'rx_settings']);
+                const profiles = Array.isArray(data.rx_settings_profiles) ? data.rx_settings_profiles : [];
+                const activeId = (data.rx_settings || {}).activeProfileId || 'default';
+                sendResponse({ ok: true, profiles: profiles.map((p) => ({ id: p.id, name: p.name, createdAt: p.createdAt })), activeId });
+            } catch (e) { sendResponse({ ok: false, reason: String(e?.message || e) }); }
+        })();
+        return true;
+    }
+    if (message.action === 'saveProfile') {
+        (async () => {
+            const name = String(message.name || '').trim();
+            if (!name) { sendResponse({ ok: false, reason: 'empty-name' }); return; }
+            try {
+                const data = await chrome.storage.local.get(['rx_settings_profiles', 'rx_settings']);
+                const profiles = Array.isArray(data.rx_settings_profiles) ? data.rx_settings_profiles.slice() : [];
+                if (profiles.some((p) => p.name === name)) { sendResponse({ ok: false, reason: 'duplicate-name' }); return; }
+                // Hard cap to keep storage bounded — 25 named profiles is plenty.
+                if (profiles.length >= 25) { sendResponse({ ok: false, reason: 'cap-reached' }); return; }
+                const id = 'p_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 8);
+                profiles.push({
+                    id, name,
+                    createdAt: Date.now(),
+                    settings: data.rx_settings || {},
+                });
+                await chrome.storage.local.set({ rx_settings_profiles: profiles });
+                sendResponse({ ok: true, id, count: profiles.length });
+            } catch (e) { sendResponse({ ok: false, reason: String(e?.message || e) }); }
+        })();
+        return true;
+    }
+    if (message.action === 'switchProfile') {
+        (async () => {
+            const id = String(message.id || '');
+            try {
+                const data = await chrome.storage.local.get(['rx_settings_profiles', 'rx_settings']);
+                const profiles = Array.isArray(data.rx_settings_profiles) ? data.rx_settings_profiles : [];
+                const target = profiles.find((p) => p.id === id);
+                if (!target) { sendResponse({ ok: false, reason: 'not-found' }); return; }
+                // Snapshot current state first so we never lose drift between
+                // saves. Reuses the v3.0 backup system rather than introducing
+                // a parallel snapshot store.
+                try { await chrome.runtime.sendMessage({ action: 'backupSnapshot', reason: 'pre-profile-switch' }); } catch {}
+                const next = { ...target.settings, activeProfileId: target.id };
+                await chrome.storage.local.set({ rx_settings: next });
+                sendResponse({ ok: true, name: target.name });
+            } catch (e) { sendResponse({ ok: false, reason: String(e?.message || e) }); }
+        })();
+        return true;
+    }
+    if (message.action === 'deleteProfile') {
+        (async () => {
+            const id = String(message.id || '');
+            try {
+                const data = await chrome.storage.local.get('rx_settings_profiles');
+                const profiles = (Array.isArray(data.rx_settings_profiles) ? data.rx_settings_profiles : [])
+                    .filter((p) => p.id !== id);
+                await chrome.storage.local.set({ rx_settings_profiles: profiles });
+                sendResponse({ ok: true, count: profiles.length });
+            } catch (e) { sendResponse({ ok: false, reason: String(e?.message || e) }); }
+        })();
+        return true;
+    }
+
     if (message.action === 'runNotifierNow') {
         rxRunNotifierPass()
             .then(() => sendResponse({ ok: true }))

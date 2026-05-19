@@ -1,4 +1,4 @@
-// RumbleX v3.9.0 - Options Page
+// RumbleX v3.10.0 - Options Page
 // Standalone settings management via chrome.storage.local (rx_settings key).
 // Mirrors Astra Deck's settings page pattern: dirty-draft workflow with
 // search, group nav, stats overview, and export/import/reset.
@@ -575,6 +575,12 @@
         notifierList: document.getElementById('notifier-list'),
         notifierRunBtn: document.getElementById('notifier-run-btn'),
         notifierTestBtn: document.getElementById('notifier-test-btn'),
+        notifierOpmlBtn: document.getElementById('notifier-opml-btn'),
+        // v3.10.0 — Multi-profile settings UI
+        profileSummary: document.getElementById('profile-summary'),
+        profileNameInput: document.getElementById('profile-name-input'),
+        profileSaveBtn: document.getElementById('profile-save-btn'),
+        profileList: document.getElementById('profile-list'),
     };
 
     const state = {
@@ -1976,8 +1982,129 @@
         }
     }
 
+    // v3.10.0 — OPML export of watched channels.
+    async function exportWatchedChannelsOpml() {
+        const resp = await chrome.runtime.sendMessage({ action: 'exportWatchedChannelsOpml' });
+        if (!resp?.ok) { showStatus('OPML export failed.', 'error'); return; }
+        if (resp.count === 0) { showStatus('No watched channels to export.', 'info'); return; }
+        try {
+            const blob = new Blob([resp.opml], { type: 'text/x-opml' });
+            const ts = new Date().toISOString().slice(0, 10);
+            const a = Object.assign(document.createElement('a'), {
+                href: URL.createObjectURL(blob),
+                download: 'rumblex-watched-channels-' + ts + '.opml',
+            });
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+            showStatus('OPML exported with ' + resp.count + ' channel' + (resp.count === 1 ? '' : 's') + '.', 'success');
+        } catch (e) {
+            showStatus('OPML export failed: ' + String(e?.message || e), 'error');
+        }
+    }
+
+    // v3.10.0 — Multi-profile settings helpers.
+    async function refreshProfileList() {
+        const list = elements.profileList;
+        const summary = elements.profileSummary;
+        if (!list) return;
+        list.replaceChildren();
+        const resp = await chrome.runtime.sendMessage({ action: 'listProfiles' });
+        if (!resp?.ok) {
+            if (summary) summary.textContent = 'Failed to load profiles.';
+            return;
+        }
+        const profiles = Array.isArray(resp.profiles) ? resp.profiles : [];
+        const activeId = resp.activeId || 'default';
+        if (summary) {
+            summary.textContent = profiles.length + ' profile' + (profiles.length === 1 ? '' : 's')
+                + ' · active: ' + activeId;
+        }
+        if (profiles.length === 0) {
+            const empty = document.createElement('li');
+            empty.style.cssText = 'justify-content: center; color: var(--text-2, #a8b0bc);';
+            empty.textContent = 'No saved profiles yet. Name one above to capture current settings.';
+            list.appendChild(empty);
+            return;
+        }
+        for (const p of profiles) {
+            const li = document.createElement('li');
+            const meta = document.createElement('span');
+            meta.className = 'snapshot-meta';
+            const nm = document.createElement('strong');
+            nm.textContent = p.name;
+            const sub = document.createElement('span');
+            sub.className = 'snapshot-reason';
+            sub.textContent = ' — saved ' + formatTimestamp(p.createdAt) + (p.id === activeId ? ' · ACTIVE' : '');
+            meta.append(nm, sub);
+            const row = document.createElement('div');
+            row.style.cssText = 'display:flex; gap:6px;';
+            const sw = document.createElement('button');
+            sw.type = 'button';
+            sw.textContent = 'Switch';
+            sw.disabled = p.id === activeId;
+            sw.addEventListener('click', async () => {
+                sw.disabled = true;
+                sw.textContent = 'Switching…';
+                const r = await chrome.runtime.sendMessage({ action: 'switchProfile', id: p.id });
+                if (r?.ok) {
+                    showStatus('Switched to "' + r.name + '". Reload Rumble tabs to apply.', 'success');
+                    await refreshProfileList();
+                    // Re-render the snapshot list too — switching just created a pre-switch snapshot.
+                    await refreshSnapshotList();
+                } else {
+                    showStatus('Switch failed: ' + (r?.reason || 'unknown'), 'error');
+                    sw.disabled = false;
+                    sw.textContent = 'Switch';
+                }
+            });
+            const del = document.createElement('button');
+            del.type = 'button';
+            del.textContent = 'Delete';
+            del.addEventListener('click', async () => {
+                del.disabled = true;
+                const r = await chrome.runtime.sendMessage({ action: 'deleteProfile', id: p.id });
+                if (r?.ok) {
+                    showStatus('Profile deleted (' + r.count + ' remaining).', 'success');
+                    await refreshProfileList();
+                } else {
+                    showStatus('Delete failed.', 'error');
+                    del.disabled = false;
+                }
+            });
+            row.append(sw, del);
+            li.append(meta, row);
+            list.appendChild(li);
+        }
+    }
+
+    async function saveCurrentAsProfile() {
+        const name = (elements.profileNameInput?.value || '').trim();
+        if (!name) { showStatus('Profile name required.', 'error'); return; }
+        const resp = await chrome.runtime.sendMessage({ action: 'saveProfile', name });
+        if (resp?.ok) {
+            showStatus('Profile saved (' + resp.count + ' total).', 'success');
+            if (elements.profileNameInput) elements.profileNameInput.value = '';
+            await refreshProfileList();
+        } else if (resp?.reason === 'duplicate-name') {
+            showStatus('A profile with that name already exists.', 'error');
+        } else if (resp?.reason === 'cap-reached') {
+            showStatus('Profile cap reached (25 max). Delete one first.', 'error');
+        } else if (resp?.reason === 'empty-name') {
+            showStatus('Profile name required.', 'error');
+        } else {
+            showStatus('Save failed: ' + (resp?.reason || 'unknown'), 'error');
+        }
+    }
+
     // Auto-load on page open. Don't block initial render.
-    setTimeout(() => { void refreshSnapshotList(); void refreshPrivacyReport(); void refreshNotifierList(); }, 250);
+    setTimeout(() => {
+        void refreshSnapshotList();
+        void refreshPrivacyReport();
+        void refreshNotifierList();
+        void refreshProfileList();
+    }, 250);
 
     // ── Event wiring ──
     if (elements.snapshotTakeBtn) elements.snapshotTakeBtn.addEventListener('click', () => void takeSnapshotNow());
@@ -1990,6 +2117,7 @@
     if (elements.notifierAddBtn) elements.notifierAddBtn.addEventListener('click', () => void addWatchedChannel());
     if (elements.notifierRunBtn) elements.notifierRunBtn.addEventListener('click', () => void runNotifierNow());
     if (elements.notifierTestBtn) elements.notifierTestBtn.addEventListener('click', () => void sendTestNotification());
+    if (elements.notifierOpmlBtn) elements.notifierOpmlBtn.addEventListener('click', () => void exportWatchedChannelsOpml());
     if (elements.notifierUrlInput) {
         elements.notifierUrlInput.addEventListener('keydown', (e) => {
             if (e.key === 'Enter') { e.preventDefault(); void addWatchedChannel(); }
@@ -1998,6 +2126,14 @@
     if (elements.notifierNameInput) {
         elements.notifierNameInput.addEventListener('keydown', (e) => {
             if (e.key === 'Enter') { e.preventDefault(); void addWatchedChannel(); }
+        });
+    }
+
+    // v3.10.0 — Multi-profile UI wiring.
+    if (elements.profileSaveBtn) elements.profileSaveBtn.addEventListener('click', () => void saveCurrentAsProfile());
+    if (elements.profileNameInput) {
+        elements.profileNameInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') { e.preventDefault(); void saveCurrentAsProfile(); }
         });
     }
 

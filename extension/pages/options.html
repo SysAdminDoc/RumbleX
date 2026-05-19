@@ -733,7 +733,28 @@
                     <div class="button-row">
                         <button id="notifier-run-btn" type="button" class="settings-tertiary-button">Run check now</button>
                         <button id="notifier-test-btn" type="button" class="settings-tertiary-button">Send test notification</button>
+                        <button id="notifier-opml-btn" type="button" class="settings-tertiary-button">Export OPML</button>
                     </div>
+                </details>
+            </section>
+
+            <!-- v3.10.0 — Multi-profile settings. Profiles are named full
+                 snapshots of rx_settings stored separately from the v3.0
+                 backup-snapshot history. Switching a profile snapshots
+                 the current state into the backup history first so
+                 nothing is lost. -->
+            <section class="data-section" id="profile-section" aria-labelledby="profile-heading">
+                <details class="data-section-details">
+                    <summary class="data-section-summary">
+                        <h2 class="data-section-title" id="profile-heading">Settings profiles</h2>
+                        <span class="data-section-hint" id="profile-summary">Loading…</span>
+                    </summary>
+                    <p class="data-section-copy">Named settings snapshots for work / casual / creator / lab configurations. Save a profile to capture current settings, switch to instantly load another profile (the current state is snapshotted to the backup history first so nothing is lost). 25 profile cap.</p>
+                    <div class="button-row notifier-add">
+                        <input type="text" id="profile-name-input" placeholder="Profile name (e.g. Work)" class="notifier-input">
+                        <button id="profile-save-btn" type="button">Save current settings as profile</button>
+                    </div>
+                    <ul class="snapshot-list" id="profile-list" aria-live="polite"></ul>
                 </details>
             </section>
 

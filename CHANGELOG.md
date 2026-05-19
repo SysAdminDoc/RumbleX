@@ -2,6 +2,25 @@
 
 All notable changes to RumbleX will be documented in this file.
 
+## [3.10.0] - 2026-05-19
+
+### v3.10.0 — Watched-channels OPML export + multi-profile settings UI
+
+Closes two more deferred ROADMAP items, both built on data models from earlier releases.
+
+**Watched-channels OPML export** (builds on v3.9 `watchedChannels`)
+- New `exportWatchedChannelsOpml` message → returns OPML 2.0 XML with each watched channel as an `<outline type="rss">` entry. `xmlUrl` synthesised from `<channel-url>?rss=1` per Rumble's standard RSS-feed suffix.
+- New **Export OPML** button in the Channel Notifier section. Downloads `rumblex-watched-channels-YYYY-MM-DD.opml`. Empty-list case shows an info toast rather than producing an empty file.
+- Any RSS reader (Inoreader, Feedly, NetNewsWire, etc.) can import the OPML to follow the same channels outside the extension. Closes the `rssExportEnabled` v2.0 setting.
+
+**Multi-profile settings UI** (closes v2.0 `settingsProfiles` + `activeProfileId` keys)
+- New profile system stored separately at `rx_settings_profiles` (not in `rx_settings`, so a profile switch doesn't recursively snapshot itself). Each profile: `{ id, name, createdAt, settings }`. Hard cap 25 profiles.
+- New options-page section: **Settings profiles** (collapsed-by-default, sits between Channel notifier and Privacy report). Name input + "Save current settings as profile" button. Per-row Switch + Delete buttons. Active profile labeled `ACTIVE`.
+- New message API: `listProfiles` / `saveProfile({ name })` / `switchProfile({ id })` / `deleteProfile({ id })`. Switch auto-creates a `pre-profile-switch` backup snapshot via the existing v3.0 system, so the previous profile's drift is preserved in the backup history.
+- Validation: empty-name / duplicate-name / cap-reached error reasons. URL is not validated (profiles are settings blobs, not URLs).
+
+**Catalog parity:** 201/201/201/201 unchanged (both features are message-API additions, not new toggle keys).
+
 ## [3.9.0] - 2026-05-19
 
 ### v3.9.0 — Channel Notifier (chrome.alarms + chrome.notifications + Discord webhook)
