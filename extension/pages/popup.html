@@ -192,6 +192,8 @@ body {
 .footer-btn svg { width: 14px; height: 14px; }
 .footer-btn.github:hover { color: #f0f0f0; }
 .footer-btn.settings:hover { color: #85d551; border-color: rgba(133,213,81,0.3); }
+.footer-btn.group-tabs:hover { color: #85d551; border-color: rgba(133,213,81,0.3); }
+.footer-btn.group-tabs.error { color: #f38ba8; border-color: rgba(243,139,168,0.3); }
 .footer-btn.update:hover { color: #89b4fa; border-color: rgba(137,180,250,0.3); }
 .footer-btn.update.has-update { color: #85d551; border-color: #85d551; animation: rx-pulse 2s infinite; }
 .footer-btn.update.checking { opacity: 0.5; pointer-events: none; }
@@ -256,6 +258,10 @@ body {
         <span class="footer-reload">Reload after changes</span>
     </div>
     <div class="footer-right">
+        <!-- v3.6.0 — Group all open Rumble tabs into one tab group (Chrome only). -->
+        <button class="footer-btn group-tabs" id="btn-group-tabs" data-tooltip="Group all Rumble tabs">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="6" height="6" rx="1"/><rect x="15" y="4" width="6" height="6" rx="1"/><rect x="3" y="14" width="6" height="6" rx="1"/><rect x="15" y="14" width="6" height="6" rx="1"/></svg>
+        </button>
         <button class="footer-btn settings" id="btn-settings" data-tooltip="Open Settings Modal">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 00-2 2v.18a2 2 0 01-1 1.73l-.43.25a2 2 0 01-2 0l-.15-.08a2 2 0 00-2.73.73l-.22.38a2 2 0 00.73 2.73l.15.1a2 2 0 011 1.72v.51a2 2 0 01-1 1.74l-.15.09a2 2 0 00-.73 2.73l.22.38a2 2 0 002.73.73l.15-.08a2 2 0 012 0l.43.25a2 2 0 011 1.73V20a2 2 0 002 2h.44a2 2 0 002-2v-.18a2 2 0 011-1.73l.43-.25a2 2 0 012 0l.15.08a2 2 0 002.73-.73l.22-.39a2 2 0 00-.73-2.73l-.15-.08a2 2 0 01-1-1.74v-.5a2 2 0 011-1.74l.15-.09a2 2 0 00.73-2.73l-.22-.38a2 2 0 00-2.73-.73l-.15.08a2 2 0 01-2 0l-.43-.25a2 2 0 01-1-1.73V4a2 2 0 00-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
         </button>

@@ -1,4 +1,4 @@
-// RumbleX v3.5.0 - Popup Script
+// RumbleX v3.6.0 - Popup Script
 'use strict';
 
 // Feature list grouped by category. Order within a group controls display
@@ -612,6 +612,37 @@ async function init() {
     document.getElementById('open-options').addEventListener('click', openOptions);
 
     // Footer gear — click opens the dedicated options page (full editor).
+    // v3.6.0 — Group all open Rumble tabs into one colored tab group.
+    // Chrome only; gracefully degrades on Firefox/MV2 (button stays but
+    // the SW responds with `no-tabgroups-api` and we flash the error tint).
+    const groupBtn = document.getElementById('btn-group-tabs');
+    if (groupBtn) {
+        groupBtn.addEventListener('click', () => {
+            chrome.runtime.sendMessage({ action: 'groupRumbleTabs' }, (res) => {
+                if (!res?.ok) {
+                    groupBtn.classList.add('error');
+                    const orig = groupBtn.dataset.tooltip;
+                    if (res?.reason === 'no-rumble-tabs') {
+                        groupBtn.dataset.tooltip = 'No Rumble tabs open';
+                    } else if (res?.reason === 'no-tabgroups-api') {
+                        groupBtn.dataset.tooltip = 'Tab groups not supported in this browser';
+                    } else {
+                        groupBtn.dataset.tooltip = 'Group failed';
+                    }
+                    setTimeout(() => {
+                        groupBtn.classList.remove('error');
+                        if (orig) groupBtn.dataset.tooltip = orig;
+                    }, 2500);
+                    return;
+                }
+                // Success — flash a brief confirmation.
+                const orig = groupBtn.dataset.tooltip;
+                groupBtn.dataset.tooltip = `Grouped ${res.count} ${res.count === 1 ? 'tab' : 'tabs'}`;
+                setTimeout(() => { if (orig) groupBtn.dataset.tooltip = orig; }, 2000);
+            });
+        });
+    }
+
     // Shift-click tries the on-page Ctrl+Shift+X modal for quick toggles but
     // only if the active tab is actually rumble.com; otherwise we gracefully
     // fall through to the options page so the click isn't wasted.

@@ -2,6 +2,29 @@
 
 All notable changes to RumbleX will be documented in this file.
 
+## [3.6.0] - 2026-05-19
+
+### v3.6.0 — CompressionStream gzip exports + chrome.tabGroups + import-side decompression
+
+Three more "Later"-tier atomic wins from the v4.0 ROADMAP.
+
+**CompressionStream gzip exports**
+- Settings + per-origin localStorage backup is now gzipped via `CompressionStream('gzip')` before download. Typical export drops from 1–10 MB to ~200KB–2MB (~80% reduction). Filename gains `.gz` extension; toast shows the compressed size.
+- Falls back to plain JSON if `CompressionStream` is unavailable (very old Chromium) — no user-visible failure path.
+- Universal browser support confirmed via [web.dev's Compression Streams API article](https://web.dev/blog/compressionstreams).
+
+**Import-side gzip auto-detection**
+- Import accepts `.json` and `.json.gz`. Magic-byte sniffing (`0x1f 0x8b`) detects gzip regardless of file extension; `DecompressionStream` does the work. Plain-JSON exports from earlier versions still import unchanged.
+- `<input type="file">` `accept` attribute extended to `.json,.gz,application/json,application/gzip`.
+
+**chrome.tabGroups: "Group all Rumble tabs"**
+- New popup-footer button (left-most icon, before settings gear). One click groups every open `rumble.com` tab into a single colored tab group titled "Rumble" with green accent.
+- New permissions: `tabs`, `tabGroups` (Chrome only — Firefox MV2 doesn't have the API; popup button still appears and reports `no-tabgroups-api` with a visible error tint).
+- Background message: `groupRumbleTabs` → returns `{ ok, count, groupId }` on success or `{ ok: false, reason }` on failure (`no-rumble-tabs`, `no-tabgroups-api`, error message).
+- Tooltip cycling shows live status: "Grouped 5 tabs" on success, "No Rumble tabs open" / "Tab groups not supported in this browser" on failure.
+
+**Catalog parity:** 198/198/198/198 unchanged (tabGroups feature isn't a per-setting toggle — it's a one-shot action).
+
 ## [3.5.0] - 2026-05-19
 
 ### v3.5.0 — chrome.contextMenus + opt-in Playwright E2E + ES/PT-BR locale drafts

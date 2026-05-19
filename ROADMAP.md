@@ -1,8 +1,8 @@
 # RumbleX Roadmap
 
-Version: 4.4 — v3.5 ContextMenus + Playwright + ES/PT-BR shipped
+Version: 4.5 — v3.6 CompressionStream + tabGroups shipped
 Date: 2026-05-19
-Current shipped: v3.5.0 (extension), v1.8.0 (userscript)
+Current shipped: v3.6.0 (extension), v1.8.0 (userscript)
 
 This roadmap supersedes the v2026-05-19 v3.0 plan. It is the result of a fresh repo audit plus a 60+ source external research sweep (see [Appendix C — Sources](#appendix-c--sources)). It tracks shipped work in the [Recently shipped](#recently-shipped) summary, then prioritises the next ~12 months of work into **Now / Next / Later / Under Consideration / Rejected** tiers with every claim traceable to a source.
 
@@ -125,8 +125,8 @@ These items need preconditions that don't exist yet (live captures, large refact
 - [ ] **Discord webhook notifier + RSS/OPML export.** `discordWebhookUrl`, `rssExportEnabled`, `channelNotifierEnabled` keys all shipped v2.0. Needs `chrome.alarms` polling + the new channel archive queue's metadata. Reference: [HamzaJarane/rumble-notifier](https://github.com/HamzaJarane/rumble-notifier) (Go-based, server-side).
 - [ ] **WebCodecs full migration.** Remove mux.js entirely once Mediabunny + WebCodecs path has shipped through a major release with no regressions. Source: [mp4-muxer deprecated in favor of Mediabunny](https://github.com/Vanilagy/mp4-muxer).
 - [ ] **File System Access API for batch download folder picker.** Today the batchDownload feature dumps everything to the default Downloads folder. With `showDirectoryPicker({startIn: 'downloads'})` users can target a sub-folder and persist the handle in IndexedDB across sessions. Falls back to per-file `chrome.downloads.download` for Firefox + Safari, which [don't support the local-disk pickers](https://developer.chrome.com/docs/capabilities/web-apis/file-system-access). Source: [File System Access API](https://developer.chrome.com/docs/capabilities/web-apis/file-system-access).
-- [ ] **`CompressionStream` gzip-backed backup exports.** Today export JSON is ~1–10 MB uncompressed. Browser-native gzip cuts that ~80%. [Compression Streams are supported across all major browsers](https://web.dev/blog/compressionstreams). Note: still requires our own ZIP container if we want multi-file archives — native API only gives us the deflate layer.
-- [ ] **`chrome.tabGroups` integration: "Group all Rumble tabs".** Small UX win for power users. Right-click toolbar action → group + colour all open `rumble.com` tabs. Source: [Chrome tabGroups API](https://developer.chrome.com/docs/extensions/reference/api/tabGroups).
+- [x] **`CompressionStream` gzip-backed backup exports.** *(v3.6.0 — settings + localStorage export now gzipped via `CompressionStream('gzip')`. ~80% smaller files. `.json.gz` extension. Import side auto-detects via magic bytes 0x1f 0x8b and decompresses transparently — plain `.json` files from older versions still import. Falls back to plain JSON if API unavailable.)* Source: [Compression Streams are supported across all major browsers](https://web.dev/blog/compressionstreams).
+- [x] **`chrome.tabGroups` integration: "Group all Rumble tabs".** *(v3.6.0 — popup footer button. One click groups every open rumble.com tab into a colored "Rumble" tab group. New `tabs` + `tabGroups` permissions (Chrome only — Firefox MV2 button appears but reports `no-tabgroups-api`). Background message `groupRumbleTabs` returns count + groupId. Tooltip cycles to show live status.)* Source: [Chrome tabGroups API](https://developer.chrome.com/docs/extensions/reference/api/tabGroups).
 - [ ] **Encrypted user-provided gist sync.** `encryptedGistSync` key shipped v2.0. Crypto + UI deferred. AES-GCM with user-provided passphrase; gist content is the ciphertext.
 - [ ] **Multi-profile settings (work / casual / creator).** `settingsProfiles` + `activeProfileId` keys shipped v2.0; profile-switching UI deferred.
 

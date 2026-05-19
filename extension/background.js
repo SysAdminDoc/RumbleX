@@ -362,6 +362,37 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     // are async and use the keep-channel-open pattern. Falls back to a
     // structured failure response if offscreen is unsupported (Firefox MV2
     // or older Chrome) so the caller can degrade gracefully.
+    // v3.6.0 — Group all open Rumble tabs into a single colored tab group.
+    // Chrome-only (tabGroups API not in Firefox/MV2). Returns { ok, count,
+    // groupId } on success or { ok: false, reason } on failure. Popup
+    // invokes via `groupRumbleTabs` message.
+    if (message.action === 'groupRumbleTabs') {
+        (async () => {
+            if (!chrome.tabs?.group || !chrome.tabGroups) {
+                sendResponse({ ok: false, reason: 'no-tabgroups-api' });
+                return;
+            }
+            try {
+                const tabs = await chrome.tabs.query({ url: ['*://rumble.com/*', '*://*.rumble.com/*'] });
+                const tabIds = (tabs || []).filter((t) => typeof t.id === 'number').map((t) => t.id);
+                if (tabIds.length === 0) {
+                    sendResponse({ ok: false, reason: 'no-rumble-tabs' });
+                    return;
+                }
+                const groupId = await chrome.tabs.group({ tabIds });
+                await chrome.tabGroups.update(groupId, {
+                    title: 'Rumble',
+                    color: 'green',
+                    collapsed: false,
+                });
+                sendResponse({ ok: true, count: tabIds.length, groupId });
+            } catch (e) {
+                sendResponse({ ok: false, reason: String(e?.message || e) });
+            }
+        })();
+        return true;
+    }
+
     if (message.action === 'parseHtmlOffscreen') {
         callOffscreen('parseHtml', { html: message.html || '' }).then(sendResponse);
         return true;
