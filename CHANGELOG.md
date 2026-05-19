@@ -2,6 +2,45 @@
 
 All notable changes to RumbleX will be documented in this file.
 
+## [3.18.0] - 2026-05-19
+
+### v3.18.0 — Channel Archive Queue Phase 1 (closes the marquee Later-tier item)
+
+Materializes the v2.0 `channelArchive*` setting keys into the headline feature people install a Rumble extension for: paste a channel URL, walk away, come back to a folder of MP4s. **Browser-side, no Flask backend** — beats the [nullEFFORT/rumble-downloader](https://github.com/nullEFFORT/rumble-downloader) reference implementation by not requiring a Python server.
+
+**Persistent queue (chrome.storage.local)**
+- `rx_archive_queue` = `{ jobs: [...], paused: boolean, version: 1 }`. Survives SW restarts and full browser restarts (re-syncs the drain alarm on `chrome.runtime.onStartup`).
+- Job shape: `{ id, channelUrl, channelName, videoId, videoUrl, videoTitle, status, qualityFound?, filename?, downloadId?, error?, addedAt, completedAt }`.
+- Status states: `pending` → `discovering` → `downloading` → (`completed` | `failed`).
+- Queue cap: 500 jobs. Completed jobs older than 7 days auto-prune on each tick.
+
+**Drain mechanism**
+- `chrome.alarms` `rx-archive-tick` fires every minute. Drains up to `downloadConcurrency` (v2.0 setting, default 2, range 1–8) pending jobs concurrently.
+- Each drained job hits `https://rumble.com/embedJS/u3/?request=video&ver=2&v=<id>` — same endpoint VideoDownloader uses in [extension/content.js:2239](extension/content.js#L2239). Picks the highest-resolution `ua.mp4.*` direct URL.
+- `chrome.downloads.download()` with `conflictAction: 'uniquify'`, target subfolder `RumbleX/<sanitized-title>_<quality>.mp4`. URL is verified against the existing `isAllowedDownloadUrl` allowlist (rumble.com / 1a-1791.com / rumble.cloud).
+- `chrome.downloads.onChanged` listener watches the tracked `downloadId` — flips jobs to `completed` on `complete`, `failed` on `interrupted`.
+
+**Background message API**
+- `archiveEnqueueChannel({ channelUrl, maxItems, filterClips })` — SW-fetches the channel page (`credentials: 'include'`), regex-extracts up to N video rows, dedups against current queue, returns `{ ok, enqueued, skipped, channelName }`. Two-pass parser: primary uses `<a class="videostream__link" href="/v..."` + `<h3 class="thumbnail__title">`, fallback to bare anchor scan. `filterClips` skips entries titled `Clip:` or under `/clips/`.
+- `archiveGetQueue` — returns the full queue object.
+- `archivePauseQueue` / `archiveResumeQueue` — toggles `paused`.
+- `archiveClearCompleted` / `archiveClearQueue` — bulk-remove.
+- `archiveRemoveJob({ id })` / `archiveRetryJob({ id })` / `archiveRunNow` — per-job ops.
+
+**Options-page UI** ("Channel archive queue" section, placed above v3.17 Encrypted Gist Sync)
+- Form: channel URL input + max-items number (default 50, 1–500) + "Skip clips" checkbox + Enqueue button.
+- Status row with five state counts. Pause/Resume toggle. Run-now / Clear-completed / Clear-all buttons.
+- Per-job rows: title (or video id) + status + quality + channel + error, with Open (deep link), Retry (failed-only), Remove actions.
+- Live refresh via `chrome.storage.onChanged` — the panel updates in real time as jobs progress.
+
+**No new permissions, no new settings keys** — `channelArchiveEnabled`, `channelArchiveFilterClips`, `channelArchiveMaxItems`, `downloadConcurrency`, `batchDownload` all exist since v2.0. Catalog parity 203/203/203/203 unchanged. Selector harness 85 pass / 17 fixtures unchanged.
+
+### Deferred to v3.19+
+
+- **Phase 2: content-script "Archive this channel" button** — currently the user pastes the channel URL on the options page. The next pass adds a one-click button on `/c/<slug>` pages.
+- **HLS fallback for videos without a direct MP4** — current phase only handles videos that expose `ua.mp4.*` direct URLs. Some recent uploads only ship as HLS (`.tar` segments); those will need the v2.2 mux.js transmux path adapted for SW or offscreen-document context.
+- **Per-job quality preference** — currently picks the absolute highest direct MP4. A future "max height" setting would let users cap at 720p/1080p for storage reasons.
+
 ## [3.17.0] - 2026-05-19
 
 ### v3.17.0 — Encrypted Gist Sync (closes the v2.0 `encryptedGistSync` key)

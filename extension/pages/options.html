@@ -776,6 +776,37 @@
                 </details>
             </section>
 
+            <!-- v3.18.0 — Channel Archive Queue. Persistent chrome.storage.local
+                 -backed job queue drained by a chrome.alarms tick every minute.
+                 Honors downloadConcurrency. Each job fetches embedJS and kicks
+                 off a chrome.downloads.download() with the highest-quality
+                 direct MP4 URL. -->
+            <section class="data-section" id="archive-queue-section" aria-labelledby="archive-queue-heading">
+                <details class="data-section-details">
+                    <summary class="data-section-summary">
+                        <h2 class="data-section-title" id="archive-queue-heading">Channel archive queue</h2>
+                        <span class="data-section-hint" id="archive-queue-summary">Loading…</span>
+                    </summary>
+                    <p class="data-section-copy">Paste a Rumble channel URL (e.g. <code>https://rumble.com/c/example</code>) and we'll queue every video from the page for direct MP4 download. Each job picks the highest-quality direct URL via Rumble's <code>embedJS</code> endpoint — same path the in-page Download button uses. Queue survives extension restarts; processed at <em>downloadConcurrency</em> jobs/minute.</p>
+                    <div class="notifier-add">
+                        <input type="text" id="archive-channel-input" placeholder="Channel URL (https://rumble.com/c/…)" class="notifier-input" autocomplete="off">
+                        <input type="number" id="archive-max-input" min="1" max="500" value="50" class="notifier-input" style="max-width: 90px;" title="Max videos to enqueue from this channel page">
+                    </div>
+                    <div class="checkbox-row" style="margin: 6px 0 10px 2px;">
+                        <label><input type="checkbox" id="archive-filter-clips-input"> Skip videos titled "Clip:" or under /clips/</label>
+                    </div>
+                    <div class="button-row">
+                        <button id="archive-enqueue-btn" type="button">Enqueue channel</button>
+                        <button id="archive-pause-btn" type="button">Pause queue</button>
+                        <button id="archive-run-btn" type="button">Run now</button>
+                        <button id="archive-clear-completed-btn" type="button">Clear completed</button>
+                        <button id="archive-clear-btn" type="button" class="danger">Clear all</button>
+                    </div>
+                    <div class="rant-stats-totals" id="archive-totals" aria-live="polite"></div>
+                    <ul class="snapshot-list" id="archive-list" aria-live="polite"></ul>
+                </details>
+            </section>
+
             <!-- v3.17.0 — Encrypted Gist Sync. Encrypt the entire rx_settings
                  blob with AES-GCM (PBKDF2-SHA256, 200k iters) under a user-
                  typed passphrase, store the ciphertext in a private GitHub

@@ -1,4 +1,4 @@
-// RumbleX v3.17.0 - Options Page
+// RumbleX v3.18.0 - Options Page
 // Standalone settings management via chrome.storage.local (rx_settings key).
 // Mirrors Astra Deck's settings page pattern: dirty-draft workflow with
 // search, group nav, stats overview, and export/import/reset.
@@ -588,6 +588,18 @@
         profileList: document.getElementById('profile-list'),
         // v3.15.0 — Account data export UI
         exportWatchHistoryBtn: document.getElementById('export-watch-history-btn'),
+        // v3.18.0 — Channel Archive Queue UI
+        archiveQueueSummary: document.getElementById('archive-queue-summary'),
+        archiveChannelInput: document.getElementById('archive-channel-input'),
+        archiveMaxInput: document.getElementById('archive-max-input'),
+        archiveFilterClipsInput: document.getElementById('archive-filter-clips-input'),
+        archiveEnqueueBtn: document.getElementById('archive-enqueue-btn'),
+        archivePauseBtn: document.getElementById('archive-pause-btn'),
+        archiveRunBtn: document.getElementById('archive-run-btn'),
+        archiveClearCompletedBtn: document.getElementById('archive-clear-completed-btn'),
+        archiveClearBtn: document.getElementById('archive-clear-btn'),
+        archiveTotals: document.getElementById('archive-totals'),
+        archiveList: document.getElementById('archive-list'),
         // v3.17.0 — Encrypted Gist Sync UI
         gistSyncSummary: document.getElementById('gist-sync-summary'),
         gistSyncTokenInput: document.getElementById('gist-sync-token-input'),
@@ -2172,6 +2184,136 @@
         }
     }
 
+    // v3.18.0 — Channel Archive Queue UI. Talks to the background drain via
+    // the archive* message API; live-refreshes via storage.onChanged.
+    async function refreshArchiveQueue() {
+        const resp = await chrome.runtime.sendMessage({ action: 'archiveGetQueue' });
+        const queue = (resp && resp.ok && resp.queue) ? resp.queue : { jobs: [], paused: false };
+        const jobs = queue.jobs || [];
+        const counts = { pending: 0, discovering: 0, downloading: 0, completed: 0, failed: 0 };
+        for (const j of jobs) counts[j.status] = (counts[j.status] || 0) + 1;
+        if (elements.archiveQueueSummary) {
+            elements.archiveQueueSummary.textContent = jobs.length === 0
+                ? 'Queue empty.'
+                : (queue.paused ? 'Paused. ' : '') + jobs.length + ' job' + (jobs.length === 1 ? '' : 's') + ' · ' + counts.pending + ' pending, ' + counts.downloading + ' downloading, ' + counts.completed + ' done, ' + counts.failed + ' failed';
+        }
+        if (elements.archiveTotals) {
+            if (jobs.length === 0) elements.archiveTotals.textContent = '';
+            else elements.archiveTotals.textContent = 'Pending ' + counts.pending + ' · Discovering ' + counts.discovering + ' · Downloading ' + counts.downloading + ' · Completed ' + counts.completed + ' · Failed ' + counts.failed;
+        }
+        if (elements.archivePauseBtn) {
+            elements.archivePauseBtn.textContent = queue.paused ? 'Resume queue' : 'Pause queue';
+        }
+        if (!elements.archiveList) return;
+        elements.archiveList.textContent = '';
+        // Show newest first.
+        const sorted = jobs.slice().sort((a, b) => (b.addedAt || 0) - (a.addedAt || 0));
+        for (const j of sorted) {
+            const li = document.createElement('li');
+            li.className = 'snapshot-item';
+            const meta = document.createElement('div');
+            meta.className = 'snapshot-meta';
+            const title = document.createElement('div');
+            title.className = 'snapshot-reason';
+            title.textContent = j.videoTitle || j.videoId;
+            const sub = document.createElement('div');
+            sub.className = 'snapshot-time';
+            const statusBits = [j.status];
+            if (j.qualityFound) statusBits.push(j.qualityFound);
+            if (j.channelName) statusBits.push(j.channelName);
+            if (j.error) statusBits.push('err: ' + j.error);
+            sub.textContent = statusBits.join(' · ');
+            meta.append(title, sub);
+            const row = document.createElement('div');
+            row.className = 'snapshot-actions';
+            const openLink = document.createElement('a');
+            openLink.textContent = 'Open';
+            openLink.href = j.videoUrl;
+            openLink.target = '_blank';
+            openLink.rel = 'noopener noreferrer';
+            openLink.className = 'snapshot-link';
+            row.appendChild(openLink);
+            if (j.status === 'failed') {
+                const retryBtn = document.createElement('button');
+                retryBtn.type = 'button';
+                retryBtn.textContent = 'Retry';
+                retryBtn.addEventListener('click', async () => {
+                    retryBtn.disabled = true;
+                    await chrome.runtime.sendMessage({ action: 'archiveRetryJob', id: j.id });
+                    await refreshArchiveQueue();
+                });
+                row.appendChild(retryBtn);
+            }
+            const rmBtn = document.createElement('button');
+            rmBtn.type = 'button';
+            rmBtn.className = 'danger';
+            rmBtn.textContent = 'Remove';
+            rmBtn.addEventListener('click', async () => {
+                rmBtn.disabled = true;
+                await chrome.runtime.sendMessage({ action: 'archiveRemoveJob', id: j.id });
+                await refreshArchiveQueue();
+            });
+            row.appendChild(rmBtn);
+            li.append(meta, row);
+            elements.archiveList.appendChild(li);
+        }
+    }
+
+    async function enqueueArchiveChannel() {
+        const channelUrl = (elements.archiveChannelInput?.value || '').trim();
+        if (!channelUrl) { showStatus('Channel URL required.', 'error'); return; }
+        const maxItems = Math.max(1, Math.min(500, parseInt(elements.archiveMaxInput?.value, 10) || 50));
+        const filterClips = !!(elements.archiveFilterClipsInput?.checked);
+        const btn = elements.archiveEnqueueBtn;
+        if (btn) { btn.disabled = true; btn.dataset.idleLabel = btn.dataset.idleLabel || btn.textContent; btn.textContent = 'Fetching…'; }
+        try {
+            const resp = await chrome.runtime.sendMessage({ action: 'archiveEnqueueChannel', channelUrl, maxItems, filterClips });
+            if (!resp?.ok) {
+                const reasonMap = {
+                    'bad-channel-url': 'Channel URL must be a https://rumble.com/c/... or /user/... link.',
+                    'no-videos-found': 'No videos found on that channel page. Sign in to rumble.com first, or check the URL.',
+                };
+                showStatus('Enqueue failed: ' + (reasonMap[resp?.reason] || resp?.reason || 'unknown'), 'error');
+                return;
+            }
+            const skippedNote = resp.skipped ? (' (' + resp.skipped + ' already queued)') : '';
+            showStatus('Queued ' + resp.enqueued + ' video' + (resp.enqueued === 1 ? '' : 's') + (resp.channelName ? ' from ' + resp.channelName : '') + skippedNote + '.', 'success');
+            if (elements.archiveChannelInput) elements.archiveChannelInput.value = '';
+            await refreshArchiveQueue();
+        } catch (e) {
+            showStatus('Enqueue failed: ' + String(e?.message || e), 'error');
+        } finally {
+            if (btn) { btn.disabled = false; if (btn.dataset.idleLabel) btn.textContent = btn.dataset.idleLabel; }
+        }
+    }
+
+    async function toggleArchivePause() {
+        const cur = await chrome.runtime.sendMessage({ action: 'archiveGetQueue' });
+        const paused = !!(cur?.queue?.paused);
+        const action = paused ? 'archiveResumeQueue' : 'archivePauseQueue';
+        await chrome.runtime.sendMessage({ action });
+        showStatus(paused ? 'Queue resumed.' : 'Queue paused.', 'success');
+        await refreshArchiveQueue();
+    }
+
+    async function runArchiveNow() {
+        await chrome.runtime.sendMessage({ action: 'archiveRunNow' });
+        showStatus('Tick scheduled.', 'success');
+        setTimeout(refreshArchiveQueue, 600);
+    }
+
+    async function clearArchiveCompleted() {
+        const resp = await chrome.runtime.sendMessage({ action: 'archiveClearCompleted' });
+        showStatus('Removed ' + (resp?.removed || 0) + ' completed job' + ((resp?.removed === 1) ? '' : 's') + '.', 'success');
+        await refreshArchiveQueue();
+    }
+
+    async function clearArchiveAll() {
+        const resp = await chrome.runtime.sendMessage({ action: 'archiveClearQueue' });
+        showStatus('Cleared ' + (resp?.removed || 0) + ' job' + ((resp?.removed === 1) ? '' : 's') + ' from the queue.', 'success');
+        await refreshArchiveQueue();
+    }
+
     // v3.17.0 — Encrypted Gist Sync UI. Reads/writes the two persistent
     // settings keys (token, gist id) directly via chrome.storage.local so
     // the inputs stay populated across reloads. Passphrase is NEVER stored.
@@ -2491,6 +2633,7 @@
         void refreshProfileList();
         void refreshRantStats();
         void refreshGistSyncInputs();
+        void refreshArchiveQueue();
     }, 250);
 
     // ── Event wiring ──
@@ -2519,6 +2662,26 @@
 
     // v3.15.0 — Account data export wiring.
     if (elements.exportWatchHistoryBtn) elements.exportWatchHistoryBtn.addEventListener('click', () => void exportWatchHistoryAction());
+
+    // v3.18.0 — Channel Archive Queue wiring.
+    if (elements.archiveEnqueueBtn) elements.archiveEnqueueBtn.addEventListener('click', () => void enqueueArchiveChannel());
+    if (elements.archivePauseBtn) elements.archivePauseBtn.addEventListener('click', () => void toggleArchivePause());
+    if (elements.archiveRunBtn) elements.archiveRunBtn.addEventListener('click', () => void runArchiveNow());
+    if (elements.archiveClearCompletedBtn) elements.archiveClearCompletedBtn.addEventListener('click', () => void clearArchiveCompleted());
+    if (elements.archiveClearBtn) elements.archiveClearBtn.addEventListener('click', () => void clearArchiveAll());
+    if (elements.archiveChannelInput) {
+        elements.archiveChannelInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') { e.preventDefault(); void enqueueArchiveChannel(); }
+        });
+    }
+    // Live-refresh the archive panel when the SW updates the queue.
+    try {
+        chrome.storage.onChanged.addListener((changes, area) => {
+            if (area === 'local' && changes && changes.rx_archive_queue) {
+                void refreshArchiveQueue();
+            }
+        });
+    } catch {}
 
     // v3.17.0 — Encrypted Gist Sync wiring.
     if (elements.gistSyncPushBtn) elements.gistSyncPushBtn.addEventListener('click', () => void gistSyncPushAction());

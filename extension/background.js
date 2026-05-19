@@ -71,7 +71,19 @@ chrome.runtime.onInstalled.addListener(() => {
     rxSyncSidePanel().catch((e) => console.warn('[RumbleX] side panel sync failed:', e));
     // v3.9.0 — Sync channel-notifier alarm with the user's preference.
     rxSyncChannelNotifier().catch((e) => console.warn('[RumbleX] notifier sync failed:', e));
+    // v3.18.0 — ensure the archive-queue drain alarm exists across SW restarts.
+    rxSyncArchiveAlarm().catch((e) => console.warn('[RumbleX] archive alarm sync failed:', e));
 });
+
+// chrome.runtime.onStartup re-registers the alarm if the browser restarted
+// (chrome.alarms survive across SW restarts, but only across SW activations,
+// not full browser restarts on some platforms — sync is cheap and idempotent).
+if (chrome.runtime?.onStartup) {
+    chrome.runtime.onStartup.addListener(() => {
+        rxSyncArchiveAlarm().catch(() => {});
+        rxSyncChannelNotifier().catch(() => {});
+    });
+}
 
 // v3.7.0 — chrome.sidePanel integration.
 // When `sidePanelEnabled` is on, clicking the toolbar icon opens the side
@@ -367,6 +379,196 @@ if (chrome.alarms?.onAlarm) {
     chrome.alarms.onAlarm.addListener((alarm) => {
         if (alarm.name === RX_NOTIFIER_ALARM) {
             rxRunNotifierPass().catch((e) => console.warn('[RumbleX] notifier pass failed:', e));
+        }
+        if (alarm.name === RX_ARCHIVE_ALARM) {
+            rxRunArchiveTick().catch((e) => console.warn('[RumbleX] archive tick failed:', e));
+        }
+    });
+}
+
+// v3.18.0 — Channel Archive Queue. A persistent chrome.storage.local-backed
+// job queue that lives across SW restarts. A chrome.alarms tick drains up to
+// `downloadConcurrency` pending jobs per minute. Each job:
+//   1. SW-fetches https://rumble.com/embedJS/u3/?request=video&v=<embedId>
+//      (the same endpoint VideoDownloader uses in content.js).
+//   2. Picks the highest-resolution `ua.mp4.*` direct URL.
+//   3. Calls chrome.downloads.download() — same path as the manual download.
+//   4. Tracks the downloadId; chrome.downloads.onChanged marks the job
+//      completed/failed when the download finishes.
+// Queue cap: 500 jobs. Completed jobs older than 7 days are auto-pruned on
+// each tick.
+const RX_ARCHIVE_ALARM = 'rx-archive-tick';
+const RX_ARCHIVE_KEY = 'rx_archive_queue';
+const RX_ARCHIVE_MAX_JOBS = 500;
+const RX_ARCHIVE_COMPLETED_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+
+async function rxSyncArchiveAlarm() {
+    try {
+        const existing = await chrome.alarms.get(RX_ARCHIVE_ALARM);
+        if (!existing) {
+            await chrome.alarms.create(RX_ARCHIVE_ALARM, { periodInMinutes: 1 });
+        }
+    } catch (e) {
+        console.warn('[RumbleX] archive alarm sync failed:', e);
+    }
+}
+
+async function rxLoadArchiveQueue() {
+    try {
+        const got = await chrome.storage.local.get([RX_ARCHIVE_KEY]);
+        const root = got[RX_ARCHIVE_KEY];
+        if (root && typeof root === 'object' && Array.isArray(root.jobs)) return root;
+    } catch {}
+    return { jobs: [], paused: false, version: 1 };
+}
+
+async function rxSaveArchiveQueue(root) {
+    try { await chrome.storage.local.set({ [RX_ARCHIVE_KEY]: root }); } catch {}
+}
+
+function rxArchiveSanitizeFilename(s) {
+    const cleaned = String(s || 'rumble-video')
+        .replace(/[\\/:*?"<>|\u0000-\u001f]+/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim()
+        .slice(0, 120);
+    return cleaned || 'rumble-video';
+}
+
+async function rxDiscoverVideoQuality(videoSlug) {
+    // videoSlug is the "v..." prefix from the path. embedJS expects the slug
+    // *minus* the leading "v". Existing content.js code does the same strip:
+    // `embedId.replace('v', '')` — see line ~2886.
+    const numericId = String(videoSlug || '').replace(/^v/, '');
+    if (!numericId) throw new Error('bad-video-id');
+    const url = 'https://rumble.com/embedJS/u3/?request=video&ver=2&v=' + encodeURIComponent(numericId);
+    const resp = await fetch(url);
+    if (!resp.ok) throw new Error('embedJS http-' + resp.status);
+    const data = await resp.json();
+    const src = data.ua || data.u || {};
+    let bestUrl = null;
+    let bestHeight = 0;
+    let bestLabel = '';
+    let title = data.title || data.full_title || data.video?.title || null;
+    for (const fmt of ['mp4', 'webm']) {
+        const group = src[fmt];
+        if (!group || typeof group !== 'object') continue;
+        if (group.url && group.meta?.h > 0 && group.meta.h > bestHeight) {
+            bestUrl = group.url;
+            bestHeight = group.meta.h;
+            bestLabel = group.meta.h + 'p';
+        }
+        for (const [, val] of Object.entries(group)) {
+            if (!val?.url || !val?.meta?.h) continue;
+            if (val.meta.h > bestHeight) {
+                bestUrl = val.url;
+                bestHeight = val.meta.h;
+                bestLabel = val.meta.h + 'p';
+            }
+        }
+    }
+    if (!bestUrl) throw new Error('no-direct-mp4');
+    return { url: bestUrl, quality: bestLabel, height: bestHeight, title };
+}
+
+async function rxRunArchiveTick() {
+    const root = await rxLoadArchiveQueue();
+    if (root.paused) return;
+    // Auto-prune old completed jobs.
+    const now = Date.now();
+    const before = root.jobs.length;
+    root.jobs = root.jobs.filter((j) => {
+        if (j.status !== 'completed') return true;
+        return !(j.completedAt && (now - j.completedAt) > RX_ARCHIVE_COMPLETED_TTL_MS);
+    });
+    if (root.jobs.length !== before) await rxSaveArchiveQueue(root);
+
+    // Honor downloadConcurrency from settings.
+    let concurrency = 2;
+    try {
+        const got = await chrome.storage.local.get(['rx_settings']);
+        const s = got.rx_settings || {};
+        const n = Number(s.downloadConcurrency);
+        if (Number.isFinite(n) && n >= 1 && n <= 8) concurrency = Math.floor(n);
+    } catch {}
+
+    const inFlight = root.jobs.filter((j) => j.status === 'discovering' || j.status === 'downloading').length;
+    const slots = Math.max(0, concurrency - inFlight);
+    if (slots === 0) return;
+
+    const pending = root.jobs.filter((j) => j.status === 'pending').slice(0, slots);
+    if (pending.length === 0) return;
+    for (const job of pending) job.status = 'discovering';
+    await rxSaveArchiveQueue(root);
+
+    await Promise.all(pending.map((job) => rxProcessArchiveJob(job.id).catch((e) => {
+        console.warn('[RumbleX] archive job ' + job.id + ' failed:', e);
+    })));
+}
+
+async function rxUpdateArchiveJob(id, patch) {
+    const root = await rxLoadArchiveQueue();
+    const idx = root.jobs.findIndex((j) => j.id === id);
+    if (idx < 0) return null;
+    root.jobs[idx] = { ...root.jobs[idx], ...patch };
+    await rxSaveArchiveQueue(root);
+    return root.jobs[idx];
+}
+
+async function rxProcessArchiveJob(id) {
+    const root = await rxLoadArchiveQueue();
+    const job = root.jobs.find((j) => j.id === id);
+    if (!job) return;
+    try {
+        const discovered = await rxDiscoverVideoQuality(job.videoId);
+        const title = job.videoTitle || discovered.title || job.videoId;
+        const filename = 'RumbleX/' + rxArchiveSanitizeFilename(title) + '_' + discovered.quality + '.mp4';
+        if (!isAllowedDownloadUrl(discovered.url)) {
+            await rxUpdateArchiveJob(id, { status: 'failed', error: 'url-not-allowlisted', completedAt: Date.now() });
+            return;
+        }
+        const downloadId = await new Promise((resolve, reject) => {
+            chrome.downloads.download(
+                { url: discovered.url, filename, saveAs: false, conflictAction: 'uniquify' },
+                (dlId) => {
+                    const err = chrome.runtime.lastError;
+                    if (err) reject(new Error(err.message));
+                    else resolve(dlId);
+                }
+            );
+        });
+        await rxUpdateArchiveJob(id, {
+            status: 'downloading',
+            qualityFound: discovered.quality,
+            videoTitle: title,
+            filename,
+            downloadId,
+        });
+    } catch (e) {
+        await rxUpdateArchiveJob(id, {
+            status: 'failed',
+            error: String(e?.message || e).slice(0, 200),
+            completedAt: Date.now(),
+        });
+    }
+}
+
+if (chrome.downloads?.onChanged) {
+    chrome.downloads.onChanged.addListener(async (delta) => {
+        if (!delta.state) return;
+        const newState = delta.state.current;
+        if (newState !== 'complete' && newState !== 'interrupted') return;
+        const root = await rxLoadArchiveQueue();
+        const job = root.jobs.find((j) => j.downloadId === delta.id);
+        if (!job) return;
+        if (newState === 'complete') {
+            await rxUpdateArchiveJob(job.id, { status: 'completed', completedAt: Date.now() });
+        } else {
+            await rxUpdateArchiveJob(job.id, {
+                status: 'failed',
+                error: 'download-interrupted',
+                completedAt: Date.now(),
+            });
         }
     });
 }
@@ -1137,6 +1339,168 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                 else sendResponse({ downloadId });
             }
         );
+        return true;
+    }
+
+    // v3.18.0 — Channel Archive Queue message API.
+    if (message.action === 'archiveEnqueueChannel') {
+        (async () => {
+            try {
+                const channelUrl = (message.channelUrl || '').trim();
+                if (!/^https?:\/\/(www\.)?rumble\.com\/(c|user)\//i.test(channelUrl)) {
+                    sendResponse({ ok: false, reason: 'bad-channel-url' });
+                    return;
+                }
+                const maxItems = Math.max(1, Math.min(500, parseInt(message.maxItems, 10) || 50));
+                const filterClips = !!message.filterClips;
+                const resp = await fetch(channelUrl, { credentials: 'include' });
+                if (!resp.ok) { sendResponse({ ok: false, reason: 'http-' + resp.status }); return; }
+                const html = await resp.text();
+                // Parse the channel page for video entries. The channel grid uses
+                // <a class="videostream__link ..." href="/v..."> elements paired
+                // with <h3 class="thumbnail__title" title="...">.
+                const seen = new Set();
+                const found = [];
+                // Walk anchor tags; each video card has data-video-id or a /v link.
+                const re = /<a[^>]*\bvideostream__link\b[^>]*href="(\/v[^"]+)"[^>]*>[\s\S]*?<h3[^>]*\bthumbnail__title\b[^>]*(?:title="([^"]*)")?[^>]*>([^<]*)<\/h3>/g;
+                let m;
+                while ((m = re.exec(html)) && found.length < maxItems) {
+                    const href = m[1];
+                    const titleAttr = (m[2] || m[3] || '').trim();
+                    if (seen.has(href)) continue;
+                    seen.add(href);
+                    if (filterClips && /^Clip:\s/i.test(titleAttr)) continue;
+                    if (filterClips && /\/clips?\//i.test(href)) continue;
+                    // Extract the v-slug.
+                    const slugMatch = href.match(/^\/(v[a-z0-9]+)/i);
+                    if (!slugMatch) continue;
+                    found.push({
+                        videoId: slugMatch[1],
+                        videoUrl: 'https://rumble.com' + href,
+                        videoTitle: titleAttr || null,
+                    });
+                }
+                if (found.length === 0) {
+                    // Fallback parse for older row markup.
+                    const reAlt = /<a[^>]*href="(\/v[a-z0-9][^"]*)"[^>]*>[\s\S]*?<\/a>/gi;
+                    let mm;
+                    while ((mm = reAlt.exec(html)) && found.length < maxItems) {
+                        const href = mm[1];
+                        if (seen.has(href)) continue;
+                        seen.add(href);
+                        const slugMatch = href.match(/^\/(v[a-z0-9]+)/i);
+                        if (!slugMatch) continue;
+                        found.push({
+                            videoId: slugMatch[1],
+                            videoUrl: 'https://rumble.com' + href,
+                            videoTitle: null,
+                        });
+                    }
+                }
+                if (found.length === 0) {
+                    sendResponse({ ok: false, reason: 'no-videos-found' });
+                    return;
+                }
+                // Channel name: from <h1> or <meta property="og:title">.
+                let channelName = null;
+                const ogt = html.match(/<meta[^>]+property="og:title"[^>]+content="([^"]+)"/i);
+                if (ogt) channelName = ogt[1].trim();
+                const root = await rxLoadArchiveQueue();
+                let enqueued = 0;
+                let skipped = 0;
+                for (const v of found) {
+                    // Skip duplicates already in queue (by videoId).
+                    if (root.jobs.some((j) => j.videoId === v.videoId)) { skipped++; continue; }
+                    if (root.jobs.length >= RX_ARCHIVE_MAX_JOBS) break;
+                    root.jobs.push({
+                        id: Math.random().toString(36).slice(2, 10) + Date.now().toString(36),
+                        channelUrl,
+                        channelName,
+                        videoId: v.videoId,
+                        videoUrl: v.videoUrl,
+                        videoTitle: v.videoTitle,
+                        status: 'pending',
+                        addedAt: Date.now(),
+                    });
+                    enqueued++;
+                }
+                await rxSaveArchiveQueue(root);
+                // Kick a tick now so the user sees progress immediately.
+                rxRunArchiveTick().catch(() => {});
+                sendResponse({ ok: true, enqueued, skipped, channelName });
+            } catch (e) {
+                sendResponse({ ok: false, reason: String(e?.message || e) });
+            }
+        })();
+        return true;
+    }
+
+    if (message.action === 'archiveGetQueue') {
+        rxLoadArchiveQueue().then((root) => sendResponse({ ok: true, queue: root }));
+        return true;
+    }
+
+    if (message.action === 'archivePauseQueue' || message.action === 'archiveResumeQueue') {
+        (async () => {
+            const root = await rxLoadArchiveQueue();
+            root.paused = (message.action === 'archivePauseQueue');
+            await rxSaveArchiveQueue(root);
+            sendResponse({ ok: true, paused: root.paused });
+        })();
+        return true;
+    }
+
+    if (message.action === 'archiveClearCompleted') {
+        (async () => {
+            const root = await rxLoadArchiveQueue();
+            const before = root.jobs.length;
+            root.jobs = root.jobs.filter((j) => j.status !== 'completed');
+            await rxSaveArchiveQueue(root);
+            sendResponse({ ok: true, removed: before - root.jobs.length });
+        })();
+        return true;
+    }
+
+    if (message.action === 'archiveClearQueue') {
+        (async () => {
+            const root = await rxLoadArchiveQueue();
+            const before = root.jobs.length;
+            root.jobs = [];
+            await rxSaveArchiveQueue(root);
+            sendResponse({ ok: true, removed: before });
+        })();
+        return true;
+    }
+
+    if (message.action === 'archiveRemoveJob') {
+        (async () => {
+            const root = await rxLoadArchiveQueue();
+            const before = root.jobs.length;
+            root.jobs = root.jobs.filter((j) => j.id !== message.id);
+            await rxSaveArchiveQueue(root);
+            sendResponse({ ok: true, removed: before - root.jobs.length });
+        })();
+        return true;
+    }
+
+    if (message.action === 'archiveRetryJob') {
+        (async () => {
+            const root = await rxLoadArchiveQueue();
+            const job = root.jobs.find((j) => j.id === message.id);
+            if (!job) { sendResponse({ ok: false, reason: 'not-found' }); return; }
+            job.status = 'pending';
+            job.error = null;
+            job.completedAt = null;
+            job.downloadId = null;
+            await rxSaveArchiveQueue(root);
+            rxRunArchiveTick().catch(() => {});
+            sendResponse({ ok: true });
+        })();
+        return true;
+    }
+
+    if (message.action === 'archiveRunNow') {
+        rxRunArchiveTick().then(() => sendResponse({ ok: true })).catch((e) => sendResponse({ ok: false, reason: String(e?.message || e) }));
         return true;
     }
 });

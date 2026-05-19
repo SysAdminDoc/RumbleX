@@ -1,8 +1,8 @@
 # RumbleX Roadmap
 
-Version: 4.16 — v3.17 Encrypted Gist Sync (AES-GCM-256 + PBKDF2-SHA256, zero RumbleX infra)
+Version: 4.17 — v3.18 Channel Archive Queue Phase 1 (persistent SW queue + embedJS direct-MP4 drain)
 Date: 2026-05-19
-Current shipped: v3.17.0 (extension), v1.8.0 (userscript)
+Current shipped: v3.18.0 (extension), v1.8.0 (userscript)
 
 This roadmap supersedes the v2026-05-19 v3.0 plan. It is the result of a fresh repo audit plus a 60+ source external research sweep (see [Appendix C — Sources](#appendix-c--sources)). It tracks shipped work in the [Recently shipped](#recently-shipped) summary, then prioritises the next ~12 months of work into **Now / Next / Later / Under Consideration / Rejected** tiers with every claim traceable to a source.
 
@@ -120,7 +120,7 @@ These items need preconditions that don't exist yet (live captures, large refact
 - [ ] **Firefox MV3 conversion.** Background-script-to-event-page rewrite ([Firefox MV3 background script docs](https://developer.mozilla.org/en-US/docs/Mozilla/Add-ons/WebExtensions/Background_scripts)). MV2 stays supported on Firefox indefinitely per Mozilla's own communication, so this is a parallel path, not a forced migration. Bonus: MV3 enables `host_permissions` to appear in the install prompt from Firefox 127+.
 - **`account/subscriptions` bulk-unsubscribe UI** — ✅ shipped v3.12.0 (unlocked by 2026-05-19 MHTML batch: Recurring Subs.mhtml + Followed Channels.mhtml). Sticky toolbar + per-row checkboxes + Select-all / Clear / Run / Stop. Honors `bulkUnsubscribeDryRun` default-ON. 350 ms inter-click pacing.
 - [ ] **`v.studio.rumble.com` Studio scene tools + uploader metadata fill.** Studio.mhtml capture landed in v3.12 but is sparse (heavy SPA — content renders client-side after JS); will need a second capture WHILE inside the Studio editor (mid-stream / mid-upload) to extract scene-mover selectors. Setting keys (`studioSceneTools`, `uploaderMetadataFill`) shipped v2.0.
-- [ ] **Channel archive queue with MV3 service-worker persistence.** Requires `chrome.offscreen` already adopted in v3.2 plus a persisted job queue in `chrome.storage.local` (not session) plus `chrome.alarms` for SW wake-up. Reference: [nullEFFORT/rumble-downloader](https://github.com/nullEFFORT/rumble-downloader) implements this on a Flask backend; we want browser-side. Settings keys (`channelArchive*`, `downloadConcurrency`, `batchDownload`) already shipped v2.0.
+- [x] **Channel archive queue with MV3 service-worker persistence.** *(v3.18.0 — Phase 1: persistent `chrome.storage.local.rx_archive_queue` (jobs + paused flag), chrome.alarms `rx-archive-tick` drain every 1 min honoring `downloadConcurrency`, each job fetches `embedJS/u3` + picks highest-resolution `ua.mp4.*` direct URL + chrome.downloads.download. chrome.downloads.onChanged listener flips status to completed/failed. 500-job cap, 7-day prune on completed jobs. Options-page UI with enqueue form (channel URL + maxItems + skip-clips checkbox), pause/resume/clear-completed/clear-all/run-now buttons, per-job retry/remove. Beats the [nullEFFORT/rumble-downloader](https://github.com/nullEFFORT/rumble-downloader) Flask reference by running entirely browser-side. Phase 2 (in-page "Archive this channel" button on /c/<slug>) and HLS fallback for direct-MP4-less videos deferred to v3.19+.)*
 - [ ] **Signed remote cosmetic rules.** Pre-approved scriptlet bundle in the extension (like [AdGuard's User Scripts API approach since v5.2](https://adguard.com/kb/adguard-browser-extension/user-scripts-api/)) avoids Chrome's MV3 remotely-hosted-code ban. Rule format: data-only, ed25519-signed, JSON-schema-validated, opt-in per-rule. The verification key ships in the extension; rule payloads on a separate static repo. Settings (`remoteCosmeticRules`, `remoteCosmeticRulesChannel`) already shipped v2.0.
 - [ ] **Multi-stream viewer (2–4 stream grid with independent chat panels).** Experimental. Iframe-based sandbox with per-stream `chrome.storage.session` for chat state. Setting key `multiStreamViewer` already shipped v2.0. Reference: Twitch/Kick power-user pattern — no Rumble equivalent exists today.
 - [x] **Discord webhook notifier.** *(v3.9.0 — `chrome.alarms` polls every `channelNotifierIntervalMin` minutes. For each `watchedChannels` entry, fetches the channel page, parses for `data-video-id` + live indicators (`videostream__status--live` / `channel__live-on-air` / `aria-label*="Live"`), fires `chrome.notifications.create()` on state change with click-to-open, and POSTs to `discordWebhookUrl` when set. Options-page UI with add/remove/run-now/test-notification. Failure is swallowed at every fetch boundary so one bad channel doesn't kill the whole pass.)* Reference: [HamzaJarane/rumble-notifier](https://github.com/HamzaJarane/rumble-notifier).
@@ -242,6 +242,15 @@ Tier placement above is per-feature; the workstreams below are themes the team s
 ## Recently shipped
 
 Compressed history. Detail per release lives in `CHANGELOG.md`.
+
+### v3.18.0 — Channel Archive Queue Phase 1 (2026-05-19)
+
+- Persistent chrome.storage.local job queue (`rx_archive_queue`) drained by `chrome.alarms` `rx-archive-tick` every minute honoring `downloadConcurrency`.
+- Each job hits Rumble's embedJS endpoint to discover the highest-resolution direct MP4, then chrome.downloads.download into `RumbleX/<title>_<quality>.mp4` (allowlist-guarded).
+- chrome.downloads.onChanged listener flips status to completed/failed.
+- Background API: archiveEnqueueChannel / archiveGetQueue / archivePauseQueue / archiveResumeQueue / archiveClearCompleted / archiveClearQueue / archiveRemoveJob / archiveRetryJob / archiveRunNow.
+- Options-page "Channel archive queue" section with enqueue form, status counts, pause/resume/clear/run-now controls, per-job retry/remove. Live refresh via storage.onChanged.
+- 500-job cap. Completed jobs auto-prune after 7 days. Catalog parity 203/203/203/203 unchanged.
 
 ### v3.17.0 — Encrypted Gist Sync (2026-05-19)
 
