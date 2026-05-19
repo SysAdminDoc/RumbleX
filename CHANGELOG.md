@@ -2,6 +2,28 @@
 
 All notable changes to RumbleX will be documented in this file.
 
+## [3.13.0] - 2026-05-19
+
+### v3.13.0 — Import followed channels into the notifier
+
+Closes the obvious next-step that fell out of v3.9 + v3.12: now that the watchedChannels notifier exists *and* the Followed Channels page structure is known from the 2026-05-19 MHTML batch, users shouldn't have to manually paste every channel URL.
+
+**New "Import from Followed" button on the Channel Notifier section**
+- Background SW fetches `https://rumble.com/account/following` with `credentials: 'include'` so the user's session cookies authenticate the request (host permission for rumble.com is already declared).
+- Parses every `<li class="followed-channel" data-type="channel">` row — channel URL from the `/c/` or `/user/` link, name from `<span class="line-clamp-2">`. Query params stripped so imported URLs are canonical.
+- Detects logged-out responses by absence of the `followed-channels__section` marker. Toast suggests "sign in on rumble.com first, then retry."
+- Deduplicates against existing watchedChannels. Toast reports `Scanned N · added X · skipped Y duplicate(s) · total now Z`.
+- Re-syncs the notifier alarm after import so the new channels start being polled on the next tick (no extension reload needed).
+
+**Three new Selectors registry entries**
+- `account.followedChannelsItem` — `li.followed-channel[data-type="channel"]`
+- `account.followedChannelsItemLink` — channel URL inside the row
+- `account.followedChannelsItemName` — `.line-clamp-2` channel name
+
+**New message API**: `importFollowedChannels` → `{ ok, scanned, added, duplicates, total }` or `{ ok: false, reason: 'not-logged-in' | 'http-XXX' | <error string> }`.
+
+**Catalog parity:** 201/201/201/201. Selector harness: 78 passes / 17 fixtures (3 new account selectors verified against Followed Channels.mhtml).
+
 ## [3.12.0] - 2026-05-19
 
 ### v3.12.0 — BulkUnsubscribe + Selectors tightening from new MHTML batch

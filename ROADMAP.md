@@ -1,8 +1,8 @@
 # RumbleX Roadmap
 
-Version: 4.11 — v3.12 BulkUnsubscribe + Shorts/Account selectors hardened
+Version: 4.12 — v3.13 Import-from-Followed shipped
 Date: 2026-05-19
-Current shipped: v3.12.0 (extension), v1.8.0 (userscript)
+Current shipped: v3.13.0 (extension), v1.8.0 (userscript)
 
 This roadmap supersedes the v2026-05-19 v3.0 plan. It is the result of a fresh repo audit plus a 60+ source external research sweep (see [Appendix C — Sources](#appendix-c--sources)). It tracks shipped work in the [Recently shipped](#recently-shipped) summary, then prioritises the next ~12 months of work into **Now / Next / Later / Under Consideration / Rejected** tiers with every claim traceable to a source.
 

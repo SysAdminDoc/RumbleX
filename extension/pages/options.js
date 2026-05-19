@@ -1,4 +1,4 @@
-// RumbleX v3.12.0 - Options Page
+// RumbleX v3.13.0 - Options Page
 // Standalone settings management via chrome.storage.local (rx_settings key).
 // Mirrors Astra Deck's settings page pattern: dirty-draft workflow with
 // search, group nav, stats overview, and export/import/reset.
@@ -576,6 +576,7 @@
         notifierRunBtn: document.getElementById('notifier-run-btn'),
         notifierTestBtn: document.getElementById('notifier-test-btn'),
         notifierOpmlBtn: document.getElementById('notifier-opml-btn'),
+        notifierImportFollowedBtn: document.getElementById('notifier-import-followed-btn'),
         // v3.10.0 — Multi-profile settings UI
         profileSummary: document.getElementById('profile-summary'),
         profileNameInput: document.getElementById('profile-name-input'),
@@ -1973,6 +1974,40 @@
         }
     }
 
+    // v3.13.0 — Import every channel from /account/following into the
+    // watchedChannels list. One-click bulk-add. Handled by the SW which
+    // fetches /account/following with session cookies and parses each
+    // <li class="followed-channel">.
+    async function importFollowedChannels() {
+        const btn = elements.notifierImportFollowedBtn;
+        if (btn) { btn.disabled = true; btn.dataset.idleLabel = btn.dataset.idleLabel || btn.textContent; btn.textContent = 'Importing…'; }
+        try {
+            const resp = await chrome.runtime.sendMessage({ action: 'importFollowedChannels' });
+            if (!resp?.ok) {
+                if (resp?.reason === 'not-logged-in') {
+                    showStatus('Not logged in to Rumble — sign in on rumble.com first, then retry.', 'error');
+                } else {
+                    showStatus('Import failed: ' + (resp?.reason || 'unknown'), 'error');
+                }
+                return;
+            }
+            const parts = [];
+            parts.push('Scanned ' + resp.scanned);
+            if (resp.added) parts.push('added ' + resp.added);
+            if (resp.duplicates) parts.push('skipped ' + resp.duplicates + ' duplicate' + (resp.duplicates === 1 ? '' : 's'));
+            parts.push('total now ' + (resp.total ?? '—'));
+            showStatus(parts.join(' · ') + '.', resp.added ? 'success' : 'info');
+            await refreshNotifierList();
+        } catch (e) {
+            showStatus('Import failed: ' + String(e?.message || e), 'error');
+        } finally {
+            if (btn) {
+                btn.disabled = false;
+                if (btn.dataset.idleLabel) btn.textContent = btn.dataset.idleLabel;
+            }
+        }
+    }
+
     async function sendTestNotification() {
         const resp = await chrome.runtime.sendMessage({ action: 'testNotification' });
         if (resp?.ok) {
@@ -2118,6 +2153,7 @@
     if (elements.notifierRunBtn) elements.notifierRunBtn.addEventListener('click', () => void runNotifierNow());
     if (elements.notifierTestBtn) elements.notifierTestBtn.addEventListener('click', () => void sendTestNotification());
     if (elements.notifierOpmlBtn) elements.notifierOpmlBtn.addEventListener('click', () => void exportWatchedChannelsOpml());
+    if (elements.notifierImportFollowedBtn) elements.notifierImportFollowedBtn.addEventListener('click', () => void importFollowedChannels());
     if (elements.notifierUrlInput) {
         elements.notifierUrlInput.addEventListener('keydown', (e) => {
             if (e.key === 'Enter') { e.preventDefault(); void addWatchedChannel(); }

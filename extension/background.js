@@ -723,6 +723,83 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             .catch((e) => sendResponse({ ok: false, reason: String(e?.message || e) }));
         return true;
     }
+    // v3.13.0 — Import followed channels into the v3.9 watchedChannels list.
+    // One-click bulk-add: fetches /account/following with the user's session
+    // cookies, parses each <li class="followed-channel"> for URL + name,
+    // merges into watchedChannels skipping duplicates. The user's actual
+    // followed list becomes the seed for the notifier without a manual
+    // per-channel paste.
+    //
+    // Failure modes the user can see:
+    //   - not logged in → page returns login redirect; we extract 0
+    //     channels and the toast suggests opening a Rumble tab + signing in
+    //   - 0 entries on a logged-in account → fine, toast says so
+    //   - fetch error → toast with HTTP status
+    if (message.action === 'importFollowedChannels') {
+        (async () => {
+            try {
+                const resp = await fetch('https://rumble.com/account/following', {
+                    method: 'GET',
+                    credentials: 'include',
+                });
+                if (!resp.ok) { sendResponse({ ok: false, reason: 'http-' + resp.status }); return; }
+                const html = await resp.text();
+                // Verify the response is actually the followed-channels page,
+                // not a login redirect. The page is identified by its
+                // `data-js="followed-channels__section"` attribute on the
+                // wrapping section.
+                if (!html.includes('followed-channels__section')) {
+                    sendResponse({ ok: false, reason: 'not-logged-in' });
+                    return;
+                }
+                // Parse each <li class="followed-channel"> block. We scan the
+                // whole document body — the row count varies with sort/paging.
+                const rows = [];
+                const re = /<li[^>]*class="[^"]*\bfollowed-channel\b[^"]*"[^>]*data-type="channel"[\s\S]*?<\/li>/g;
+                let m;
+                while ((m = re.exec(html))) {
+                    const block = m[0];
+                    // Channel URL: prefer /c/ links; fall back to /user/.
+                    const linkMatch = block.match(/href="([^"]*\/(?:c|user)\/[^"]+?)"/);
+                    if (!linkMatch) continue;
+                    // Strip query params so the import URL stays canonical.
+                    let url = linkMatch[1];
+                    try { const u = new URL(url, 'https://rumble.com'); u.search = ''; url = u.toString(); } catch {}
+                    // Channel name from <span class="line-clamp-2">.
+                    const nameMatch = block.match(/<span class="line-clamp-2"[^>]*>([^<]+)<\/span>/);
+                    const name = nameMatch ? nameMatch[1].trim() : url;
+                    rows.push({ url, name });
+                }
+                if (rows.length === 0) { sendResponse({ ok: true, scanned: 0, added: 0, duplicates: 0 }); return; }
+                // Merge into watchedChannels, skipping anything we already track.
+                const s = await rxGetSettings();
+                const existing = Array.isArray(s.watchedChannels) ? s.watchedChannels : [];
+                const known = new Set(existing.map((c) => c.url));
+                let added = 0;
+                let duplicates = 0;
+                const next = existing.slice();
+                for (const r of rows) {
+                    if (known.has(r.url)) { duplicates++; continue; }
+                    next.push({
+                        url: r.url,
+                        name: r.name,
+                        lastSeenVideoId: null,
+                        isLive: false,
+                        lastChecked: null,
+                    });
+                    known.add(r.url);
+                    added++;
+                }
+                await rxSetSettings({ watchedChannels: next });
+                await rxSyncChannelNotifier();
+                sendResponse({ ok: true, scanned: rows.length, added, duplicates, total: next.length });
+            } catch (e) {
+                sendResponse({ ok: false, reason: String(e?.message || e) });
+            }
+        })();
+        return true;
+    }
+
     if (message.action === 'testNotification') {
         rxFireNotification({
             title: 'RumbleX — Test',

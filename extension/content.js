@@ -1,9 +1,9 @@
-// RumbleX v3.12.0 - Content Script
+// RumbleX v3.13.0 - Content Script
 // Rumble enhancement suite - Chrome/Firefox extension
 'use strict';
 
 // ── Version ──
-const VERSION = chrome.runtime?.getManifest?.()?.version || '3.12.0';
+const VERSION = chrome.runtime?.getManifest?.()?.version || '3.13.0';
 const SCHEMA_VERSION = 2;
 
 // ── Settings Manager (chrome.storage.local) ──
@@ -472,6 +472,13 @@ const Selectors = {
         'account.recurringSubsRow':       { stable: 'table tr:has(button[data-js="cancel_recurring_subscriptions"])', fallback: 'tr[class*="subscription"]' },
         'account.followedChannelsSection':{ stable: '[data-js="followed-channels__section"]', fallback: 'section[class*="followed"]' },
         'account.followedChannelsUnsubBtn':{ stable: 'button[data-action="unsubscribe"][hx-post*="legacy-video-collection"]', fallback: 'button.js-media-subscribe[data-action="unsubscribe"]' },
+        // v3.13.0 — Per-channel row on /account/following (Followed Channels.mhtml).
+        // Row: <li class="followed-channel" data-id data-type="channel">
+        //   Channel URL: <a href="rumble.com/c/..."> with <span class="line-clamp-2">Name</span>
+        //   Live tag:    <span class="live__tag">LIVE</span> (when channel is live now)
+        'account.followedChannelsItem':     { stable: 'li.followed-channel[data-type="channel"]', fallback: 'li.followed-channel' },
+        'account.followedChannelsItemLink': { stable: 'li.followed-channel a[href*="/c/"], li.followed-channel a[href*="/user/"]', fallback: 'a.channel__link[href*="/c/"]' },
+        'account.followedChannelsItemName': { stable: 'li.followed-channel a span.line-clamp-2', fallback: 'li.followed-channel .line-clamp-2' },
     },
     _telemetry: [],
     find(key, root) {
