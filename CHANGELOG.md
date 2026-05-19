@@ -2,6 +2,24 @@
 
 All notable changes to RumbleX will be documented in this file.
 
+## [2.2.0] - 2026-05-19
+
+### v2.2.0 — Download Manager 2.0 (Phase 1)
+
+First implementable slice of the v2.2 download superset. Lands the visible "external player handoff" surface plus a reusable media probe cache other download modules can adopt.
+
+**New feature modules**
+- **ExternalPlayer** — Adds an "Open in player" button on watch pages next to the share row when `externalPlayerEnabled` is on. Substitutes the current page URL into `externalPlayerTemplate` (default `mpv://{url}`) and launches it. HTTPS templates use `window.open(..., '_blank')`; custom-protocol templates (`mpv://`, `potplayer://`, `vlc://`) launch via a hidden iframe so the parent page never navigates if the browser rejects the URL. Routes through `Selectors.find('watch.share')` from the v2.0 registry; re-anchors on htmx route changes via `Router.onChange`. Visible by default in the **Downloads & Capture** category.
+
+**New shared module**
+- **MediaProbeCache** — Persistent TTL-keyed cache for media probe results (embedJS responses, HLS manifest variants, CDN HEAD probes). `get(key)` / `set(key, val)` / `clear()` API backed by `chrome.storage.local` with debounced flushes (250ms). Lazy GC on read — expired entries are dropped + flushed. Honors `downloadProbeCacheTtlHours` (0 disables cache entirely); falls back to in-memory only on storage errors so the cache never blocks downloads. Available globally to feature modules; `VideoDownloader` will adopt it in a follow-up pass.
+
+### Deferred to v2.3+
+- DASH/fMP4 detection in `VideoDownloader` — non-trivial parser + mux pipeline. The existing HLS-to-MP4 transmux path already covers the majority of Rumble's modern CDN responses.
+- Real audio extraction via `ffmpeg.wasm` — adds ~25MB to the extension bundle. Will ship as an opt-in companion package rather than bundled. `audioExtractionMode: 'browserIfSupported'` semantics formalized in v2.0; the actual `ffmpeg.wasm` integration is v2.4 scope.
+- Batch and channel archive queue with concurrency/resume/manifest — depends on a v2.3 service-worker queue with persisted state. Settings keys (`channelArchive*`, `downloadConcurrency`, `batchDownload`) shipped in v2.0; the queue UI lands in v2.3.
+- Live stream recording prototype — `liveDVR` already covers the last-N-seconds case from v1.8. Indefinite-duration live recording requires a robust service-worker handoff and lands with the v2.3 archive queue.
+
 ## [2.1.0] - 2026-05-19
 
 ### v2.1.0 — Premium UI and Layout Superset

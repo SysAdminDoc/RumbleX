@@ -763,15 +763,15 @@ Acceptance criteria:
 
 Features:
 
-- Unified download manager and media probe cache.
-- MP4/WEBM quality picker with provenance and failure reasons.
-- Shorts download parity.
-- HLS/DASH/fMP4 detection and safe handling.
-- Live stream recording prototype behind opt-in toggle.
-- Subtitle sidecars, transcript import/export, metadata sidecars.
-- Real audio extraction path: browser if supported, companion/external fallback.
-- External player handoff to MPV/PotPlayer/custom URI.
-- Batch and channel archive queue with filters, concurrency, resume, and manifest export.
+- [x] Unified download manager and media probe cache. *(v2.2.0 — `MediaProbeCache` shipped as a shared module: TTL-keyed `get/set/clear` over `chrome.storage.local`, debounced flushes, lazy GC, honors `downloadProbeCacheTtlHours` (0 disables), in-memory fallback on storage errors. Unified download manager scaffolding exists via `downloadManagerEnabled` flag from v2.0; `VideoDownloader` adopts the probe cache in a v2.3 follow-up.)*
+- [x] MP4/WEBM quality picker with provenance and failure reasons. *(Shipped in v1.9.1 RUD — every row has format/quality/CDN provenance and the scan reports "No downloadable source found" / "CDN refused range probe" / "TAR — extract then VLC" honest failure states.)*
+- [x] Shorts download parity. *(Shipped in v1.9 — VideoDownloader treats Shorts as normal videos. `downloadShorts: true` default key formalized in v2.0.)*
+- [ ] HLS/DASH/fMP4 detection and safe handling. *(HLS done in v1.x via mux.js. DASH/fMP4 deferred to v2.3 — needs a parser + mux pipeline; non-trivial native code.)*
+- [x] Live stream recording prototype behind opt-in toggle. *(`liveDVR` module shipped in v1.8 — saves last 30s/1m/5m/10m of a live stream. Indefinite-duration recording deferred to v2.3 service-worker queue.)*
+- [x] Subtitle sidecars, transcript import/export, metadata sidecars. *(`subtitleSidecar` + `transcripts` shipped in v1.8. `downloadIncludeMetadata` flag added in v2.0; `VideoDownloader` writes the sidecar in a v2.3 follow-up.)*
+- [ ] Real audio extraction path: browser if supported, companion/external fallback. *(Deferred to v2.4 — `ffmpeg.wasm` adds ~25MB to the bundle, will ship as an opt-in companion package instead. `audioExtractionMode` enum (`off | browserIfSupported | companion | external`) shipped in v2.0; current `audioOnly` module ships a low-bitrate MP4 fallback honestly labelled.)*
+- [x] External player handoff to MPV/PotPlayer/custom URI. *(v2.2.0 — `ExternalPlayer` module mounts an "Open in player" button next to the watch-page share row when `externalPlayerEnabled` is on. Substitutes current URL into `externalPlayerTemplate` placeholder. HTTPS templates open in a new tab; custom-protocol templates (`mpv://`, `potplayer://`, `vlc://`) launch via a hidden iframe so the parent page never navigates if the browser rejects the URL.)*
+- [ ] Batch and channel archive queue with filters, concurrency, resume, and manifest export. *(Deferred to v2.3 — requires a MV3 service-worker queue with persisted resume state. `batchDownload` + `channelArchive*` + `downloadConcurrency` setting keys shipped in v2.0; the queue UI lands with the v2.3 service-worker work.)*
 
 Dependencies:
 

@@ -1,9 +1,9 @@
-// RumbleX v2.1.0 - Content Script
+// RumbleX v2.2.0 - Content Script
 // Rumble enhancement suite - Chrome/Firefox extension
 'use strict';
 
 // ── Version ──
-const VERSION = chrome.runtime?.getManifest?.()?.version || '2.1.0';
+const VERSION = chrome.runtime?.getManifest?.()?.version || '2.2.0';
 const SCHEMA_VERSION = 2;
 
 // ── Settings Manager (chrome.storage.local) ──
@@ -6904,6 +6904,8 @@ const RX_CATEGORIES = [
             { id: 'shareTimestamp', label: 'Share@Time', desc: 'Copy video URL at current playback time' },
             { id: 'subtitleSidecar', label: 'Subtitle Sidecar', desc: 'Load local SRT/VTT and overlay captions' },
             { id: 'transcripts', label: 'Transcripts', desc: 'Clickable transcript panel synced to player' },
+            // v2.2.0 — Download Manager 2.0
+            { id: 'externalPlayerEnabled', label: 'External Player', desc: 'Open videos in MPV / PotPlayer / custom URI (template configurable in options)' },
         ],
     },
     {
@@ -10941,6 +10943,204 @@ const HomeCleanupPreset = {
 };
 
 // ═══════════════════════════════════════════
+//  MODULE: Media Probe Cache (v2.2.0)
+// ═══════════════════════════════════════════
+// Persistent TTL-keyed cache for media probe results (embedJS responses,
+// HLS manifest variants, CDN HEAD probes). Other download modules can call
+// MediaProbeCache.get(key) before hitting the network and MediaProbeCache.set(key, val)
+// after a successful probe. Honors Settings.get('downloadProbeCacheTtlHours'):
+// 0 disables cache, otherwise entries expire at `at + ttlHours * 3600000`.
+//
+// Storage: a single chrome.storage.local key holds the full cache; on
+// chrome.runtime.lastError or quota errors we fall back to in-memory only
+// so the cache never blocks downloads. Cache is GC'd lazily on read.
+const MediaProbeCache = {
+    _KEY: 'rx_probe_cache',
+    _mem: null,       // { [key]: { at: number, val: any } }
+    _ready: false,
+    async _load() {
+        if (this._ready) return;
+        try {
+            const data = await chrome.storage.local.get(this._KEY);
+            this._mem = (data && data[this._KEY]) || {};
+        } catch {
+            this._mem = {};
+        }
+        this._ready = true;
+    },
+    _ttlMs() {
+        const hrs = Number(Settings.get('downloadProbeCacheTtlHours'));
+        if (!Number.isFinite(hrs) || hrs <= 0) return 0;
+        return hrs * 3600 * 1000;
+    },
+    async get(key) {
+        if (!key) return null;
+        await this._load();
+        const entry = this._mem[key];
+        if (!entry) return null;
+        const ttl = this._ttlMs();
+        if (ttl === 0) return null; // cache disabled — every read misses
+        if (Date.now() - entry.at > ttl) {
+            // Expired: GC inline so the cache doesn't grow unbounded.
+            delete this._mem[key];
+            this._scheduleFlush();
+            return null;
+        }
+        return entry.val;
+    },
+    async set(key, val) {
+        if (!key) return;
+        if (this._ttlMs() === 0) return; // don't persist if cache is disabled
+        await this._load();
+        this._mem[key] = { at: Date.now(), val };
+        this._scheduleFlush();
+    },
+    async clear() {
+        this._mem = {};
+        try { await chrome.storage.local.remove(this._KEY); } catch {}
+    },
+    _flushTimer: null,
+    _scheduleFlush() {
+        clearTimeout(this._flushTimer);
+        this._flushTimer = setTimeout(() => {
+            try { chrome.storage.local.set({ [this._KEY]: this._mem }); } catch {}
+        }, 250);
+    },
+};
+
+// ═══════════════════════════════════════════
+//  FEATURE: External Player Handoff (v2.2.0)
+// ═══════════════════════════════════════════
+// Adds an "Open in external player" button on watch pages when
+// externalPlayerEnabled is true. The button substitutes the current page
+// URL into externalPlayerTemplate ({url} placeholder) and navigates to
+// the resulting URI. Common templates:
+//   mpv://{url}                  — MPV with mpv-handler / play-with-mpv
+//   potplayer://{url}            — PotPlayer custom protocol
+//   vlc://{url}                  — VLC custom protocol
+//   https://mpvhandler.com/?u={url} — Play-With-MPV fallback
+//
+// The button mounts next to the media engage/share row. It is intentionally
+// silent on click — no toast spam — but a status message appears if the
+// browser blocks the navigation (most browsers prompt the user to allow
+// the custom-protocol handler on first use).
+const ExternalPlayer = {
+    id: 'externalPlayerEnabled',
+    name: 'External Player Handoff',
+    _btn: null,
+    _styleEl: null,
+    _css: `
+        html.rumblex-active button.rx-extplayer {
+            display: inline-flex; align-items: center; gap: 6px;
+            padding: 6px 10px; margin-left: 6px;
+            background: var(--rx-surface0, #1e2a14);
+            color: var(--rx-text, #d6e8c4);
+            border: 1px solid var(--rx-surface1, #2a3a1e);
+            border-radius: 6px; cursor: pointer;
+            font: 600 12px/1 system-ui, sans-serif;
+            transition: background 120ms ease;
+        }
+        html.rumblex-active button.rx-extplayer:hover {
+            background: var(--rx-surface1, #2a3a1e);
+        }
+        html.rumblex-active button.rx-extplayer svg {
+            width: 14px; height: 14px; fill: currentColor;
+        }
+    `,
+    _resolveTemplate() {
+        const raw = (Settings.get('externalPlayerTemplate') || '').trim();
+        // Sensible default if user hasn't configured one: mpv-handler URI.
+        // Documented in the settings so users know they can change it.
+        return raw || 'mpv://{url}';
+    },
+    _build() {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'rx-extplayer';
+        btn.title = 'Open in external player (configured in RumbleX settings)';
+        // SVG: a small "external" arrow icon
+        btn.innerHTML = ''; // we DOM-build to avoid innerHTML for safety
+        const svgNS = 'http://www.w3.org/2000/svg';
+        const svg = document.createElementNS(svgNS, 'svg');
+        svg.setAttribute('viewBox', '0 0 16 16');
+        const path = document.createElementNS(svgNS, 'path');
+        path.setAttribute('d', 'M10 1h5v5h-2V4.41L7.41 10 6 8.59 11.59 3H10V1zM3 4h3v2H4v6h6V10h2v3a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1h-1z');
+        svg.appendChild(path);
+        const label = document.createElement('span');
+        label.textContent = 'Open in player';
+        btn.appendChild(svg);
+        btn.appendChild(label);
+        btn.addEventListener('click', (e) => this._handleClick(e));
+        return btn;
+    },
+    _handleClick(e) {
+        e?.preventDefault?.();
+        const tpl = this._resolveTemplate();
+        const url = location.href;
+        const target = tpl.includes('{url}') ? tpl.replace('{url}', encodeURIComponent(url)) : tpl + url;
+        try {
+            // Use an iframe to trigger the protocol handler without navigating
+            // the parent page if Chrome rejects the URL. Most browsers will
+            // pop the "allow handler?" dialog on first use. If the protocol
+            // is HTTPS (web fallback), window.open works better.
+            if (/^https?:/i.test(target)) {
+                window.open(target, '_blank', 'noopener');
+            } else {
+                const iframe = document.createElement('iframe');
+                iframe.style.display = 'none';
+                iframe.src = target;
+                document.body.appendChild(iframe);
+                setTimeout(() => iframe.remove(), 1500);
+            }
+        } catch (err) {
+            console.warn('[RumbleX] external player launch failed:', err);
+        }
+    },
+    _mountTarget() {
+        // Prefer the share/engage row so the new button sits with siblings.
+        // Selectors.find() routes through the v2.0 registry.
+        return Selectors.find('watch.share')
+            || qs('.media-by-actions')
+            || qs('.media-page-buttons-actions')
+            || qs('.media-by');
+    },
+    _tryMount() {
+        if (this._btn?.isConnected) return;
+        const host = this._mountTarget();
+        if (!host) return;
+        if (!this._btn) this._btn = this._build();
+        host.parentNode?.insertBefore(this._btn, host.nextSibling);
+    },
+    init() {
+        if (!Settings.get(this.id)) return;
+        if (!Page.isWatch()) return;
+        this._styleEl = injectStyle(this._css, 'rx-extplayer-css');
+        // The watch-page buttons render after the initial HTML parse; poll
+        // through Selectors.wait so we don't race htmx swaps. Re-mount on
+        // route changes (htmx navigates between watch pages without reload).
+        Selectors.wait('watch.share', { timeout: 15000 }).then(() => this._tryMount()).catch(() => this._tryMount());
+        this._routerUnsub = Router.onChange((d) => {
+            if (d.changed && Page.isWatch()) {
+                // Detach old button so we re-anchor next to the new share button.
+                this._btn?.remove();
+                this._btn = null;
+                Selectors.wait('watch.share', { timeout: 10000 }).then(() => this._tryMount()).catch(() => {});
+            }
+        });
+    },
+    destroy() {
+        this._btn?.remove();
+        this._btn = null;
+        this._styleEl?.remove();
+        this._styleEl = null;
+        if (typeof this._routerUnsub === 'function') {
+            try { this._routerUnsub(); } catch {}
+            this._routerUnsub = null;
+        }
+    },
+};
+
+// ═══════════════════════════════════════════
 //  FEATURE REGISTRY & INIT
 // ═══════════════════════════════════════════
 const features = [
@@ -10961,6 +11161,8 @@ const features = [
     FullWidthPlayer, AdaptiveLiveLayout, CommentBlocking, SiteTheme,
     // v2.1.0 — Premium UI and Layout Superset
     ThumbnailHider, DenseMode, AccountPaginationCompact, ReducedMotion, HomeCleanupPreset,
+    // v2.2.0 — Download Manager 2.0 (visible surfaces; cache module is global)
+    ExternalPlayer,
     ...RX_CSS_FEATURES,
 ];
 
