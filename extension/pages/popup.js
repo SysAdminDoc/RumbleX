@@ -1,4 +1,4 @@
-// RumbleX v3.4.0 - Popup Script
+// RumbleX v3.5.0 - Popup Script
 'use strict';
 
 // Feature list grouped by category. Order within a group controls display
@@ -400,6 +400,9 @@ const DEFAULTS = {
     // v3.1.0 — Platform follow-through
     disableShortsFeed: false,
     hideWalletTipButton: false,
+
+    // v3.5.0 — chrome.contextMenus integration
+    contextMenusEnabled: true,
 };
 
 const UI_STATE_KEY = 'rx_popup_ui';

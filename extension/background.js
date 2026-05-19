@@ -65,7 +65,169 @@ function isAllowedDownloadUrl(url) {
 
 chrome.runtime.onInstalled.addListener(() => {
     console.log('[RumbleX] Extension installed');
+    // v3.5.0 — Register context-menu items on install/update. Gate the
+    // registration on the user's `contextMenusEnabled` setting so disabling
+    // the feature removes the menu entries cleanly. removeAll first to
+    // avoid "duplicate id" errors on reinstall.
+    rxSyncContextMenus().catch((e) => console.warn('[RumbleX] context menu sync failed:', e));
 });
+
+// v3.5.0 — Context menus.
+// Three unambiguous wins:
+//   - Copy clean URL  (strips e9s, utm_*, fbclid, etc.)
+//   - Copy URL at video timestamp  (only useful on watch pages)
+//   - Open RumbleX settings  (page-level entry, always available on Rumble)
+// All entries scoped to *://*.rumble.com/* via documentUrlPatterns so they
+// never appear on other sites.
+const RX_CM_IDS = {
+    copyClean: 'rx-copy-clean-url',
+    copyAtTime: 'rx-copy-url-at-time',
+    openSettings: 'rx-open-settings',
+};
+
+async function rxIsContextMenusEnabled() {
+    try {
+        const data = await chrome.storage.local.get('rx_settings');
+        const s = data.rx_settings || {};
+        // Default ON when key missing — matches Settings._defaults.
+        return s.contextMenusEnabled !== false;
+    } catch { return true; }
+}
+
+async function rxSyncContextMenus() {
+    if (!chrome.contextMenus) return;
+    await new Promise((res) => chrome.contextMenus.removeAll(() => res()));
+    if (!(await rxIsContextMenusEnabled())) return;
+    const docPatterns = ['*://rumble.com/*', '*://*.rumble.com/*'];
+    chrome.contextMenus.create({
+        id: RX_CM_IDS.copyClean,
+        title: 'Copy clean URL (strip tracking)',
+        contexts: ['link', 'page'],
+        documentUrlPatterns: docPatterns,
+        // Link context already filters by target; page context lets the
+        // user copy the current page URL when right-clicking blank space.
+    });
+    chrome.contextMenus.create({
+        id: RX_CM_IDS.copyAtTime,
+        title: 'Copy URL at current time',
+        contexts: ['page', 'video'],
+        documentUrlPatterns: docPatterns,
+    });
+    chrome.contextMenus.create({
+        id: RX_CM_IDS.openSettings,
+        title: 'Open RumbleX settings',
+        contexts: ['page', 'action'],
+        documentUrlPatterns: docPatterns,
+    });
+}
+
+// React to the user toggling `contextMenusEnabled` in settings without
+// requiring a reload. storage.onChanged fires for every settings flush.
+if (chrome.storage?.onChanged) {
+    chrome.storage.onChanged.addListener((changes, area) => {
+        if (area !== 'local' || !changes.rx_settings) return;
+        rxSyncContextMenus().catch(() => {});
+    });
+}
+
+// Allowlist of tracking params to strip — kept in sync with content.js
+// StripTrackingParams. Duplicated here because the SW handles the link-
+// context case where the user right-clicked a link (whose URL the content
+// script never saw).
+const RX_CM_TRACKING_PARAMS = new Set([
+    'e9s', 'ref', 'referrer', 'src',
+    'utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content',
+    'campaign', 'mtm_source', 'mtm_medium', 'mtm_campaign',
+    'fbclid', 'gclid', 'mc_cid', 'mc_eid', 'igshid', '_ga', 'yclid',
+]);
+
+function rxStripTrackingFromUrl(href) {
+    try {
+        const u = new URL(href);
+        if (!/(^|\.)rumble\.com$/i.test(u.hostname)) return href;
+        for (const k of [...u.searchParams.keys()]) {
+            if (RX_CM_TRACKING_PARAMS.has(k.toLowerCase())) u.searchParams.delete(k);
+        }
+        return u.toString();
+    } catch { return href; }
+}
+
+async function rxCopyToActiveTab(tabId, text) {
+    // Service workers can't access navigator.clipboard reliably; the only
+    // safe path is to inject a tiny copy script into the content tab.
+    if (!chrome.scripting || typeof tabId !== 'number') return false;
+    try {
+        const [res] = await chrome.scripting.executeScript({
+            target: { tabId },
+            func: (t) => {
+                try { navigator.clipboard.writeText(t); return true; }
+                catch {
+                    // Fallback: legacy execCommand via a temporary textarea.
+                    const ta = document.createElement('textarea');
+                    ta.value = t;
+                    ta.style.position = 'fixed';
+                    ta.style.top = '-10000px';
+                    document.body.appendChild(ta);
+                    ta.select();
+                    try { return document.execCommand('copy'); }
+                    finally { ta.remove(); }
+                }
+            },
+            args: [text],
+        });
+        return !!(res && res.result);
+    } catch (e) {
+        console.warn('[RumbleX] copy script injection failed:', e);
+        return false;
+    }
+}
+
+if (chrome.contextMenus) {
+    chrome.contextMenus.onClicked.addListener(async (info, tab) => {
+        if (!tab || typeof tab.id !== 'number') return;
+        const tabId = tab.id;
+        switch (info.menuItemId) {
+            case RX_CM_IDS.copyClean: {
+                const target = info.linkUrl || info.pageUrl || tab.url || '';
+                const cleaned = rxStripTrackingFromUrl(target);
+                await rxCopyToActiveTab(tabId, cleaned);
+                return;
+            }
+            case RX_CM_IDS.copyAtTime: {
+                // Ask the content script for the current video time + clean URL.
+                chrome.tabs.sendMessage(tabId, { action: 'getVideoStateAtTime' }, async (resp) => {
+                    void chrome.runtime.lastError;
+                    if (!resp?.ok) {
+                        // Fall back to the plain clean URL if there's no
+                        // video on the page (e.g. user right-clicked on
+                        // a feed/home/channel page).
+                        await rxCopyToActiveTab(tabId, rxStripTrackingFromUrl(tab.url || ''));
+                        return;
+                    }
+                    let out = resp.cleanUrl || tab.url || '';
+                    if (resp.isWatch && Number.isFinite(resp.currentTime) && resp.currentTime > 0) {
+                        try {
+                            const u = new URL(out);
+                            // Rumble's native timestamp param is `start`,
+                            // per their share modal and existing v1.x
+                            // shareTimestamp module. Stay consistent.
+                            u.searchParams.set('start', String(resp.currentTime));
+                            out = u.toString();
+                        } catch {}
+                    }
+                    await rxCopyToActiveTab(tabId, out);
+                });
+                return;
+            }
+            case RX_CM_IDS.openSettings: {
+                try {
+                    if (chrome.runtime.openOptionsPage) chrome.runtime.openOptionsPage();
+                } catch (e) { console.warn('[RumbleX] openOptionsPage failed:', e); }
+                return;
+            }
+        }
+    });
+}
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     // Pass-through reads — kept for parity with earlier versions in case any

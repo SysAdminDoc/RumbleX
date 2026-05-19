@@ -2,6 +2,34 @@
 
 All notable changes to RumbleX will be documented in this file.
 
+## [3.5.0] - 2026-05-19
+
+### v3.5.0 — chrome.contextMenus + opt-in Playwright E2E + ES/PT-BR locale drafts
+
+Three v3.3–v3.5 ROADMAP items closed in one focused release.
+
+**chrome.contextMenus integration**
+- New permission `contextMenus` + `scripting` (latter for clipboard fallback). Three menu entries, all scoped to `*://*.rumble.com/*` via `documentUrlPatterns` so they never appear on other sites:
+  - **Copy clean URL (strip tracking)** — works on link + page contexts. Strips the same v2.4 allowlist (`e9s`, `utm_*`, `ref`, `campaign`, `fbclid`, `gclid`, etc.) on the service-worker side so right-clicked links (whose URL the content script never saw) get the same treatment.
+  - **Copy URL at current time** — works on page + video contexts. Sends a `getVideoStateAtTime` message to the active tab, reads `video.currentTime` and the cleaned URL, builds a `?start=` link matching Rumble's native timestamp format and v1.x `shareTimestamp` module. Falls back to plain clean URL when no video element is on the page.
+  - **Open RumbleX settings** — page + action contexts. Calls `chrome.runtime.openOptionsPage()`.
+- New setting `contextMenusEnabled` (default ON). Toggling it off live re-syncs via `chrome.storage.onChanged` — the SW removes the menu entries without a reload.
+- Copy helper uses `chrome.scripting.executeScript` to run a tiny in-tab clipboard write (Service Workers can't access `navigator.clipboard` directly). Includes legacy `execCommand('copy')` fallback for older Chromium builds.
+- Menu entries registered on `chrome.runtime.onInstalled`. `removeAll()` first to avoid duplicate-id errors on extension update.
+
+**Opt-in Playwright E2E suite**
+- New `package.json` + `playwright.config.js` + `tests/e2e/` directory. Run locally with `npm install && npm run test:e2e`.
+- `tests/e2e/_fixtures.js` extends Playwright's test base with a persistent Chromium context that pre-loads the MV3 extension via `--load-extension`. Each test gets its own temp profile so `rx_settings` doesn't leak between cases.
+- First-pass coverage: extension service worker boots within 15 s (`extension-loads.spec.js`), options page renders the v3.1 snapshot + privacy sections, popup renders feature groups with `aria-pressed` toggles, settings modal dirty-draft search filters correctly, catalog parity sanity ≥ 180 boolean cards (`settings-modal.spec.js`).
+- New `.github/workflows/e2e.yml` runs on `workflow_dispatch` only — avoids the ~200 MB Chromium download on every push. Uploads `playwright-report/` as an artifact with 7-day retention.
+- Test artifacts (`node_modules/`, `playwright-report/`, `test-results/`, `.playwright/`) added to `.gitignore`.
+
+**Spanish + Brazilian Portuguese locale drafts**
+- `extension/_locales/es/messages.json` and `extension/_locales/pt_BR/messages.json` — 32/32/32 key parity with the English source. Marked as initial translations needing human review before store publish (description fields call this out explicitly).
+- Both locale folders use underscore (`pt_BR`, not `pt-BR`) per Chrome i18n folder-naming convention.
+
+**Catalog parity:** 198/198/198/198.
+
 ## [3.4.0] - 2026-05-19
 
 ### v3.4.0 — Regression harness + CI

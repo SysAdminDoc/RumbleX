@@ -1,9 +1,9 @@
-// RumbleX v3.4.0 - Content Script
+// RumbleX v3.5.0 - Content Script
 // Rumble enhancement suite - Chrome/Firefox extension
 'use strict';
 
 // ── Version ──
-const VERSION = chrome.runtime?.getManifest?.()?.version || '3.4.0';
+const VERSION = chrome.runtime?.getManifest?.()?.version || '3.5.0';
 const SCHEMA_VERSION = 2;
 
 // ── Settings Manager (chrome.storage.local) ──
@@ -230,6 +230,9 @@ const Settings = {
         // ── v3.1.0 — Rumble Shorts (Feb 2026) + Wallet (Jan 2026) ──
         disableShortsFeed: false,    // redirects /shorts → /subscriptions when ON
         hideWalletTipButton: false,  // hides per-creator tip jar button
+
+        // ── v3.5.0 — chrome.contextMenus integration ──
+        contextMenusEnabled: true,
     },
     _writeTimer: null,
     _pendingWrite: false,
@@ -11778,6 +11781,37 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     }
     if (msg.action === 'restoreSnapshot') {
         rxRestoreSnapshot(msg.indexOrAt).then(sendResponse);
+        return true;
+    }
+    // v3.5.0 — chrome.contextMenus probe. Background SW asks the active
+    // tab for its current video state (URL + playback time + clean URL)
+    // so the right-click action "Copy URL at timestamp" can build a
+    // shareable link without redoing tracking-param strip on the SW side.
+    if (msg.action === 'getVideoStateAtTime') {
+        try {
+            const video = qs('#rx-split-left video') || qs('#videoPlayer video') || qs('video');
+            const t = video && Number.isFinite(video.currentTime) ? Math.floor(video.currentTime) : null;
+            // Clean URL: reuse the same allowlist-strip set as StripTrackingParams.
+            let cleanUrl = location.href;
+            try {
+                const u = new URL(location.href);
+                if (/(^|\.)rumble\.com$/i.test(u.hostname)) {
+                    const strip = new Set([
+                        'e9s', 'ref', 'referrer', 'src',
+                        'utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content',
+                        'campaign', 'mtm_source', 'mtm_medium', 'mtm_campaign',
+                        'fbclid', 'gclid', 'mc_cid', 'mc_eid', 'igshid', '_ga', 'yclid',
+                    ]);
+                    for (const k of [...u.searchParams.keys()]) {
+                        if (strip.has(k.toLowerCase())) u.searchParams.delete(k);
+                    }
+                    cleanUrl = u.toString();
+                }
+            } catch {}
+            sendResponse({ ok: true, cleanUrl, currentTime: t, isWatch: Page.isWatch() });
+        } catch (e) {
+            sendResponse({ ok: false, reason: String(e?.message || e) });
+        }
         return true;
     }
 });

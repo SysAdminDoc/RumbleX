@@ -1,0 +1,14 @@
+{
+  "name": "rumblex-tests",
+  "version": "3.5.0",
+  "private": true,
+  "description": "RumbleX Playwright E2E harness (devDependency only — runtime code is in extension/).",
+  "scripts": {
+    "test:e2e": "playwright test",
+    "test:e2e:headed": "playwright test --headed",
+    "test:e2e:install": "playwright install chromium --with-deps"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.49.0"
+  }
+}

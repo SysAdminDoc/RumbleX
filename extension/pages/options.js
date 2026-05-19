@@ -1,4 +1,4 @@
-// RumbleX v3.4.0 - Options Page
+// RumbleX v3.5.0 - Options Page
 // Standalone settings management via chrome.storage.local (rx_settings key).
 // Mirrors Astra Deck's settings page pattern: dirty-draft workflow with
 // search, group nav, stats overview, and export/import/reset.
@@ -228,6 +228,9 @@
         // v3.1.0 — Platform follow-through
         disableShortsFeed: false,
         hideWalletTipButton: false,
+
+        // v3.5.0 — chrome.contextMenus integration
+        contextMenusEnabled: true,
     };
 
     // Per-key metadata: group + human label + description
@@ -464,6 +467,9 @@
         // v3.1.0 — Platform follow-through
         disableShortsFeed: { group: 'feed-controls', label: 'Disable Shorts Feed', desc: 'Redirect rumble.com/shorts to /subscriptions on every visit. Launched on web 2026-02-04.' },
         hideWalletTipButton: { group: 'video-buttons', label: 'Hide Wallet Tip Button', desc: 'Hide the per-creator Rumble Wallet tip-jar button (launched January 2026). Off by default — leave on if you want to tip with crypto.' },
+
+        // v3.5.0 — chrome.contextMenus integration
+        contextMenusEnabled: { group: 'integrations', label: 'Right-Click Menus', desc: 'Add "Copy clean URL", "Copy URL at current time", and "Open RumbleX settings" to the browser right-click menu on rumble.com pages.' },
     };
 
     const GROUPS = [

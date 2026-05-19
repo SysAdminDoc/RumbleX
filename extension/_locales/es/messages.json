@@ -1,0 +1,130 @@
+{
+  "extName": {
+    "message": "RumbleX",
+    "description": "Nombre de la extensión. No traducir — nombre propio."
+  },
+  "extDescription": {
+    "message": "Suite de mejoras para Rumble — bloqueo de anuncios, vista de cine, descargas de vídeo, tema oscuro pulido y más de 130 funciones configurables.",
+    "description": "Descripción corta mostrada en la tienda de extensiones del navegador. Traducción inicial — revisar antes de publicar."
+  },
+  "actionTitle": {
+    "message": "RumbleX",
+    "description": "Tooltip del icono en la barra de herramientas."
+  },
+  "openSettingsEditor": {
+    "message": "Abrir editor de ajustes",
+    "description": "Botón en la página de opciones que abre el modal de edición."
+  },
+  "exportBackup": {
+    "message": "Exportar copia de seguridad",
+    "description": "Botón que descarga la copia completa en JSON."
+  },
+  "importBackup": {
+    "message": "Importar copia de seguridad",
+    "description": "Botón que restaura desde un JSON previamente exportado."
+  },
+  "resetAllData": {
+    "message": "Restablecer todos los datos",
+    "description": "Botón destructivo que borra ajustes y localStorage por origen. Crea una instantánea automática si backupHistory está activado."
+  },
+  "snapshotHistory": {
+    "message": "Historial de instantáneas",
+    "description": "Encabezado de la sección de instantáneas (v3.1.0)."
+  },
+  "snapshotTakeNow": {
+    "message": "Crear instantánea ahora",
+    "description": "Botón que crea una instantánea manual."
+  },
+  "snapshotRestore": {
+    "message": "Restaurar",
+    "description": "Botón por instantánea para restaurarla. Crea otra instantánea antes de sobrescribir."
+  },
+  "privacyReport": {
+    "message": "Informe de privacidad",
+    "description": "Encabezado de la sección de informe de privacidad (v3.1.0)."
+  },
+  "telemetryNone": {
+    "message": "Telemetría: ninguna — sin analíticas, sin registro remoto, sin balizas de uso",
+    "description": "Aviso del informe. Debe coincidir con la cadena `telemetry` en rxBuildPrivacyReport."
+  },
+  "settingsTotal": {
+    "message": "ajustes",
+    "description": "Sustantivo plural mostrado junto al recuento en el encabezado del modal."
+  },
+  "settingsUnsaved": {
+    "message": "sin guardar",
+    "description": "Etiqueta para la pastilla de claves modificadas."
+  },
+  "saveBtn": {
+    "message": "Guardar",
+    "description": "Botón de guardar en el modal de ajustes."
+  },
+  "discardBtn": {
+    "message": "Descartar",
+    "description": "Botón de descartar cambios en el modal de ajustes."
+  },
+  "restoreDefaultsBtn": {
+    "message": "Restaurar valores predeterminados",
+    "description": "Botón que carga los valores por defecto en el borrador (requiere Guardar para persistir)."
+  },
+  "groupAll": {
+    "message": "Todos los ajustes",
+    "description": "Nombre del grupo en la barra lateral que muestra todos los ajustes."
+  },
+  "groupCore": {
+    "message": "Núcleo",
+    "description": "Grupo de ajustes del motor principal, tema y accesibilidad."
+  },
+  "groupAdBlocking": {
+    "message": "Bloqueo de anuncios",
+    "description": "Grupo de ajustes."
+  },
+  "groupVideoPlayer": {
+    "message": "Reproductor de vídeo",
+    "description": "Grupo de ajustes."
+  },
+  "groupDownloads": {
+    "message": "Descargas y captura",
+    "description": "Grupo de ajustes."
+  },
+  "groupHistory": {
+    "message": "Historial y marcadores",
+    "description": "Grupo de ajustes."
+  },
+  "groupChat": {
+    "message": "Comentarios y chat",
+    "description": "Grupo de ajustes."
+  },
+  "groupFeedControls": {
+    "message": "Controles de feed",
+    "description": "Grupo de ajustes."
+  },
+  "groupAutomation": {
+    "message": "Automatización",
+    "description": "Grupo de ajustes."
+  },
+  "groupCreator": {
+    "message": "Creador y Studio",
+    "description": "Grupo de ajustes."
+  },
+  "groupIntegrations": {
+    "message": "Integraciones",
+    "description": "Grupo de ajustes."
+  },
+  "groupPrivacy": {
+    "message": "Privacidad y datos",
+    "description": "Grupo de ajustes."
+  },
+  "groupAdvanced": {
+    "message": "Avanzado",
+    "description": "Grupo de ajustes para usuarios avanzados y claves de depuración."
+  },
+  "tipDisableShortsFeed": {
+    "message": "Desactivar el feed de Shorts",
+    "description": "Etiqueta del interruptor que redirige rumble.com/shorts a /subscriptions (v3.1.0)."
+  },
+  "tipHideWalletTipButton": {
+    "message": "Ocultar botón de propina del Wallet",
+    "description": "Etiqueta del interruptor que oculta el botón de propina por creador del Rumble Wallet (v3.1.0)."
+  }
+}

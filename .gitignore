@@ -8,3 +8,9 @@ RumbleX-chrome.zip
 RumbleX-firefox.zip
 RumbleX-*.crx
 Sample Pages/
+
+# v3.5.0 — Playwright E2E artifacts
+node_modules/
+playwright-report/
+test-results/
+.playwright/
