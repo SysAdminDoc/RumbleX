@@ -1,8 +1,8 @@
 # RumbleX Roadmap
 
-Version: 4.9 — v3.10 OPML export + multi-profile UI shipped
+Version: 4.10 — v3.11 CommentExport module shipped
 Date: 2026-05-19
-Current shipped: v3.10.0 (extension), v1.8.0 (userscript)
+Current shipped: v3.11.0 (extension), v1.8.0 (userscript)
 
 This roadmap supersedes the v2026-05-19 v3.0 plan. It is the result of a fresh repo audit plus a 60+ source external research sweep (see [Appendix C — Sources](#appendix-c--sources)). It tracks shipped work in the [Recently shipped](#recently-shipped) summary, then prioritises the next ~12 months of work into **Now / Next / Later / Under Consideration / Rejected** tiers with every claim traceable to a source.
 

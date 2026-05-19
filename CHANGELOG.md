@@ -2,6 +2,22 @@
 
 All notable changes to RumbleX will be documented in this file.
 
+## [3.11.0] - 2026-05-19
+
+### v3.11.0 — Comment Export module
+
+Closes the v2.0 `commentExport` setting key that has shipped with no consumer module for nine releases.
+
+**New `CommentExport` feature module**
+- Mounts an "Export comments" button at the top of `Selectors.find('comments.root')` on watch pages when `commentExport` is on. Anchors via the v2.0 Selectors registry; re-anchors on htmx route changes via `Router.onChange`.
+- **Click → JSON download.** Payload: `{ exportedAt, pageUrl, pageTitle, count, comments: [{ id, author, text, votes, ts }] }`. Pretty-printed with `JSON.stringify(_, null, 2)`.
+- **Shift-click → CSV download.** Same fields, RFC 4180-style escaping (quote-wrap when the value contains `"`, `,`, `\n`, or `\r`; doubled quotes inside).
+- Extraction iterates `Selectors.findAll('comments.item')` so the data model tracks the v2.0 selector registry — when Rumble's DOM shifts, only `Selectors._map` needs an update.
+- Filename pattern: `YYYY-MM-DD_<sanitized-title>_comments.{json,csv}`.
+- Honest UX: only exports comments Rumble has actually loaded. Toast tells the user the count so they know whether to scroll-to-load-more before re-exporting.
+
+**Catalog parity:** 201/201/201/201 (commentExport key was already in catalog since v2.0).
+
 ## [3.10.0] - 2026-05-19
 
 ### v3.10.0 — Watched-channels OPML export + multi-profile settings UI

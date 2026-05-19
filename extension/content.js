@@ -1,9 +1,9 @@
-// RumbleX v3.10.0 - Content Script
+// RumbleX v3.11.0 - Content Script
 // Rumble enhancement suite - Chrome/Firefox extension
 'use strict';
 
 // ── Version ──
-const VERSION = chrome.runtime?.getManifest?.()?.version || '3.10.0';
+const VERSION = chrome.runtime?.getManifest?.()?.version || '3.11.0';
 const SCHEMA_VERSION = 2;
 
 // ── Settings Manager (chrome.storage.local) ──
@@ -7056,6 +7056,7 @@ const RX_CATEGORIES = [
             { id: 'videoTimestamps', label: 'Timestamps', desc: 'Clickable timestamps in comments/description' },
             { id: 'commentNav', label: 'Comment Nav', desc: 'Navigate, expand/collapse, OP-only filter' },
             { id: 'commentSort', label: 'Comment Sort', desc: 'Sort comments: Top / New / Oldest / Controversial' },
+            { id: 'commentExport', label: 'Comment Export', desc: 'Export visible comments as JSON (click) or CSV (shift-click)' },
             { id: 'rantHighlight', label: 'Rant Highlight', desc: 'Glow rants by tier + running $ total' },
             { id: 'rantPersist', label: 'Rant Persist', desc: 'Keep rants visible past expiry + export JSON' },
             { id: 'commentBlocking', label: 'Comment Blocking', desc: 'Block users from the comment section' },
@@ -8654,6 +8655,177 @@ const CommentSort = {
         this._styleEl?.remove();
         this._bar?.remove();
     }
+};
+
+// ═══════════════════════════════════════════
+//  FEATURE: Comment Export (v3.11.0)
+// ═══════════════════════════════════════════
+// Closes the v2.0 `commentExport` setting key that shipped with no
+// consumer. Adds an "Export" button next to the comments root on watch
+// pages. Click → JSON download of every currently-loaded comment.
+// Shift-click → CSV. Iterates Selectors.findAll('comments.item') so the
+// extraction tracks the v2.0 selector registry.
+//
+// Only exports what Rumble's pagination has actually rendered. The toast
+// tells the user exactly how many comments were captured so they know
+// whether to scroll/load-more first and re-export.
+const CommentExport = {
+    id: 'commentExport',
+    name: 'Comment Export',
+    _btn: null,
+    _styleEl: null,
+    _routerUnsub: null,
+    _css: `
+        html.rumblex-active button.rx-comment-export-btn {
+            display: inline-flex; align-items: center; gap: 6px;
+            margin: 0 0 12px;
+            padding: 6px 12px;
+            background: var(--rx-surface0, #1e2a14);
+            color: var(--rx-text, #d6e8c4);
+            border: 1px solid var(--rx-surface1, #2a3a1e);
+            border-radius: 6px; cursor: pointer;
+            font: 600 12px/1 system-ui, sans-serif;
+            transition: background 120ms ease;
+        }
+        html.rumblex-active button.rx-comment-export-btn:hover {
+            background: var(--rx-surface1, #2a3a1e);
+        }
+    `,
+    _extractAll() {
+        const items = Selectors.findAll('comments.item');
+        const out = [];
+        for (const item of items) {
+            try {
+                // Comment ID lives on the LI's data attribute; falls back
+                // to the text-content's hash-prefix when Rumble obscures it.
+                const id = item.getAttribute('data-comment-id')
+                    || item.id
+                    || null;
+                const text = (Selectors.find('comments.text', item) || item.querySelector('.comment-text'))?.textContent?.trim() || '';
+                const author = item.querySelector('.comment-author, [data-js*="user_name"], .channel__link')?.textContent?.trim() || '';
+                // Vote counts — match the CommentSort module's parser style.
+                const voteEl = item.querySelector('.comment-actions-up-vote-count, .comment-vote-pill, [data-vote-count]');
+                const voteRaw = voteEl?.textContent?.trim() || voteEl?.getAttribute('data-vote-count') || '';
+                // Timestamp — Rumble renders relative ("3 days ago") on cards
+                // and absolute on hover. We capture the visible text only.
+                const ts = item.querySelector('time, .comment-meta time, .comments-meta')?.textContent?.trim() || '';
+                out.push({ id, author, text, votes: voteRaw, ts });
+            } catch {}
+        }
+        return out;
+    },
+    _toCsv(rows) {
+        const esc = (v) => {
+            const s = String(v ?? '');
+            return /[",\n\r]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+        };
+        const header = ['id', 'author', 'text', 'votes', 'ts'];
+        const lines = [header.join(',')];
+        for (const r of rows) {
+            lines.push([r.id, r.author, r.text, r.votes, r.ts].map(esc).join(','));
+        }
+        return lines.join('\n');
+    },
+    _filenameStub() {
+        // Derive from page title with a YYYY-MM-DD prefix. Keeps the
+        // download distinct across multiple exports of the same page.
+        const title = (qs('.video-header-container__title')?.textContent?.trim() || 'rumblex')
+            .replace(/[^\w-]+/g, '-')
+            .replace(/-+/g, '-')
+            .replace(/^-|-$/g, '')
+            .slice(0, 80);
+        return new Date().toISOString().slice(0, 10) + '_' + (title || 'rumblex') + '_comments';
+    },
+    _download(content, filename, mime) {
+        try {
+            const blob = new Blob([content], { type: mime });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = filename;
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            setTimeout(() => URL.revokeObjectURL(url), 5000);
+        } catch (e) {
+            console.warn('[RumbleX] comment export download failed:', e);
+        }
+    },
+    _handleClick(e) {
+        const rows = this._extractAll();
+        if (rows.length === 0) {
+            SettingsPanel._showToast?.('No comments loaded yet — scroll to load comments first');
+            return;
+        }
+        const stub = this._filenameStub();
+        if (e?.shiftKey) {
+            this._download(this._toCsv(rows), stub + '.csv', 'text/csv;charset=utf-8');
+            SettingsPanel._showToast?.(`Exported ${rows.length} comment${rows.length === 1 ? '' : 's'} as CSV`);
+        } else {
+            const payload = {
+                exportedAt: new Date().toISOString(),
+                pageUrl: location.href,
+                pageTitle: qs('.video-header-container__title')?.textContent?.trim() || '',
+                count: rows.length,
+                comments: rows,
+            };
+            this._download(JSON.stringify(payload, null, 2), stub + '.json', 'application/json');
+            SettingsPanel._showToast?.(`Exported ${rows.length} comment${rows.length === 1 ? '' : 's'} as JSON (shift-click for CSV)`);
+        }
+    },
+    _build() {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'rx-comment-export-btn';
+        btn.title = 'Export visible comments — click = JSON, shift-click = CSV';
+        const svgNS = 'http://www.w3.org/2000/svg';
+        const svg = document.createElementNS(svgNS, 'svg');
+        svg.setAttribute('viewBox', '0 0 16 16');
+        svg.setAttribute('width', '14');
+        svg.setAttribute('height', '14');
+        svg.setAttribute('fill', 'currentColor');
+        const path = document.createElementNS(svgNS, 'path');
+        path.setAttribute('d', 'M8 1a1 1 0 011 1v6.59l1.3-1.3a1 1 0 011.4 1.42l-3 3a1 1 0 01-1.4 0l-3-3a1 1 0 011.4-1.42L7 8.59V2a1 1 0 011-1zM3 13a1 1 0 100 2h10a1 1 0 100-2H3z');
+        svg.appendChild(path);
+        const label = document.createElement('span');
+        label.textContent = 'Export comments';
+        btn.appendChild(svg);
+        btn.appendChild(label);
+        btn.addEventListener('click', (e) => this._handleClick(e));
+        return btn;
+    },
+    _tryMount() {
+        if (this._btn?.isConnected) return;
+        const host = Selectors.find('comments.root');
+        if (!host) return;
+        if (!this._btn) this._btn = this._build();
+        host.insertBefore(this._btn, host.firstChild);
+    },
+    init() {
+        if (!Settings.get(this.id)) return;
+        if (!Page.isWatch()) return;
+        this._styleEl = injectStyle(this._css, 'rx-comment-export-css');
+        Selectors.wait('comments.root', { timeout: 15000 })
+            .then(() => this._tryMount())
+            .catch(() => this._tryMount());
+        this._routerUnsub = Router.onChange((d) => {
+            if (d.changed && Page.isWatch()) {
+                this._btn?.remove();
+                this._btn = null;
+                Selectors.wait('comments.root', { timeout: 10000 }).then(() => this._tryMount()).catch(() => {});
+            }
+        });
+    },
+    destroy() {
+        this._btn?.remove();
+        this._btn = null;
+        this._styleEl?.remove();
+        this._styleEl = null;
+        if (typeof this._routerUnsub === 'function') {
+            try { this._routerUnsub(); } catch {}
+            this._routerUnsub = null;
+        }
+    },
 };
 
 // ═══════════════════════════════════════════
@@ -11514,7 +11686,7 @@ const features = [
     ChatAutoScroll, AutoExpand, NotifEnhance, PlaylistQuickSave,
     // v1.8.0 additions
     FullTitles, TitleFont, UniqueChatters, ChatUserBlock, ChatSpamDedup,
-    ChatExport, RantPersist, CommentSort, PopoutChat, KeywordFilter,
+    ChatExport, RantPersist, CommentSort, CommentExport, PopoutChat, KeywordFilter,
     AutoplayScheduler, Chapters, SponsorBlockRX, VideoClips, LiveDVR,
     SubtitleSidecar, Transcripts, AudioOnly, BatchDownload,
     // v1.9.0 — Rumble Enhancement Suite port
