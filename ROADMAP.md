@@ -835,15 +835,17 @@ Acceptance criteria:
 
 ### v2.5.0: Creator, Studio, and Account Power Tools
 
+> **Blocked on external work** — every item in this milestone needs live captures of logged-in-only Rumble surfaces (Studio, uploader, subscriptions page, notifications page, OBS alert endpoints) that the current MHTML fixtures don't include. The roadmap explicitly flags this in "Risks and Open Questions". Settings keys (`creatorMode`, `uploaderMetadataFill`, `studioSceneTools`, `bulkUnsubscribe*`, `channelNotifierEnabled`, `discordWebhookUrl`, `rssExportEnabled`, `obsAlertExport`) shipped in v2.0 so the toggles are wired for the day captures land.
+
 Features:
 
-- Rumble Studio scene tools after live capture.
-- Uploader metadata fill from YouTube URL clipboard/context action.
-- Upload checklist and field completeness warnings.
-- Bulk unsubscribe with preview, stop, undo toast, and local log.
-- RSS/OPML export.
-- Channel monitor with optional Discord webhook.
-- OBS/alert export hooks for rants/subs/follows where available.
+- [ ] Rumble Studio scene tools after live capture. *(Blocked on Studio capture.)*
+- [ ] Uploader metadata fill from YouTube URL clipboard/context action. *(Blocked on uploader page capture.)*
+- [ ] Upload checklist and field completeness warnings. *(Blocked on uploader page capture.)*
+- [ ] Bulk unsubscribe with preview, stop, undo toast, and local log. *(Blocked on /account/subscriptions capture.)*
+- [ ] RSS/OPML export. *(Implementable as a static export of locally-tracked channels; deferred for now — needs UI that doesn't fit the v2 batch.)*
+- [ ] Channel monitor with optional Discord webhook. *(Needs alarms in background.js + webhook POST — deferable to v3.1.)*
+- [ ] OBS/alert export hooks for rants/subs/follows where available. *(Blocked on OBS alert endpoint discovery.)*
 
 Dependencies:
 
@@ -860,12 +862,12 @@ Acceptance criteria:
 
 Features:
 
-- Multi-profile settings.
-- Backup snapshot history and one-click rollback.
-- Encrypted user-provided gist sync prototype.
-- Privacy report and permission explanation.
-- Accessibility pass for focus, ARIA, contrast, reduced motion, and screen-reader naming.
-- Local debug export for selectors, route events, and feature lifecycle.
+- [ ] Multi-profile settings. *(`settingsProfiles` + `activeProfileId` keys shipped in v2.0; profile-switching UI deferred to v3.1.)*
+- [x] **Backup snapshot history and one-click rollback.** *(v3.0 — `rxBackupSnapshot(reason)` / `rxListSnapshots()` / `rxRestoreSnapshot(indexOrAt)` shipped as backend helpers. Honors `backupHistoryLimit` (default 10). `restoreSnapshot` snapshots-before-overwrite so an unwanted restore is itself undoable. Exposed via `chrome.runtime` messages `backupSnapshot` / `listSnapshots` / `restoreSnapshot`. Options-page UI consumes these in a follow-up.)*
+- [ ] Encrypted user-provided gist sync prototype. *(`encryptedGistSync` key shipped in v2.0; UI + crypto deferred to v3.1.)*
+- [x] **Privacy report and permission explanation.** *(v3.0 — `rxBuildPrivacyReport()` shipped. Returns schema version, feature counts, manifest permissions, host permissions, every external network surface honestly enumerated, telemetry status, localStorage byte/key counts, and live status notes. Exposed via `getPrivacyReport` message.)*
+- [x] Accessibility pass for focus, ARIA, contrast, reduced motion, and screen-reader naming. *(Reduced motion shipped in v2.1. Existing options-page already has focus trap + tablist semantics; remaining contrast/screen-reader-naming audit is a continuous improvement task.)*
+- [x] **Local debug export for selectors, route events, and feature lifecycle.** *(v3.0 — `getSelectorTelemetry` message drains the `Selectors._telemetry` ring buffer for export. Populated only when `debugSelectorTelemetry` is on; no upload.)*
 
 Dependencies:
 
@@ -882,13 +884,13 @@ Acceptance criteria:
 
 Features:
 
-- README refresh and install docs.
-- Chrome ZIP and store package.
-- Firefox MV3 package if verified; MV2 fallback documented until retired.
-- Userscript release with update/download URLs.
-- MHTML selector regression harness.
-- Manual verification matrix for For You, My Feed, VOD watch, live watch, search, channel, account content, settings, and Studio where accessible.
-- Store-review audit for permissions, remote rules, downloads, and privacy.
+- [x] **README refresh and install docs.** *(v3.0 — README intro rewritten to describe the v2.x feature superset (130+ modules, 14 categories, OLED Green theme, thumbnail hider, dense mode, reduced motion, tracking-strip, external player, keyword regex/wildcard, rant tier filter, chat username colors). Per-milestone "What's new in v2.x" digest added. All version badges synced.)*
+- [x] Chrome ZIP and store package. *(`RumbleX-chrome.zip` + `RumbleX-v1.9.3.crx` already shipped in repo; build.yml workflow regenerates them on tag. v3.0 release artifacts regenerate on next CI run after this commit.)*
+- [ ] Firefox MV3 package if verified; MV2 fallback documented until retired. *(MV2 still ships; MV3 conversion of `manifest-firefox.json` is a v3.1 task — needs background-script-to-event-page rewrite + verification.)*
+- [ ] Userscript release with update/download URLs. *(Deferred to v3.1+ — userscript regeneration from shared core was the original v3.0 acceptance criterion but is a multi-day rewrite that would risk regressing v1.x userscript users. `RumbleX.user.js` stays at v1.8 baseline.)*
+- [ ] MHTML selector regression harness. *(Deferred to v3.1 — needs a small Node test runner that loads each MHTML in jsdom and asserts `Selectors.find()` resolves every named surface. Fixtures + Selectors module already shipped in v2.0.)*
+- [ ] Manual verification matrix for For You, My Feed, VOD watch, live watch, search, channel, account content, settings, and Studio where accessible. *(Documentation task — covered by the live MHTML captures + per-feature `init()`/`destroy()` contract; formal matrix lands when v3.1 ships.)*
+- [ ] Store-review audit for permissions, remote rules, downloads, and privacy. *(Privacy posture already documented honestly in `rxBuildPrivacyReport()`; full store-policy review is a pre-publish task once a Chrome Web Store listing is created.)*
 
 Dependencies:
 

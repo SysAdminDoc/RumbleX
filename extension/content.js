@@ -1,9 +1,9 @@
-// RumbleX v2.4.0 - Content Script
+// RumbleX v3.0.0 - Content Script
 // Rumble enhancement suite - Chrome/Firefox extension
 'use strict';
 
 // ── Version ──
-const VERSION = chrome.runtime?.getManifest?.()?.version || '2.4.0';
+const VERSION = chrome.runtime?.getManifest?.()?.version || '3.0.0';
 const SCHEMA_VERSION = 2;
 
 // ── Settings Manager (chrome.storage.local) ──
@@ -11496,6 +11496,115 @@ function rxWriteLocalStorage(data) {
     return written;
 }
 
+// ═══════════════════════════════════════════
+//  HELPER: Privacy Report (v2.6.0)
+// ═══════════════════════════════════════════
+// Returns a snapshot of RumbleX's local privacy footprint so the options
+// page can render the "Privacy Report" panel without recomputing client-side.
+// Pure read — no side effects, no network. Every value is either a feature
+// counter, a storage size, or a permission boolean from the manifest.
+function rxBuildPrivacyReport() {
+    const manifest = chrome.runtime?.getManifest?.() || {};
+    const settings = Settings._cache || {};
+    const featureKeys = Object.keys(Settings._defaults).filter((k) =>
+        typeof Settings._defaults[k] === 'boolean'
+    );
+    const enabled = featureKeys.filter((k) => !!settings[k]).length;
+    // localStorage size — we own only the rx_* keys; sum them safely.
+    let localBytes = 0;
+    let localKeys = 0;
+    try {
+        for (let i = 0; i < localStorage.length; i++) {
+            const k = localStorage.key(i);
+            if (!k) continue;
+            if (RX_LOCAL_STORAGE_KEYS.includes(k)
+                || RX_LOCAL_STORAGE_PREFIXES.some((p) => k.startsWith(p))) {
+                localKeys++;
+                localBytes += k.length + (localStorage.getItem(k) || '').length;
+            }
+        }
+    } catch {}
+    return {
+        version: VERSION,
+        schemaVersion: settings.schemaVersion || 0,
+        featureCount: featureKeys.length,
+        enabledFeatures: enabled,
+        permissions: manifest.permissions || [],
+        hostPermissions: manifest.host_permissions || manifest.permissions?.filter((p) => p.includes('://')) || [],
+        externalNetworkSurfaces: [
+            // Honest list of every outbound network surface RumbleX can touch.
+            '*.rumble.com (content script + downloads)',
+            '*.1a-1791.com (Rumble CDN downloads)',
+            '*.rumble.cloud (Rumble CDN downloads)',
+            'api.github.com (release version check, manual)',
+        ],
+        telemetry: 'none — no analytics, no remote logging, no usage beacons',
+        localStorage: {
+            keys: localKeys,
+            bytes: localBytes,
+        },
+        notes: [
+            settings.stripTrackingParams ? 'Tracking-param stripping is ON' : 'Tracking-param stripping is OFF',
+            settings.debugSelectorTelemetry ? 'Selector telemetry is being collected locally (ring buffer, no upload)' : 'Selector telemetry is disabled',
+            settings.remoteCosmeticRules ? 'Remote cosmetic rules enabled — signed payloads only' : 'Remote cosmetic rules disabled',
+        ],
+    };
+}
+
+// ═══════════════════════════════════════════
+//  HELPER: Backup Snapshot (v2.6.0)
+// ═══════════════════════════════════════════
+// Pushes a copy of the current rx_settings onto a rolling stack stored at
+// rx_settings_snapshots. Honors backupHistoryLimit so the snapshot list
+// stays bounded. Called automatically before destructive ops (import,
+// reset) by the options page once it adopts the new message action.
+async function rxBackupSnapshot(reason) {
+    if (!Settings.get('backupHistory')) return { ok: false, reason: 'disabled' };
+    const limit = Math.max(1, Number(Settings.get('backupHistoryLimit')) || 10);
+    try {
+        const cur = await chrome.storage.local.get(['rx_settings', 'rx_settings_snapshots']);
+        const snapshot = {
+            at: Date.now(),
+            reason: typeof reason === 'string' ? reason.slice(0, 80) : 'manual',
+            settings: cur.rx_settings || {},
+        };
+        const next = Array.isArray(cur.rx_settings_snapshots) ? cur.rx_settings_snapshots.slice() : [];
+        next.push(snapshot);
+        while (next.length > limit) next.shift();
+        await chrome.storage.local.set({ rx_settings_snapshots: next });
+        return { ok: true, count: next.length };
+    } catch (e) {
+        return { ok: false, reason: 'storage', error: String(e?.message || e) };
+    }
+}
+
+async function rxListSnapshots() {
+    try {
+        const cur = await chrome.storage.local.get('rx_settings_snapshots');
+        const list = Array.isArray(cur.rx_settings_snapshots) ? cur.rx_settings_snapshots : [];
+        // Strip the actual settings blob so the list endpoint is cheap;
+        // a separate restore call fetches the full snapshot by index/at.
+        return list.map((s, i) => ({ index: i, at: s.at, reason: s.reason }));
+    } catch { return []; }
+}
+
+async function rxRestoreSnapshot(indexOrAt) {
+    try {
+        const cur = await chrome.storage.local.get('rx_settings_snapshots');
+        const list = Array.isArray(cur.rx_settings_snapshots) ? cur.rx_settings_snapshots : [];
+        const snap = typeof indexOrAt === 'number' && indexOrAt < list.length
+            ? list[indexOrAt]
+            : list.find((s) => s.at === indexOrAt);
+        if (!snap) return { ok: false, reason: 'not-found' };
+        // Snapshot BEFORE we overwrite, so an unwanted restore is itself undoable.
+        await rxBackupSnapshot('pre-restore');
+        await chrome.storage.local.set({ rx_settings: snap.settings });
+        return { ok: true, restored: { at: snap.at, reason: snap.reason } };
+    } catch (e) {
+        return { ok: false, reason: 'storage', error: String(e?.message || e) };
+    }
+}
+
 // Listen for control messages from popup / background / options.
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     if (!msg || typeof msg !== 'object') return;
@@ -11516,6 +11625,27 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     if (msg.action === 'setLocalData') {
         const written = rxWriteLocalStorage(msg.data);
         sendResponse({ ok: true, written });
+        return true;
+    }
+    // v2.6.0 — privacy / backup / telemetry message API
+    if (msg.action === 'getPrivacyReport') {
+        sendResponse({ ok: true, report: rxBuildPrivacyReport() });
+        return true;
+    }
+    if (msg.action === 'getSelectorTelemetry') {
+        sendResponse({ ok: true, events: Selectors.drainTelemetry() });
+        return true;
+    }
+    if (msg.action === 'backupSnapshot') {
+        rxBackupSnapshot(msg.reason).then(sendResponse);
+        return true;
+    }
+    if (msg.action === 'listSnapshots') {
+        rxListSnapshots().then((list) => sendResponse({ ok: true, snapshots: list }));
+        return true;
+    }
+    if (msg.action === 'restoreSnapshot') {
+        rxRestoreSnapshot(msg.indexOrAt).then(sendResponse);
         return true;
     }
 });

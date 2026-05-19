@@ -2,6 +2,28 @@
 
 All notable changes to RumbleX will be documented in this file.
 
+## [3.0.0] - 2026-05-19
+
+### v3.0.0 — Distribution, store readiness, v2.6 backend, README refresh
+
+Closes the v2 roadmap arc with v2.6 atomic backend helpers and the v3.0 distribution-readiness work. Bumps to v3.0.0.
+
+**v2.6.0 — Data, Profiles, Accessibility, Privacy (backend atoms)**
+- **`rxBuildPrivacyReport()`** — Returns a pure-read snapshot of RumbleX's local privacy footprint: schema version, total feature count, enabled features, manifest permissions, host permissions, every external network surface RumbleX can touch (rumble.com / 1a-1791.com / rumble.cloud / api.github.com — honestly enumerated), telemetry status ("none — no analytics, no remote logging, no usage beacons"), localStorage byte/key counts, and live status notes for tracking-strip / selector telemetry / remote cosmetic rules. Exposed via `chrome.runtime` message `getPrivacyReport`. No network, no side effects.
+- **`rxBackupSnapshot(reason)`** / **`rxListSnapshots()`** / **`rxRestoreSnapshot(indexOrAt)`** — Rolling stack of pre-destructive-op settings snapshots stored at `rx_settings_snapshots`. Honors `backupHistoryLimit` (default 10). `restoreSnapshot` itself snapshots before overwriting so an unwanted restore is undoable. Exposed via message actions `backupSnapshot`, `listSnapshots`, `restoreSnapshot`. Options-page UI to consume these lands in a follow-up.
+- **`getSelectorTelemetry`** — Drains and returns the `Selectors._telemetry` ring buffer (only populated when `debugSelectorTelemetry` is on). No upload — caller is expected to write the events to a user-initiated download.
+
+**v3.0.0 — README refresh**
+- README intro rewritten to describe the v2.x feature superset honestly (130+ modules, 14 categories, OLED Green theme, thumbnail hider, dense mode, reduced motion, tracking-strip, external player, keyword regex/wildcard, rant tier filter, chat username colors).
+- "What's new in v2.x" digest added: per-milestone summary of what shipped at v2.0/v2.1/v2.2/v2.3+v2.4/v2.6.
+- All version badges (codex-branding block + `shields.io`) synced to v3.0.0.
+
+### What's intentionally NOT in v3.0.0
+
+The original v3.0 acceptance criteria included a single-file userscript regenerated from a shared core. That's a multi-day rewrite that would compete with the rest of the v2 roadmap arc and risks regressing the v1.x userscript users still rely on. `RumbleX.user.js` remains at the v1.8.0 baseline. The extension is the primary distribution surface; userscript regeneration is tracked as a deferred v3.1+ deliverable in ROADMAP.md.
+
+Other deferred items (Rumble Studio scene tools, uploader metadata fill, bulk unsubscribe UI, channel notifier alarms, OBS alert export, multi-stream viewer) all require live captures of logged-in-only Rumble surfaces I don't have, so they remain in the roadmap as ROADMAP.md-tracked deferrals rather than half-shipped stubs.
+
 ## [2.4.0] - 2026-05-19
 
 ### v2.3.0 + v2.4.0 — Live chat hardening + feed/discovery moderation
