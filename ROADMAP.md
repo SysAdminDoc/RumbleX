@@ -1,8 +1,8 @@
 # RumbleX Roadmap
 
-Version: 4.1 — Now-tier batch shipped
+Version: 4.2 — Now batch + v3.2 partial shipped
 Date: 2026-05-19
-Current shipped: v3.1.0 (extension), v1.8.0 (userscript)
+Current shipped: v3.2.0 (extension), v1.8.0 (userscript)
 
 This roadmap supersedes the v2026-05-19 v3.0 plan. It is the result of a fresh repo audit plus a 60+ source external research sweep (see [Appendix C — Sources](#appendix-c--sources)). It tracks shipped work in the [Recently shipped](#recently-shipped) summary, then prioritises the next ~12 months of work into **Now / Next / Later / Under Consideration / Rejected** tiers with every claim traceable to a source.
 
@@ -58,7 +58,7 @@ Items must be Now-tier if (a) source confirms a fresh platform surface change, O
 ### House-style debt
 
 - [x] **WCAG 2.2 SC 4.1.3 Status Messages: `aria-live` on toast region.** *(v3.1.0 — settings-modal toast region now has `role="status"`, `aria-live="polite"`, `aria-atomic="true"`. Options-page status divs already compliant.)* Source: [WCAG 2.2 / ARIA integration](https://www.accesify.io/blog/aria-wcag-integration/).
-- [ ] **WCAG 2.2 SC 2.5.8 Target Size 24 px on all in-page controls.** Audit `rx-extplayer`, settings switches, popup gear, fab buttons. Anything < 24×24 gets bumped. Deferred to v3.2 (needs visual diff testing). Source: [Accesify](https://www.accesify.io/blog/aria-wcag-integration/) · [BrowserStack](https://www.browserstack.com/guide/wcag-chrome-extension).
+- [x] **WCAG 2.2 SC 2.5.8 Target Size 24 px on all in-page controls.** *(v3.2.0 — popup toggle 34×18→40×24 + thumb 14→20; in-page modal switch 40×22→40×24 + thumb 16→18; options-page toggle already at 44×26. Translate offsets re-computed. Toggle-switch full-rounded shape preserved per the explicit exception in the no-pill-backdrops rule.)* Source: [Accesify](https://www.accesify.io/blog/aria-wcag-integration/) · [BrowserStack](https://www.browserstack.com/guide/wcag-chrome-extension).
 - [x] **`aria-pressed` on every Switch component, `aria-expanded` on collapsible category groups.** *(v3.1.0 — `aria-pressed` added to in-page modal `_makeSwitch`, popup `makeToggle`, options-page `renderToggleControl`. State syncs on every change event. Popup category groups already had `aria-expanded`.)* Source: [WCAG / ARIA spec](https://www.allaccessible.org/blog/implementing-aria-labels-for-web-accessibility).
 - [x] **`autoplayBlockMode` actually consumed by AutoplayBlock module.** *(v3.1.0 — module reads `Settings.get('autoplayBlockMode')` and routes through three branches: `off` matches `!autoplayBlock`; `playerOnly` is v1.x DOM-overlay removal; `relatedEndpointAndPlayer` (default) additionally installs an `ended` event capture-phase guard that pauses the player so the next video can't auto-load. v3.2 pairs this with declarativeNetRequest.)* Community uBlock filter precedent: [Mastering The Rumble: Stop Autoplay with uBlock Origin](https://rumble.com/v3tkf3a-mastering-the-rumble-stop-autoplay-with-ublock-origin.html).
 
@@ -82,11 +82,11 @@ Items must be Now-tier if (a) source confirms a fresh platform surface change, O
 
 ## Next — v3.2 – v3.5
 
-### v3.2 — Mediabunny migration plan + MV3 offscreen adoption
+### v3.2 ✓ shipped 2026-05-19 — Target-size 24px + offscreen-doc scaffolding
 
-- [ ] **Migration plan from `mux.js` → Mediabunny.** `mux.js` is in maintenance mode per its [npm metadata](https://www.npmjs.com/package/mux.js/v/5.2.0-2). [Mediabunny](https://github.com/Vanilagy/mp4-muxer) (the explicit successor to mp4-muxer) ships with WebCodecs API integration, demuxers, smaller bundle, tree-shakable design. Two-step plan: (a) keep `worker.js` running mux.js as the default, (b) add a `_useWebCodecs` opt-in path behind a settings toggle that routes the HLS-to-MP4 work through Mediabunny + WebCodecs. Cuts the bundle by ~80 KB once mux.js is removed. Don't drop mux.js until the Mediabunny path has shipped a major release without regressions.
-- [ ] **`chrome.offscreen` document for HLS work.** Today, deep-scan and HLS segment processing live in the content script (which dies on page unload) and the Web Worker (which doesn't have DOM access). Spin up a single offscreen document with reasons `["DOM_PARSER", "BLOBS", "WORKERS"]` for long-running download work that needs to survive page navigation. Source: [Chrome offscreen docs](https://developer.chrome.com/docs/extensions/reference/api/offscreen) · [MV3 offscreen blog](https://developer.chrome.com/blog/Offscreen-Documents-in-Manifest-v3).
-- [ ] **`chrome.declarativeNetRequest` rules for autoplay-related endpoints.** Replace the v3.0 in-content blocking with declarative rules. Min ruleset: block `embedJS/u*` requests on watch-page exit when `autoplayBlockMode === "relatedEndpointAndPlayer"`. Source: [Chrome MV3 declarativeNetRequest](https://developer.chrome.com/docs/extensions/reference/api/declarativeNetRequest). Note Google's [30,000-rule guaranteed minimum is plenty](https://nordvpn.com/blog/manifest-v3-ad-blockers/) for our scope.
+- [ ] **Migration plan from `mux.js` → Mediabunny.** `mux.js` is in maintenance mode per its [npm metadata](https://www.npmjs.com/package/mux.js/v/5.2.0-2). [Mediabunny](https://github.com/Vanilagy/mp4-muxer) (the explicit successor to mp4-muxer) ships with WebCodecs API integration, demuxers, smaller bundle, tree-shakable design. Two-step plan: (a) keep `worker.js` running mux.js as the default, (b) add a `_useWebCodecs` opt-in path behind a settings toggle that routes the HLS-to-MP4 work through Mediabunny + WebCodecs. Cuts the bundle by ~80 KB once mux.js is removed. Don't drop mux.js until the Mediabunny path has shipped a major release without regressions. **Deferred — moving to v3.3+.**
+- [x] **`chrome.offscreen` document scaffolding.** *(v3.2.0 — offscreen.html + offscreen.js host two read-only operations: `parseHtml` (DOM_PARSER) and `hashBlob` (BLOBS + WORKERS). background.js `ensureOffscreenDocument()` honors Chrome's one-doc-per-extension contract via `chrome.offscreen.hasDocument()`. Falls back to `{ ok: false, reason: 'no-offscreen' }` on Firefox MV2 / older Chrome. Full HLS-work migration deferred to v3.3 alongside Mediabunny.)* Source: [Chrome offscreen docs](https://developer.chrome.com/docs/extensions/reference/api/offscreen) · [MV3 offscreen blog](https://developer.chrome.com/blog/Offscreen-Documents-in-Manifest-v3).
+- [ ] **`chrome.declarativeNetRequest` rules for autoplay-related endpoints.** Replace the v3.0 in-content blocking with declarative rules. Min ruleset: block `embedJS/u*` requests on watch-page exit when `autoplayBlockMode === "relatedEndpointAndPlayer"`. **Deferred — needs a captured Rumble next-video request shape; the autoplay-trigger endpoint isn't documented and a wrong rule would break video metadata loading. Moving to v3.3+ behind a fresh network-trace.** Source: [Chrome MV3 declarativeNetRequest](https://developer.chrome.com/docs/extensions/reference/api/declarativeNetRequest). Note Google's [30,000-rule guaranteed minimum is plenty](https://nordvpn.com/blog/manifest-v3-ad-blockers/) for our scope.
 
 ### v3.3 — Side panel + context menus + RantStats-parity panel
 

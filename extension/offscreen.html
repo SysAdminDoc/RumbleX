@@ -1,0 +1,17 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>RumbleX offscreen</title>
+    <!-- v3.2.0 — Offscreen document scaffold.
+         Lives in the extension origin; carries DOM access that the MV3
+         service worker can't have. Reasons declared in background.js when
+         calling chrome.offscreen.createDocument: DOM_PARSER + BLOBS +
+         WORKERS. Used today only as a future home for HLS/download work
+         that needs to survive page navigation (v3.3 will route the deep-
+         scan probe path through here). -->
+</head>
+<body>
+    <script src="offscreen.js"></script>
+</body>
+</html>

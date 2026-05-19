@@ -1,4 +1,4 @@
-// RumbleX v1.8.0 - Background Service Worker
+// RumbleX v3.2.0 - Background Service Worker
 'use strict';
 
 // Guard rails for download URLs accepted from the content script. We trust
@@ -10,6 +10,47 @@ const ALLOWED_DOWNLOAD_HOSTS = [
     '1a-1791.com',
     'rumble.cloud',
 ];
+
+// v3.2.0 — Offscreen document lifecycle.
+// MV3 service workers can't touch the DOM (no DOMParser, no Blob URL creation
+// in many shapes, no WebRTC). We spin a single offscreen document with
+// reasons DOM_PARSER + BLOBS + WORKERS and reuse it across requests. Chrome
+// API enforces one offscreen doc per extension per profile so we don't fight
+// the runtime — `hasDocument()` is the contract.
+const OFFSCREEN_URL = chrome.runtime.getURL('offscreen.html');
+
+async function ensureOffscreenDocument() {
+    if (!chrome.offscreen) return false; // older Chrome / Firefox MV2 — caller falls back
+    try {
+        const has = await chrome.offscreen.hasDocument();
+        if (has) return true;
+        await chrome.offscreen.createDocument({
+            url: 'offscreen.html',
+            reasons: ['DOM_PARSER', 'BLOBS', 'WORKERS'],
+            justification: 'Parse HTML probe results, hash media blobs, and host long-running download work that the service worker cannot do alone.',
+        });
+        return true;
+    } catch (e) {
+        // Swallow — caller falls back to in-content-script processing.
+        console.warn('[RumbleX] ensureOffscreenDocument failed:', e);
+        return false;
+    }
+}
+
+async function callOffscreen(action, payload) {
+    const ok = await ensureOffscreenDocument();
+    if (!ok) return { ok: false, reason: 'no-offscreen' };
+    return new Promise((resolve) => {
+        try {
+            chrome.runtime.sendMessage({ target: 'offscreen', action, ...payload }, (resp) => {
+                void chrome.runtime.lastError;
+                resolve(resp || { ok: false, reason: 'no-response' });
+            });
+        } catch (e) {
+            resolve({ ok: false, reason: String(e?.message || e) });
+        }
+    });
+}
 
 function isAllowedDownloadUrl(url) {
     try {
@@ -151,6 +192,20 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                 });
             }
         });
+        return true;
+    }
+
+    // v3.2.0 — Offscreen proxies. Content scripts cannot create offscreen
+    // documents directly; they go through the service worker. Both calls
+    // are async and use the keep-channel-open pattern. Falls back to a
+    // structured failure response if offscreen is unsupported (Firefox MV2
+    // or older Chrome) so the caller can degrade gracefully.
+    if (message.action === 'parseHtmlOffscreen') {
+        callOffscreen('parseHtml', { html: message.html || '' }).then(sendResponse);
+        return true;
+    }
+    if (message.action === 'hashBlobOffscreen') {
+        callOffscreen('hashBlob', { url: message.url || '' }).then(sendResponse);
         return true;
     }
 

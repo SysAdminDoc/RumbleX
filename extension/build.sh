@@ -71,7 +71,7 @@ fi
 echo "[*] Building Chrome package..."
 rm -f "../RumbleX-chrome.zip"
 zip -r "../RumbleX-chrome.zip" \
-    manifest.json background.js content.js worker.js \
+    manifest.json background.js content.js worker.js offscreen.html offscreen.js \
     lib/ icons/ pages/ _locales/ \
     -x "manifest-firefox.json" -x "build.sh" -x "*.DS_Store"
 echo "    Created RumbleX-chrome.zip"
@@ -82,7 +82,7 @@ rm -f "../RumbleX-firefox.zip"
 cp manifest.json manifest-chrome-backup.json
 cp manifest-firefox.json manifest.json
 zip -r "../RumbleX-firefox.zip" \
-    manifest.json background.js content.js worker.js \
+    manifest.json background.js content.js worker.js offscreen.html offscreen.js \
     lib/ icons/ pages/ _locales/ \
     -x "manifest-firefox.json" -x "manifest-chrome-backup.json" -x "build.sh" -x "*.DS_Store"
 mv manifest-chrome-backup.json manifest.json

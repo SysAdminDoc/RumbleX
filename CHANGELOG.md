@@ -2,6 +2,27 @@
 
 All notable changes to RumbleX will be documented in this file.
 
+## [3.2.0] - 2026-05-19
+
+### v3.2.0 — Target-size 24px + chrome.offscreen scaffolding
+
+Two Now/Next-tier closes from the v4.0 ROADMAP.
+
+**Accessibility (WCAG 2.2 SC 2.5.8 Target Size)**
+- Popup toggle bumped 34×18 → 40×24 (track) + 14×14 → 20×20 (thumb). Translate offset re-computed to stay correct.
+- In-page settings-modal switch bumped 40×22 → 40×24 (track) + 16×16 → 18×18 (thumb). Translate offset re-computed.
+- Options-page toggle already at 44×26 — no change needed, recorded as compliant.
+- Toggle-switch full-rounded shape preserved per the no-pill-backdrops rule's explicit exception for toggle thumbs and tracks.
+
+**MV3 offscreen-document scaffolding** (preparing the v3.3 sidePanel + RantStats panel work)
+- New `extension/offscreen.html` + `extension/offscreen.js` host two read-only operations: `parseHtml` (DOMParser via DOM_PARSER reason) and `hashBlob` (fetch + SHA-256 via BLOBS reason).
+- New `background.js` helpers: `ensureOffscreenDocument()` honors Chrome's "one offscreen doc per extension per profile" contract via `chrome.offscreen.hasDocument()`. `callOffscreen(action, payload)` is the single async call site. Reasons declared at creation: `DOM_PARSER` + `BLOBS` + `WORKERS`.
+- New message-API surfaces: `parseHtmlOffscreen` and `hashBlobOffscreen`. Content scripts cannot call `chrome.offscreen.*` directly — they go through the service worker. Falls back to a structured `{ ok: false, reason: 'no-offscreen' }` response if offscreen is unsupported (Firefox MV2 or older Chrome) so callers can degrade gracefully.
+- `offscreen` permission + web-accessible-resource entry added to `manifest.json` (Chrome MV3 only). Firefox MV2 doesn't have the API; manifest stays unchanged there.
+- Build script + GH Actions workflow include `offscreen.html` + `offscreen.js` in the release ZIP.
+
+**Deferred to v3.3+:** Migration of HLS/download work from `worker.js` to the offscreen document. Today only the two atomic read-only paths use it; full migration happens with the Mediabunny work in v3.3.
+
 ## [3.1.0] - 2026-05-19
 
 ### v3.1.0 — Platform follow-through, accessibility, supply-chain hardening, i18n bootstrap

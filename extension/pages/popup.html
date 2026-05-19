@@ -107,19 +107,23 @@ body {
 }
 .feat-row:hover { background: rgba(255,255,255,0.03); }
 .feat-label { font-size: 12px; }
-.toggle { position: relative; width: 34px; height: 18px; flex-shrink: 0; cursor: pointer; }
+/* v3.1.0 — WCAG 2.2 SC 2.5.8 Target Size: 24×24 CSS px minimum.
+   Track bumped 34×18 → 40×24, thumb 14 → 20, kept the toggle-switch
+   shape exception per the no-pill-backdrops rule (toggle thumbs and
+   tracks are explicit allowed uses for full-rounded shapes). */
+.toggle { position: relative; width: 40px; height: 24px; flex-shrink: 0; cursor: pointer; }
 .toggle input { opacity: 0; width: 0; height: 0; position: absolute; }
 .toggle-track {
     position: absolute; inset: 0;
     background: #27272a;
     border: 1px solid #2a2a2e;
-    border-radius: 9px;
+    border-radius: 12px;
     transition: background 0.2s, border-color 0.2s;
 }
 .toggle input:checked + .toggle-track { background: #85d551; border-color: transparent; }
 .toggle-thumb {
     position: absolute; top: 2px; left: 2px;
-    width: 14px; height: 14px;
+    width: 20px; height: 20px;
     border-radius: 50%;
     background: #fff;
     transition: transform 0.2s cubic-bezier(.4,0,.2,1);

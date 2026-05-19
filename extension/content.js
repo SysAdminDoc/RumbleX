@@ -1,9 +1,9 @@
-// RumbleX v3.1.0 - Content Script
+// RumbleX v3.2.0 - Content Script
 // Rumble enhancement suite - Chrome/Firefox extension
 'use strict';
 
 // ── Version ──
-const VERSION = chrome.runtime?.getManifest?.()?.version || '3.1.0';
+const VERSION = chrome.runtime?.getManifest?.()?.version || '3.2.0';
 const SCHEMA_VERSION = 2;
 
 // ── Settings Manager (chrome.storage.local) ──
@@ -7314,7 +7314,8 @@ const SettingsPanel = {
         .rx-m-card-desc { font-size: 11px; color: #71717a; margin: 0; line-height: 1.4; }
 
         /* ── Switch ── */
-        .rx-m-switch { position: relative; width: 40px; height: 22px; flex-shrink: 0; }
+        /* v3.1.0 — WCAG 2.2 SC 2.5.8 Target Size: bumped 40x22 → 40x24. */
+        .rx-m-switch { position: relative; width: 40px; height: 24px; flex-shrink: 0; }
         .rx-m-switch input { position: absolute; opacity: 0; width: 100%; height: 100%; cursor: pointer; z-index: 1; margin: 0; }
         .rx-m-switch-track {
             position: absolute; inset: 0; background: #27272a; border: 1px solid #2a2a2e;
@@ -7325,11 +7326,12 @@ const SettingsPanel = {
             box-shadow: 0 0 14px color-mix(in srgb, var(--rx-switch-color, #85d551) 45%, transparent);
         }
         .rx-m-switch-thumb {
-            position: absolute; top: 3px; left: 3px; width: 16px; height: 16px;
+            /* v3.1.0 — thumb bumped 16 → 18 to match the 24px track height. */
+            position: absolute; top: 3px; left: 3px; width: 18px; height: 18px;
             background: #fff; border-radius: 50%; box-shadow: 0 1px 2px rgba(0,0,0,0.3);
             transition: all 180ms cubic-bezier(0.4,0,0.2,1);
         }
-        .rx-m-switch.active .rx-m-switch-thumb { transform: translateX(18px); }
+        .rx-m-switch.active .rx-m-switch-thumb { transform: translateX(16px); }
 
         /* ── Special Sections ── */
         .rx-m-section-title {

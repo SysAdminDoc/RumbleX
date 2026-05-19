@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "__MSG_extName__",
-  "version": "3.1.0",
+  "version": "3.2.0",
   "description": "__MSG_extDescription__",
   "default_locale": "en",
   "author": "SysAdminDoc",
@@ -14,7 +14,8 @@
   },
   "permissions": [
     "storage",
-    "downloads"
+    "downloads",
+    "offscreen"
   ],
   "host_permissions": [
     "*://*.rumble.com/*",
@@ -58,7 +59,8 @@
     {
       "resources": [
         "lib/mux.min.js",
-        "worker.js"
+        "worker.js",
+        "offscreen.html"
       ],
       "matches": [
         "*://*.rumble.com/*"
