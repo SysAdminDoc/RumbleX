@@ -1,16 +1,65 @@
 name: Build & Release
 
 on:
+  # v3.4 — also fire on every push to main + every PR so the test job runs
+  # on every change, not only on release tags.
   workflow_dispatch:
   push:
+    branches: [main]
     tags:
       - 'v*'
+  pull_request:
+    branches: [main]
 
 permissions:
   contents: write
 
 jobs:
+  test:
+    # v3.4 — Selector regression harness. Runs on every push and PR; gates
+    # the build job below so a Rumble-DOM-shift PR can't merge unnoticed.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Selector regression harness
+        run: python test_selectors.py
+      - name: JS syntax check
+        run: |
+          node --check extension/content.js
+          node --check extension/background.js
+          node --check extension/offscreen.js
+          node --check extension/pages/popup.js
+          node --check extension/pages/options.js
+      - name: Catalog parity (197/197/197/197)
+        run: |
+          node -e "
+            const fs = require('fs');
+            function ext(f) {
+              const t = fs.readFileSync(f, 'utf8');
+              const s = f.includes('content.js') ? t.indexOf('_defaults: {') : t.indexOf('const DEFAULTS = {');
+              const e = f.includes('content.js') ? t.indexOf('    },', s) : t.indexOf('};', s);
+              const b = t.slice(s, e);
+              const k = new Set();
+              for (const m of b.matchAll(/^\s+(\w+):/gm)) k.add(m[1]);
+              k.delete('_defaults');
+              return k;
+            }
+            const c = ext('extension/content.js');
+            const p = ext('extension/pages/popup.js');
+            const o = ext('extension/pages/options.js');
+            if (c.size !== p.size || c.size !== o.size) {
+              console.error('Catalog parity FAIL — content:', c.size, 'popup:', p.size, 'options:', o.size);
+              process.exit(1);
+            }
+            console.log('Catalog parity OK at', c.size);
+          "
+
   build:
+    needs: test
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

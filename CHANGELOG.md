@@ -2,6 +2,22 @@
 
 All notable changes to RumbleX will be documented in this file.
 
+## [3.4.0] - 2026-05-19
+
+### v3.4.0 — Regression harness + CI
+
+Closes the v3.4 ROADMAP item "MHTML fixture replay harness" and tightens the existing build workflow into a true gate.
+
+**Selector regression harness**
+- New `test_selectors.py` at the repo root — stdlib-only Python script (matches `analyze_pages.py` precedent, no `pip install` required). Walks every `Sample Pages/*.mhtml` fixture, extracts the HTML payload, then asserts every named surface in `Selectors._map` resolves to at least one element via its stable or fallback selector. Mixed-quote selectors (single-quoted outer with double-quoted attribute values, and vice versa) are handled via a permissive string-pattern matcher.
+- Uses regex / substring matching rather than a real CSS engine — sufficient because we're checking "this selector pattern appears in the HTML at all", not "this selector parses into a valid CSS AST".
+- Fixture expectations are per-file via `FIXTURE_EXPECTATIONS` so we don't fail when a surface only exists on one route kind (e.g. `chat.*` is checked on `Live.mhtml`, not `For You.mhtml`).
+- 35 surface resolutions across the 4 shipped fixtures pass on first run. Warns (does not fail) when only the fallback matched — useful selector-drift signal.
+
+**CI tightening**
+- `.github/workflows/build.yml` gains a `test` job that runs on every push to `main` and every PR (not just on release tags). The job runs the selector harness, `node --check` on every shipped JS file, and a catalog-parity assertion (197/197/197). The existing `build` job now `needs: test`, so a regression PR can't ship.
+- `pull_request` trigger added — every external contribution is now validated automatically.
+
 ## [3.2.0] - 2026-05-19
 
 ### v3.2.0 — Target-size 24px + chrome.offscreen scaffolding
