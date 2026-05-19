@@ -1,4 +1,4 @@
-// RumbleX v3.0.0 - Options Page
+// RumbleX v3.1.0 - Options Page
 // Standalone settings management via chrome.storage.local (rx_settings key).
 // Mirrors Astra Deck's settings page pattern: dirty-draft workflow with
 // search, group nav, stats overview, and export/import/reset.
@@ -224,6 +224,10 @@
         backupHistory: true,
         backupHistoryLimit: 10,
         encryptedGistSync: false,
+
+        // v3.1.0 — Platform follow-through
+        disableShortsFeed: false,
+        hideWalletTipButton: false,
     };
 
     // Per-key metadata: group + human label + description
@@ -456,6 +460,10 @@
         backupHistory: { group: 'privacy', label: 'Backup Snapshot History', desc: 'Snapshot settings before import/reset.' },
         backupHistoryLimit: { group: 'privacy', label: 'Backup History Limit', desc: 'How many local snapshots to keep.' },
         encryptedGistSync: { group: 'privacy', label: 'Encrypted Gist Sync', desc: 'User-provided encrypted sync (future).' },
+
+        // v3.1.0 — Platform follow-through
+        disableShortsFeed: { group: 'feed-controls', label: 'Disable Shorts Feed', desc: 'Redirect rumble.com/shorts to /subscriptions on every visit. Launched on web 2026-02-04.' },
+        hideWalletTipButton: { group: 'video-buttons', label: 'Hide Wallet Tip Button', desc: 'Hide the per-creator Rumble Wallet tip-jar button (launched January 2026). Off by default — leave on if you want to tip with crypto.' },
     };
 
     const GROUPS = [
@@ -529,6 +537,16 @@
         settingsEmptyTitle: document.querySelector('#settings-empty .settings-empty-title'),
         settingsEmptyCopy: document.querySelector('#settings-empty .settings-empty-copy'),
         settingsEmptyResetButton: document.getElementById('settings-empty-reset-btn'),
+        // v3.1.0 — Backup snapshots + Privacy report UI
+        snapshotTakeBtn: document.getElementById('snapshot-take-btn'),
+        snapshotRefreshBtn: document.getElementById('snapshot-refresh-btn'),
+        snapshotList: document.getElementById('snapshot-list'),
+        snapshotSummary: document.getElementById('snapshot-summary'),
+        privacyRefreshBtn: document.getElementById('privacy-refresh-btn'),
+        privacyExportBtn: document.getElementById('privacy-export-btn'),
+        telemetryExportBtn: document.getElementById('telemetry-export-btn'),
+        privacyReportPre: document.getElementById('privacy-report-pre'),
+        privacySummary: document.getElementById('privacy-summary'),
     };
 
     const state = {
@@ -1289,12 +1307,15 @@
         const input = document.createElement('input');
         input.type = 'checkbox';
         input.checked = Boolean(value);
+        // v3.1.0 — WCAG 2.2 aria-pressed for screen-reader on/off announce.
+        input.setAttribute('aria-pressed', String(!!input.checked));
         applyControlAccessibility(input, key, meta);
         const track = document.createElement('span');
         track.className = 'settings-item-toggle-track';
         input.addEventListener('change', () => {
             state.draftSettings[key] = input.checked;
             state.invalidKeys.delete(key);
+            input.setAttribute('aria-pressed', String(!!input.checked));
             updateDirtyStateForKey(key);
             updateCardState(card, key);
             updateModalHeaderState();
@@ -1635,7 +1656,162 @@
         showModalStatus('Defaults loaded into the draft. Save to apply them.', 'info');
     }
 
+    // ── v3.1.0 — Snapshot + Privacy + Telemetry helpers ──
+    // The actual logic lives in content.js (rxBackupSnapshot, rxListSnapshots,
+    // rxRestoreSnapshot, rxBuildPrivacyReport, Selectors.drainTelemetry) and is
+    // exposed via runtime messages. Options page lives in the extension origin
+    // and cannot call those helpers directly — it sends a message to the active
+    // Rumble tab via background.js relay.
+    function sendToContent(action, payload) {
+        return new Promise((resolve) => {
+            try {
+                chrome.tabs.query({ url: ['*://rumble.com/*', '*://*.rumble.com/*'] }, (tabs) => {
+                    const tab = tabs && tabs.find((t) => typeof t.id === 'number');
+                    if (!tab) { resolve({ ok: false, reason: 'no-rumble-tab' }); return; }
+                    chrome.tabs.sendMessage(tab.id, { action, ...payload }, (resp) => {
+                        void chrome.runtime.lastError;
+                        resolve(resp || { ok: false, reason: 'no-response' });
+                    });
+                });
+            } catch (e) { resolve({ ok: false, reason: 'send-failed', error: String(e?.message || e) }); }
+        });
+    }
+
+    function formatTimestamp(ms) {
+        if (!Number.isFinite(ms)) return '—';
+        try { return new Date(ms).toISOString().replace('T', ' ').replace(/\..+$/, ''); }
+        catch { return String(ms); }
+    }
+
+    async function refreshSnapshotList() {
+        const summary = elements.snapshotSummary;
+        const list = elements.snapshotList;
+        if (!list) return;
+        list.replaceChildren();
+        if (summary) summary.textContent = 'Loading…';
+        const resp = await sendToContent('listSnapshots');
+        if (!resp || !resp.ok) {
+            if (summary) summary.textContent = resp?.reason === 'no-rumble-tab' ? 'Open a Rumble tab to load snapshots.' : 'Unavailable.';
+            return;
+        }
+        const snaps = Array.isArray(resp.snapshots) ? resp.snapshots : [];
+        if (summary) summary.textContent = snaps.length + ' ' + pluralize(snaps.length, 'snapshot');
+        if (snaps.length === 0) {
+            const empty = document.createElement('li');
+            empty.style.cssText = 'justify-content: center; color: var(--text-2, #a8b0bc);';
+            empty.textContent = 'No snapshots yet. The next destructive op (import / reset / restore) creates one automatically.';
+            list.appendChild(empty);
+            return;
+        }
+        // Show newest first.
+        for (const s of [...snaps].reverse()) {
+            const li = document.createElement('li');
+            const meta = document.createElement('span');
+            meta.className = 'snapshot-meta';
+            const ts = document.createElement('strong');
+            ts.textContent = formatTimestamp(s.at);
+            const reason = document.createElement('span');
+            reason.className = 'snapshot-reason';
+            reason.textContent = ' — ' + (s.reason || 'manual');
+            meta.append(ts, reason);
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.textContent = 'Restore';
+            btn.addEventListener('click', async () => {
+                const previous = btn.textContent;
+                btn.disabled = true;
+                btn.textContent = 'Restoring…';
+                const r = await sendToContent('restoreSnapshot', { indexOrAt: s.at });
+                btn.disabled = false;
+                btn.textContent = previous;
+                if (r?.ok) {
+                    showStatus('Snapshot from ' + formatTimestamp(s.at) + ' restored. Reload Rumble tabs to apply.', 'success');
+                    // Refresh in case the restore created a pre-restore snapshot.
+                    await refreshSnapshotList();
+                } else {
+                    showStatus('Restore failed: ' + (r?.reason || 'unknown') + '.', 'error');
+                }
+            });
+            li.append(meta, btn);
+            list.appendChild(li);
+        }
+    }
+
+    async function takeSnapshotNow() {
+        const r = await sendToContent('backupSnapshot', { reason: 'manual-options-page' });
+        if (r?.ok) {
+            showStatus('Snapshot taken (' + r.count + ' total).', 'success');
+            await refreshSnapshotList();
+        } else if (r?.reason === 'disabled') {
+            showStatus('Backup history is disabled in settings (backupHistory key).', 'error');
+        } else {
+            showStatus('Snapshot failed: ' + (r?.reason || 'unknown') + '.', 'error');
+        }
+    }
+
+    async function refreshPrivacyReport() {
+        const pre = elements.privacyReportPre;
+        const summary = elements.privacySummary;
+        if (!pre) return;
+        pre.textContent = '';
+        if (summary) summary.textContent = 'Loading…';
+        const resp = await sendToContent('getPrivacyReport');
+        if (!resp || !resp.ok) {
+            if (summary) summary.textContent = resp?.reason === 'no-rumble-tab' ? 'Open a Rumble tab to load the report.' : 'Unavailable.';
+            return;
+        }
+        const report = resp.report || {};
+        pre.textContent = JSON.stringify(report, null, 2);
+        if (summary) summary.textContent = 'Telemetry: ' + (report.telemetry || 'unknown');
+    }
+
+    function downloadJsonBlob(filename, data) {
+        try {
+            const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = filename;
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            setTimeout(() => URL.revokeObjectURL(url), 5000);
+        } catch (e) {
+            showStatus('Export failed: ' + String(e?.message || e), 'error');
+        }
+    }
+
+    async function exportPrivacyReport() {
+        const resp = await sendToContent('getPrivacyReport');
+        if (!resp?.ok) { showStatus('Privacy report unavailable.', 'error'); return; }
+        const ts = new Date().toISOString().replace(/[:T]/g, '-').replace(/\..+$/, '');
+        downloadJsonBlob('rumblex-privacy-report-' + ts + '.json', resp.report || {});
+        showStatus('Privacy report exported.', 'success');
+    }
+
+    async function exportSelectorTelemetry() {
+        const resp = await sendToContent('getSelectorTelemetry');
+        if (!resp?.ok) { showStatus('Telemetry unavailable. Enable debugSelectorTelemetry in settings first.', 'error'); return; }
+        const events = Array.isArray(resp.events) ? resp.events : [];
+        if (events.length === 0) {
+            showStatus('Telemetry buffer is empty — turn on debugSelectorTelemetry and trigger a few features first.', 'info');
+            return;
+        }
+        const ts = new Date().toISOString().replace(/[:T]/g, '-').replace(/\..+$/, '');
+        downloadJsonBlob('rumblex-selector-telemetry-' + ts + '.json', events);
+        showStatus('Telemetry exported (' + events.length + ' events).', 'success');
+    }
+
+    // Auto-load on page open. Don't block initial render.
+    setTimeout(() => { void refreshSnapshotList(); void refreshPrivacyReport(); }, 250);
+
     // ── Event wiring ──
+    if (elements.snapshotTakeBtn) elements.snapshotTakeBtn.addEventListener('click', () => void takeSnapshotNow());
+    if (elements.snapshotRefreshBtn) elements.snapshotRefreshBtn.addEventListener('click', () => void refreshSnapshotList());
+    if (elements.privacyRefreshBtn) elements.privacyRefreshBtn.addEventListener('click', () => void refreshPrivacyReport());
+    if (elements.privacyExportBtn) elements.privacyExportBtn.addEventListener('click', () => void exportPrivacyReport());
+    if (elements.telemetryExportBtn) elements.telemetryExportBtn.addEventListener('click', () => void exportSelectorTelemetry());
+
     elements.exportButton.addEventListener('click', () => {
         void runWithBusyButton(elements.exportButton, 'Exporting…', exportSettings);
     });

@@ -1,0 +1,130 @@
+{
+  "extName": {
+    "message": "RumbleX",
+    "description": "Extension name shown in the browser. Avoid translating — proper noun."
+  },
+  "extDescription": {
+    "message": "Rumble enhancement suite — ad/bloat removal, theater split view, video downloads, dark theme polish, and 130+ feature toggles.",
+    "description": "Short marketing description shown in browser extension store listings."
+  },
+  "actionTitle": {
+    "message": "RumbleX",
+    "description": "Tooltip on the toolbar action icon. Same as extName by default."
+  },
+  "openSettingsEditor": {
+    "message": "Open Settings Editor",
+    "description": "Button label on the options page hero that launches the dirty-draft settings modal."
+  },
+  "exportBackup": {
+    "message": "Export Backup",
+    "description": "Button on the options page that downloads a full settings + per-origin localStorage JSON backup."
+  },
+  "importBackup": {
+    "message": "Import Backup",
+    "description": "Button on the options page that restores settings + per-origin localStorage from a previously exported JSON file."
+  },
+  "resetAllData": {
+    "message": "Reset All Data",
+    "description": "Destructive button that wipes rx_settings and per-origin localStorage. Snapshots first if backupHistory is on."
+  },
+  "snapshotHistory": {
+    "message": "Backup snapshot history",
+    "description": "Section heading for the rolling snapshot list (added v3.1.0)."
+  },
+  "snapshotTakeNow": {
+    "message": "Take snapshot now",
+    "description": "Button that explicitly snapshots current settings."
+  },
+  "snapshotRestore": {
+    "message": "Restore",
+    "description": "Per-row button on the snapshot list that restores that specific snapshot. Itself snapshots-before-overwriting."
+  },
+  "privacyReport": {
+    "message": "Privacy report",
+    "description": "Section heading for the local-only privacy disclosure panel (added v3.1.0)."
+  },
+  "telemetryNone": {
+    "message": "Telemetry: none — no analytics, no remote logging, no usage beacons",
+    "description": "Disclosure shown in the privacy report. Match the rxBuildPrivacyReport.telemetry string exactly."
+  },
+  "settingsTotal": {
+    "message": "settings",
+    "description": "Pluralized noun shown next to a count in the modal header (e.g. '197 settings')."
+  },
+  "settingsUnsaved": {
+    "message": "unsaved",
+    "description": "Pluralized noun for the dirty-keys chip in the modal header."
+  },
+  "saveBtn": {
+    "message": "Save",
+    "description": "Save button in the dirty-draft settings modal."
+  },
+  "discardBtn": {
+    "message": "Discard",
+    "description": "Discard button in the dirty-draft settings modal."
+  },
+  "restoreDefaultsBtn": {
+    "message": "Restore Defaults",
+    "description": "Button that resets the draft to factory defaults (still requires Save to persist)."
+  },
+  "groupAll": {
+    "message": "All Settings",
+    "description": "Sidebar group name showing every setting at once."
+  },
+  "groupCore": {
+    "message": "Core",
+    "description": "Sidebar group name for v2.0+ core engine + theming + accessibility keys."
+  },
+  "groupAdBlocking": {
+    "message": "Ad Blocking",
+    "description": "Sidebar group name."
+  },
+  "groupVideoPlayer": {
+    "message": "Video Player",
+    "description": "Sidebar group name."
+  },
+  "groupDownloads": {
+    "message": "Downloads & Capture",
+    "description": "Sidebar group name."
+  },
+  "groupHistory": {
+    "message": "History & Bookmarks",
+    "description": "Sidebar group name."
+  },
+  "groupChat": {
+    "message": "Comments & Chat",
+    "description": "Sidebar group name."
+  },
+  "groupFeedControls": {
+    "message": "Feed Controls",
+    "description": "Sidebar group name."
+  },
+  "groupAutomation": {
+    "message": "Automation",
+    "description": "Sidebar group name."
+  },
+  "groupCreator": {
+    "message": "Creator & Studio",
+    "description": "Sidebar group name."
+  },
+  "groupIntegrations": {
+    "message": "Integrations",
+    "description": "Sidebar group name."
+  },
+  "groupPrivacy": {
+    "message": "Privacy & Data",
+    "description": "Sidebar group name."
+  },
+  "groupAdvanced": {
+    "message": "Advanced",
+    "description": "Sidebar group name for power-user and debug keys."
+  },
+  "tipDisableShortsFeed": {
+    "message": "Disable Shorts Feed",
+    "description": "Toggle label that redirects rumble.com/shorts to /subscriptions (added v3.1.0)."
+  },
+  "tipHideWalletTipButton": {
+    "message": "Hide Wallet Tip Button",
+    "description": "Toggle label that hides the per-creator Rumble Wallet tip-jar button (added v3.1.0)."
+  }
+}

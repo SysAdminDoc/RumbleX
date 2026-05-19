@@ -1,8 +1,8 @@
 # RumbleX Roadmap
 
-Version: 4.0 — research-driven refresh
+Version: 4.1 — Now-tier batch shipped
 Date: 2026-05-19
-Current shipped: v3.0.0 (extension), v1.8.0 (userscript)
+Current shipped: v3.1.0 (extension), v1.8.0 (userscript)
 
 This roadmap supersedes the v2026-05-19 v3.0 plan. It is the result of a fresh repo audit plus a 60+ source external research sweep (see [Appendix C — Sources](#appendix-c--sources)). It tracks shipped work in the [Recently shipped](#recently-shipped) summary, then prioritises the next ~12 months of work into **Now / Next / Later / Under Consideration / Rejected** tiers with every claim traceable to a source.
 
@@ -45,38 +45,38 @@ House style (carried forward, non-negotiable): dark-only RumbleX-owned UI, OLED 
 
 ---
 
-## Now — target v3.1.0
+## Now — v3.1.0 ✓ shipped 2026-05-19
 
 Items must be Now-tier if (a) source confirms a fresh platform surface change, OR (b) a shipped setting key exists with no underlying feature module, OR (c) a hard-rule house-style violation exists, OR (d) it's a one-edit-per-change fix.
 
 ### Platform follow-through
 
-- [ ] **`shortsRoute` + Shorts feed handling.** `Page.classify()` doesn't currently recognise `/shorts/` or `/shorts` paths. Add `Page.isShorts()` + classifier branch. ShortsFilter today only hides cards with `#shorts__label` SVG and `#section-shorts`; on the new Shorts tab it has no effect. Per Rumble's launch post, the Shorts feed is a continuous swipeable feed — opt-in toggle `disableShortsFeed` redirects `/shorts` → `/subscriptions` for users who reject vertical-video discovery. Source: [Rumble blog](https://corp.rumble.com/blog/rumble-unveils-the-web-version-of-rumble-shorts/) · [Nasdaq](https://www.nasdaq.com/press-release/rumble-unveils-web-version-rumble-shorts-2026-02-04). Confirms long-running Reddit-thread demand documented in original ROADMAP.
-- [ ] **`hideWalletTipButton` toggle.** Add to the existing hide-X registry. Selector: scope to the share/engage row + tip button. Default OFF (don't break a feature users may want). Source: [Tether launch](https://tether.io/news/tether-and-rumble-launch-rumble-wallet-bringing-self-custodial-crypto-payments-to-millions-of-creators-and-users/).
-- [ ] **`Selectors` registry adds `shorts.feed`, `shorts.card`, `shorts.player`, `wallet.tipButton`.** Stable + fallback selectors only after a fresh MHTML capture of `/shorts` and a creator page with the tip button visible. Until captured, ship a single conservative `stable` selector and rely on Selectors fallback machinery.
+- [x] **`shortsRoute` + Shorts feed handling.** *(v3.1.0 — `Page.isShorts()` classifier covers `/shorts`, `/shorts/*`, `/shorts.*`. `Page.classify()` returns `'shorts'`. New `ShortsRedirect` module: when `disableShortsFeed` is on, navigating to `/shorts` triggers `location.replace('/subscriptions')` on both fresh load and htmx route change.)* Source: [Rumble blog](https://corp.rumble.com/blog/rumble-unveils-the-web-version-of-rumble-shorts/) · [Nasdaq](https://www.nasdaq.com/press-release/rumble-unveils-web-version-rumble-shorts-2026-02-04).
+- [x] **`hideWalletTipButton` toggle.** *(v3.1.0 — added to `RX_CSS_TOGGLES` hide-X registry with a broad selector covering both `data-js` variants and class-name fallbacks. Off by default.)* Source: [Tether launch](https://tether.io/news/tether-and-rumble-launch-rumble-wallet-bringing-self-custodial-crypto-payments-to-millions-of-creators-and-users/).
+- [x] **`Selectors` registry adds `shorts.feed`, `shorts.card`, `shorts.player`, `wallet.tipButton`.** *(v3.1.0 — conservative entries shipped; refine once we have live MHTML captures of `/shorts` and a creator page with tip jar visible.)*
 
 ### House-style debt
 
-- [ ] **WCAG 2.2 SC 4.1.3 Status Messages: `aria-live` on toast region.** `SettingsPanel._showToast` currently appends to a generic div with no `aria-live="polite"`. Fix is one attribute. Source: [WCAG 2.2 / ARIA integration](https://www.accesify.io/blog/aria-wcag-integration/).
-- [ ] **WCAG 2.2 SC 2.5.8 Target Size 24 px on all in-page controls.** Audit `rx-extplayer`, settings switches, popup gear, fab buttons. Anything < 24×24 gets bumped. Source: [Accesify](https://www.accesify.io/blog/aria-wcag-integration/) · [BrowserStack](https://www.browserstack.com/guide/wcag-chrome-extension).
-- [ ] **`aria-pressed` on every Switch component, `aria-expanded` on collapsible category groups.** Confirmed missing in options-page audit. Source: [WCAG / ARIA spec](https://www.allaccessible.org/blog/implementing-aria-labels-for-web-accessibility).
-- [ ] **`autoplayBlockMode` actually consumed by AutoplayBlock module.** Setting shipped in v2.0; module still uses old single-mode logic. Wire the enum: `playerOnly` | `relatedEndpointAndPlayer` | `off`. The `relatedEndpointAndPlayer` mode should pair with the v3.2 declarativeNetRequest work (block embedJS-related autoplay endpoints). Community uBlock filter precedent: [Mastering The Rumble: Stop Autoplay with uBlock Origin](https://rumble.com/v3tkf3a-mastering-the-rumble-stop-autoplay-with-ublock-origin.html).
+- [x] **WCAG 2.2 SC 4.1.3 Status Messages: `aria-live` on toast region.** *(v3.1.0 — settings-modal toast region now has `role="status"`, `aria-live="polite"`, `aria-atomic="true"`. Options-page status divs already compliant.)* Source: [WCAG 2.2 / ARIA integration](https://www.accesify.io/blog/aria-wcag-integration/).
+- [ ] **WCAG 2.2 SC 2.5.8 Target Size 24 px on all in-page controls.** Audit `rx-extplayer`, settings switches, popup gear, fab buttons. Anything < 24×24 gets bumped. Deferred to v3.2 (needs visual diff testing). Source: [Accesify](https://www.accesify.io/blog/aria-wcag-integration/) · [BrowserStack](https://www.browserstack.com/guide/wcag-chrome-extension).
+- [x] **`aria-pressed` on every Switch component, `aria-expanded` on collapsible category groups.** *(v3.1.0 — `aria-pressed` added to in-page modal `_makeSwitch`, popup `makeToggle`, options-page `renderToggleControl`. State syncs on every change event. Popup category groups already had `aria-expanded`.)* Source: [WCAG / ARIA spec](https://www.allaccessible.org/blog/implementing-aria-labels-for-web-accessibility).
+- [x] **`autoplayBlockMode` actually consumed by AutoplayBlock module.** *(v3.1.0 — module reads `Settings.get('autoplayBlockMode')` and routes through three branches: `off` matches `!autoplayBlock`; `playerOnly` is v1.x DOM-overlay removal; `relatedEndpointAndPlayer` (default) additionally installs an `ended` event capture-phase guard that pauses the player so the next video can't auto-load. v3.2 pairs this with declarativeNetRequest.)* Community uBlock filter precedent: [Mastering The Rumble: Stop Autoplay with uBlock Origin](https://rumble.com/v3tkf3a-mastering-the-rumble-stop-autoplay-with-ublock-origin.html).
 
 ### Backend → UI wiring (settings shipped, UI not)
 
-- [ ] **Backup snapshot restore UI on options page.** v3.0 shipped `rxBackupSnapshot`/`List`/`Restore` and message API; the options page has no way to invoke them. Add a "Backup history" section below the existing Export/Import/Reset actions: list snapshots with timestamp + reason, single-click Restore (which itself snapshots-before-overwrite per the v3.0 contract).
-- [ ] **Privacy report panel on options page.** v3.0 shipped `rxBuildPrivacyReport()` + `getPrivacyReport` message. Render the structured output (schema version, feature counts, manifest permissions, external network surfaces, telemetry status "none", localStorage byte/key counts, live notes for tracking-strip / selector-telemetry / remote-cosmetic-rules) in a collapsed-by-default panel. Strong honest disclosure beats no disclosure for OSS trust.
-- [ ] **Selector telemetry export button (advanced).** v3.0 shipped `getSelectorTelemetry`; gate behind the existing `debugSelectorTelemetry` toggle; download as JSON. Tiny addition, big value when Rumble's DOM shifts.
+- [x] **Backup snapshot restore UI on options page.** *(v3.1.0 — new `#snapshot-section` on options page lists snapshots newest-first with timestamp + reason. Per-row Restore button calls the `restoreSnapshot` message; restore itself snapshots-before-overwrite. "Take snapshot now" button + Refresh button. Communicates via existing background.js → content.js → `rxListSnapshots`/`rxBackupSnapshot`/`rxRestoreSnapshot` chain.)*
+- [x] **Privacy report panel on options page.** *(v3.1.0 — new `#privacy-section` renders the full structured `rxBuildPrivacyReport()` output as formatted JSON. Refresh, Export-JSON, and Export-Selector-Telemetry buttons. All read-only — no network calls triggered when opened.)*
+- [x] **Selector telemetry export button (advanced).** *(v3.1.0 — bundled with Privacy panel. Drains `Selectors._telemetry` ring buffer via `getSelectorTelemetry` message and downloads as JSON. Only useful when `debugSelectorTelemetry` is on.)*
 
 ### Supply chain
 
-- [ ] **SHA-256 pin `mux.min.js` in `extension/build.sh`.** Today: `curl -sL "https://cdn.jsdelivr.net/npm/mux.js@7.0.3/dist/mux.min.js" -o "lib/mux.min.js"` runs with no integrity check. Add an expected-hash gate so a compromised CDN can't silently swap the bundle. Source: [CVE-2026-1861 libvpx heap overflow](https://www.esecurityplanet.com/threats/chrome-vulnerability-cve-2026-5281-exploited-in-the-wild/) demonstrates video-codec supply chain risk is real.
-- [ ] **`content_security_policy` clause in both manifests.** Today both `manifest.json` and `manifest-firefox.json` omit the field, so the extension origin inherits browser default CSP. Tighten to `{"extension_pages": "script-src 'self'; object-src 'self'"}`. Source: [Chrome MV3 CSP docs](https://developer.chrome.com/docs/extensions/reference/manifest/content-security-policy).
+- [x] **SHA-256 pin `mux.min.js` in `extension/build.sh`.** *(v3.1.0 — `MUX_JS_SHA256` constant pinned to the actual SHA-256 of the bundled file (`79da5742…56b`). `verify_mux_sha()` function supports `shasum`, `sha256sum`, and `certutil` (Git-Bash on Windows fallback). Build script aborts on mismatch.)* Source: [CVE-2026-1861 libvpx heap overflow](https://www.esecurityplanet.com/threats/chrome-vulnerability-cve-2026-5281-exploited-in-the-wild/) demonstrates video-codec supply chain risk is real.
+- [x] **`content_security_policy` clause in both manifests.** *(v3.1.0 — MV3 manifest: `content_security_policy: { extension_pages: "script-src 'self'; object-src 'self'; base-uri 'self'" }`. MV2 Firefox manifest: `content_security_policy: "script-src 'self'; object-src 'self'; base-uri 'self'"`.)* Source: [Chrome MV3 CSP docs](https://developer.chrome.com/docs/extensions/reference/manifest/content-security-policy).
 
 ### Distribution prep (non-blocking)
 
-- [ ] **`_locales/en/messages.json` bootstrap.** Add the manifest `default_locale: "en"` field and migrate `manifest.name`/`manifest.description` to `__MSG_*__` references. Migrate the top ~30 popup/options/options-page strings to `chrome.i18n.getMessage()`. Doesn't ship more locales yet — just makes the next-locale add a translation-only change. Source: [Chrome i18n docs](https://developer.chrome.com/docs/extensions/reference/api/i18n) · [MDN Internationalization](https://developer.mozilla.org/en-US/docs/Mozilla/Add-ons/WebExtensions/Internationalization).
-- [ ] **`CONTRIBUTING.md` + `CODE_OF_CONDUCT.md` + `.github/ISSUE_TEMPLATE/` bootstrap.** Three files, ~150 lines total, but ["Adding files like CONTRIBUTING.md and CODE_OF_CONDUCT.md signals that you're open to collaboration"](https://business.daily.dev/resources/open-source-marketing-grow-developer-community-without-budget/). Add "good first issue" and "help wanted" labels via `.github/labels.yml`.
+- [x] **`_locales/en/messages.json` bootstrap.** *(v3.1.0 — `extension/_locales/en/messages.json` shipped with ~30 strings (manifest name/description, action title, options-page CTAs, group labels, snapshot/privacy section labels). Both manifests now use `default_locale: "en"` + `__MSG_*__` references for `name`, `description`, `default_title`. Build script + GH Actions workflow include `_locales/` in the release ZIP.)* Source: [Chrome i18n docs](https://developer.chrome.com/docs/extensions/reference/api/i18n) · [MDN Internationalization](https://developer.mozilla.org/en-US/docs/Mozilla/Add-ons/WebExtensions/Internationalization).
+- [x] **`CONTRIBUTING.md` + `CODE_OF_CONDUCT.md` + `.github/ISSUE_TEMPLATE/` bootstrap.** *(v3.1.0 — `CONTRIBUTING.md` covers what we accept / don't accept / code style / setup / release process. `CODE_OF_CONDUCT.md` is Contributor Covenant v2.1. Three issue templates: `bug_report.md`, `feature_request.md`, `selector_regression.md` (the last includes the selector-telemetry export workflow).)*
 
 ---
 

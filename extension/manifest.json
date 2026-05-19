@@ -1,8 +1,9 @@
 {
   "manifest_version": 3,
-  "name": "RumbleX",
-  "version": "3.0.0",
-  "description": "Rumble enhancement suite - ad/bloat removal, theater split view, video downloads, and dark theme polish.",
+  "name": "__MSG_extName__",
+  "version": "3.1.0",
+  "description": "__MSG_extDescription__",
+  "default_locale": "en",
   "author": "SysAdminDoc",
   "homepage_url": "https://github.com/SysAdminDoc/RumbleX",
   "icons": {
@@ -24,6 +25,9 @@
   "background": {
     "service_worker": "background.js"
   },
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'self'; base-uri 'self'"
+  },
   "action": {
     "default_icon": {
       "16": "icons/16.png",
@@ -31,7 +35,7 @@
       "48": "icons/48.png",
       "128": "icons/128.png"
     },
-    "default_title": "RumbleX",
+    "default_title": "__MSG_actionTitle__",
     "default_popup": "pages/popup.html"
   },
   "options_ui": {

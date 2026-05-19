@@ -18,6 +18,9 @@ jobs:
       - name: Build ZIP
         run: |
           cd extension
+          # The -x patterns exclude developer-side artifacts; manifest.json,
+          # background.js, content.js, worker.js, lib/, icons/, pages/, and
+          # _locales/ (v3.1.0+) are all included by the implicit `.` walk.
           zip -r ../${{ github.event.repository.name }}-${{ github.ref_name || 'dev' }}.zip . -x "*.git*" "*.md" "*.py" "*.bak" "*.mhtml" "userscript/*" "*.sh"
 
       - name: Upload artifact

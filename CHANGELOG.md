@@ -2,6 +2,47 @@
 
 All notable changes to RumbleX will be documented in this file.
 
+## [3.1.0] - 2026-05-19
+
+### v3.1.0 — Platform follow-through, accessibility, supply-chain hardening, i18n bootstrap
+
+First release executing against the v4.0 research-driven ROADMAP. Closes 11 of the Now-tier items.
+
+**Platform follow-through (Rumble Shorts + Wallet)**
+- `Page.isShorts()` classifier + `'shorts'` page kind in `Page.classify()`. Detects `/shorts`, `/shorts/*`, `/shorts.*` paths. Rumble Shorts launched on web 2026-02-04.
+- `ShortsRedirect` module — when `disableShortsFeed` is on, navigating to `/shorts` triggers `location.replace('/subscriptions')`. Re-evaluates on every htmx route change via `Router.onChange` so it fires on in-app nav too.
+- `hideWalletTipButton` toggle added to the `RX_CSS_TOGGLES` hide-X registry. Off by default. Tip jar launched 2026-01-07 with Tether.
+- `Selectors._map` extended with `shorts.feed`, `shorts.card`, `shorts.player`, `wallet.tipButton` — conservative selectors today, will tighten once we have MHTML captures.
+
+**Accessibility (WCAG 2.2)**
+- SC 4.1.3 Status Messages — settings-modal toast region now has `role="status"`, `aria-live="polite"`, `aria-atomic="true"`. Options-page status divs already had this; left intact.
+- SC 4.1.2 Name, Role, Value — `aria-pressed` added to every Switch component across the in-page settings modal, popup, and options-page toggle controls. State is kept in sync on every `change` event.
+- Popup category groups already had `aria-expanded` — verified, no change needed.
+
+**`autoplayBlockMode` enum wired**
+- AutoplayBlock module now honors `Settings.get('autoplayBlockMode')`: `off` (matches `!autoplayBlock`), `playerOnly` (DOM-overlay removal only, v1.x behavior), `relatedEndpointAndPlayer` (default — also installs an `ended` event guard on the player to pause the next-video auto-load). v3.2 will pair this with `chrome.declarativeNetRequest` rules at the service-worker layer.
+
+**Backend → UI wiring (consumes v3.0 helpers)**
+- Options page Backup Snapshot history section — calls `listSnapshots` / `backupSnapshot` / `restoreSnapshot` via the existing message API. Shows timestamp + reason for each, per-row Restore button (each restore snapshots-before-overwrite so it's itself undoable).
+- Options page Privacy Report section — calls `getPrivacyReport`, renders structured JSON output. Honest disclosure beats no disclosure.
+- Options page Selector Telemetry export — calls `getSelectorTelemetry`, downloads as JSON (only populated when `debugSelectorTelemetry` is on).
+
+**Supply chain**
+- `extension/build.sh` now SHA-256 verifies the bundled `mux.min.js` against a pinned hash. Refuses to ship unverified bytes. Constants documented for safe upgrades. Supports `shasum`, `sha256sum`, and `certutil` (Git-Bash on Windows fallback).
+- `content_security_policy` added to both manifests: `script-src 'self'; object-src 'self'; base-uri 'self'`. Locks down the extension origin from inline-script / object / base-tag attacks.
+
+**i18n bootstrap (Now-tier preparation for v3.5 distribution)**
+- `extension/_locales/en/messages.json` created with the core ~30 user-visible strings (manifest name/description, action title, options page CTAs, group labels, snapshot/privacy section labels).
+- Both manifests updated to `default_locale: "en"` with `__MSG_*__` references for `name`, `description`, and `default_title`.
+- Build script + GH Actions workflow include `_locales/` in the release ZIP.
+
+**Community files**
+- `CONTRIBUTING.md` — what we accept, what we don't, code style, setup, release process.
+- `CODE_OF_CONDUCT.md` — Contributor Covenant v2.1.
+- `.github/ISSUE_TEMPLATE/bug_report.md`, `feature_request.md`, `selector_regression.md` — three structured templates.
+
+**Catalog parity:** 197/197/197/197 across content.js `_defaults`, popup.js `DEFAULTS`, options.js `DEFAULTS`, options.js `META`.
+
 ## [3.0.0] - 2026-05-19
 
 ### v3.0.0 — Distribution, store readiness, v2.6 backend, README refresh

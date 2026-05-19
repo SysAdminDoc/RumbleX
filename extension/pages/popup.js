@@ -1,4 +1,4 @@
-// RumbleX v3.0.0 - Popup Script
+// RumbleX v3.1.0 - Popup Script
 'use strict';
 
 // Feature list grouped by category. Order within a group controls display
@@ -94,6 +94,8 @@ const GROUPS = [
             { id: 'keywordFilter', label: 'Keyword Filter' },
             { id: 'relatedFilter', label: 'Related Filter' },
             { id: 'exactCounts', label: 'Exact Counts' },
+            // v3.1.0 — Rumble Shorts (launched Feb 2026)
+            { id: 'disableShortsFeed', label: 'Disable Shorts Feed' },
         ],
     },
     // ── v1.9.0 — Rumble Enhancement Suite port ──
@@ -173,6 +175,8 @@ const GROUPS = [
             { id: 'hideCommentButton', label: 'Hide Comment' },
             { id: 'hideReportButton', label: 'Hide 3-dot Menu' },
             { id: 'hidePremiumJoinButtons', label: 'Hide Premium/Join' },
+            // v3.1.0 — Rumble Wallet (launched Jan 2026)
+            { id: 'hideWalletTipButton', label: 'Hide Wallet Tip Button' },
         ],
     },
     {
@@ -392,6 +396,10 @@ const DEFAULTS = {
     backupHistory: true,
     backupHistoryLimit: 10,
     encryptedGistSync: false,
+
+    // v3.1.0 — Platform follow-through
+    disableShortsFeed: false,
+    hideWalletTipButton: false,
 };
 
 const UI_STATE_KEY = 'rx_popup_ui';
@@ -404,7 +412,13 @@ function makeToggle(featId, initialChecked, onChange) {
     const input = document.createElement('input');
     input.type = 'checkbox';
     input.checked = initialChecked;
-    input.addEventListener('change', () => onChange(input.checked));
+    // v3.1.0 — WCAG 2.2 aria-pressed so screen readers announce on/off state.
+    // Keep in sync with .checked on every change so AT users get accurate state.
+    input.setAttribute('aria-pressed', String(!!initialChecked));
+    input.addEventListener('change', () => {
+        input.setAttribute('aria-pressed', String(!!input.checked));
+        onChange(input.checked);
+    });
 
     const track = document.createElement('div');
     track.className = 'toggle-track';

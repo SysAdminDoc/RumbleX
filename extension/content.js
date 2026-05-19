@@ -1,9 +1,9 @@
-// RumbleX v3.0.0 - Content Script
+// RumbleX v3.1.0 - Content Script
 // Rumble enhancement suite - Chrome/Firefox extension
 'use strict';
 
 // ── Version ──
-const VERSION = chrome.runtime?.getManifest?.()?.version || '3.0.0';
+const VERSION = chrome.runtime?.getManifest?.()?.version || '3.1.0';
 const SCHEMA_VERSION = 2;
 
 // ── Settings Manager (chrome.storage.local) ──
@@ -226,6 +226,10 @@ const Settings = {
         backupHistory: true,
         backupHistoryLimit: 10,
         encryptedGistSync: false,
+
+        // ── v3.1.0 — Rumble Shorts (Feb 2026) + Wallet (Jan 2026) ──
+        disableShortsFeed: false,    // redirects /shorts → /subscriptions when ON
+        hideWalletTipButton: false,  // hides per-creator tip jar button
     },
     _writeTimer: null,
     _pendingWrite: false,
@@ -374,9 +378,15 @@ const Page = {
     isLive: () => !!document.querySelector('.media-description-info-stream-time') || !!document.querySelector('#chat-history-list'),
     isAccount: () => location.pathname.startsWith('/account/'),
     isStudio: () => location.hostname === 'studio.rumble.com',
+    // v3.1.0 — Rumble Shorts launched on web 2026-02-04 at rumble.com/shorts.
+    // Vertical swipeable feed, dedicated player, ≤90s, 1:1-or-taller aspect ratio.
+    // Distinct from the in-feed Shorts row (`#section-shorts`) the v1.x
+    // shortsFilter already handles via `#shorts__label` SVG detection.
+    isShorts: () => location.pathname === '/shorts' || location.pathname.startsWith('/shorts/') || location.pathname.startsWith('/shorts.'),
     classify() {
         if (this.isStudio()) return 'studio';
         if (this.isAccount()) return 'account';
+        if (this.isShorts()) return 'shorts';
         if (this.isEmbed()) return 'embed';
         if (this.isSearch()) return 'search';
         if (this.isChannel()) return 'channel';
@@ -423,6 +433,16 @@ const Selectors = {
         'modal.overlay':      { stable: '[data-js="modal__overlay"]', fallback: '[hx-ext="modal"]' },
         'theme.group':        { stable: '.theme-option-group', fallback: '[class*="theme-option"]' },
         'account.pagination': { stable: '.pagination.autoPg', fallback: '.pagination' },
+        // v3.1.0 — Shorts surfaces. Conservative selectors — no live MHTML
+        // capture of /shorts yet (queued). When the capture lands, refine
+        // stable selector first; fallbacks already err on the broad side.
+        'shorts.feed':        { stable: '[data-js="shorts_feed"], main[data-route="shorts"]', fallback: '[class*="shorts-feed"], [class*="ShortsFeed"]' },
+        'shorts.card':        { stable: '[data-js="shorts_card"], article[data-shorts-id]', fallback: '[class*="shorts-card"], [class*="ShortsCard"]' },
+        'shorts.player':      { stable: '[data-js="shorts_player"], #shortsPlayer', fallback: '[class*="shorts-player"], [class*="ShortsPlayer"]' },
+        // v3.1.0 — Rumble Wallet tip button surface (launched 2026-01-07).
+        // Appears only for creators who enabled their tip jar — opt-in toggle
+        // hides it without breaking creators who want to keep it visible.
+        'wallet.tipButton':   { stable: '[data-js="wallet_tip_button"], [data-js="tip_button"]', fallback: 'button[hx-get*="wallet"], [class*="tip-button"], [class*="TipButton"]' },
     },
     _telemetry: [],
     find(key, root) {
@@ -4868,6 +4888,8 @@ const AutoplayBlock = {
     id: 'autoplayBlock',
     name: 'Autoplay Block',
     _obs: null,
+    _docObs: null,
+    _autoplayHandler: null,
 
     _css: `
         .js-player-upcoming-button,
@@ -4887,8 +4909,37 @@ const AutoplayBlock = {
         // Intercept the autoplay trigger by watching for src changes
     },
 
+    // v3.1.0 — Consume autoplayBlockMode enum:
+    //   'off'                       — disable the module entirely (matches !autoplayBlock)
+    //   'playerOnly'                — DOM-overlay removal only (v1.x behavior)
+    //   'relatedEndpointAndPlayer'  — overlay removal AND intercept the player
+    //                                 'ended' event so the next video never auto-loads
+    //                                 (default in v2.0; v3.2 will pair this with
+    //                                 declarativeNetRequest rules at the SW layer).
+    _mode() {
+        const m = (Settings.get('autoplayBlockMode') || 'relatedEndpointAndPlayer').toLowerCase();
+        return ['off', 'playeronly', 'relatedendpointandplayer'].includes(m) ? m : 'relatedendpointandplayer';
+    },
+
+    _attachEndedGuard() {
+        const video = qs('video');
+        if (!video || video.dataset.rxEndedGuard) return;
+        video.dataset.rxEndedGuard = '1';
+        this._autoplayHandler = (e) => {
+            // Don't fight the user's own autoplay scheduler (different feature).
+            if (Settings.get('autoplayScheduler')) return;
+            // Stop here — let the v3.2 dNR rules do the heavy lifting once they
+            // ship. In the meantime, pause + clear the next-video src so the
+            // page doesn't navigate away under us.
+            try { video.pause(); } catch {}
+        };
+        video.addEventListener('ended', this._autoplayHandler, { capture: true });
+    },
+
     init() {
         if (!Settings.get(this.id)) return;
+        const mode = this._mode();
+        if (mode === 'off') return;
         if (!Page.isWatch()) return;
         this._styleEl = injectStyle(this._css, 'rx-autoplay-block-css');
 
@@ -4904,13 +4955,69 @@ const AutoplayBlock = {
 
         // Initial pass
         setTimeout(() => this._blockAutoplay(), 2000);
+
+        // Player-event interception (v3.1.0) — only when mode says so.
+        if (mode === 'relatedendpointandplayer') {
+            waitFor('video', 10000).then(() => this._attachEndedGuard()).catch(() => {});
+        }
     },
 
     destroy() {
         this._styleEl?.remove();
         this._obs?.disconnect();
         this._docObs?.disconnect();
+        // Unbind ended-guard if we installed it.
+        if (this._autoplayHandler) {
+            for (const v of qsa('video[data-rx-ended-guard="1"]')) {
+                try { v.removeEventListener('ended', this._autoplayHandler, { capture: true }); } catch {}
+                delete v.dataset.rxEndedGuard;
+            }
+            this._autoplayHandler = null;
+        }
     }
+};
+
+// ═══════════════════════════════════════════
+//  FEATURE: Shorts Redirect (v3.1.0)
+// ═══════════════════════════════════════════
+// Rumble Shorts launched on web 2026-02-04 (rumble.com/shorts) — a vertical,
+// swipeable, loops-until-swipe feed that some users explicitly do not want
+// (see r/RumbleForum threads and the uBO custom-filter community).
+//
+// When `disableShortsFeed` is on, navigating to /shorts redirects to
+// /subscriptions immediately. Implementation is location.replace() so the
+// /shorts entry doesn't pollute browser history. Routes are hooked via
+// Router.onChange so this fires on htmx in-app navigation too, not just
+// fresh page loads.
+const ShortsRedirect = {
+    id: 'disableShortsFeed',
+    name: 'Disable Shorts Feed',
+    _routerUnsub: null,
+    _maybeRedirect() {
+        if (!Settings.get(this.id)) return;
+        if (!Page.isShorts()) return;
+        try {
+            // location.replace so the user's back-button isn't trapped in a loop.
+            location.replace('/subscriptions');
+        } catch (e) {
+            console.warn('[RumbleX] ShortsRedirect navigation failed:', e);
+        }
+    },
+    init() {
+        if (!Settings.get(this.id)) return;
+        // Fresh-load case: redirect immediately if we landed on /shorts.
+        this._maybeRedirect();
+        // htmx + history nav case: re-evaluate on every route change.
+        this._routerUnsub = Router.onChange((d) => {
+            if (d.changed) this._maybeRedirect();
+        });
+    },
+    destroy() {
+        if (typeof this._routerUnsub === 'function') {
+            try { this._routerUnsub(); } catch {}
+            this._routerUnsub = null;
+        }
+    },
 };
 
 // ═══════════════════════════════════════════
@@ -6952,6 +7059,9 @@ const RX_CATEGORIES = [
             { id: 'exactCounts', label: 'Exact Counts', desc: 'Show full numbers instead of 1.2K/3.5M' },
             // v2.4.0 — Feed, Discovery, and Moderation
             { id: 'stripTrackingParams', label: 'Strip Tracking Params', desc: 'Remove e9s, utm_*, ref, campaign, fbclid, gclid from rumble.com URLs (allowlisted; canonical params kept)' },
+            // v3.1.0 — Platform follow-through
+            { id: 'disableShortsFeed', label: 'Disable Shorts Feed', desc: 'Redirect rumble.com/shorts to /subscriptions (Shorts launched on web Feb 2026)' },
+            { id: 'hideWalletTipButton', label: 'Hide Wallet Tip Button', desc: 'Hide the per-creator Rumble Wallet tip-jar button (launched Jan 2026)' },
         ],
     },
     // ── v1.9.0 — Rumble Enhancement Suite port ──
@@ -7305,6 +7415,14 @@ const SettingsPanel = {
         if (!this._toastEl) {
             this._toastEl = document.createElement('div');
             this._toastEl.className = 'rx-m-toast';
+            // v3.1.0 — WCAG 2.2 SC 4.1.3 Status Messages.
+            // role="status" (implicit aria-live="polite") so screen readers
+            // announce the toast without stealing focus from whatever the user
+            // is interacting with. aria-atomic ensures the whole message is
+            // re-announced on update, not just the diff.
+            this._toastEl.setAttribute('role', 'status');
+            this._toastEl.setAttribute('aria-live', 'polite');
+            this._toastEl.setAttribute('aria-atomic', 'true');
             document.body.appendChild(this._toastEl);
         }
         this._toastEl.textContent = msg;
@@ -7321,9 +7439,14 @@ const SettingsPanel = {
         input.type = 'checkbox';
         input.checked = Settings.get(featureId);
         input.dataset.featureId = featureId;
+        // v3.1.0 — WCAG 2.2 aria-pressed for toggle semantics so screen readers
+        // announce the on/off state, plus a name from the surrounding label.
+        input.setAttribute('aria-pressed', String(!!input.checked));
+        wrap.setAttribute('aria-label', featureId);
         input.addEventListener('change', () => {
             Settings.set(featureId, input.checked);
             wrap.classList.toggle('active', input.checked);
+            input.setAttribute('aria-pressed', String(!!input.checked));
             const card = wrap.closest('.rx-m-card');
             if (card && !card.classList.contains('rx-m-sub')) card.classList.toggle('rx-m-enabled', input.checked);
             this._updateNavCounts();
@@ -10260,6 +10383,11 @@ const RX_CSS_TOGGLES = [
         css: `.video-action-sub-menu-wrapper { display: none !important; }`, page: 'watch' },
     { id: 'hidePremiumJoinButtons', label: 'Hide Premium/Join', desc: 'Hide the "Rumble Premium" and "Join" buttons.',
         css: `button[hx-get*="premium-value-prop"], button[data-js="locals-subscription-button"] { display: none !important; }`, page: 'watch' },
+    // v3.1.0 — Rumble Wallet tip button (launched 2026-01-07).
+    // Selector intentionally broad — covers both `data-js` variants and the
+    // fallback `hx-get*="wallet"`/class-name patterns documented in Selectors.
+    { id: 'hideWalletTipButton', label: 'Hide Wallet Tip Button', desc: 'Hide the per-creator Rumble Wallet tip-jar button (launched January 2026). Off by default — leave on if you want to tip with crypto.',
+        css: `[data-js="wallet_tip_button"], [data-js="tip_button"], button[hx-get*="wallet"], [class*="tip-button"], [class*="TipButton"] { display: none !important; }`, page: 'watch' },
 
     // ── Comments ─────────────────────────────────────────────
     { id: 'moveReplyButton', label: 'Move Reply Button', desc: 'Move the reply button next to the like/dislike buttons.',
@@ -11382,6 +11510,8 @@ const features = [
     RantTierFilter, ChatUsernameColors,
     // v2.4.0 — Feed, Discovery, and Moderation
     StripTrackingParams,
+    // v3.1.0 — Platform follow-through (Rumble Shorts launched Feb 2026)
+    ShortsRedirect,
     ...RX_CSS_FEATURES,
 ];
 
