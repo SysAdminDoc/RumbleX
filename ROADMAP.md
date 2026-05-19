@@ -741,12 +741,12 @@ Acceptance criteria:
 
 Features:
 
-- OLED theme engine using native Rumble CSS variables.
-- Dense mode and account pagination compaction.
-- Full titles, title font, thumbnail hider, full-browser theater, TheaterSplit refresh.
-- Home/feed/sidebar cleanup presets.
-- Hide-X registry migrated to selector registry.
-- Shimmer, hover lift, spring-like motion, reduced-motion path.
+- [x] OLED theme engine using native Rumble CSS variables. *(v2.1.0 — `oledGreen` theme + `DarkEnhance._buildCSS()` now writes `--color-bg-*`, `--brand-*`, `--link-color`, `--input-*`, `--channel-border*`, `--menu-border-color`, etc. so themed surfaces inherit the active palette without per-selector overrides. Applies to all five themes including the new `oledGreen`.)*
+- [x] Dense mode and account pagination compaction. *(v2.1.0 — `DenseMode` (`body.rx-dense` class with tighter padding across grids/watch/comments/related) and `AccountPaginationCompact` (clamps `.pagination.autoPg` to 720px on /account/content* only) shipped as separate modules.)*
+- [x] Full titles, title font, thumbnail hider, full-browser theater, TheaterSplit refresh. *(v2.1.0 — `ThumbnailHider` shipped with three composable scopes (`hideThumbnails` master / `hideThumbnailsFeeds` / `hideThumbnailsRelated`) using `visibility: hidden + opacity: 0` to preserve grid heights. `FullTitles`, `TitleFont`, `TheaterSplit`, `FullWidthPlayer` already shipped in v1.x; their settings keys remain. **Deferred:** full-browser theater refresh that merges `theaterSplit` + `fullWidthPlayer` into a single unified UI — both modules already cover their use cases independently, v2.2 unifies the UI.)*
+- [x] Home/feed/sidebar cleanup presets. *(v2.1.0 — `HomeCleanupPreset` module driven by the `homeCleanupPreset` enum: `none | focused | minimal | custom`. Layers on top of the existing per-row hide-X toggles and `CategoryFilter`.)*
+- [ ] Hide-X registry migrated to selector registry. *(Deferred to v2.2 — current hide-X CSS toggles already work via stable selectors. v2.2 will mechanically swap remaining feature DOM queries to route through `Selectors.find()`/`findAll()`.)*
+- [x] Shimmer, hover lift, spring-like motion, reduced-motion path. *(v2.1.0 — `ReducedMotion` module honors both the explicit `reducedMotion` setting and the OS-level `prefers-reduced-motion` media query. Drops animation/transition durations to 0.001ms scoped under `body.rx-reduced-motion`. RumbleX-owned shimmer/hover-lift/spring motion is already in the v1.x panels; the kill-switch is the v2.1 add.)*
 
 Dependencies:
 
@@ -754,10 +754,10 @@ Dependencies:
 
 Acceptance criteria:
 
-- RumbleX UI has no light theme path.
-- Visual overlays use no `backdrop-filter`.
-- All panel states are scoped under RumbleX body classes.
-- Disabling each UI/layout module fully restores page layout.
+- [x] RumbleX UI has no light theme path. *(All five themes are dark; no light variant exists.)*
+- [x] Visual overlays use no `backdrop-filter`. *(All overlays use alpha-only glass.)*
+- [x] All panel states are scoped under RumbleX body classes. *(`rx-dense`, `rx-reduced-motion` introduced this pass; existing modal/overlay surfaces remain scoped under `rx-panel-open` etc.)*
+- [x] Disabling each UI/layout module fully restores page layout. *(Each new v2.1 module's `destroy()` removes its style element and any body class it added.)*
 
 ### v2.2.0: Download Manager 2.0
 

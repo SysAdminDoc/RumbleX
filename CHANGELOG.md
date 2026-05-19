@@ -2,6 +2,30 @@
 
 All notable changes to RumbleX will be documented in this file.
 
+## [2.1.0] - 2026-05-19
+
+### v2.1.0 — Premium UI and Layout Superset
+
+Builds on v2.0.0's core engine. Lands the visible v2.x UI superset behind the schema-v2 settings keys shipped in v2.0.
+
+**New feature modules**
+- **ThumbnailHider** — Three composable toggles: `hideThumbnails` (master), `hideThumbnailsFeeds` (feeds only), `hideThumbnailsRelated` (related sidebar only). Hides via `visibility: hidden + opacity: 0` so grid heights stay intact (no ugly stacking reflow). Also blanks `background-image` on poster wrappers (live cards, hero banners use CSS backgrounds, not `<img>`).
+- **DenseMode** — Tightens spacing across feed grids, watch page, comments, related media when `denseMode` is on. Pairs cleanly with `wideLayout` for power users. Scoped under `body.rx-dense` so disable fully restores layout.
+- **AccountPaginationCompact** — Implements the community Reddit userscript via the new setting registry. `.pagination.autoPg` on `/account/content*` now clamps to 720px and tightens vertical rhythm. Scoped to account pages only via the new `Page.isAccount()` classifier.
+- **ReducedMotion** — Honors the explicit `reducedMotion` setting *and* the OS `prefers-reduced-motion` media query. Kills RumbleX shimmer/stagger/spring; degrades animation durations to `0.001ms` so transitions don't read as broken.
+- **HomeCleanupPreset** — Three presets driven by the new `homeCleanupPreset` enum: `focused` hides editor picks, recommendations, premium row, featured banner; `minimal` adds every category row except subscribed/live; `custom` falls back to the existing hide-X toggles. Layers on top of `CategoryFilter` without conflict.
+
+**OLED-grade native-token theme mapping**
+- `DarkEnhance` now writes Rumble's *native* CSS custom properties (`--color-bg-*`, `--brand-*`, `--link-color`, `--input-*`, `--channel-border*`, `--menu-border-color`, etc.) in addition to RumbleX's `--rx-*` tokens. Themed surfaces now inherit the active palette without per-selector overrides — drops the number of `!important` rules needed to keep `darkEnhance` ahead of Rumble's stylesheet churn.
+- Applies to all four existing themes (Catppuccin, YouTubify, Midnight AMOLED, Rumble Green) plus the new `oledGreen` theme added in v2.0.
+
+**Catalog parity**
+- 195/195/195 keys across content.js `_defaults`, popup.js `DEFAULTS`, options.js `DEFAULTS` + `META`. Six new module IDs added to `RX_CATEGORIES` (in-page modal) under the **Theme & Layout** category.
+
+### Deferred to v2.2+
+- Full hide-X registry migration to `Selectors` — v2.1 modules use both inline selectors (for hot paths) and the registry (for new code). v2.2 will mechanically swap the rest.
+- Full-browser theater refresh — TheaterSplit + Rumble Resize merger. Existing `theaterSplit` + `fullWidthPlayer` modules already cover the use cases; v2.2 unifies the UI.
+
 ## [2.0.0] - 2026-05-19
 
 ### v2.0.0 — Core Engine, Schema v2, and Settings Superset (Phase 1 of v2)

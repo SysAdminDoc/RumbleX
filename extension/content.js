@@ -1,9 +1,9 @@
-// RumbleX v2.0.0 - Content Script
+// RumbleX v2.1.0 - Content Script
 // Rumble enhancement suite - Chrome/Firefox extension
 'use strict';
 
 // ── Version ──
-const VERSION = chrome.runtime?.getManifest?.()?.version || '2.0.0';
+const VERSION = chrome.runtime?.getManifest?.()?.version || '2.1.0';
 const SCHEMA_VERSION = 2;
 
 // ── Settings Manager (chrome.storage.local) ──
@@ -912,6 +912,41 @@ const DarkEnhance = {
             --rx-yellow: ${t.yellow};
             --rx-peach: ${t.peach};
             --rx-overlay: rgba(0, 0, 0, 0.85);
+        }
+
+        /* ── v2.1.0: native-token mapping ── */
+        /* Hook Rumble's own CSS custom properties so themed surfaces inherit
+           the active palette without per-selector overrides. Lets unstyled
+           Rumble UI track our theme automatically. */
+        html.rumblex-active {
+            --color-bg-main: ${t.crust} !important;
+            --color-bg-default: ${t.base} !important;
+            --color-bg-default-0: ${t.base} !important;
+            --color-bg-featured: ${t.surface0} !important;
+            --color-bg-featured-0: ${t.surface0} !important;
+            --color-txt-default: ${t.text} !important;
+            --color-separator: ${t.surface0} !important;
+            --color-separator-highlight: ${t.surface1} !important;
+            --background: ${t.crust} !important;
+            --background-color: ${t.crust} !important;
+            --background-highlight: ${t.surface0} !important;
+            --title-color: ${t.text} !important;
+            --heading-color: ${t.text} !important;
+            --text-color: ${t.text} !important;
+            --border-color: ${t.surface0} !important;
+            --link-color: ${t.accent} !important;
+            --small-link-color: ${t.accent} !important;
+            --link-green: ${t.green} !important;
+            --brand-800: ${t.brand} !important;
+            --brand-900: ${t.brand} !important;
+            --brand-950: ${t.brand} !important;
+            --menu-border-color: ${t.surface0} !important;
+            --input-font-color: ${t.text} !important;
+            --input-border-color: ${t.surface0} !important;
+            --input-placeholder-color: ${t.subtext0} !important;
+            --channel-border: ${t.surface0} !important;
+            --channel-border-light: ${t.surface1} !important;
+            --channel-border-dark: ${t.crust} !important;
         }
 
         /* ── Base ── */
@@ -6847,6 +6882,13 @@ const RX_CATEGORIES = [
             { id: 'notifEnhance', label: 'Notif Enhance', desc: 'Themed notification dropdown + bell pulse' },
             { id: 'fullTitles', label: 'Full Titles', desc: 'Remove title truncation on video cards' },
             { id: 'titleFont', label: 'Title Font', desc: 'Unbold + normalize title typography' },
+            // v2.1.0 — Premium UI and Layout Superset
+            { id: 'denseMode', label: 'Dense Mode', desc: 'Compact spacing across grids and the watch page' },
+            { id: 'reducedMotion', label: 'Reduced Motion', desc: 'Disable shimmer/stagger/spring animations' },
+            { id: 'hideThumbnails', label: 'Hide Thumbnails', desc: 'Hide all thumbnails (master toggle)' },
+            { id: 'hideThumbnailsFeeds', label: 'Hide Thumbs (Feeds)', desc: 'Hide thumbnails on home/subs/for-you only' },
+            { id: 'hideThumbnailsRelated', label: 'Hide Thumbs (Related)', desc: 'Hide thumbnails in the related sidebar only' },
+            { id: 'compactAccountPagination', label: 'Compact Account Pagination', desc: 'Shrink the autoPg pagination on /account/content' },
         ],
     },
     {
@@ -10658,6 +10700,247 @@ const SiteTheme = {
 };
 
 // ═══════════════════════════════════════════
+//  FEATURE: Thumbnail Hider (v2.1.0)
+// ═══════════════════════════════════════════
+// Three independent toggles compose into one feature:
+//   hideThumbnails        — master kill-switch (all thumbnails across the site)
+//   hideThumbnailsFeeds   — feeds only (home/subs/for-you/search)
+//   hideThumbnailsRelated — related sidebar only
+//
+// Implementation note: Rumble lazy-loads thumbnails as <img loading="lazy">.
+// Hiding via CSS (visibility/opacity) keeps grid heights intact so cards
+// don't reflow into ugly stacks. We also blank the background-image on
+// poster wrappers, since some surfaces (live cards, hero banners) use CSS
+// backgrounds instead of <img>.
+const ThumbnailHider = {
+    id: 'hideThumbnails',
+    name: 'Thumbnail Hider',
+    _styleEl: null,
+    _buildCss() {
+        const all = Settings.get('hideThumbnails');
+        const feeds = Settings.get('hideThumbnailsFeeds');
+        const related = Settings.get('hideThumbnailsRelated');
+        const rules = [];
+        // Master toggle: everything.
+        if (all) {
+            rules.push(`
+                html.rumblex-active img.thumbnail__image,
+                html.rumblex-active .thumbnail__thumb img,
+                html.rumblex-active .thumbnail__thumb picture,
+                html.rumblex-active .videostream__thumbnail img,
+                html.rumblex-active .mediaList-item img,
+                html.rumblex-active .media-item__thumb img,
+                html.rumblex-active picture.thumbnail__image-container > img,
+                html.rumblex-active .channel-header--backsplash {
+                    visibility: hidden !important;
+                    opacity: 0 !important;
+                    background-image: none !important;
+                }
+                html.rumblex-active .thumbnail__thumb,
+                html.rumblex-active .videostream__thumbnail {
+                    background: var(--rx-thumb-blank, #1b1b1b) !important;
+                }
+            `);
+        } else {
+            if (feeds) {
+                rules.push(`
+                    html.rumblex-active .thumbnail__grid .thumbnail__thumb img,
+                    html.rumblex-active .streams__container .thumbnail__thumb img,
+                    html.rumblex-active .videostream__thumbnail img {
+                        visibility: hidden !important;
+                        opacity: 0 !important;
+                    }
+                    html.rumblex-active .thumbnail__grid .thumbnail__thumb,
+                    html.rumblex-active .streams__container .thumbnail__thumb,
+                    html.rumblex-active .videostream__thumbnail {
+                        background: var(--rx-thumb-blank, #1b1b1b) !important;
+                    }
+                `);
+            }
+            if (related) {
+                rules.push(`
+                    html.rumblex-active .media-page-related-media-desktop-sidebar img,
+                    html.rumblex-active .mediaList-item img,
+                    html.rumblex-active .mediaList-item picture {
+                        visibility: hidden !important;
+                        opacity: 0 !important;
+                    }
+                `);
+            }
+        }
+        return rules.join('\n');
+    },
+    init() {
+        // Module always loads — internal toggles decide whether anything is injected.
+        const css = this._buildCss();
+        if (css) this._styleEl = injectStyle(css, 'rx-thumbnailhider');
+    },
+    destroy() { this._styleEl?.remove(); this._styleEl = null; },
+};
+
+// ═══════════════════════════════════════════
+//  FEATURE: Dense Mode (v2.1.0)
+// ═══════════════════════════════════════════
+// Tightens spacing across feed grids and the watch page. Affects layout
+// padding only — never overlaps content or changes column counts. Designed
+// to pair with wideLayout for power users who want maximum signal density.
+const DenseMode = {
+    id: 'denseMode',
+    name: 'Dense Mode',
+    _styleEl: null,
+    _css: `
+        html.rumblex-active body.rx-dense .thumbnail__grid { gap: 8px !important; }
+        html.rumblex-active body.rx-dense .thumbnail__title { line-height: 1.25 !important; margin-top: 4px !important; }
+        html.rumblex-active body.rx-dense .videostream__footer { padding: 4px 2px 6px !important; }
+        html.rumblex-active body.rx-dense .videostream { margin-bottom: 8px !important; }
+        html.rumblex-active body.rx-dense .homepage-section { padding-top: 8px !important; padding-bottom: 8px !important; }
+        html.rumblex-active body.rx-dense .homepage-heading { margin: 6px 0 6px !important; }
+        html.rumblex-active body.rx-dense .container.content { padding-top: 8px !important; }
+        html.rumblex-active body.rx-dense .media-page-comments-container { gap: 8px !important; }
+        html.rumblex-active body.rx-dense .comment-item { padding: 6px 0 !important; }
+        html.rumblex-active body.rx-dense .mediaList-item { margin-bottom: 6px !important; }
+        html.rumblex-active body.rx-dense h1.video-header-container__title { margin: 4px 0 !important; }
+    `,
+    init() {
+        if (!Settings.get(this.id)) return;
+        this._styleEl = injectStyle(this._css, 'rx-densemode');
+        document.body?.classList.add('rx-dense');
+    },
+    destroy() {
+        this._styleEl?.remove();
+        document.body?.classList.remove('rx-dense');
+    },
+};
+
+// ═══════════════════════════════════════════
+//  FEATURE: Account Pagination Compaction (v2.1.0)
+// ═══════════════════════════════════════════
+// /account/content* pages bury the autoPg pagination strip under huge margin.
+// Reddit userscript referenced in the roadmap just clamps its width; we go
+// further and tighten vertical rhythm too. Scoped to account pages only.
+const AccountPaginationCompact = {
+    id: 'compactAccountPagination',
+    name: 'Account Pagination Compact',
+    _styleEl: null,
+    _css: `
+        html.rumblex-active .pagination.autoPg {
+            max-width: 720px !important;
+            margin: 8px auto !important;
+            padding: 4px !important;
+        }
+        html.rumblex-active .pagination.autoPg a,
+        html.rumblex-active .pagination.autoPg span {
+            padding: 4px 8px !important;
+            min-width: 28px !important;
+            line-height: 1.2 !important;
+        }
+    `,
+    init() {
+        if (!Settings.get(this.id)) return;
+        if (!Page.isAccount()) return;
+        this._styleEl = injectStyle(this._css, 'rx-acct-pagination');
+    },
+    destroy() { this._styleEl?.remove(); },
+};
+
+// ═══════════════════════════════════════════
+//  FEATURE: Reduced Motion (v2.1.0)
+// ═══════════════════════════════════════════
+// Honors the user's explicit reducedMotion setting *and* the OS-level
+// prefers-reduced-motion media query. RumbleX-owned UI uses shimmer +
+// stagger + spring easing by default; this kills it.
+const ReducedMotion = {
+    id: 'reducedMotion',
+    name: 'Reduced Motion',
+    _styleEl: null,
+    _css: `
+        html.rumblex-active body.rx-reduced-motion *,
+        html.rumblex-active body.rx-reduced-motion *::before,
+        html.rumblex-active body.rx-reduced-motion *::after {
+            animation-duration: 0.001ms !important;
+            animation-delay: 0.001ms !important;
+            transition-duration: 0.001ms !important;
+            transition-delay: 0ms !important;
+            scroll-behavior: auto !important;
+        }
+        html.rumblex-active body.rx-reduced-motion .rx-shimmer { animation: none !important; }
+        @media (prefers-reduced-motion: reduce) {
+            html.rumblex-active *,
+            html.rumblex-active *::before,
+            html.rumblex-active *::after {
+                animation-duration: 0.001ms !important;
+                transition-duration: 0.001ms !important;
+            }
+        }
+    `,
+    init() {
+        if (!Settings.get(this.id)) return;
+        this._styleEl = injectStyle(this._css, 'rx-reduced-motion');
+        document.body?.classList.add('rx-reduced-motion');
+    },
+    destroy() {
+        this._styleEl?.remove();
+        document.body?.classList.remove('rx-reduced-motion');
+    },
+};
+
+// ═══════════════════════════════════════════
+//  FEATURE: Home Cleanup Presets (v2.1.0)
+// ═══════════════════════════════════════════
+// Settings.get('homeCleanupPreset') is an enum:
+//   'none'     — no extra rules
+//   'focused'  — hide editor picks, recommendations, premium row, featured banner
+//   'minimal'  — focused + hide every category row except subscribed/live (keeps the spine)
+//   'custom'   — falls back to user's existing hide-X toggles (no-op here)
+// Designed to *layer* on top of the individual hide-X toggles, not replace
+// them. The CSS uses the existing `#section-*` ID scheme already proven in
+// CategoryFilter, so any new sections Rumble adds are governed by the same
+// selector contract.
+const HomeCleanupPreset = {
+    id: 'homeCleanupPreset',
+    name: 'Home Cleanup Preset',
+    _styleEl: null,
+    _focused: [
+        '#section-editor-picks',
+        '#section-personal-recommendations',
+        '#section-premium-videos',
+        '#hero-section',
+        '.homepage-hero',
+        '#section-featured',
+    ],
+    _minimal: [
+        '#section-editor-picks',
+        '#section-personal-recommendations',
+        '#section-premium-videos',
+        '#hero-section',
+        '.homepage-hero',
+        '#section-featured',
+        '#section-gaming',
+        '#section-finance',
+        '#section-sports',
+        '#section-viral',
+        '#section-podcasts',
+        '#section-leaderboard',
+        '#section-vlogs',
+        '#section-news',
+        '#section-science',
+        '#section-music',
+        '#section-entertainment',
+        '#section-cooking',
+        '#section-shorts',
+    ],
+    init() {
+        const preset = Settings.get('homeCleanupPreset') || 'none';
+        if (preset === 'none' || preset === 'custom') return;
+        if (!Page.isHome()) return;
+        const list = preset === 'minimal' ? this._minimal : this._focused;
+        const css = list.join(',\n') + ' { display: none !important; }';
+        this._styleEl = injectStyle(css, 'rx-home-cleanup-preset');
+    },
+    destroy() { this._styleEl?.remove(); },
+};
+
+// ═══════════════════════════════════════════
 //  FEATURE REGISTRY & INIT
 // ═══════════════════════════════════════════
 const features = [
@@ -10676,6 +10959,8 @@ const features = [
     // v1.9.0 — Rumble Enhancement Suite port
     AutoHideHeader, AutoHideNavSidebar, AutoLike, AutoLoadComments,
     FullWidthPlayer, AdaptiveLiveLayout, CommentBlocking, SiteTheme,
+    // v2.1.0 — Premium UI and Layout Superset
+    ThumbnailHider, DenseMode, AccountPaginationCompact, ReducedMotion, HomeCleanupPreset,
     ...RX_CSS_FEATURES,
 ];
 
