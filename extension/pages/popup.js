@@ -1,4 +1,4 @@
-// RumbleX v3.8.0 - Popup Script
+// RumbleX v3.9.0 - Popup Script
 'use strict';
 
 // Feature list grouped by category. Order within a group controls display
@@ -406,6 +406,10 @@ const DEFAULTS = {
 
     // v3.7.0 — chrome.sidePanel integration
     sidePanelEnabled: false,
+
+    // v3.9.0 — Channel Notifier
+    watchedChannels: [],
+    channelNotifierIntervalMin: 30,
 };
 
 const UI_STATE_KEY = 'rx_popup_ui';

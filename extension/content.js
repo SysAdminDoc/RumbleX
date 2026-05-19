@@ -1,9 +1,9 @@
-// RumbleX v3.8.0 - Content Script
+// RumbleX v3.9.0 - Content Script
 // Rumble enhancement suite - Chrome/Firefox extension
 'use strict';
 
 // ── Version ──
-const VERSION = chrome.runtime?.getManifest?.()?.version || '3.8.0';
+const VERSION = chrome.runtime?.getManifest?.()?.version || '3.9.0';
 const SCHEMA_VERSION = 2;
 
 // ── Settings Manager (chrome.storage.local) ──
@@ -238,6 +238,14 @@ const Settings = {
         // Default OFF; users opt in from the popup. Once on, clicking the
         // toolbar icon opens the persistent side panel instead of the popup.
         sidePanelEnabled: false,
+
+        // ── v3.9.0 — Channel Notifier ──
+        // Array of channel objects: { url, name, lastSeenVideoId, lastChecked,
+        //   isLive, etag }. Populated through the options-page UI.
+        watchedChannels: [],
+        // Poll interval in minutes. chrome.alarms enforces a 1-minute floor in
+        // Chrome MV3 — anything lower is silently clamped.
+        channelNotifierIntervalMin: 30,
     },
     _writeTimer: null,
     _pendingWrite: false,

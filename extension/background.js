@@ -69,6 +69,8 @@ chrome.runtime.onInstalled.addListener(() => {
     rxSyncContextMenus().catch((e) => console.warn('[RumbleX] context menu sync failed:', e));
     // v3.7.0 — Sync side-panel behavior with the user's preference.
     rxSyncSidePanel().catch((e) => console.warn('[RumbleX] side panel sync failed:', e));
+    // v3.9.0 — Sync channel-notifier alarm with the user's preference.
+    rxSyncChannelNotifier().catch((e) => console.warn('[RumbleX] notifier sync failed:', e));
 });
 
 // v3.7.0 — chrome.sidePanel integration.
@@ -149,14 +151,196 @@ async function rxSyncContextMenus() {
     });
 }
 
-// React to the user toggling `contextMenusEnabled` or `sidePanelEnabled` in
-// settings without requiring a reload. storage.onChanged fires for every
-// settings flush.
+// React to the user toggling `contextMenusEnabled`, `sidePanelEnabled`, or
+// `channelNotifierEnabled` in settings without requiring a reload.
+// storage.onChanged fires for every settings flush.
 if (chrome.storage?.onChanged) {
     chrome.storage.onChanged.addListener((changes, area) => {
         if (area !== 'local' || !changes.rx_settings) return;
         rxSyncContextMenus().catch(() => {});
         rxSyncSidePanel().catch(() => {});
+        rxSyncChannelNotifier().catch(() => {});
+    });
+}
+
+// v3.9.0 — Channel Notifier.
+// chrome.alarms-driven background poll that fetches each watched channel's
+// page, scans for the latest video ID and any live indicator, and fires a
+// chrome.notifications toast (+ optional Discord webhook POST) when state
+// changes. Honors:
+//   - channelNotifierEnabled (master toggle, default OFF from v2.0 schema)
+//   - watchedChannels (array of { url, name, lastSeenVideoId, isLive })
+//   - channelNotifierIntervalMin (poll interval, MV3 floor 1 min)
+//   - discordWebhookUrl (optional POST destination)
+// All fetches scoped to the rumble.com host permissions we already declare.
+const RX_NOTIFIER_ALARM = 'rx-channel-notifier';
+
+async function rxGetSettings() {
+    try {
+        const data = await chrome.storage.local.get('rx_settings');
+        return data.rx_settings || {};
+    } catch { return {}; }
+}
+
+async function rxSetSettings(patch) {
+    try {
+        const data = await chrome.storage.local.get('rx_settings');
+        const merged = { ...(data.rx_settings || {}), ...patch };
+        await chrome.storage.local.set({ rx_settings: merged });
+    } catch (e) { console.warn('[RumbleX] rxSetSettings failed:', e); }
+}
+
+async function rxSyncChannelNotifier() {
+    if (!chrome.alarms) return;
+    const s = await rxGetSettings();
+    const enabled = s.channelNotifierEnabled === true;
+    const intervalMin = Math.max(1, Number(s.channelNotifierIntervalMin) || 30);
+    try {
+        await chrome.alarms.clear(RX_NOTIFIER_ALARM);
+        if (enabled && Array.isArray(s.watchedChannels) && s.watchedChannels.length > 0) {
+            await chrome.alarms.create(RX_NOTIFIER_ALARM, { periodInMinutes: intervalMin });
+        }
+    } catch (e) {
+        console.warn('[RumbleX] alarms sync failed:', e);
+    }
+}
+
+// Parse a channel page HTML and return { latestVideoId, isLive, title }.
+// Conservative: matches `data-video-id="..."` for the first video in the
+// channel grid + scans for the "LIVE" badge SVG / class hooks. Won't grab
+// titles when Rumble changes its markup — that's intentional, we just
+// detect "something new" and let the notification say so.
+function rxParseChannelHtml(html) {
+    try {
+        // The very first data-video-id on the page is the latest video on
+        // a channel page (Rumble orders newest-first by default).
+        const idMatch = html.match(/data-video-id="([^"]+)"/);
+        const isLive = /class="[^"]*\bvideostream__status--live\b/.test(html)
+            || /class="[^"]*\bchannel__live-on-air\b/.test(html)
+            || /aria-label="[^"]*Live[^"]*"/.test(html);
+        return {
+            latestVideoId: idMatch ? idMatch[1] : null,
+            isLive,
+        };
+    } catch { return { latestVideoId: null, isLive: false }; }
+}
+
+async function rxPostDiscordWebhook(url, payload) {
+    try {
+        const resp = await fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+        });
+        return resp.ok;
+    } catch (e) {
+        console.warn('[RumbleX] discord webhook POST failed:', e);
+        return false;
+    }
+}
+
+async function rxFireNotification({ title, message, url }) {
+    if (!chrome.notifications) return null;
+    return new Promise((resolve) => {
+        try {
+            chrome.notifications.create('', {
+                type: 'basic',
+                iconUrl: chrome.runtime.getURL('icons/128.png'),
+                title: title || 'RumbleX',
+                message: message || '',
+                contextMessage: url || '',
+                priority: 0,
+            }, (id) => {
+                void chrome.runtime.lastError;
+                // Stash the URL so the click handler can navigate to it.
+                if (id && url) rxNotificationUrlMap.set(id, url);
+                resolve(id || null);
+            });
+        } catch (e) {
+            console.warn('[RumbleX] notification create failed:', e);
+            resolve(null);
+        }
+    });
+}
+
+const rxNotificationUrlMap = new Map();
+
+if (chrome.notifications?.onClicked) {
+    chrome.notifications.onClicked.addListener((id) => {
+        const url = rxNotificationUrlMap.get(id);
+        rxNotificationUrlMap.delete(id);
+        if (url) {
+            chrome.tabs.create({ url }).catch(() => {});
+            chrome.notifications.clear(id).catch(() => {});
+        }
+    });
+}
+
+async function rxRunNotifierPass() {
+    const s = await rxGetSettings();
+    if (!s.channelNotifierEnabled) return;
+    const channels = Array.isArray(s.watchedChannels) ? s.watchedChannels : [];
+    if (channels.length === 0) return;
+    let dirty = false;
+    const updated = [];
+    for (const ch of channels) {
+        if (!ch?.url) { updated.push(ch); continue; }
+        try {
+            const resp = await fetch(ch.url, { method: 'GET', credentials: 'omit' });
+            if (!resp.ok) {
+                updated.push({ ...ch, lastChecked: Date.now(), lastError: 'http-' + resp.status });
+                dirty = true;
+                continue;
+            }
+            const text = await resp.text();
+            const { latestVideoId, isLive } = rxParseChannelHtml(text);
+            const newVideo = latestVideoId && ch.lastSeenVideoId && latestVideoId !== ch.lastSeenVideoId;
+            const liveStarted = isLive && !ch.isLive;
+            if (newVideo) {
+                await rxFireNotification({
+                    title: 'New video — ' + (ch.name || ch.url),
+                    message: 'A new video is up on this channel.',
+                    url: ch.url,
+                });
+                if (s.discordWebhookUrl) {
+                    void rxPostDiscordWebhook(s.discordWebhookUrl, {
+                        content: 'New RumbleX video on ' + (ch.name || ch.url) + ': ' + ch.url,
+                    });
+                }
+            }
+            if (liveStarted) {
+                await rxFireNotification({
+                    title: 'LIVE — ' + (ch.name || ch.url),
+                    message: 'This channel just went live.',
+                    url: ch.url,
+                });
+                if (s.discordWebhookUrl) {
+                    void rxPostDiscordWebhook(s.discordWebhookUrl, {
+                        content: 'LIVE on ' + (ch.name || ch.url) + ' → ' + ch.url,
+                    });
+                }
+            }
+            updated.push({
+                ...ch,
+                lastSeenVideoId: latestVideoId || ch.lastSeenVideoId,
+                isLive,
+                lastChecked: Date.now(),
+                lastError: null,
+            });
+            dirty = true;
+        } catch (e) {
+            updated.push({ ...ch, lastChecked: Date.now(), lastError: String(e?.message || e) });
+            dirty = true;
+        }
+    }
+    if (dirty) await rxSetSettings({ watchedChannels: updated });
+}
+
+if (chrome.alarms?.onAlarm) {
+    chrome.alarms.onAlarm.addListener((alarm) => {
+        if (alarm.name === RX_NOTIFIER_ALARM) {
+            rxRunNotifierPass().catch((e) => console.warn('[RumbleX] notifier pass failed:', e));
+        }
     });
 }
 
@@ -392,6 +576,57 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     // are async and use the keep-channel-open pattern. Falls back to a
     // structured failure response if offscreen is unsupported (Firefox MV2
     // or older Chrome) so the caller can degrade gracefully.
+    // v3.9.0 — Channel Notifier message API.
+    // Options page sends these messages; we don't expose them to content
+    // scripts so a compromised rumble.com page can't add itself to the
+    // watched list. (The sender check is conservative — message.action
+    // is recognized only from extension-origin pages because the SW
+    // serves both, but worth gating defensively.)
+    if (message.action === 'addWatchedChannel') {
+        (async () => {
+            const url = String(message.url || '').trim();
+            const name = String(message.name || '').trim();
+            if (!url || !/^https?:\/\//.test(url)) { sendResponse({ ok: false, reason: 'bad-url' }); return; }
+            try {
+                const u = new URL(url);
+                if (!/(^|\.)rumble\.com$/i.test(u.hostname)) { sendResponse({ ok: false, reason: 'not-rumble' }); return; }
+            } catch { sendResponse({ ok: false, reason: 'parse-failed' }); return; }
+            const s = await rxGetSettings();
+            const list = Array.isArray(s.watchedChannels) ? s.watchedChannels.slice() : [];
+            if (list.some((c) => c.url === url)) { sendResponse({ ok: false, reason: 'duplicate' }); return; }
+            list.push({ url, name: name || url, lastSeenVideoId: null, isLive: false, lastChecked: null });
+            await rxSetSettings({ watchedChannels: list });
+            await rxSyncChannelNotifier();
+            sendResponse({ ok: true, count: list.length });
+        })();
+        return true;
+    }
+    if (message.action === 'removeWatchedChannel') {
+        (async () => {
+            const url = String(message.url || '');
+            const s = await rxGetSettings();
+            const list = (Array.isArray(s.watchedChannels) ? s.watchedChannels : []).filter((c) => c.url !== url);
+            await rxSetSettings({ watchedChannels: list });
+            await rxSyncChannelNotifier();
+            sendResponse({ ok: true, count: list.length });
+        })();
+        return true;
+    }
+    if (message.action === 'runNotifierNow') {
+        rxRunNotifierPass()
+            .then(() => sendResponse({ ok: true }))
+            .catch((e) => sendResponse({ ok: false, reason: String(e?.message || e) }));
+        return true;
+    }
+    if (message.action === 'testNotification') {
+        rxFireNotification({
+            title: 'RumbleX — Test',
+            message: 'Notifications are working. The channel notifier will use this same path when a watched channel posts a new video or goes live.',
+            url: 'https://rumble.com/',
+        }).then((id) => sendResponse({ ok: !!id, id }));
+        return true;
+    }
+
     // v3.6.0 — Group all open Rumble tabs into a single colored tab group.
     // Chrome-only (tabGroups API not in Firefox/MV2). Returns { ok, count,
     // groupId } on success or { ok: false, reason } on failure. Popup

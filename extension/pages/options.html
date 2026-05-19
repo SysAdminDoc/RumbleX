@@ -227,6 +227,20 @@
         .snapshot-list .snapshot-meta { color: var(--text-1, #ecedee); }
         .snapshot-list .snapshot-reason { color: var(--text-2, #a8b0bc); font-style: italic; }
         .snapshot-list button { font-size: 12px; padding: 4px 10px; min-height: 24px; }
+        /* v3.9.0 — Channel notifier add-form inputs. */
+        .notifier-add { gap: 8px; align-items: stretch; flex-wrap: wrap; margin-top: 10px; }
+        .notifier-input {
+            flex: 1; min-width: 180px;
+            padding: 6px 10px;
+            background: rgba(0, 0, 0, 0.32);
+            color: var(--text-1, #ecedee);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 6px;
+            font: 500 12px/1.4 inherit;
+        }
+        .notifier-input:focus { outline: none; border-color: var(--accent, #89b4fa); }
+        .notifier-error-row { color: #ffb4be; }
+
         .privacy-report-pre {
             margin: 10px 0 0;
             padding: 10px 12px;
@@ -696,6 +710,30 @@
                         <button id="snapshot-refresh-btn" type="button" class="settings-tertiary-button">Refresh list</button>
                     </div>
                     <ul class="snapshot-list" id="snapshot-list" aria-live="polite"></ul>
+                </details>
+            </section>
+
+            <!-- v3.9.0 — Channel Notifier panel. Manages the watchedChannels
+                 array via message API (addWatchedChannel / removeWatchedChannel
+                 / runNotifierNow / testNotification). Requires channelNotifierEnabled
+                 ON in the settings modal to actually fire on schedule. -->
+            <section class="data-section" id="notifier-section" aria-labelledby="notifier-heading">
+                <details class="data-section-details">
+                    <summary class="data-section-summary">
+                        <h2 class="data-section-title" id="notifier-heading">Channel notifier</h2>
+                        <span class="data-section-hint" id="notifier-summary">Loading…</span>
+                    </summary>
+                    <p class="data-section-copy">Polls each watched channel on a background alarm and fires an OS notification (and an optional Discord webhook POST) when the channel posts a new video or goes live. Enable <code>channelNotifierEnabled</code> in the Settings editor + add at least one channel below.</p>
+                    <div class="button-row notifier-add">
+                        <input type="url" id="notifier-url-input" placeholder="https://rumble.com/c/SomeChannel" class="notifier-input">
+                        <input type="text" id="notifier-name-input" placeholder="Display name (optional)" class="notifier-input">
+                        <button id="notifier-add-btn" type="button">Add channel</button>
+                    </div>
+                    <ul class="snapshot-list" id="notifier-list" aria-live="polite"></ul>
+                    <div class="button-row">
+                        <button id="notifier-run-btn" type="button" class="settings-tertiary-button">Run check now</button>
+                        <button id="notifier-test-btn" type="button" class="settings-tertiary-button">Send test notification</button>
+                    </div>
                 </details>
             </section>
 

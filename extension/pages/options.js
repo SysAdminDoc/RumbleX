@@ -1,4 +1,4 @@
-// RumbleX v3.8.0 - Options Page
+// RumbleX v3.9.0 - Options Page
 // Standalone settings management via chrome.storage.local (rx_settings key).
 // Mirrors Astra Deck's settings page pattern: dirty-draft workflow with
 // search, group nav, stats overview, and export/import/reset.
@@ -234,6 +234,10 @@
 
         // v3.7.0 — chrome.sidePanel integration
         sidePanelEnabled: false,
+
+        // v3.9.0 — Channel Notifier
+        watchedChannels: [],
+        channelNotifierIntervalMin: 30,
     };
 
     // Per-key metadata: group + human label + description
@@ -476,6 +480,10 @@
 
         // v3.7.0 — chrome.sidePanel integration
         sidePanelEnabled: { group: 'integrations', label: 'Open in Side Panel', desc: 'When on, clicking the toolbar icon opens RumbleX in the browser side panel (persistent across pages) instead of the popup. Chrome / Edge only — Firefox and older browsers always show the popup.' },
+
+        // v3.9.0 — Channel Notifier
+        watchedChannels: { group: 'automation', label: 'Watched Channels', desc: 'Array of channel URLs the notifier monitors. Manage entries in the dedicated panel on this page.' },
+        channelNotifierIntervalMin: { group: 'automation', label: 'Notifier Poll Interval (min)', desc: 'How often (minutes) the background alarm checks watched channels. Floor 1 (Chrome MV3 minimum). Default 30.' },
     };
 
     const GROUPS = [
@@ -559,6 +567,14 @@
         telemetryExportBtn: document.getElementById('telemetry-export-btn'),
         privacyReportPre: document.getElementById('privacy-report-pre'),
         privacySummary: document.getElementById('privacy-summary'),
+        // v3.9.0 — Channel Notifier UI
+        notifierSummary: document.getElementById('notifier-summary'),
+        notifierUrlInput: document.getElementById('notifier-url-input'),
+        notifierNameInput: document.getElementById('notifier-name-input'),
+        notifierAddBtn: document.getElementById('notifier-add-btn'),
+        notifierList: document.getElementById('notifier-list'),
+        notifierRunBtn: document.getElementById('notifier-run-btn'),
+        notifierTestBtn: document.getElementById('notifier-test-btn'),
     };
 
     const state = {
@@ -1854,8 +1870,114 @@
         showStatus('Telemetry exported (' + events.length + ' events).', 'success');
     }
 
+    // v3.9.0 — Channel Notifier helpers.
+    async function refreshNotifierList() {
+        const list = elements.notifierList;
+        const summary = elements.notifierSummary;
+        if (!list) return;
+        list.replaceChildren();
+        try {
+            const data = await chrome.storage.local.get(STORAGE_KEY);
+            const settings = data[STORAGE_KEY] || {};
+            const channels = Array.isArray(settings.watchedChannels) ? settings.watchedChannels : [];
+            const enabled = settings.channelNotifierEnabled === true;
+            if (summary) {
+                summary.textContent = channels.length + ' channel' + (channels.length === 1 ? '' : 's')
+                    + ' · ' + (enabled ? 'enabled' : 'disabled (channelNotifierEnabled = off)');
+            }
+            if (channels.length === 0) {
+                const empty = document.createElement('li');
+                empty.style.cssText = 'justify-content: center; color: var(--text-2, #a8b0bc);';
+                empty.textContent = 'No watched channels yet. Paste a rumble.com channel URL above and click "Add channel".';
+                list.appendChild(empty);
+                return;
+            }
+            for (const ch of channels) {
+                const li = document.createElement('li');
+                const meta = document.createElement('span');
+                meta.className = 'snapshot-meta';
+                const nm = document.createElement('strong');
+                nm.textContent = ch.name || ch.url;
+                const sub = document.createElement('span');
+                sub.className = 'snapshot-reason';
+                const checkedAt = ch.lastChecked ? formatTimestamp(ch.lastChecked) : 'never';
+                const liveTag = ch.isLive ? ' · LIVE' : '';
+                const errTag = ch.lastError ? ' · err: ' + ch.lastError : '';
+                sub.textContent = ' — last checked ' + checkedAt + liveTag + errTag;
+                meta.append(nm, sub);
+                const btn = document.createElement('button');
+                btn.type = 'button';
+                btn.textContent = 'Remove';
+                btn.addEventListener('click', async () => {
+                    btn.disabled = true;
+                    try {
+                        const resp = await chrome.runtime.sendMessage({ action: 'removeWatchedChannel', url: ch.url });
+                        if (resp?.ok) {
+                            showStatus('Removed. ' + resp.count + ' channel' + (resp.count === 1 ? '' : 's') + ' remain.', 'success');
+                            await refreshNotifierList();
+                        } else {
+                            showStatus('Remove failed.', 'error');
+                            btn.disabled = false;
+                        }
+                    } catch (e) {
+                        showStatus('Remove failed: ' + String(e?.message || e), 'error');
+                        btn.disabled = false;
+                    }
+                });
+                li.append(meta, btn);
+                list.appendChild(li);
+            }
+        } catch (e) {
+            if (summary) summary.textContent = 'Failed to load: ' + String(e?.message || e);
+        }
+    }
+
+    async function addWatchedChannel() {
+        const url = (elements.notifierUrlInput?.value || '').trim();
+        const name = (elements.notifierNameInput?.value || '').trim();
+        if (!url) { showStatus('Channel URL required.', 'error'); return; }
+        try {
+            const resp = await chrome.runtime.sendMessage({ action: 'addWatchedChannel', url, name });
+            if (resp?.ok) {
+                showStatus('Added (' + resp.count + ' total). The notifier polls every ' + ((await chrome.storage.local.get(STORAGE_KEY))[STORAGE_KEY]?.channelNotifierIntervalMin || 30) + ' min once enabled.', 'success');
+                if (elements.notifierUrlInput) elements.notifierUrlInput.value = '';
+                if (elements.notifierNameInput) elements.notifierNameInput.value = '';
+                await refreshNotifierList();
+            } else if (resp?.reason === 'duplicate') {
+                showStatus('That channel is already in the list.', 'info');
+            } else if (resp?.reason === 'not-rumble') {
+                showStatus('URL must be on rumble.com.', 'error');
+            } else if (resp?.reason === 'bad-url') {
+                showStatus('Invalid URL.', 'error');
+            } else {
+                showStatus('Add failed: ' + (resp?.reason || 'unknown'), 'error');
+            }
+        } catch (e) {
+            showStatus('Add failed: ' + String(e?.message || e), 'error');
+        }
+    }
+
+    async function runNotifierNow() {
+        const resp = await chrome.runtime.sendMessage({ action: 'runNotifierNow' });
+        if (resp?.ok) {
+            showStatus('Notifier pass complete.', 'success');
+            await refreshNotifierList();
+        } else {
+            showStatus('Notifier pass failed: ' + (resp?.reason || 'unknown'), 'error');
+        }
+    }
+
+    async function sendTestNotification() {
+        const resp = await chrome.runtime.sendMessage({ action: 'testNotification' });
+        if (resp?.ok) {
+            showStatus('Test notification fired. If you didn\'t see it, check your OS notification permissions for Chrome.', 'success');
+        } else {
+            showStatus('Test notification failed. Browser may be blocking notifications.', 'error');
+        }
+    }
+
     // Auto-load on page open. Don't block initial render.
-    setTimeout(() => { void refreshSnapshotList(); void refreshPrivacyReport(); }, 250);
+    setTimeout(() => { void refreshSnapshotList(); void refreshPrivacyReport(); void refreshNotifierList(); }, 250);
 
     // ── Event wiring ──
     if (elements.snapshotTakeBtn) elements.snapshotTakeBtn.addEventListener('click', () => void takeSnapshotNow());
@@ -1863,6 +1985,21 @@
     if (elements.privacyRefreshBtn) elements.privacyRefreshBtn.addEventListener('click', () => void refreshPrivacyReport());
     if (elements.privacyExportBtn) elements.privacyExportBtn.addEventListener('click', () => void exportPrivacyReport());
     if (elements.telemetryExportBtn) elements.telemetryExportBtn.addEventListener('click', () => void exportSelectorTelemetry());
+
+    // v3.9.0 — Channel notifier wiring.
+    if (elements.notifierAddBtn) elements.notifierAddBtn.addEventListener('click', () => void addWatchedChannel());
+    if (elements.notifierRunBtn) elements.notifierRunBtn.addEventListener('click', () => void runNotifierNow());
+    if (elements.notifierTestBtn) elements.notifierTestBtn.addEventListener('click', () => void sendTestNotification());
+    if (elements.notifierUrlInput) {
+        elements.notifierUrlInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') { e.preventDefault(); void addWatchedChannel(); }
+        });
+    }
+    if (elements.notifierNameInput) {
+        elements.notifierNameInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') { e.preventDefault(); void addWatchedChannel(); }
+        });
+    }
 
     elements.exportButton.addEventListener('click', () => {
         void runWithBusyButton(elements.exportButton, 'Exporting…', exportSettings);

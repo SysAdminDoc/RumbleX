@@ -2,6 +2,40 @@
 
 All notable changes to RumbleX will be documented in this file.
 
+## [3.9.0] - 2026-05-19
+
+### v3.9.0 — Channel Notifier (chrome.alarms + chrome.notifications + Discord webhook)
+
+Closes the v3.x ROADMAP "Channel monitor with optional Discord webhook" item — was deferred at v2.5 + v3.x because it needed `chrome.alarms` + `chrome.notifications` plumbing the extension didn't have. Now wired end-to-end.
+
+**Backend (`background.js`)**
+- New permissions: `alarms`, `notifications`. Chrome MV3 + Firefox MV2.
+- `rxSyncChannelNotifier()` registers a single `rx-channel-notifier` alarm with `periodInMinutes: channelNotifierIntervalMin` (default 30, MV3 floor 1). Re-syncs live on every settings flush via `chrome.storage.onChanged`.
+- `rxRunNotifierPass()` runs on each alarm tick: fetches every watched channel URL, parses HTML for the most recent `data-video-id` + a `videostream__status--live` / `channel__live-on-air` / `aria-label*="Live"` indicator, fires `chrome.notifications.create()` when state changes (new video ID or live started). Notification clicks open the channel URL in a new tab via `chrome.notifications.onClicked`.
+- `rxPostDiscordWebhook()` optionally POSTs a JSON `{ content }` payload to the user-provided `discordWebhookUrl` after every notification. Failure is swallowed; the OS notification still fires.
+- All fetches scoped to the existing rumble.com host permissions — no new origins.
+
+**New settings keys**
+- `watchedChannels: []` — array of `{ url, name, lastSeenVideoId, isLive, lastChecked, lastError }` objects. Managed via UI (see below).
+- `channelNotifierIntervalMin: 30` — poll interval. Editable from the Settings editor; live alarm resync on change.
+
+**Options-page UI (new section between Snapshot history and Privacy report)**
+- Add-channel form: URL input + optional display name + "Add channel" button. Backend validates that the URL is `rumble.com` and not a duplicate.
+- Watched-channels list: name + URL + last-checked timestamp + LIVE tag when applicable + error tag when fetch failed. Per-row **Remove** button.
+- **Run check now** button — fires `rxRunNotifierPass()` immediately without waiting for the next alarm tick.
+- **Send test notification** button — fires a sample `chrome.notifications.create()` so users can verify OS-level permissions are granted.
+- Section gated by `channelNotifierEnabled` — summary line shows "disabled" tag when off.
+
+**Message API** (extension-origin only, not exposed to content scripts)
+- `addWatchedChannel({ url, name })` → `{ ok, count, reason? }` with validation reasons `bad-url`/`not-rumble`/`duplicate`/`parse-failed`.
+- `removeWatchedChannel({ url })` → `{ ok, count }`.
+- `runNotifierNow()` → `{ ok, reason? }`.
+- `testNotification()` → `{ ok, id }`.
+
+**Catalog parity:** 201/201/201/201.
+
+**Deferred to v3.10+:** RSS/OPML export of watched channels (uses the same list, `rssExportEnabled` key from v2.0). Multi-stream auto-open when several watched channels go live simultaneously.
+
 ## [3.8.0] - 2026-05-19
 
 ### v3.8.0 — axe-core accessibility regression spec
