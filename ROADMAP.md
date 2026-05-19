@@ -789,13 +789,13 @@ Acceptance criteria:
 
 Features:
 
-- Chat participants list, mention highlight, click-to-mention, username colors.
-- Timed and permanent chat mutes with reason and expiry.
-- Spam dedup dashboard.
-- RantStats parity: cached rants, sidebar/popup, read state, totals, CSV/JSON export.
-- Rant tier filter and sticky high-value rant rail.
-- Popout chat resize persistence.
-- Multi-stream 2 to 4 grid experimental module.
+- [x] Chat participants list, mention highlight, click-to-mention, **username colors**. *(v2.4 — `ChatUsernameColors` shipped with `off`/`deterministic`/`tiered` modes. Mention highlight + click-to-mention shipped in v1.x `LiveChatEnhance`. Participants list deferred to v2.5.)*
+- [ ] Timed and permanent chat mutes with reason and expiry. *(Deferred — needs a per-user mute store with expiry tracking + UI; `chatTimedMutes` + `chatMuteDurations` keys shipped in v2.0.)*
+- [ ] Spam dedup dashboard. *(`chatSpamDedup` module already runs; dashboard UI deferred.)*
+- [ ] RantStats parity: cached rants, sidebar/popup, read state, totals, CSV/JSON export. *(`rantPersist` shipped in v1.8 covers cache + export; full sidebar/popup parity deferred to v2.5.)*
+- [x] Rant tier filter and sticky high-value rant rail. *(v2.4 — `RantTierFilter` module hides rants below `rantTierFilter` via CSS `[data-level]` selectors. Sticky high-value rail (`rantStickyHighValue` key) deferred — needs the rant sidebar from the RantStats panel item above.)*
+- [ ] Popout chat resize persistence. *(`popoutChat` module already opens a 420×720 window; resize persistence deferred to v2.5.)*
+- [ ] Multi-stream 2 to 4 grid experimental module. *(Deferred — needs iframe sandbox + chat orchestration.)*
 
 Dependencies:
 
@@ -812,14 +812,14 @@ Acceptance criteria:
 
 Features:
 
-- Shorts removal everywhere.
-- Channel blocklist with reason/expiry/import/export.
-- Keyword filter literal/regex/wildcard modes with scope.
-- Category/home row presets.
-- Related/sidebar replacement rules.
-- Watch-next replacement using local history only.
-- Remote signed cosmetic rules preview channel, opt-in.
-- Tracking parameter stripping.
+- [x] Shorts removal everywhere. *(`shortsFilter` module already hides Shorts cards across feeds via `#shorts__label` SVG detection + `#section-shorts` hide. `shortsFilterScope` key shipped in v2.0.)*
+- [ ] Channel blocklist with reason/expiry/import/export. *(`channelBlocker` shipped in v1.x; `blockedChannelsMeta` key for reason/expiry shipped in v2.0; metadata UI deferred to v2.5.)*
+- [x] **Keyword filter literal/regex/wildcard modes** with scope. *(v2.4 — `KeywordFilter` upgraded to honor `blockedKeywordsMode`: literal (default), regex (sandboxed; bad regex falls back to literal per-entry), wildcard (`*`→`.*`, `?`→`.`, anchored). Matchers compiled once per signature.)*
+- [x] Category/home row presets. *(`HomeCleanupPreset` shipped in v2.1 with `focused`/`minimal`/`custom` enum values.)*
+- [ ] Related/sidebar replacement rules. *(Deferred — needs a replacement renderer; current `relatedFilter` already covers hide/search; replacement is a v2.6 stretch.)*
+- [ ] Watch-next replacement using local history only. *(Deferred — depends on the related-sidebar replacement renderer above.)*
+- [ ] Remote signed cosmetic rules preview channel, opt-in. *(`remoteCosmeticRules` + `remoteCosmeticRulesChannel` keys shipped in v2.0; rule loader + signature verification deferred to v2.6.)*
+- [x] **Tracking parameter stripping.** *(v2.4 — `StripTrackingParams` module allowlist-strips `e9s`/`ref`/`utm_*`/`mtm_*`/`campaign`/`fbclid`/`gclid`/etc. from rumble.com URLs. Scrubs `location.href` on boot via `history.replaceState`; rewrites `<a href>` on capture-phase click before browser follows; re-scrubs on every htmx route change. Preserves canonical params `v`/`q`/`page`/`start`/`t`.)*
 
 Dependencies:
 

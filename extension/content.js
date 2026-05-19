@@ -1,9 +1,9 @@
-// RumbleX v2.2.0 - Content Script
+// RumbleX v2.4.0 - Content Script
 // Rumble enhancement suite - Chrome/Firefox extension
 'use strict';
 
 // ── Version ──
-const VERSION = chrome.runtime?.getManifest?.()?.version || '2.2.0';
+const VERSION = chrome.runtime?.getManifest?.()?.version || '2.4.0';
 const SCHEMA_VERSION = 2;
 
 // ── Settings Manager (chrome.storage.local) ──
@@ -6947,9 +6947,11 @@ const RX_CATEGORIES = [
         icon: '<path d="M3 5a1 1 0 011-1h16a1 1 0 010 2H4a1 1 0 01-1-1zm3 5a1 1 0 011-1h10a1 1 0 010 2H7a1 1 0 01-1-1zm5 5a1 1 0 011-1h4a1 1 0 010 2h-4a1 1 0 01-1-1z"/>',
         features: [
             { id: 'channelBlocker', label: 'Channel Blocker', desc: 'Block/hide channels from all feeds' },
-            { id: 'keywordFilter', label: 'Keyword Filter', desc: 'Hide videos whose titles match blocked keywords' },
+            { id: 'keywordFilter', label: 'Keyword Filter', desc: 'Hide videos whose titles match blocked keywords (literal/regex/wildcard modes in options)' },
             { id: 'relatedFilter', label: 'Related Filter', desc: 'Search & filter related sidebar videos' },
             { id: 'exactCounts', label: 'Exact Counts', desc: 'Show full numbers instead of 1.2K/3.5M' },
+            // v2.4.0 — Feed, Discovery, and Moderation
+            { id: 'stripTrackingParams', label: 'Strip Tracking Params', desc: 'Remove e9s, utm_*, ref, campaign, fbclid, gclid from rumble.com URLs (allowlisted; canonical params kept)' },
         ],
     },
     // ── v1.9.0 — Rumble Enhancement Suite port ──
@@ -8583,6 +8585,8 @@ const KeywordFilter = {
     name: 'Keyword Filter',
     _styleEl: null,
     _obs: null,
+    _matchers: null,
+    _matcherSig: '',
 
     _css: `.rx-kw-hidden { display: none !important; }`,
 
@@ -8590,9 +8594,39 @@ const KeywordFilter = {
         return (Settings.get('blockedKeywords') || []).map(k => k.toLowerCase()).filter(Boolean);
     },
 
-    _process() {
+    // v2.4.0: support three modes via Settings.get('blockedKeywordsMode').
+    //   literal  — case-insensitive substring (v1 behavior, default).
+    //   wildcard — '*' matches any run, '?' matches one char. Anchored.
+    //   regex    — raw RegExp source (compiled with 'i' flag, sandboxed).
+    // Build matchers once per (keywords, mode) tuple. A bad regex falls back
+    // to literal substring match for that one entry so a typo doesn't
+    // disable the whole filter.
+    _buildMatchers() {
         const kws = this._keywords();
-        if (!kws.length) {
+        const mode = (Settings.get('blockedKeywordsMode') || 'literal').toLowerCase();
+        const sig = mode + '\u0000' + kws.join('\u0001');
+        if (sig === this._matcherSig && this._matchers) return this._matchers;
+        const matchers = kws.map((k) => {
+            if (mode === 'regex') {
+                try { const re = new RegExp(k, 'i'); return (t) => re.test(t); }
+                catch { return (t) => t.includes(k); }
+            }
+            if (mode === 'wildcard') {
+                // Escape regex metas, then convert *? to .* and ? to .
+                const escaped = k.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*').replace(/\?/g, '.');
+                try { const re = new RegExp('^' + escaped + '$', 'i'); return (t) => re.test(t); }
+                catch { return (t) => t.includes(k); }
+            }
+            return (t) => t.includes(k);
+        });
+        this._matchers = matchers;
+        this._matcherSig = sig;
+        return matchers;
+    },
+
+    _process() {
+        const matchers = this._buildMatchers();
+        if (!matchers.length) {
             for (const el of qsa('.rx-kw-hidden')) el.classList.remove('rx-kw-hidden');
             return;
         }
@@ -8609,7 +8643,7 @@ const KeywordFilter = {
                 continue;
             }
             const t = titleEl.textContent.toLowerCase();
-            const hit = kws.some((k) => k.length > 0 && t.includes(k));
+            const hit = matchers.some((m) => m(t));
             card.classList.toggle('rx-kw-hidden', hit);
         }
     },
@@ -11141,6 +11175,187 @@ const ExternalPlayer = {
 };
 
 // ═══════════════════════════════════════════
+//  FEATURE: Strip Tracking Params (v2.4.0)
+// ═══════════════════════════════════════════
+// Removes Rumble's referral/tracking query params from the current URL and
+// from outbound links, when stripTrackingParams is on. Whitelisted-strip
+// model: only known tracking params are removed; navigation-critical params
+// (?start=, ?t=, &p=) are preserved.
+//
+// Strategy:
+//   1. On boot, scrub the current location via history.replaceState so the
+//      address bar matches the canonical share URL.
+//   2. On click of any <a href>, rewrite to canonical before the browser
+//      follows. Capture-phase so we beat Rumble's own handlers.
+const StripTrackingParams = {
+    id: 'stripTrackingParams',
+    name: 'Strip Tracking Params',
+    _handler: null,
+    _routerUnsub: null,
+    // Conservative removal list. Adding to this is one-edit-per-param; keep
+    // canonical params (start, t, v, q, page) out of it.
+    _strip: new Set([
+        'e9s', 'ref', 'referrer', 'src',
+        'utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content',
+        'campaign', 'mtm_source', 'mtm_medium', 'mtm_campaign',
+        'fbclid', 'gclid', 'mc_cid', 'mc_eid', 'igshid', '_ga', 'yclid',
+    ]),
+    _clean(href) {
+        let url;
+        try { url = new URL(href, location.href); } catch { return href; }
+        if (!/(^|\.)rumble\.com$/i.test(url.hostname)) return href;
+        let changed = false;
+        for (const key of [...url.searchParams.keys()]) {
+            if (this._strip.has(key.toLowerCase())) { url.searchParams.delete(key); changed = true; }
+        }
+        return changed ? url.toString() : href;
+    },
+    _scrubLocation() {
+        const cleaned = this._clean(location.href);
+        if (cleaned !== location.href) {
+            try { history.replaceState(history.state, '', cleaned); } catch {}
+        }
+    },
+    init() {
+        if (!Settings.get(this.id)) return;
+        this._scrubLocation();
+        this._handler = (e) => {
+            const a = e.target?.closest?.('a[href]');
+            if (!a) return;
+            const cleaned = this._clean(a.href);
+            if (cleaned !== a.href) {
+                // Rewrite href in place; the browser navigates to the cleaned
+                // URL when it follows the link. Don't preventDefault so other
+                // handlers (e.g. middle-click open) still work.
+                a.href = cleaned;
+            }
+        };
+        document.addEventListener('click', this._handler, { capture: true });
+        // Re-scrub on each htmx route change in case Rumble appends new
+        // tracking params during in-app navigation.
+        this._routerUnsub = Router.onChange((d) => {
+            if (d.changed) this._scrubLocation();
+        });
+    },
+    destroy() {
+        if (this._handler) document.removeEventListener('click', this._handler, { capture: true });
+        this._handler = null;
+        if (typeof this._routerUnsub === 'function') {
+            try { this._routerUnsub(); } catch {}
+            this._routerUnsub = null;
+        }
+    },
+};
+
+// ═══════════════════════════════════════════
+//  FEATURE: Rant Tier Filter (v2.3.0)
+// ═══════════════════════════════════════════
+// When rantTierFilter > 0, hides chat rants below the configured tier value.
+// Tiers map to .chat-history--rant[data-level="1..10"] per Rumble's chat
+// renderer. The filter applies CSS, not DOM removal — so when the user
+// raises/lowers the threshold the previously hidden rants reappear without
+// needing the stream to redeliver them.
+const RantTierFilter = {
+    id: 'rantTierFilter',          // value treated as truthy if > 0
+    name: 'Rant Tier Filter',
+    _styleEl: null,
+    _buildCss(threshold) {
+        if (!Number.isFinite(threshold) || threshold <= 0) return '';
+        const rules = [];
+        for (let i = 1; i < Math.min(threshold, 11); i++) {
+            rules.push(`html.rumblex-active .chat-history--rant[data-level="${i}"]`);
+        }
+        if (!rules.length) return '';
+        return rules.join(',\n') + ' { display: none !important; }';
+    },
+    init() {
+        const threshold = Number(Settings.get(this.id)) || 0;
+        const css = this._buildCss(threshold);
+        if (css) this._styleEl = injectStyle(css, 'rx-rant-tier-filter');
+    },
+    destroy() { this._styleEl?.remove(); this._styleEl = null; },
+};
+
+// ═══════════════════════════════════════════
+//  FEATURE: Chat Username Colors (v2.3.0)
+// ═══════════════════════════════════════════
+// Deterministic per-username color tinting in live chat. Helps users scan
+// fast-moving chat for specific posters. Honors Settings.get('chatUsernameColors'):
+//   off            — no color change (default for users who don't want it)
+//   deterministic  — hash username → HSL hue, fixed saturation/lightness
+//   tiered         — color by rant tier (data-level) when present, else hash
+const ChatUsernameColors = {
+    id: 'chatUsernameColors',  // enum, but truthy iff != 'off'
+    name: 'Chat Username Colors',
+    _obs: null,
+    _styleEl: null,
+    _mode: 'off',
+    _styleId: 'rx-chat-username-colors',
+    _hash(name) {
+        let h = 0;
+        for (let i = 0; i < name.length; i++) h = ((h << 5) - h + name.charCodeAt(i)) | 0;
+        return Math.abs(h);
+    },
+    _hueFor(name) {
+        return this._hash(name.toLowerCase()) % 360;
+    },
+    _applyToNode(usernameEl) {
+        if (!usernameEl || usernameEl.dataset.rxColored) return;
+        const name = usernameEl.textContent?.trim();
+        if (!name) return;
+        let color;
+        if (this._mode === 'tiered') {
+            const rant = usernameEl.closest('.chat-history--rant[data-level]');
+            if (rant?.dataset?.level) {
+                const t = Math.min(10, Math.max(1, Number(rant.dataset.level)));
+                // Tier ramp: cooler at low tiers, warmer at high tiers.
+                const hue = 200 - (t - 1) * 20;
+                color = `hsl(${hue}, 70%, 65%)`;
+            }
+        }
+        if (!color) {
+            const hue = this._hueFor(name);
+            color = `hsl(${hue}, 65%, 65%)`;
+        }
+        usernameEl.style.setProperty('color', color, 'important');
+        usernameEl.dataset.rxColored = '1';
+    },
+    _scan(root) {
+        const scope = root || document;
+        for (const el of scope.querySelectorAll(
+            '.chat-history--username, .chat-history--rant-username, .js-chat-username'
+        )) {
+            this._applyToNode(el);
+        }
+    },
+    init() {
+        const mode = (Settings.get(this.id) || 'off').toLowerCase();
+        if (mode === 'off') return;
+        this._mode = mode;
+        this._scan(document);
+        const chatRoot = qs('#chat-history-list') || document.body;
+        this._obs = new MutationObserver((records) => {
+            for (const r of records) {
+                for (const node of r.addedNodes) {
+                    if (node.nodeType !== 1) continue;
+                    this._scan(node);
+                }
+            }
+        });
+        this._obs.observe(chatRoot, { childList: true, subtree: true });
+    },
+    destroy() {
+        this._obs?.disconnect();
+        this._obs = null;
+        // Roll back inline color overrides — important so themes restore on disable.
+        for (const el of qsa('[data-rx-colored="1"]')) {
+            el.style.removeProperty('color');
+            delete el.dataset.rxColored;
+        }
+    },
+};
+
+// ═══════════════════════════════════════════
 //  FEATURE REGISTRY & INIT
 // ═══════════════════════════════════════════
 const features = [
@@ -11163,6 +11378,10 @@ const features = [
     ThumbnailHider, DenseMode, AccountPaginationCompact, ReducedMotion, HomeCleanupPreset,
     // v2.2.0 — Download Manager 2.0 (visible surfaces; cache module is global)
     ExternalPlayer,
+    // v2.3.0 — Live Chat, Rants, and Multi-Stream
+    RantTierFilter, ChatUsernameColors,
+    // v2.4.0 — Feed, Discovery, and Moderation
+    StripTrackingParams,
     ...RX_CSS_FEATURES,
 ];
 

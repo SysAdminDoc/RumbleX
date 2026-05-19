@@ -2,6 +2,30 @@
 
 All notable changes to RumbleX will be documented in this file.
 
+## [2.4.0] - 2026-05-19
+
+### v2.3.0 + v2.4.0 — Live chat hardening + feed/discovery moderation
+
+Bundles the implementable atomic features from the v2.3 (Live Chat & Rants) and v2.4 (Feed/Discovery/Moderation) milestones into a single shipped release. Two waves below; jumps to v2.4 because that's the highest milestone with shipped features (skipping a tagged v2.3 release; the v2.3 acceptance items show as checked in ROADMAP.md).
+
+**v2.3.0 — Live Chat, Rants**
+- **RantTierFilter** — When `rantTierFilter > 0`, hides chat rants below the configured tier (1-10 → matches `.chat-history--rant[data-level]`). CSS-only — raising/lowering the threshold reveals previously hidden rants without needing the stream to redeliver them.
+- **ChatUsernameColors** — Three modes via `chatUsernameColors`: `off` | `deterministic` (hash username → HSL hue, fixed sat/lightness) | `tiered` (color by rant tier when present, else hash). MutationObserver scoped to `#chat-history-list` so the colorizer doesn't scan the whole document. Rolls back inline style on `destroy()`.
+
+**v2.4.0 — Feed, Discovery, Moderation**
+- **KeywordFilter mode upgrade** — Honors `blockedKeywordsMode`: `literal` (default, v1 behavior), `regex` (raw RegExp source, compiled with `i` flag, sandboxed — a bad regex falls back to literal substring for that one entry so a typo doesn't disable the whole filter), `wildcard` (`*` → `.*`, `?` → `.`, anchored). Matchers compiled once per (keywords, mode) signature.
+- **StripTrackingParams** — Removes Rumble's tracking/referral query params via allowlisted-strip model. Scrubs known trackers (`e9s`, `ref`, `referrer`, `src`, `utm_*`, `mtm_*`, `campaign`, `fbclid`, `gclid`, `mc_cid`, `mc_eid`, `igshid`, `_ga`, `yclid`) while preserving canonical params (`v`, `q`, `page`, `start`, `t`). On boot, scrubs `location.href` via `history.replaceState`. On click of any `<a href>`, rewrites to canonical before the browser follows (capture-phase so it beats Rumble's own handlers). Re-scrubs on each htmx route change via `Router.onChange`. Scoped to rumble.com origin only.
+
+**Catalog parity**
+- Still 195/195/195 across content.js `_defaults`, popup.js `DEFAULTS`, options.js `DEFAULTS` + `META`. Two new module IDs added to `RX_CATEGORIES` (`stripTrackingParams` under Feed Controls; rant/chat enum settings remain options-page-only since they're not booleans).
+
+### Deferred to v2.3+ / v2.5+
+- Full RantStats-parity sidebar (`rantStatsPanel`) — needs significant UI work; cached rants from the existing `rantPersist` already cover the bulk of the value.
+- Chat participants list (`chatParticipantsList`) — needs a derived-state observer over chat history; deferred to v2.5.
+- Multi-stream viewer (`multiStreamViewer`) — experimental; needs iframe sandboxing and chat panel orchestration. Deferred.
+- Politics filter preset (`politicsFilterPreset`) — needs an editable rules JSON; subjective category definitions out of scope for v2.4.
+- Remote cosmetic rules — needs signed rule format + signature verification; deferred to v2.6.
+
 ## [2.2.0] - 2026-05-19
 
 ### v2.2.0 — Download Manager 2.0 (Phase 1)
