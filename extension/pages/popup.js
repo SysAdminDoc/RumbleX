@@ -1,4 +1,4 @@
-// RumbleX v3.16.0 - Popup Script
+// RumbleX v3.17.0 - Popup Script
 'use strict';
 
 // Feature list grouped by category. Order within a group controls display
@@ -396,6 +396,8 @@ const DEFAULTS = {
     backupHistory: true,
     backupHistoryLimit: 10,
     encryptedGistSync: false,
+    encryptedGistSyncToken: '',
+    encryptedGistSyncId: '',
 
     // v3.1.0 — Platform follow-through
     disableShortsFeed: false,

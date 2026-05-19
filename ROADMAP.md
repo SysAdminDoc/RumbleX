@@ -1,8 +1,8 @@
 # RumbleX Roadmap
 
-Version: 4.15 — v3.16 RantStats panel (closes v3.3 acceptance criterion)
+Version: 4.16 — v3.17 Encrypted Gist Sync (AES-GCM-256 + PBKDF2-SHA256, zero RumbleX infra)
 Date: 2026-05-19
-Current shipped: v3.16.0 (extension), v1.8.0 (userscript)
+Current shipped: v3.17.0 (extension), v1.8.0 (userscript)
 
 This roadmap supersedes the v2026-05-19 v3.0 plan. It is the result of a fresh repo audit plus a 60+ source external research sweep (see [Appendix C — Sources](#appendix-c--sources)). It tracks shipped work in the [Recently shipped](#recently-shipped) summary, then prioritises the next ~12 months of work into **Now / Next / Later / Under Consideration / Rejected** tiers with every claim traceable to a source.
 
@@ -129,7 +129,7 @@ These items need preconditions that don't exist yet (live captures, large refact
 - [ ] **File System Access API for batch download folder picker.** Today the batchDownload feature dumps everything to the default Downloads folder. With `showDirectoryPicker({startIn: 'downloads'})` users can target a sub-folder and persist the handle in IndexedDB across sessions. Falls back to per-file `chrome.downloads.download` for Firefox + Safari, which [don't support the local-disk pickers](https://developer.chrome.com/docs/capabilities/web-apis/file-system-access). Source: [File System Access API](https://developer.chrome.com/docs/capabilities/web-apis/file-system-access).
 - [x] **`CompressionStream` gzip-backed backup exports.** *(v3.6.0 — settings + localStorage export now gzipped via `CompressionStream('gzip')`. ~80% smaller files. `.json.gz` extension. Import side auto-detects via magic bytes 0x1f 0x8b and decompresses transparently — plain `.json` files from older versions still import. Falls back to plain JSON if API unavailable.)* Source: [Compression Streams are supported across all major browsers](https://web.dev/blog/compressionstreams).
 - [x] **`chrome.tabGroups` integration: "Group all Rumble tabs".** *(v3.6.0 — popup footer button. One click groups every open rumble.com tab into a colored "Rumble" tab group. New `tabs` + `tabGroups` permissions (Chrome only — Firefox MV2 button appears but reports `no-tabgroups-api`). Background message `groupRumbleTabs` returns count + groupId. Tooltip cycles to show live status.)* Source: [Chrome tabGroups API](https://developer.chrome.com/docs/extensions/reference/api/tabGroups).
-- [ ] **Encrypted user-provided gist sync.** `encryptedGistSync` key shipped v2.0. Crypto + UI deferred. AES-GCM with user-provided passphrase; gist content is the ciphertext.
+- [x] **Encrypted user-provided gist sync.** *(v3.17.0 — `gistSyncPush` / `gistSyncPull` background handlers use WebCrypto AES-GCM-256 + PBKDF2-SHA256 (200k iters, 16-byte random salt per push). User brings their own GitHub PAT (gist scope) and gist id (auto-created on first push). Passphrase NEVER stored — entered each push/pull. Settings keys `encryptedGistSyncToken` + `encryptedGistSyncId` (catalog 201→203). Pre-pull snapshot via v3.0 backup system; post-pull preserves local token + gist id. Failure-mode taxonomy: missing-token / missing-gist-id / weak-passphrase / bad-passphrase / no-payload / malformed-payload / http-NNN. No new permissions — `api.github.com` already in host_permissions since v3.0.)*
 - [x] **Multi-profile settings (work / casual / creator).** *(v3.10.0 — profiles stored separately at `rx_settings_profiles` (not in `rx_settings` itself, so a profile switch doesn't recursively snapshot itself). 25-profile cap. New options-page section with name input + Save / per-row Switch / per-row Delete. Switch auto-creates a `pre-profile-switch` snapshot via the v3.0 backup system so the previous profile's drift is preserved. Message API: listProfiles / saveProfile / switchProfile / deleteProfile.)*
 
 ---
@@ -242,6 +242,13 @@ Tier placement above is per-feature; the workstreams below are themes the team s
 ## Recently shipped
 
 Compressed history. Detail per release lives in `CHANGELOG.md`.
+
+### v3.17.0 — Encrypted Gist Sync (2026-05-19)
+
+- WebCrypto AES-GCM-256 + PBKDF2-SHA256 (200k iters, 16-byte random salt per push). User brings own GitHub PAT (gist scope) + gist id (auto-created on first push). Passphrase NEVER stored.
+- Background handlers `gistSyncPush` / `gistSyncPull`. Pre-pull snapshot via v3.0 backup system. Post-pull preserves local token + gist id so user doesn't lose their sync target.
+- New options-page "Encrypted gist sync" section. Token + gist id persisted to `rx_settings`; passphrase entered fresh each push/pull.
+- Catalog parity 201→203 (added `encryptedGistSyncToken`, `encryptedGistSyncId`). No new permissions — `api.github.com` already in `host_permissions` since v3.0.
 
 ### v3.16.0 — RantStats panel (2026-05-19)
 

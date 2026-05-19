@@ -1,9 +1,9 @@
-// RumbleX v3.16.0 - Content Script
+// RumbleX v3.17.0 - Content Script
 // Rumble enhancement suite - Chrome/Firefox extension
 'use strict';
 
 // ── Version ──
-const VERSION = chrome.runtime?.getManifest?.()?.version || '3.16.0';
+const VERSION = chrome.runtime?.getManifest?.()?.version || '3.17.0';
 const SCHEMA_VERSION = 2;
 
 // ── Settings Manager (chrome.storage.local) ──
@@ -226,6 +226,12 @@ const Settings = {
         backupHistory: true,
         backupHistoryLimit: 10,
         encryptedGistSync: false,
+        // v3.17.0 — Encrypted Gist Sync credentials. Token is a GitHub PAT
+        // with the `gist` scope. Gist ID is set once on first push (or filled
+        // manually if syncing from an existing gist). Passphrase is NEVER
+        // stored — user enters it on every push/pull.
+        encryptedGistSyncToken: '',
+        encryptedGistSyncId: '',
 
         // ── v3.1.0 — Rumble Shorts (Feb 2026) + Wallet (Jan 2026) ──
         disableShortsFeed: false,    // redirects /shorts → /subscriptions when ON
@@ -12231,7 +12237,7 @@ function rxBuildPrivacyReport() {
             '*.rumble.com (content script + downloads)',
             '*.1a-1791.com (Rumble CDN downloads)',
             '*.rumble.cloud (Rumble CDN downloads)',
-            'api.github.com (release version check, manual)',
+            'api.github.com (release version check + opt-in Encrypted Gist Sync)',
         ],
         telemetry: 'none — no analytics, no remote logging, no usage beacons',
         localStorage: {
@@ -12242,6 +12248,9 @@ function rxBuildPrivacyReport() {
             settings.stripTrackingParams ? 'Tracking-param stripping is ON' : 'Tracking-param stripping is OFF',
             settings.debugSelectorTelemetry ? 'Selector telemetry is being collected locally (ring buffer, no upload)' : 'Selector telemetry is disabled',
             settings.remoteCosmeticRules ? 'Remote cosmetic rules enabled — signed payloads only' : 'Remote cosmetic rules disabled',
+            (settings.encryptedGistSyncToken && settings.encryptedGistSyncId)
+                ? 'Encrypted Gist Sync is configured — payloads are AES-GCM-256 encrypted client-side (PBKDF2-SHA256, 200k iters); passphrase is never stored'
+                : 'Encrypted Gist Sync is not configured',
         ],
     };
 }

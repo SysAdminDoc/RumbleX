@@ -2,6 +2,35 @@
 
 All notable changes to RumbleX will be documented in this file.
 
+## [3.17.0] - 2026-05-19
+
+### v3.17.0 — Encrypted Gist Sync (closes the v2.0 `encryptedGistSync` key)
+
+Materializes the v2.0 placeholder boolean into actual cross-device settings sync. Zero RumbleX-side infrastructure — the user brings their own GitHub gist and their own passphrase. **AES-GCM-256 + PBKDF2-SHA256 with 200,000 iterations** — same KDF tier as 1Password / Bitwarden defaults.
+
+**Background-side crypto handlers**
+- New `gistSyncPush` action: derives a 256-bit AES-GCM key via WebCrypto PBKDF2-SHA256 (200k iters, random 16-byte salt per push) from the user-provided passphrase, encrypts the full `rx_settings` JSON with a random 12-byte IV, wraps it in a `{ rumblex: { schemaVersion, cipher, kdf, salt, iv, ciphertext, encryptedAt } }` envelope, and PUTs to a private GitHub gist (POST + auto-save id on first push, PATCH thereafter). All base64-encoded.
+- New `gistSyncPull` action: GETs the gist, derives the key from the SAME passphrase + the stored salt, decrypts, validates the schema, snapshots current settings as `pre-gist-pull` via the v3.0 backup system, then writes the decrypted settings back to `chrome.storage.local`. Preserves the LOCAL token + gist-id post-pull so the user doesn't get logged out of their own sync target.
+- Failure-mode taxonomy: `missing-token` | `missing-gist-id` | `weak-passphrase` | `bad-passphrase` | `no-payload` | `malformed-payload` | `bad-json` | `bad-decoded-json` | `http-NNN`. Each surfaces a specific user-facing message in the options page.
+
+**Options-page side**
+- New "Encrypted gist sync" section above the v3.16 RantStats section. Three password-type inputs (PAT, gist id, passphrase) plus Push / Pull buttons.
+- Token + gist id are persisted to `rx_settings` so they auto-fill on page reload. Passphrase is **never stored** — entered on every push/pull.
+- Setup instructions link directly to <https://github.com/settings/tokens?type=beta>. First push creates a private gist named `rumblex-settings.enc.json` and auto-saves its ID for subsequent pushes.
+- Pull auto-reloads the options page after success so every section re-reads from storage.
+
+**Privacy report update** — `rxBuildPrivacyReport` now states whether Encrypted Gist Sync is configured and how the payloads are protected. The honest `externalNetworkSurfaces` line for `api.github.com` is upgraded from "release version check, manual" to "release version check + opt-in Encrypted Gist Sync".
+
+**Catalog parity** 203/203/203/203 (was 201) — added `encryptedGistSyncToken` (string, default `''`) and `encryptedGistSyncId` (string, default `''`). The original boolean `encryptedGistSync` stays the user-facing master toggle, surfaced in the existing settings catalog.
+
+**No new permissions.** `api.github.com` was already in `host_permissions` since v3.0 for release version checks. Selector harness: 85 pass / 17 fixtures unchanged. `node --check` clean across all four JS files.
+
+### Deferred to v3.18+
+
+- **Mediabunny / WebCodecs migration** — still pending; multi-day work.
+- **declarativeNetRequest autoplay rules** — still pending; needs live network trace.
+- **Channel archive queue** — chrome.alarms + chrome.offscreen + persistent queue. Infra all present; next reasonable v3.x slot.
+
 ## [3.16.0] - 2026-05-19
 
 ### v3.16.0 — RantStats panel (closes the v3.3 Now-tier acceptance criterion)

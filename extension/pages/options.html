@@ -776,6 +776,35 @@
                 </details>
             </section>
 
+            <!-- v3.17.0 — Encrypted Gist Sync. Encrypt the entire rx_settings
+                 blob with AES-GCM (PBKDF2-SHA256, 200k iters) under a user-
+                 typed passphrase, store the ciphertext in a private GitHub
+                 gist. Bring-your-own-PAT (gist scope). Passphrase is never
+                 stored — entered on each push/pull. -->
+            <section class="data-section" id="gist-sync-section" aria-labelledby="gist-sync-heading">
+                <details class="data-section-details">
+                    <summary class="data-section-summary">
+                        <h2 class="data-section-title" id="gist-sync-heading">Encrypted gist sync</h2>
+                        <span class="data-section-hint" id="gist-sync-summary">Bring-your-own GitHub gist + passphrase. We never see either.</span>
+                    </summary>
+                    <p class="data-section-copy">Cross-device settings sync via a private GitHub gist you control. Your settings are encrypted client-side with AES-GCM-256 (PBKDF2-SHA256, 200k iterations) under a passphrase only you know. Neither the passphrase nor the cleartext settings ever leave your device. RumbleX has zero server.</p>
+                    <p class="data-section-copy"><strong>Setup:</strong> create a GitHub personal access token with the <code>gist</code> scope at <a href="https://github.com/settings/tokens?type=beta" target="_blank" rel="noopener noreferrer">github.com/settings/tokens</a>, paste it below, then push once. The first push creates a new private gist and saves its ID automatically.</p>
+                    <div class="notifier-add">
+                        <input type="password" id="gist-sync-token-input" placeholder="GitHub PAT (gist scope)" class="notifier-input" autocomplete="off">
+                    </div>
+                    <div class="notifier-add">
+                        <input type="text" id="gist-sync-id-input" placeholder="Gist ID (set automatically on first push)" class="notifier-input" autocomplete="off">
+                    </div>
+                    <div class="notifier-add">
+                        <input type="password" id="gist-sync-passphrase-input" placeholder="Passphrase (min 8 chars, never stored)" class="notifier-input" autocomplete="new-password">
+                    </div>
+                    <div class="button-row">
+                        <button id="gist-sync-push-btn" type="button">Push to gist</button>
+                        <button id="gist-sync-pull-btn" type="button">Pull from gist</button>
+                    </div>
+                </details>
+            </section>
+
             <!-- v3.16.0 — RantStats panel. Reads the chrome.storage.local
                  mirror written by RantPersist on rumble.com watch pages.
                  Per-video summary + drill-down + JSON/CSV export. Beats

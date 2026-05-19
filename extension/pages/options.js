@@ -1,4 +1,4 @@
-// RumbleX v3.16.0 - Options Page
+// RumbleX v3.17.0 - Options Page
 // Standalone settings management via chrome.storage.local (rx_settings key).
 // Mirrors Astra Deck's settings page pattern: dirty-draft workflow with
 // search, group nav, stats overview, and export/import/reset.
@@ -224,6 +224,8 @@
         backupHistory: true,
         backupHistoryLimit: 10,
         encryptedGistSync: false,
+        encryptedGistSyncToken: '',
+        encryptedGistSyncId: '',
 
         // v3.1.0 — Platform follow-through
         disableShortsFeed: false,
@@ -469,7 +471,9 @@
         activeProfileId: { group: 'privacy', label: 'Active Profile', desc: 'Currently applied profile id.' },
         backupHistory: { group: 'privacy', label: 'Backup Snapshot History', desc: 'Snapshot settings before import/reset.' },
         backupHistoryLimit: { group: 'privacy', label: 'Backup History Limit', desc: 'How many local snapshots to keep.' },
-        encryptedGistSync: { group: 'privacy', label: 'Encrypted Gist Sync', desc: 'User-provided encrypted sync (future).' },
+        encryptedGistSync: { group: 'privacy', label: 'Encrypted Gist Sync', desc: 'Cross-device settings sync via your own GitHub gist (AES-GCM encrypted).' },
+        encryptedGistSyncToken: { group: 'privacy', label: 'Gist Sync GitHub PAT', desc: 'Personal access token with the `gist` scope. Stored locally only.' },
+        encryptedGistSyncId: { group: 'privacy', label: 'Gist Sync ID', desc: 'GitHub Gist ID. Set automatically on first push.' },
 
         // v3.1.0 — Platform follow-through
         disableShortsFeed: { group: 'feed-controls', label: 'Disable Shorts Feed', desc: 'Redirect rumble.com/shorts to /subscriptions on every visit. Launched on web 2026-02-04.' },
@@ -584,6 +588,13 @@
         profileList: document.getElementById('profile-list'),
         // v3.15.0 — Account data export UI
         exportWatchHistoryBtn: document.getElementById('export-watch-history-btn'),
+        // v3.17.0 — Encrypted Gist Sync UI
+        gistSyncSummary: document.getElementById('gist-sync-summary'),
+        gistSyncTokenInput: document.getElementById('gist-sync-token-input'),
+        gistSyncIdInput: document.getElementById('gist-sync-id-input'),
+        gistSyncPassphraseInput: document.getElementById('gist-sync-passphrase-input'),
+        gistSyncPushBtn: document.getElementById('gist-sync-push-btn'),
+        gistSyncPullBtn: document.getElementById('gist-sync-pull-btn'),
         // v3.16.0 — RantStats panel UI
         rantStatsSummary: document.getElementById('rant-stats-summary'),
         rantStatsTotals: document.getElementById('rant-stats-totals'),
@@ -2161,6 +2172,92 @@
         }
     }
 
+    // v3.17.0 — Encrypted Gist Sync UI. Reads/writes the two persistent
+    // settings keys (token, gist id) directly via chrome.storage.local so
+    // the inputs stay populated across reloads. Passphrase is NEVER stored.
+    async function refreshGistSyncInputs() {
+        const got = await new Promise((resolve) => chrome.storage.local.get(['rx_settings'], resolve));
+        const settings = (got && got.rx_settings && typeof got.rx_settings === 'object') ? got.rx_settings : {};
+        if (elements.gistSyncTokenInput) elements.gistSyncTokenInput.value = settings.encryptedGistSyncToken || '';
+        if (elements.gistSyncIdInput) elements.gistSyncIdInput.value = settings.encryptedGistSyncId || '';
+        if (elements.gistSyncSummary) {
+            const hasToken = !!(settings.encryptedGistSyncToken || '').trim();
+            const hasId = !!(settings.encryptedGistSyncId || '').trim();
+            elements.gistSyncSummary.textContent = hasToken
+                ? (hasId ? 'Configured. Push or pull anytime.' : 'Token set. First push will create the gist.')
+                : 'Not configured.';
+        }
+    }
+
+    async function _persistGistSyncCredentials() {
+        const token = (elements.gistSyncTokenInput?.value || '').trim();
+        const gistId = (elements.gistSyncIdInput?.value || '').trim();
+        const got = await new Promise((resolve) => chrome.storage.local.get(['rx_settings'], resolve));
+        const settings = (got && got.rx_settings && typeof got.rx_settings === 'object') ? got.rx_settings : {};
+        settings.encryptedGistSyncToken = token;
+        settings.encryptedGistSyncId = gistId;
+        await new Promise((resolve) => chrome.storage.local.set({ rx_settings: settings }, resolve));
+    }
+
+    async function gistSyncPushAction() {
+        await _persistGistSyncCredentials();
+        const passphrase = elements.gistSyncPassphraseInput?.value || '';
+        if (passphrase.length < 8) { showStatus('Passphrase must be at least 8 characters.', 'error'); return; }
+        const btn = elements.gistSyncPushBtn;
+        if (btn) { btn.disabled = true; btn.dataset.idleLabel = btn.dataset.idleLabel || btn.textContent; btn.textContent = 'Pushing…'; }
+        try {
+            const resp = await chrome.runtime.sendMessage({ action: 'gistSyncPush', passphrase });
+            if (!resp?.ok) {
+                showStatus('Push failed: ' + (resp?.reason || 'unknown'), 'error');
+                return;
+            }
+            if (elements.gistSyncPassphraseInput) elements.gistSyncPassphraseInput.value = '';
+            await refreshGistSyncInputs();
+            showStatus('Pushed ' + resp.bytes + ' bytes to gist ' + resp.gistId + '.', 'success');
+        } catch (e) {
+            showStatus('Push failed: ' + String(e?.message || e), 'error');
+        } finally {
+            if (btn) {
+                btn.disabled = false;
+                if (btn.dataset.idleLabel) btn.textContent = btn.dataset.idleLabel;
+            }
+        }
+    }
+
+    async function gistSyncPullAction() {
+        await _persistGistSyncCredentials();
+        const passphrase = elements.gistSyncPassphraseInput?.value || '';
+        if (passphrase.length < 8) { showStatus('Passphrase must be at least 8 characters.', 'error'); return; }
+        const btn = elements.gistSyncPullBtn;
+        if (btn) { btn.disabled = true; btn.dataset.idleLabel = btn.dataset.idleLabel || btn.textContent; btn.textContent = 'Pulling…'; }
+        try {
+            const resp = await chrome.runtime.sendMessage({ action: 'gistSyncPull', passphrase });
+            if (!resp?.ok) {
+                const reasonMap = {
+                    'missing-token': 'Set a GitHub PAT first.',
+                    'missing-gist-id': 'Set the Gist ID (or push first to create one).',
+                    'bad-passphrase': 'Passphrase did not decrypt the gist.',
+                    'weak-passphrase': 'Passphrase must be at least 8 characters.',
+                    'no-payload': 'Gist has no rumblex-settings.enc.json file.',
+                    'malformed-payload': 'Gist contents are not a RumbleX encrypted payload.',
+                };
+                showStatus('Pull failed: ' + (reasonMap[resp?.reason] || resp?.reason || 'unknown'), 'error');
+                return;
+            }
+            if (elements.gistSyncPassphraseInput) elements.gistSyncPassphraseInput.value = '';
+            showStatus('Pulled ' + resp.keyCount + ' settings keys from gist (encrypted at ' + (resp.encryptedAt || 'unknown time') + '). Reloading…', 'success');
+            // Refresh the page so every section re-reads from storage.
+            setTimeout(() => window.location.reload(), 1200);
+        } catch (e) {
+            showStatus('Pull failed: ' + String(e?.message || e), 'error');
+        } finally {
+            if (btn) {
+                btn.disabled = false;
+                if (btn.dataset.idleLabel) btn.textContent = btn.dataset.idleLabel;
+            }
+        }
+    }
+
     // v3.16.0 — RantStats panel. Reads the chrome.storage.local mirror
     // written by the content-script RantPersist module on rumble.com
     // watch pages. Renders per-video summary cards with totals + a
@@ -2393,6 +2490,7 @@
         void refreshNotifierList();
         void refreshProfileList();
         void refreshRantStats();
+        void refreshGistSyncInputs();
     }, 250);
 
     // ── Event wiring ──
@@ -2421,6 +2519,12 @@
 
     // v3.15.0 — Account data export wiring.
     if (elements.exportWatchHistoryBtn) elements.exportWatchHistoryBtn.addEventListener('click', () => void exportWatchHistoryAction());
+
+    // v3.17.0 — Encrypted Gist Sync wiring.
+    if (elements.gistSyncPushBtn) elements.gistSyncPushBtn.addEventListener('click', () => void gistSyncPushAction());
+    if (elements.gistSyncPullBtn) elements.gistSyncPullBtn.addEventListener('click', () => void gistSyncPullAction());
+    if (elements.gistSyncTokenInput) elements.gistSyncTokenInput.addEventListener('change', () => void _persistGistSyncCredentials().then(refreshGistSyncInputs));
+    if (elements.gistSyncIdInput) elements.gistSyncIdInput.addEventListener('change', () => void _persistGistSyncCredentials().then(refreshGistSyncInputs));
 
     // v3.16.0 — RantStats panel wiring.
     if (elements.rantStatsRefreshBtn) elements.rantStatsRefreshBtn.addEventListener('click', () => void refreshRantStats());

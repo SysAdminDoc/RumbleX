@@ -873,6 +873,141 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         return true;
     }
 
+    // v3.17.0 — Encrypted Gist Sync. Push: encrypt rx_settings with a
+    // passphrase-derived AES-GCM key, store the ciphertext as a single file
+    // in a GitHub gist. Pull: GET the gist, decrypt with the same passphrase.
+    // The passphrase is NEVER stored — caller passes it in on every call.
+    // host_permissions for api.github.com is declared in manifest.json.
+    if (message.action === 'gistSyncPush' || message.action === 'gistSyncPull') {
+        (async () => {
+            try {
+                const stored = await new Promise((resolve) => {
+                    chrome.storage.local.get(['rx_settings'], resolve);
+                });
+                const settings = (stored && stored.rx_settings && typeof stored.rx_settings === 'object') ? stored.rx_settings : {};
+                const token = (settings.encryptedGistSyncToken || '').trim();
+                const gistId = (settings.encryptedGistSyncId || '').trim();
+                const passphrase = (message.passphrase || '').trim();
+                if (!token) { sendResponse({ ok: false, reason: 'missing-token' }); return; }
+                if (!passphrase || passphrase.length < 8) { sendResponse({ ok: false, reason: 'weak-passphrase' }); return; }
+
+                const enc = new TextEncoder();
+                const dec = new TextDecoder();
+                const baseKey = await crypto.subtle.importKey(
+                    'raw', enc.encode(passphrase), { name: 'PBKDF2' }, false, ['deriveKey']
+                );
+
+                const b64 = (buf) => btoa(String.fromCharCode(...new Uint8Array(buf)));
+                const fromB64 = (s) => Uint8Array.from(atob(s), (c) => c.charCodeAt(0));
+
+                if (message.action === 'gistSyncPush') {
+                    const salt = crypto.getRandomValues(new Uint8Array(16));
+                    const iv = crypto.getRandomValues(new Uint8Array(12));
+                    const aesKey = await crypto.subtle.deriveKey(
+                        { name: 'PBKDF2', salt, iterations: 200000, hash: 'SHA-256' },
+                        baseKey,
+                        { name: 'AES-GCM', length: 256 },
+                        false,
+                        ['encrypt']
+                    );
+                    const plaintext = enc.encode(JSON.stringify(settings));
+                    const cipherBuf = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, aesKey, plaintext);
+                    const payload = {
+                        rumblex: {
+                            schemaVersion: 3,
+                            cipher: 'AES-GCM-256',
+                            kdf: 'PBKDF2-SHA256-200000',
+                            salt: b64(salt),
+                            iv: b64(iv),
+                            ciphertext: b64(cipherBuf),
+                            encryptedAt: new Date().toISOString(),
+                        },
+                    };
+
+                    const body = JSON.stringify({
+                        description: 'RumbleX encrypted settings backup',
+                        public: false,
+                        files: { 'rumblex-settings.enc.json': { content: JSON.stringify(payload, null, 2) } },
+                    });
+                    const url = gistId ? ('https://api.github.com/gists/' + gistId) : 'https://api.github.com/gists';
+                    const resp = await fetch(url, {
+                        method: gistId ? 'PATCH' : 'POST',
+                        headers: {
+                            'Accept': 'application/vnd.github+json',
+                            'Authorization': 'Bearer ' + token,
+                            'Content-Type': 'application/json',
+                            'X-GitHub-Api-Version': '2022-11-28',
+                        },
+                        body,
+                    });
+                    if (!resp.ok) { sendResponse({ ok: false, reason: 'http-' + resp.status }); return; }
+                    const data = await resp.json();
+                    const newId = data && data.id ? data.id : gistId;
+                    // Persist the gist id if this was a CREATE.
+                    if (!gistId && newId) {
+                        const next = { ...settings, encryptedGistSyncId: newId };
+                        await new Promise((resolve) => chrome.storage.local.set({ rx_settings: next }, resolve));
+                    }
+                    sendResponse({ ok: true, gistId: newId, bytes: JSON.stringify(payload).length });
+                    return;
+                }
+
+                // Pull
+                if (!gistId) { sendResponse({ ok: false, reason: 'missing-gist-id' }); return; }
+                const resp = await fetch('https://api.github.com/gists/' + gistId, {
+                    headers: {
+                        'Accept': 'application/vnd.github+json',
+                        'Authorization': 'Bearer ' + token,
+                        'X-GitHub-Api-Version': '2022-11-28',
+                    },
+                });
+                if (!resp.ok) { sendResponse({ ok: false, reason: 'http-' + resp.status }); return; }
+                const data = await resp.json();
+                const files = data && data.files ? data.files : {};
+                const file = files['rumblex-settings.enc.json'] || Object.values(files)[0];
+                if (!file || !file.content) { sendResponse({ ok: false, reason: 'no-payload' }); return; }
+                let parsed;
+                try { parsed = JSON.parse(file.content); } catch { sendResponse({ ok: false, reason: 'bad-json' }); return; }
+                const env = parsed && parsed.rumblex;
+                if (!env || !env.ciphertext || !env.iv || !env.salt) { sendResponse({ ok: false, reason: 'malformed-payload' }); return; }
+                const aesKey = await crypto.subtle.deriveKey(
+                    { name: 'PBKDF2', salt: fromB64(env.salt), iterations: 200000, hash: 'SHA-256' },
+                    baseKey,
+                    { name: 'AES-GCM', length: 256 },
+                    false,
+                    ['decrypt']
+                );
+                let plainBuf;
+                try {
+                    plainBuf = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: fromB64(env.iv) }, aesKey, fromB64(env.ciphertext));
+                } catch {
+                    sendResponse({ ok: false, reason: 'bad-passphrase' });
+                    return;
+                }
+                let pulled;
+                try { pulled = JSON.parse(dec.decode(plainBuf)); } catch { sendResponse({ ok: false, reason: 'bad-decoded-json' }); return; }
+                // Take a backup snapshot before overwriting — same pattern as
+                // the v3.0 backup system uses for any settings overwrite.
+                try {
+                    const snapList = await new Promise((resolve) => chrome.storage.local.get(['rx_settings_snapshots'], resolve));
+                    const arr = Array.isArray(snapList?.rx_settings_snapshots) ? snapList.rx_settings_snapshots : [];
+                    arr.push({ at: new Date().toISOString(), reason: 'pre-gist-pull', settings });
+                    while (arr.length > 50) arr.shift();
+                    await new Promise((resolve) => chrome.storage.local.set({ rx_settings_snapshots: arr }, resolve));
+                } catch {}
+                // Preserve the LOCAL token + gist id so the user doesn't get
+                // logged out of their own sync target after a pull.
+                pulled.encryptedGistSyncToken = token;
+                pulled.encryptedGistSyncId = gistId;
+                await new Promise((resolve) => chrome.storage.local.set({ rx_settings: pulled }, resolve));
+                sendResponse({ ok: true, encryptedAt: env.encryptedAt || null, keyCount: Object.keys(pulled).length });
+            } catch (e) {
+                sendResponse({ ok: false, reason: String(e?.message || e) });
+            }
+        })();
+        return true;
+    }
+
     if (message.action === 'importFollowedChannels') {
         (async () => {
             try {
