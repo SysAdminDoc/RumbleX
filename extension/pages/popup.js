@@ -1,4 +1,4 @@
-// RumbleX v3.6.0 - Popup Script
+// RumbleX v3.7.0 - Popup Script
 'use strict';
 
 // Feature list grouped by category. Order within a group controls display
@@ -403,6 +403,9 @@ const DEFAULTS = {
 
     // v3.5.0 — chrome.contextMenus integration
     contextMenusEnabled: true,
+
+    // v3.7.0 — chrome.sidePanel integration
+    sidePanelEnabled: false,
 };
 
 const UI_STATE_KEY = 'rx_popup_ui';

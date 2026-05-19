@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "__MSG_extName__",
-  "version": "3.6.0",
+  "version": "3.7.0",
   "description": "__MSG_extDescription__",
   "default_locale": "en",
   "author": "SysAdminDoc",
@@ -19,7 +19,8 @@
     "contextMenus",
     "scripting",
     "tabs",
-    "tabGroups"
+    "tabGroups",
+    "sidePanel"
   ],
   "host_permissions": [
     "*://*.rumble.com/*",
@@ -46,6 +47,9 @@
   "options_ui": {
     "page": "pages/options.html",
     "open_in_tab": true
+  },
+  "side_panel": {
+    "default_path": "pages/options.html"
   },
   "content_scripts": [
     {

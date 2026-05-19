@@ -1,4 +1,4 @@
-// RumbleX v3.6.0 - Options Page
+// RumbleX v3.7.0 - Options Page
 // Standalone settings management via chrome.storage.local (rx_settings key).
 // Mirrors Astra Deck's settings page pattern: dirty-draft workflow with
 // search, group nav, stats overview, and export/import/reset.
@@ -231,6 +231,9 @@
 
         // v3.5.0 — chrome.contextMenus integration
         contextMenusEnabled: true,
+
+        // v3.7.0 — chrome.sidePanel integration
+        sidePanelEnabled: false,
     };
 
     // Per-key metadata: group + human label + description
@@ -470,6 +473,9 @@
 
         // v3.5.0 — chrome.contextMenus integration
         contextMenusEnabled: { group: 'integrations', label: 'Right-Click Menus', desc: 'Add "Copy clean URL", "Copy URL at current time", and "Open RumbleX settings" to the browser right-click menu on rumble.com pages.' },
+
+        // v3.7.0 — chrome.sidePanel integration
+        sidePanelEnabled: { group: 'integrations', label: 'Open in Side Panel', desc: 'When on, clicking the toolbar icon opens RumbleX in the browser side panel (persistent across pages) instead of the popup. Chrome / Edge only — Firefox and older browsers always show the popup.' },
     };
 
     const GROUPS = [

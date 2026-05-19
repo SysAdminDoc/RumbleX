@@ -2,6 +2,24 @@
 
 All notable changes to RumbleX will be documented in this file.
 
+## [3.7.0] - 2026-05-19
+
+### v3.7.0 — chrome.sidePanel integration
+
+Closes the v3.3 ROADMAP "chrome.sidePanel" item. Adds a third entry-point to RumbleX settings: a persistent side panel that survives every htmx navigation (unlike the popup, which closes the moment the user clicks anywhere outside it).
+
+**Side panel registration**
+- New `sidePanel` permission + `side_panel.default_path: "pages/options.html"` in `manifest.json`. Chrome/Edge only — Firefox MV2 doesn't have the API; manifest stays unchanged there.
+- New setting `sidePanelEnabled` (default OFF — opt-in so we don't surprise existing users). When ON, `chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true })` makes the toolbar icon open the side panel directly instead of the popup. When OFF, the popup is restored.
+- Live toggle: `chrome.storage.onChanged` re-runs `rxSyncSidePanel()` whenever `rx_settings` changes — no extension reload needed to flip behavior.
+- New group placement: lives under **Integrations** in the options page (alongside `contextMenusEnabled` and `discordWebhookUrl`).
+
+**Hosts the existing options UI**
+- The side panel points at `pages/options.html` — same page the options tab uses. This means the full v3.0 settings editor + v3.1 backup snapshot history + v3.1 privacy report + v3.5 contextMenus toggle all work inside the panel with zero extra code.
+- Future v3.x work (RantStats panel from v3.3, bulk unsubscribe UI from v3.4, multi-stream viewer scaffolding) can mount as sub-views inside the same side-panel host without touching the manifest again.
+
+**Catalog parity:** 199/199/199/199.
+
 ## [3.6.0] - 2026-05-19
 
 ### v3.6.0 — CompressionStream gzip exports + chrome.tabGroups + import-side decompression

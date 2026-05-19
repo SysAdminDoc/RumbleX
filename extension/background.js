@@ -65,12 +65,40 @@ function isAllowedDownloadUrl(url) {
 
 chrome.runtime.onInstalled.addListener(() => {
     console.log('[RumbleX] Extension installed');
-    // v3.5.0 — Register context-menu items on install/update. Gate the
-    // registration on the user's `contextMenusEnabled` setting so disabling
-    // the feature removes the menu entries cleanly. removeAll first to
-    // avoid "duplicate id" errors on reinstall.
+    // v3.5.0 — Register context-menu items on install/update.
     rxSyncContextMenus().catch((e) => console.warn('[RumbleX] context menu sync failed:', e));
+    // v3.7.0 — Sync side-panel behavior with the user's preference.
+    rxSyncSidePanel().catch((e) => console.warn('[RumbleX] side panel sync failed:', e));
 });
+
+// v3.7.0 — chrome.sidePanel integration.
+// When `sidePanelEnabled` is on, clicking the toolbar icon opens the side
+// panel instead of the popup. The side panel hosts pages/options.html which
+// already has the full settings + snapshot + privacy UI; this gives users a
+// persistent panel that survives htmx navigation (popup closes on every
+// out-of-popup click). Chrome / Edge only — Firefox MV2 doesn't have the
+// API; rxSyncSidePanel becomes a no-op there.
+async function rxIsSidePanelEnabled() {
+    try {
+        const data = await chrome.storage.local.get('rx_settings');
+        const s = data.rx_settings || {};
+        return s.sidePanelEnabled === true;
+    } catch { return false; }
+}
+
+async function rxSyncSidePanel() {
+    if (!chrome.sidePanel) return;
+    const enabled = await rxIsSidePanelEnabled();
+    try {
+        // setPanelBehavior controls what happens when the toolbar icon is
+        // clicked. `openPanelOnActionClick: true` makes the icon open the
+        // side panel directly (suppressing the popup). When OFF, Chrome
+        // falls back to default_popup from the manifest.
+        await chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: enabled });
+    } catch (e) {
+        console.warn('[RumbleX] sidePanel.setPanelBehavior failed:', e);
+    }
+}
 
 // v3.5.0 — Context menus.
 // Three unambiguous wins:
@@ -121,12 +149,14 @@ async function rxSyncContextMenus() {
     });
 }
 
-// React to the user toggling `contextMenusEnabled` in settings without
-// requiring a reload. storage.onChanged fires for every settings flush.
+// React to the user toggling `contextMenusEnabled` or `sidePanelEnabled` in
+// settings without requiring a reload. storage.onChanged fires for every
+// settings flush.
 if (chrome.storage?.onChanged) {
     chrome.storage.onChanged.addListener((changes, area) => {
         if (area !== 'local' || !changes.rx_settings) return;
         rxSyncContextMenus().catch(() => {});
+        rxSyncSidePanel().catch(() => {});
     });
 }
 
