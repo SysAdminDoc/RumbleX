@@ -1,8 +1,8 @@
 # RumbleX Roadmap
 
-Version: 4.10 — v3.11 CommentExport module shipped
+Version: 4.11 — v3.12 BulkUnsubscribe + Shorts/Account selectors hardened
 Date: 2026-05-19
-Current shipped: v3.11.0 (extension), v1.8.0 (userscript)
+Current shipped: v3.12.0 (extension), v1.8.0 (userscript)
 
 This roadmap supersedes the v2026-05-19 v3.0 plan. It is the result of a fresh repo audit plus a 60+ source external research sweep (see [Appendix C — Sources](#appendix-c--sources)). It tracks shipped work in the [Recently shipped](#recently-shipped) summary, then prioritises the next ~12 months of work into **Now / Next / Later / Under Consideration / Rejected** tiers with every claim traceable to a source.
 
@@ -118,7 +118,8 @@ These items need preconditions that don't exist yet (live captures, large refact
 
 - [ ] **Userscript regeneration from shared core.** Original v3.0 acceptance criterion, deferred. Multi-day rewrite to extract `core/`, `platform/`, `features/` from the monolithic `content.js`, then re-bundle two distributions (MV3 extension + Tampermonkey single-file). Risk: regressing the v1.8 userscript baseline users still rely on. The v2.0 Selectors registry + Router are the seams the split will pull through. Deferred to v4.0.
 - [ ] **Firefox MV3 conversion.** Background-script-to-event-page rewrite ([Firefox MV3 background script docs](https://developer.mozilla.org/en-US/docs/Mozilla/Add-ons/WebExtensions/Background_scripts)). MV2 stays supported on Firefox indefinitely per Mozilla's own communication, so this is a parallel path, not a forced migration. Bonus: MV3 enables `host_permissions` to appear in the install prompt from Firefox 127+.
-- [ ] **`v.studio.rumble.com` Studio scene tools, uploader metadata fill, account/subscriptions bulk-unsubscribe UI.** Still blocked on live MHTML captures of those surfaces; setting keys shipped v2.0. The Greasy Fork [Studio Scene Mover](https://greasyfork.org/en/scripts/by-site/rumble.com) (6 installs) confirms the demand exists.
+- **`account/subscriptions` bulk-unsubscribe UI** — ✅ shipped v3.12.0 (unlocked by 2026-05-19 MHTML batch: Recurring Subs.mhtml + Followed Channels.mhtml). Sticky toolbar + per-row checkboxes + Select-all / Clear / Run / Stop. Honors `bulkUnsubscribeDryRun` default-ON. 350 ms inter-click pacing.
+- [ ] **`v.studio.rumble.com` Studio scene tools + uploader metadata fill.** Studio.mhtml capture landed in v3.12 but is sparse (heavy SPA — content renders client-side after JS); will need a second capture WHILE inside the Studio editor (mid-stream / mid-upload) to extract scene-mover selectors. Setting keys (`studioSceneTools`, `uploaderMetadataFill`) shipped v2.0.
 - [ ] **Channel archive queue with MV3 service-worker persistence.** Requires `chrome.offscreen` already adopted in v3.2 plus a persisted job queue in `chrome.storage.local` (not session) plus `chrome.alarms` for SW wake-up. Reference: [nullEFFORT/rumble-downloader](https://github.com/nullEFFORT/rumble-downloader) implements this on a Flask backend; we want browser-side. Settings keys (`channelArchive*`, `downloadConcurrency`, `batchDownload`) already shipped v2.0.
 - [ ] **Signed remote cosmetic rules.** Pre-approved scriptlet bundle in the extension (like [AdGuard's User Scripts API approach since v5.2](https://adguard.com/kb/adguard-browser-extension/user-scripts-api/)) avoids Chrome's MV3 remotely-hosted-code ban. Rule format: data-only, ed25519-signed, JSON-schema-validated, opt-in per-rule. The verification key ships in the extension; rule payloads on a separate static repo. Settings (`remoteCosmeticRules`, `remoteCosmeticRulesChannel`) already shipped v2.0.
 - [ ] **Multi-stream viewer (2–4 stream grid with independent chat panels).** Experimental. Iframe-based sandbox with per-stream `chrome.storage.session` for chat state. Setting key `multiStreamViewer` already shipped v2.0. Reference: Twitch/Kick power-user pattern — no Rumble equivalent exists today.

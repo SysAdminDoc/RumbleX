@@ -1,9 +1,9 @@
-// RumbleX v3.11.0 - Content Script
+// RumbleX v3.12.0 - Content Script
 // Rumble enhancement suite - Chrome/Firefox extension
 'use strict';
 
 // ── Version ──
-const VERSION = chrome.runtime?.getManifest?.()?.version || '3.11.0';
+const VERSION = chrome.runtime?.getManifest?.()?.version || '3.12.0';
 const SCHEMA_VERSION = 2;
 
 // ── Settings Manager (chrome.storage.local) ──
@@ -449,16 +449,29 @@ const Selectors = {
         'modal.overlay':      { stable: '[data-js="modal__overlay"]', fallback: '[hx-ext="modal"]' },
         'theme.group':        { stable: '.theme-option-group', fallback: '[class*="theme-option"]' },
         'account.pagination': { stable: '.pagination.autoPg', fallback: '.pagination' },
-        // v3.1.0 — Shorts surfaces. Conservative selectors — no live MHTML
-        // capture of /shorts yet (queued). When the capture lands, refine
-        // stable selector first; fallbacks already err on the broad side.
-        'shorts.feed':        { stable: '[data-js="shorts_feed"], main[data-route="shorts"]', fallback: '[class*="shorts-feed"], [class*="ShortsFeed"]' },
-        'shorts.card':        { stable: '[data-js="shorts_card"], article[data-shorts-id]', fallback: '[class*="shorts-card"], [class*="ShortsCard"]' },
-        'shorts.player':      { stable: '[data-js="shorts_player"], #shortsPlayer', fallback: '[class*="shorts-player"], [class*="ShortsPlayer"]' },
+        // v3.1.0 / refined v3.12.0 — Shorts surfaces. Real semantic class
+        // names confirmed against Sample Pages/Shorts.mhtml (2026-05-19
+        // capture). Rumble uses hashed-prefix utility classes like
+        // `rum-4oaq3e rum-shorts__screen__action rum-lxsho7` — the hashed
+        // tokens are unstable, the BEM-ish `rum-shorts-*` tokens are not.
+        'shorts.feed':        { stable: '[class*="rum-shorts-feed__screen-container"], [class*="rum-shorts-feed__screen-box"]', fallback: '[class*="shorts-feed"], [class*="ShortsFeed"]' },
+        'shorts.card':        { stable: '[class*="rum-shorts-screen__aspect-box"]', fallback: '[class*="shorts-card"], [class*="ShortsCard"]' },
+        'shorts.player':      { stable: '[class*="rum-shorts-player-overlay"], [class*="rum-shorts-screen-bg"]', fallback: '[class*="shorts-player"], [class*="ShortsPlayer"]' },
+        'shorts.navItem':     { stable: '[class*="rum-shorts-navigation__item"]', fallback: '[class*="shorts-nav"]' },
         // v3.1.0 — Rumble Wallet tip button surface (launched 2026-01-07).
         // Appears only for creators who enabled their tip jar — opt-in toggle
         // hides it without breaking creators who want to keep it visible.
         'wallet.tipButton':   { stable: '[data-js="wallet_tip_button"], [data-js="tip_button"]', fallback: 'button[hx-get*="wallet"], [class*="tip-button"], [class*="TipButton"]' },
+        // v3.12.0 — Account-content surfaces (from new MHTML batch 2026-05-19).
+        // recurringSubsCancelBtn = per-row Cancel button on /account/subscriptions
+        // (the Recurring Subs page). Stable via data-js attribute.
+        // followedChannelsUnsubBtn = per-channel Unsubscribe button on
+        // /account/following. Identified via data-action="unsubscribe" so it
+        // doesn't match the inverse Subscribe button on the same page.
+        'account.recurringSubsCancelBtn': { stable: 'button[data-js="cancel_recurring_subscriptions"]', fallback: 'button[class*="cancel-recurring"]' },
+        'account.recurringSubsRow':       { stable: 'table tr:has(button[data-js="cancel_recurring_subscriptions"])', fallback: 'tr[class*="subscription"]' },
+        'account.followedChannelsSection':{ stable: '[data-js="followed-channels__section"]', fallback: 'section[class*="followed"]' },
+        'account.followedChannelsUnsubBtn':{ stable: 'button[data-action="unsubscribe"][hx-post*="legacy-video-collection"]', fallback: 'button.js-media-subscribe[data-action="unsubscribe"]' },
     },
     _telemetry: [],
     find(key, root) {
@@ -5029,6 +5042,279 @@ const ShortsRedirect = {
         });
     },
     destroy() {
+        if (typeof this._routerUnsub === 'function') {
+            try { this._routerUnsub(); } catch {}
+            this._routerUnsub = null;
+        }
+    },
+};
+
+// ═══════════════════════════════════════════
+//  FEATURE: Bulk Unsubscribe (v3.12.0)
+// ═══════════════════════════════════════════
+// Closes the v2.5 deferred item. Two account pages were unblocked by the
+// 2026-05-19 MHTML capture batch:
+//   /account/subscriptions/recurring  → per-row <button data-js=
+//       "cancel_recurring_subscriptions">Cancel</button>  (paid Locals subs)
+//   /account/following                → per-row <button data-action=
+//       "unsubscribe" hx-post="/-htmx/account/legacy-video-collection">
+//       (free channel follows)
+//
+// Mounts a floating "Bulk-unsubscribe" toolbar on those pages when
+// `bulkUnsubscribeEnabled` is on. Provides three actions:
+//   - Select all     — checks every action row
+//   - Run            — clicks each selected row's native button in order
+//                       (paced 350ms apart so htmx doesn't reject the
+//                       burst). Respects `bulkUnsubscribeDryRun`: when ON,
+//                       counts what WOULD run and shows a toast instead
+//                       of clicking anything. Default ON; user must
+//                       explicitly turn dry-run OFF to actually unsub.
+//   - Stop           — Cancels the in-flight loop.
+const BulkUnsubscribe = {
+    id: 'bulkUnsubscribeEnabled',
+    name: 'Bulk Unsubscribe',
+    _bar: null,
+    _styleEl: null,
+    _routerUnsub: null,
+    _aborter: null,
+
+    _css: `
+        html.rumblex-active .rx-bulk-unsub-bar {
+            position: sticky; top: 70px; z-index: 50;
+            display: flex; gap: 8px; align-items: center;
+            padding: 10px 14px; margin: 12px 0;
+            background: var(--rx-surface0, #1e2a14);
+            border: 1px solid var(--rx-surface1, #2a3a1e);
+            border-radius: 8px;
+            color: var(--rx-text, #d6e8c4);
+            font: 600 13px/1.3 system-ui, sans-serif;
+        }
+        html.rumblex-active .rx-bulk-unsub-bar .rx-bu-label { flex: 1; }
+        html.rumblex-active .rx-bulk-unsub-bar .rx-bu-count {
+            color: var(--rx-accent, #85c742);
+        }
+        html.rumblex-active .rx-bulk-unsub-bar button {
+            padding: 6px 12px; min-height: 28px;
+            background: var(--rx-surface1, #2a3a1e);
+            color: inherit;
+            border: 1px solid var(--rx-surface2, #3a4f2a);
+            border-radius: 6px; cursor: pointer;
+            font: 600 12px/1.2 inherit;
+        }
+        html.rumblex-active .rx-bulk-unsub-bar button:hover {
+            background: var(--rx-surface2, #3a4f2a);
+        }
+        html.rumblex-active .rx-bulk-unsub-bar button[disabled] {
+            opacity: 0.5; cursor: not-allowed;
+        }
+        html.rumblex-active .rx-bu-row-check {
+            margin-right: 8px;
+            width: 18px; height: 18px;
+            accent-color: var(--rx-accent, #85c742);
+            vertical-align: middle;
+        }
+        html.rumblex-active .rx-bu-dry-tag {
+            display: inline-block; padding: 2px 6px;
+            background: rgba(212, 168, 67, 0.18);
+            color: #d4a843;
+            border-radius: 4px;
+            font: 700 10px/1 inherit;
+            text-transform: uppercase; letter-spacing: 0.4px;
+        }
+    `,
+
+    _onAccountFollowing() {
+        return location.pathname.startsWith('/account/following');
+    },
+    _onAccountRecurring() {
+        return location.pathname.startsWith('/account/subscriptions');
+    },
+    _shouldMount() {
+        return this._onAccountFollowing() || this._onAccountRecurring();
+    },
+
+    // Finds every native action button on the current page. We attach a
+    // checkbox to each enclosing row so the user can include/exclude per
+    // entry before running. Returns array of { btn, check, row, label }.
+    _scanRows() {
+        const rows = [];
+        const onFollowing = this._onAccountFollowing();
+        const buttons = onFollowing
+            ? Selectors.findAll('account.followedChannelsUnsubBtn')
+            : Selectors.findAll('account.recurringSubsCancelBtn');
+        for (const btn of buttons) {
+            // The "row" we associate is the nearest TR (for recurring subs
+            // table) or LI/article (for following grid). Falls back to
+            // the button's grandparent.
+            const row = btn.closest('tr, li, article, .following-row, [class*="subscription"]') || btn.parentElement?.parentElement || btn.parentElement;
+            // Best-effort label — pulls the visible channel/title text from
+            // the row so the bar's "Select all (N)" message means something.
+            const label = (row?.querySelector('a, .channel__link, .channel-name, h3, td')?.textContent || '').trim().slice(0, 60);
+            // Mount a checkbox once per button. Default-unchecked so the
+            // user always opts in per row before running.
+            let check = row?.querySelector('input.rx-bu-row-check');
+            if (!check && row) {
+                check = document.createElement('input');
+                check.type = 'checkbox';
+                check.className = 'rx-bu-row-check';
+                check.title = 'Select for bulk unsubscribe';
+                row.insertBefore(check, row.firstChild);
+            }
+            if (check) rows.push({ btn, check, row, label });
+        }
+        return rows;
+    },
+
+    _updateCount() {
+        const rows = this._scanRows();
+        const checked = rows.filter((r) => r.check?.checked).length;
+        const countEl = this._bar?.querySelector('.rx-bu-count');
+        if (countEl) countEl.textContent = `${checked} / ${rows.length} selected`;
+        return { rows, checked };
+    },
+
+    async _run() {
+        const { rows } = this._updateCount();
+        const selected = rows.filter((r) => r.check?.checked);
+        if (selected.length === 0) {
+            SettingsPanel._showToast?.('Select at least one row first');
+            return;
+        }
+        const dryRun = Settings.get('bulkUnsubscribeDryRun') !== false; // default ON
+        if (dryRun) {
+            SettingsPanel._showToast?.(`Dry-run: would unsubscribe from ${selected.length} channel${selected.length === 1 ? '' : 's'}. Turn bulkUnsubscribeDryRun OFF in Settings to run for real.`);
+            return;
+        }
+        // Disable the Run button + show progress in the count slot.
+        const runBtn = this._bar?.querySelector('[data-act="run"]');
+        const stopBtn = this._bar?.querySelector('[data-act="stop"]');
+        if (runBtn) runBtn.disabled = true;
+        if (stopBtn) stopBtn.disabled = false;
+        this._aborter = { aborted: false };
+        let done = 0;
+        for (const { btn, check, label } of selected) {
+            if (this._aborter.aborted) break;
+            try {
+                btn.click();
+                done++;
+                const countEl = this._bar?.querySelector('.rx-bu-count');
+                if (countEl) countEl.textContent = `Running: ${done} / ${selected.length}`;
+                // Uncheck the row so a re-run doesn't double-process it.
+                if (check) check.checked = false;
+            } catch (e) {
+                console.warn('[RumbleX] BulkUnsubscribe row failed:', label, e);
+            }
+            // 350ms inter-click pacing so htmx doesn't pile up requests.
+            await new Promise((r) => setTimeout(r, 350));
+        }
+        if (runBtn) runBtn.disabled = false;
+        if (stopBtn) stopBtn.disabled = true;
+        SettingsPanel._showToast?.(this._aborter.aborted
+            ? `Stopped after ${done} unsub${done === 1 ? '' : 's'}.`
+            : `Done: unsubscribed from ${done} channel${done === 1 ? '' : 's'}.`);
+        this._updateCount();
+    },
+
+    _build() {
+        const bar = document.createElement('div');
+        bar.className = 'rx-bulk-unsub-bar';
+        const label = document.createElement('span');
+        label.className = 'rx-bu-label';
+        label.innerHTML = '';
+        const title = document.createElement('strong');
+        title.textContent = 'Bulk unsubscribe — ';
+        const count = document.createElement('span');
+        count.className = 'rx-bu-count';
+        count.textContent = '0 / 0 selected';
+        label.appendChild(title);
+        label.appendChild(count);
+        // Dry-run tag — visible UI hint that nothing will happen on Run
+        // until the user flips the setting.
+        if (Settings.get('bulkUnsubscribeDryRun') !== false) {
+            const tag = document.createElement('span');
+            tag.className = 'rx-bu-dry-tag';
+            tag.textContent = 'DRY-RUN';
+            tag.title = 'bulkUnsubscribeDryRun is ON — Run will count, not click. Disable in Settings → Automation.';
+            label.appendChild(document.createTextNode(' '));
+            label.appendChild(tag);
+        }
+        bar.appendChild(label);
+
+        const mkBtn = (text, act, disabled = false) => {
+            const b = document.createElement('button');
+            b.type = 'button';
+            b.textContent = text;
+            b.dataset.act = act;
+            if (disabled) b.disabled = true;
+            return b;
+        };
+        const selectAll = mkBtn('Select all', 'all');
+        const clearAll = mkBtn('Clear', 'clear');
+        const run = mkBtn('Run', 'run');
+        const stop = mkBtn('Stop', 'stop', true);
+        selectAll.addEventListener('click', () => {
+            for (const { check } of this._scanRows()) check.checked = true;
+            this._updateCount();
+        });
+        clearAll.addEventListener('click', () => {
+            for (const { check } of this._scanRows()) check.checked = false;
+            this._updateCount();
+        });
+        run.addEventListener('click', () => void this._run());
+        stop.addEventListener('click', () => {
+            if (this._aborter) this._aborter.aborted = true;
+        });
+        bar.appendChild(selectAll);
+        bar.appendChild(clearAll);
+        bar.appendChild(run);
+        bar.appendChild(stop);
+
+        // Watch each checkbox so the count stays live.
+        bar.addEventListener('change', (e) => {
+            if (e.target?.classList?.contains('rx-bu-row-check')) this._updateCount();
+        });
+        return bar;
+    },
+
+    _mount() {
+        if (!this._shouldMount()) return;
+        if (this._bar?.isConnected) return;
+        // Find a reasonable mount host. Recurring subs has a table; following
+        // has a section. We attach the bar at the top of <main> as a safe
+        // fallback that's always present after page paint.
+        const host = qs('main') || qs('.main-content') || document.body;
+        if (!host) return;
+        if (!this._bar) this._bar = this._build();
+        // Ensure all rows have their checkboxes mounted on first paint.
+        this._scanRows();
+        host.insertBefore(this._bar, host.firstChild);
+        this._updateCount();
+    },
+
+    _unmount() {
+        this._bar?.remove();
+        this._bar = null;
+        for (const el of qsa('.rx-bu-row-check')) el.remove();
+    },
+
+    init() {
+        if (!Settings.get(this.id)) return;
+        if (!Page.isAccount()) return;
+        this._styleEl = injectStyle(this._css, 'rx-bulk-unsub-css');
+        this._mount();
+        // Account pages can change between subsections without a full
+        // reload (Rumble uses htmx). Re-evaluate on every route tick.
+        this._routerUnsub = Router.onChange(() => {
+            if (this._shouldMount()) this._mount();
+            else this._unmount();
+        });
+    },
+
+    destroy() {
+        this._aborter && (this._aborter.aborted = true);
+        this._unmount();
+        this._styleEl?.remove();
+        this._styleEl = null;
         if (typeof this._routerUnsub === 'function') {
             try { this._routerUnsub(); } catch {}
             this._routerUnsub = null;
@@ -11702,6 +11988,8 @@ const features = [
     StripTrackingParams,
     // v3.1.0 — Platform follow-through (Rumble Shorts launched Feb 2026)
     ShortsRedirect,
+    // v3.12.0 — v2.5 Creator/account tools unlocked by 2026-05-19 MHTML batch
+    BulkUnsubscribe,
     ...RX_CSS_FEATURES,
 ];
 

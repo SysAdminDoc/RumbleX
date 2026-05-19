@@ -2,6 +2,40 @@
 
 All notable changes to RumbleX will be documented in this file.
 
+## [3.12.0] - 2026-05-19
+
+### v3.12.0 — BulkUnsubscribe + Selectors tightening from new MHTML batch
+
+User dropped **13 new MHTML captures** into `Sample Pages/` (Shorts, Recurring Subs, Followed Channels, Rumble Studio, Watch History, Watch Later, My Library, Profile, Editor Picks, Trending, Browse, Stats & Analytics, Sticker Mule). This release unblocks the highest-value items they enable.
+
+**Selectors registry tightened (12 → 37 entries; 32 → 37 from this batch)**
+- **`shorts.feed` / `shorts.card` / `shorts.player`** — replaced the v3.1 conservative `data-js="shorts_*"` placeholders with the real semantic class names verified against `Sample Pages/Shorts.mhtml`: `rum-shorts-feed__screen-container`, `rum-shorts-screen__aspect-box`, `rum-shorts-player-overlay`. Hashed-prefix utility tokens (`rum-4oaq3e`) stay untouched per house style.
+- **`shorts.navItem`** — new entry. `[class*="rum-shorts-navigation__item"]`.
+- **`account.recurringSubsCancelBtn`** — `button[data-js="cancel_recurring_subscriptions"]`. The per-row Cancel button on `/account/subscriptions/recurring` (paid Locals).
+- **`account.recurringSubsRow`** — `tr:has(...)` wrapper around the row.
+- **`account.followedChannelsSection`** — `[data-js="followed-channels__section"]`. Container.
+- **`account.followedChannelsUnsubBtn`** — `button[data-action="unsubscribe"][hx-post*="legacy-video-collection"]`. Per-row Unsubscribe button on `/account/following`.
+
+**Regression harness extended**
+- `FIXTURE_EXPECTATIONS` now covers all 17 fixtures with per-page surface lists. Trending + Browse list `header.root` only (their feed cards lazy-load via htmx after initial render). Sticker Mule store has an empty expectation list (3rd-party domain). Stats and Studio assert only the header — Studio is a heavy SPA with sparse static HTML; the harness emits a `WARN` when only the fallback selector matches there.
+- **75 surface resolutions across 17 fixtures, 0 failures.** Up from 35/4.
+
+**New `BulkUnsubscribe` module** (closes v2.5 "Bulk unsubscribe with preview, stop, undo toast" ROADMAP item)
+- Mounts a sticky-top toolbar on `/account/following` and `/account/subscriptions*` pages when `bulkUnsubscribeEnabled` is on. Inserts a checkbox at the start of each row containing a native Unsubscribe/Cancel button.
+- Three actions: **Select all** / **Clear** / **Run** / **Stop**.
+- **Honors `bulkUnsubscribeDryRun`** (default ON from v2.0). With dry-run on, "Run" counts what would happen and shows a toast — no native button is clicked. The toolbar displays a visible "DRY-RUN" tag so this is unambiguous. User must explicitly flip `bulkUnsubscribeDryRun` OFF to actually unsubscribe.
+- **350 ms inter-click pacing** so htmx requests don't pile up and trip Rumble's rate limit.
+- **Stop button** aborts the in-flight loop cleanly. Each clicked row's checkbox unchecks itself so a re-run doesn't double-process.
+- Honest UX: the toast at end reports `Done: unsubscribed from N` or `Stopped after N`.
+- Re-evaluates on every `Router.onChange` so navigating between `/account/*` subsections re-mounts the bar correctly.
+
+**Catalog parity:** 201/201/201/201 unchanged (BulkUnsubscribe consumes the existing `bulkUnsubscribeEnabled` + `bulkUnsubscribeDryRun` keys from v2.0).
+
+### Deferred to v3.13+
+
+- **Studio scene tools** — Studio.mhtml has minimal static HTML (heavy SPA, content renders after JS). Will need a second capture WHILE inside the Studio editor (mid-stream) to extract scene-mover selectors.
+- **`account.profile.*`** / **`account.library.*`** selectors — Watch History / Watch Later / My Library / Profile fixtures need expectations refined once specific features target them.
+
 ## [3.11.0] - 2026-05-19
 
 ### v3.11.0 — Comment Export module

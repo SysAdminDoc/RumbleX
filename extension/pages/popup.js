@@ -1,4 +1,4 @@
-// RumbleX v3.11.0 - Popup Script
+// RumbleX v3.12.0 - Popup Script
 'use strict';
 
 // Feature list grouped by category. Order within a group controls display

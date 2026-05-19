@@ -42,6 +42,7 @@ CONTENT_JS = os.path.join(REPO_ROOT, 'extension', 'content.js')
 # default). Keep this overrideable so we can target tests like "shorts.* only
 # applies to a /shorts capture once we have one".
 FIXTURE_EXPECTATIONS = {
+    # Original 4 fixtures (pre-v3.12).
     'For You.mhtml':            ['header.root', 'nav.mainMenu', 'search.form', 'search.input',
                                  'feed.card', 'feed.cardTitle', 'feed.author', 'modal.portal'],
     'My Feed.mhtml':            ['header.root', 'nav.mainMenu', 'search.form', 'search.input',
@@ -52,9 +53,40 @@ FIXTURE_EXPECTATIONS = {
     'Live.mhtml':               ['header.root', 'watch.media', 'watch.player', 'watch.title',
                                  'chat.root', 'chat.history', 'chat.message', 'chat.username',
                                  'modal.portal'],
-    # v3.1.0 added shorts.* and wallet.tipButton — no live capture yet,
-    # so they're tested-but-only-when-captured. The harness skips
-    # any surface listed here without a fixture rather than failing.
+
+    # v3.12.0 — New fixture batch dropped 2026-05-19. Per-page expectations
+    # only — listing every surface against every fixture would noise the
+    # output with route-mismatch "failures" (e.g. chat.* on a feed page).
+
+    # Feed-style pages. Note: Browse + Trending lazy-load their cards via
+    # htmx after initial render, so the static MHTML capture has no
+    # feed.card matches even though the live page does. We only assert
+    # the page chrome here.
+    'Browse.mhtml':             ['header.root', 'nav.mainMenu', 'modal.portal'],
+    'Editor Picks.mhtml':       ['header.root', 'nav.mainMenu', 'feed.card', 'modal.portal'],
+    'Trending.mhtml':           ['header.root', 'nav.mainMenu', 'modal.portal'],
+
+    # Account / library / personal-content surfaces.
+    'My Library.mhtml':         ['header.root', 'nav.mainMenu', 'modal.portal'],
+    'Watch History.mhtml':      ['header.root', 'nav.mainMenu', 'modal.portal'],
+    'Watch Later.mhtml':        ['header.root', 'nav.mainMenu', 'modal.portal'],
+    'Profile.mhtml':            ['header.root', 'nav.mainMenu', 'modal.portal'],
+    'Recurring Subs.mhtml':     ['header.root', 'nav.mainMenu', 'modal.portal',
+                                 'account.recurringSubsCancelBtn'],
+    'Followed Channels.mhtml':  ['header.root', 'nav.mainMenu', 'modal.portal',
+                                 'account.followedChannelsSection',
+                                 'account.followedChannelsUnsubBtn'],
+
+    # New top-level platform surfaces.
+    'Shorts.mhtml':             ['header.root', 'nav.mainMenu', 'modal.portal',
+                                 'shorts.feed', 'shorts.card', 'shorts.player', 'shorts.navItem'],
+    'Rumble Studio.mhtml':      ['header.root'],  # heavy SPA, minimal static HTML
+
+    # Non-content pages — sanity-check only that the header still renders.
+    'Stats and Analytics.mhtml':     ['header.root'],
+    # Sticker Mule store is on a 3rd-party domain via Rumble link-out; we
+    # don't ship selectors for it. Skip with an empty expectation list.
+    "Rumble's Store _ Sticker Mule.mhtml": [],
 }
 
 
