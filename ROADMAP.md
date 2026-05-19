@@ -709,14 +709,20 @@ Categories:
 
 Features:
 
-- Split shared runtime into core/platform/features layout.
-- Build selector registry from the MHTML map.
-- Build route lifecycle for htmx and history navigation.
-- Convert current feature registry to `init(ctx)` and `destroy(ctx)`.
-- Rebuild settings panel with grouped categories, immediate apply, undo toasts, and no dialogs.
-- Migrate `keyboardNav` to `legacyKeyboardNav: false`.
-- Generate MV3 extension and single-file userscript from shared core.
-- Remove remote userscript runtime dependencies.
+- [ ] Split shared runtime into core/platform/features layout. *(Deferred to v2.1 — kept content.js single-file for v2.0 stability; the new selector registry + router are the seams the split will pull through.)*
+- [x] Build selector registry from the MHTML map. *(v2.0.0 — `Selectors` module with 27 named surfaces × stable+fallback selectors + `find`/`findAll`/`wait`/telemetry ring buffer.)*
+- [x] Build route lifecycle for htmx and history navigation. *(v2.0.0 — `Router` patches `history.pushState`/`replaceState` once, hooks `popstate` + `htmx:afterSwap`/`afterSettle`/`historyRestore`, emits `{ url, prevUrl, page, prevPage, reason, changed }` via `Router.onChange()`. `Page.classify()` returns one of 10 page kinds.)*
+- [ ] Convert current feature registry to `init(ctx)` and `destroy(ctx)`. *(Deferred to v2.1 — existing modules already implement `init()`/`destroy()` per the v1.x contract; v2.1 will thread the `ctx` object through.)*
+- [ ] Rebuild settings panel with grouped categories, immediate apply, undo toasts, and no dialogs. *(Partial — v2.0.0 added five new options-page groups (**Core**, **Automation**, **Creator & Studio**, **Integrations**, **Privacy & Data**) and ~70 new keys with META. Toast + undo polish lands in v2.1.)*
+- [x] Migrate `keyboardNav` to `legacyKeyboardNav: false`. *(v2.0.0 — `Settings._migrate()` preserves pre-v2 `keyboardNav: true` into `legacyKeyboardNav: true` so users don't silently lose hotkeys. New default is off. Module retitled "Keyboard Nav (legacy)", moved to **Core** options group.)*
+- [ ] Generate MV3 extension and single-file userscript from shared core. *(Deferred to v3.0 per roadmap acceptance criteria — userscript still on v1.8.0 baseline until v2.x feature work stabilises.)*
+- [ ] Remove remote userscript runtime dependencies. *(N/A until userscript is regenerated in v3.0.)*
+
+v2.0.0 also delivered, beyond the original scope:
+
+- [x] **Schema v2 migration** — Storage gains `schemaVersion: 2` marker, written through on first load via `Settings._migrate()`. Migration is idempotent and runs only once per profile.
+- [x] **~70 new settings keys** — Core/theming, layout, player, downloads, feed/moderation, chat/rants, comments, automation, creator, integrations, privacy/data. All three catalogs (content.js `_defaults`, popup.js `DEFAULTS`, options.js `DEFAULTS` + `META`) extended in lockstep.
+- [x] **OLED Green theme** — Added `oledGreen` to `THEMES` (pure-black AMOLED, Rumble-green accent, alpha-only glass per house style — no `backdrop-filter`). Existing `catppuccin` default preserved on upgrade; v2.1 flips new installs.
 
 Dependencies:
 
@@ -729,7 +735,7 @@ Acceptance criteria:
 - Toggling any migrated feature on/off removes all DOM/CSS/listeners without reload.
 - Existing backups import into schema v2.
 - Userscript can install as one file and load core settings.
-- No new keyboard shortcuts exist.
+- [x] No new keyboard shortcuts exist. *(KeyboardNav demoted to legacy/off; no new shortcuts introduced in v2.0.0.)*
 
 ### v2.1.0: Premium UI and Layout Superset
 

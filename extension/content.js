@@ -1,9 +1,10 @@
-// RumbleX v1.9.3 - Content Script
+// RumbleX v2.0.0 - Content Script
 // Rumble enhancement suite - Chrome/Firefox extension
 'use strict';
 
 // ── Version ──
-const VERSION = chrome.runtime?.getManifest?.()?.version || '1.9.3';
+const VERSION = chrome.runtime?.getManifest?.()?.version || '2.0.0';
+const SCHEMA_VERSION = 2;
 
 // ── Settings Manager (chrome.storage.local) ──
 const Settings = {
@@ -27,7 +28,6 @@ const Settings = {
         autoMaxQuality: true,
         watchProgress: true,
         channelBlocker: true,
-        keyboardNav: true,
         autoTheater: false,
         liveChatEnhance: true,
         videoTimestamps: true,
@@ -145,6 +145,87 @@ const Settings = {
         hideCommentReportLink: false,
         // Chat
         cleanLiveChat: false,
+
+        // ── v2.0.0 — Schema v2, Core Engine, Settings Superset ──
+        schemaVersion: SCHEMA_VERSION,
+        // Core & theming
+        denseMode: true,
+        reducedMotion: false,
+        glassIntensity: 'medium',
+        accentColor: 'rumbleGreen',
+        legacyKeyboardNav: false,
+        debugSelectorTelemetry: false,
+        // Layout & UI cleanup
+        hideThumbnails: false,
+        hideThumbnailsFeeds: false,
+        hideThumbnailsRelated: false,
+        compactAccountPagination: false,
+        homeCleanupPreset: 'none',
+        pageDensity: 'dense',
+        // Player
+        qualityMode: 'best',
+        perChannelVolumeMemory: false,
+        autoplayBlockMode: 'relatedEndpointAndPlayer',
+        clipExportFormat: 'mp4',
+        segmentSkipMode: 'localOnly',
+        // Downloads & archives
+        downloadManagerEnabled: true,
+        downloadQualityPreference: 'best',
+        downloadIncludeMetadata: true,
+        downloadIncludeThumbnail: false,
+        downloadLiveStreams: false,
+        downloadShorts: true,
+        downloadConcurrency: 2,
+        downloadProbeCacheTtlHours: 24,
+        audioExtractionMode: 'browserIfSupported',
+        externalPlayerEnabled: false,
+        externalPlayerTemplate: '',
+        channelArchiveEnabled: false,
+        channelArchiveFilterClips: false,
+        channelArchiveMaxItems: 50,
+        // Feed, filtering & moderation
+        shortsFilterScope: 'everywhere',
+        blockedChannelsMeta: [],
+        blockedKeywordsMode: 'literal',
+        filterPreviewBadges: true,
+        politicsFilterPreset: 'off',
+        remoteCosmeticRules: false,
+        remoteCosmeticRulesChannel: 'stable',
+        // Live chat & rants
+        chatMentionHighlight: true,
+        chatClickToMention: true,
+        chatParticipantsList: false,
+        chatUsernameColors: 'deterministic',
+        chatTimedMutes: true,
+        chatMuteDurations: [15, 30, 60, 240],
+        rantStatsPanel: true,
+        rantExportFormat: 'csvJson',
+        rantTierFilter: 0,
+        rantStickyHighValue: true,
+        multiStreamViewer: false,
+        // Comments
+        commentThreadView: false,
+        commentSearch: false,
+        commentMuteDurations: [1440, 10080],
+        commentExport: false,
+        // Automation, creator & integrations
+        bulkUnsubscribeEnabled: false,
+        bulkUnsubscribeDryRun: true,
+        channelNotifierEnabled: false,
+        discordWebhookUrl: '',
+        rssExportEnabled: false,
+        creatorMode: false,
+        uploaderMetadataFill: false,
+        studioSceneTools: false,
+        obsAlertExport: false,
+        // Privacy, data & backup
+        stripTrackingParams: true,
+        privacyReport: true,
+        settingsProfiles: [],
+        activeProfileId: 'default',
+        backupHistory: true,
+        backupHistoryLimit: 10,
+        encryptedGistSync: false,
     },
     _writeTimer: null,
     _pendingWrite: false,
@@ -161,10 +242,36 @@ const Settings = {
 
     async init() {
         const data = await chrome.storage.local.get('rx_settings');
-        this._cache = { ...this._defaults, ...(data.rx_settings || {}) };
+        const stored = data.rx_settings || {};
+        const migrated = this._migrate(stored);
+        this._cache = { ...this._defaults, ...migrated };
         this._lastWritten = JSON.stringify(this._cache);
         this._pendingKeys = new Set();
         this._ready = true;
+        if (migrated !== stored) {
+            // Persist migration so we don't keep re-running it on every load.
+            try { await chrome.storage.local.set({ rx_settings: this._cache }); } catch {}
+            this._lastWritten = JSON.stringify(this._cache);
+        }
+    },
+    // Pre-v2 storage shapes:
+    //   - schemaVersion missing or < 2
+    //   - keyboardNav: bool (replaced by legacyKeyboardNav: false; off by house style)
+    // Migration preserves user intent: if they explicitly had keyboardNav on,
+    // their hotkeys still work after upgrade because legacyKeyboardNav inherits
+    // that value. Otherwise keyboardNav silently drops to off (the new default).
+    _migrate(stored) {
+        if (!stored || typeof stored !== 'object') return {};
+        const current = Number(stored.schemaVersion) || 0;
+        if (current >= SCHEMA_VERSION) return stored;
+        const out = { ...stored };
+        // v0/v1 → v2: keyboardNav → legacyKeyboardNav
+        if ('keyboardNav' in out && !('legacyKeyboardNav' in out)) {
+            out.legacyKeyboardNav = !!out.keyboardNav;
+        }
+        delete out.keyboardNav;
+        out.schemaVersion = SCHEMA_VERSION;
+        return out;
     },
     get(key) {
         if (!this._cache) return this._defaults[key];
@@ -265,6 +372,177 @@ const Page = {
     isSearch: () => location.pathname === '/search/video' || location.pathname.startsWith('/search/'),
     isChannel: () => location.pathname.startsWith('/c/') || location.pathname.startsWith('/user/'),
     isLive: () => !!document.querySelector('.media-description-info-stream-time') || !!document.querySelector('#chat-history-list'),
+    isAccount: () => location.pathname.startsWith('/account/'),
+    isStudio: () => location.hostname === 'studio.rumble.com',
+    classify() {
+        if (this.isStudio()) return 'studio';
+        if (this.isAccount()) return 'account';
+        if (this.isEmbed()) return 'embed';
+        if (this.isSearch()) return 'search';
+        if (this.isChannel()) return 'channel';
+        if (this.isWatch()) return this.isLive() ? 'live' : 'watch';
+        if (this.isHome()) return 'home';
+        if (this.isFeed()) return 'feed';
+        return 'unknown';
+    },
+};
+
+// ── Selector Registry (v2.0.0) ──
+// Named surface selectors with stable/fallback pairs from the MHTML map.
+// Prefer Selectors.find(key) over raw qs() in new feature code so Rumble's
+// DOM churn lands in ONE place instead of scattered selectors. Each entry
+// tries `stable` first, then falls back to `fallback`. `validate(el)` lets
+// callers reject false-positive matches structurally.
+const Selectors = {
+    _map: {
+        'header.root':        { stable: 'header[data-js="app_header"]', fallback: '.header' },
+        'nav.mainMenu':       { stable: '#main-menu', fallback: '.hover-menu.main-menu-nav' },
+        'search.form':        { stable: 'form[data-js="search_form"]', fallback: '.header-search' },
+        'search.input':       { stable: '[data-js="search_input"]', fallback: '.header-search-field' },
+        'search.autocomplete':{ stable: '[data-js="autocomplete_results_container"]', fallback: '[hx-post="/search/htmx/get-autocomplete-results"]' },
+        'feed.card':          { stable: '[role="listitem"][data-video-id]', fallback: '.videostream.thumbnail__grid--item' },
+        'feed.cardTitle':     { stable: '.thumbnail__title', fallback: '.thumbnail__title.line-clamp-2' },
+        'feed.author':        { stable: 'a[rel="author"].channel__link', fallback: '.channel__link' },
+        'watch.media':        { stable: '[data-js="media_container"]', fallback: '.media-page' },
+        'watch.player':       { stable: '#videoPlayer, video', fallback: '.videoPlayer-Rumble-cls' },
+        'watch.title':        { stable: '.video-header-container__title', fallback: '[class*="video-header"] [class*="title"]' },
+        'watch.share':        { stable: '[data-js="media_engage_share"]', fallback: '.round-button.media-by-actions-button' },
+        'watch.description':  { stable: '[data-js="media_description_section"], .media-description-section', fallback: '.container.content.media-description' },
+        'watch.related':      { stable: '.media-page-related-media-desktop-sidebar', fallback: '.mediaList-item' },
+        'comments.root':      { stable: '[data-js="media_page_comments_container"], #video-comments', fallback: '.media-page-comments-container' },
+        'comments.item':      { stable: 'li.comment-item[data-comment-id]', fallback: '.comment-item' },
+        'comments.text':      { stable: '.comment-text', fallback: '[class*="comment"] [class*="text"]' },
+        'comments.composer':  { stable: '[data-js*="comment"] textarea', fallback: '.comments-create-textarea' },
+        'chat.root':          { stable: 'aside.media-page-chat-aside-chat', fallback: '.chat--header' },
+        'chat.history':       { stable: '#chat-history-list', fallback: '.chat-history' },
+        'chat.message':       { stable: '#chat-history-list .chat-history--row', fallback: '.chat-history--row' },
+        'chat.username':      { stable: '.chat-history--username, .chat-history--rant-username', fallback: '.js-chat-username' },
+        'rant.item':          { stable: '.chat-history--rant[data-level]', fallback: '.chat-history--rant' },
+        'rant.price':         { stable: '.chat-history--rant-price', fallback: '[class*="rant-price"]' },
+        'modal.portal':       { stable: '#portal[data-js="portal"]', fallback: '#portal' },
+        'modal.overlay':      { stable: '[data-js="modal__overlay"]', fallback: '[hx-ext="modal"]' },
+        'theme.group':        { stable: '.theme-option-group', fallback: '[class*="theme-option"]' },
+        'account.pagination': { stable: '.pagination.autoPg', fallback: '.pagination' },
+    },
+    _telemetry: [],
+    find(key, root) {
+        const entry = this._map[key];
+        if (!entry) return null;
+        const scope = root || document;
+        try {
+            let el = scope.querySelector(entry.stable);
+            if (el) return el;
+        } catch {}
+        try {
+            const el = scope.querySelector(entry.fallback);
+            if (el) {
+                this._note(key, 'fallback');
+                return el;
+            }
+        } catch {}
+        return null;
+    },
+    findAll(key, root) {
+        const entry = this._map[key];
+        if (!entry) return [];
+        const scope = root || document;
+        try {
+            const nodes = scope.querySelectorAll(entry.stable);
+            if (nodes.length) return Array.from(nodes);
+        } catch {}
+        try {
+            const nodes = scope.querySelectorAll(entry.fallback);
+            if (nodes.length) {
+                this._note(key, 'fallback');
+                return Array.from(nodes);
+            }
+        } catch {}
+        return [];
+    },
+    wait(key, { timeout = 8000, root } = {}) {
+        return new Promise((resolve, reject) => {
+            const found = this.find(key, root);
+            if (found) return resolve(found);
+            const obs = new MutationObserver(() => {
+                const el = this.find(key, root);
+                if (el) { obs.disconnect(); clearTimeout(timer); resolve(el); }
+            });
+            obs.observe(document.documentElement, { childList: true, subtree: true });
+            const timer = setTimeout(() => {
+                obs.disconnect();
+                this._note(key, 'timeout');
+                reject(new Error('Selectors.wait timeout: ' + key));
+            }, timeout);
+        });
+    },
+    _note(key, kind) {
+        if (!Settings._ready || !Settings.get('debugSelectorTelemetry')) return;
+        this._telemetry.push({ key, kind, at: Date.now() });
+        if (this._telemetry.length > 200) this._telemetry.shift();
+    },
+    drainTelemetry() {
+        const out = this._telemetry.slice();
+        this._telemetry.length = 0;
+        return out;
+    },
+};
+
+// ── Route Lifecycle (v2.0.0) ──
+// Single source of route-change signals for features. Patches history once,
+// subscribes to popstate, and listens for htmx swap/settle events. Feature
+// modules call Router.onChange(cb) and re-init/destroy themselves on route
+// transitions instead of relying on hardcoded MutationObservers per feature.
+const Router = {
+    _handlers: [],
+    _lastUrl: location.href,
+    _lastPage: null,
+    _patched: false,
+    init() {
+        if (this._patched) return;
+        this._patched = true;
+        const fire = (reason) => this._fire(reason);
+        try {
+            const origPush = history.pushState;
+            const origReplace = history.replaceState;
+            history.pushState = function (...args) {
+                const r = origPush.apply(this, args);
+                queueMicrotask(() => fire('pushState'));
+                return r;
+            };
+            history.replaceState = function (...args) {
+                const r = origReplace.apply(this, args);
+                queueMicrotask(() => fire('replaceState'));
+                return r;
+            };
+        } catch (e) { console.warn('[RumbleX] history patch failed:', e); }
+        window.addEventListener('popstate', () => fire('popstate'));
+        // htmx may load after content.js — listen on document so any later
+        // htmx-emitted event still bubbles to us.
+        for (const evt of ['htmx:afterSwap', 'htmx:afterSettle', 'htmx:historyRestore']) {
+            document.addEventListener(evt, () => fire(evt));
+        }
+        document.addEventListener('visibilitychange', () => fire('visibilitychange'));
+        this._lastPage = Page.classify();
+    },
+    _fire(reason) {
+        const url = location.href;
+        const page = Page.classify();
+        const changed = url !== this._lastUrl || page !== this._lastPage;
+        const detail = { url, prevUrl: this._lastUrl, page, prevPage: this._lastPage, reason, changed };
+        this._lastUrl = url;
+        this._lastPage = page;
+        for (const fn of this._handlers) {
+            try { fn(detail); } catch (e) { console.warn('[RumbleX] router handler failed:', e); }
+        }
+    },
+    onChange(fn) {
+        if (typeof fn === 'function') this._handlers.push(fn);
+        return () => {
+            const i = this._handlers.indexOf(fn);
+            if (i >= 0) this._handlers.splice(i, 1);
+        };
+    },
+    page() { return Page.classify(); },
 };
 
 // ── Anti-FOUC: Inject immediately at document-start ──
@@ -595,6 +873,18 @@ const THEMES = {
         yellow: '#d4a843', peach: '#c98042', brand: '#85c742',
         selectionBg: 'rgba(133,199,66,0.25)',
         hoverBg: 'rgba(30,42,20,0.5)',
+    },
+    // v2.0.0 — OLED Green: pure-black surfaces, premium dark RumbleX-owned UI.
+    // Tuned for AMOLED, denser borders, no backdrop-filter (per house style).
+    oledGreen: {
+        label: 'OLED Green',
+        base: '#000000', mantle: '#000000', crust: '#000000',
+        surface0: '#0a0f06', surface1: '#11170c', surface2: '#1b2412',
+        text: '#e7f1dc', subtext: '#a8c490', subtext0: '#6e8f56',
+        accent: '#85c742', green: '#85c742', red: '#e55c5c',
+        yellow: '#d4a843', peach: '#c98042', brand: '#85c742',
+        selectionBg: 'rgba(133,199,66,0.28)',
+        hoverBg: 'rgba(133,199,66,0.08)',
     },
 };
 
@@ -3741,8 +4031,8 @@ const ChannelBlocker = {
 //  FEATURE: Keyboard Navigation
 // ═══════════════════════════════════════════
 const KeyboardNav = {
-    id: 'keyboardNav',
-    name: 'Keyboard Nav',
+    id: 'legacyKeyboardNav',
+    name: 'Keyboard Nav (legacy)',
     _handler: null,
 
     _getVideo() {
@@ -6540,7 +6830,7 @@ const RX_CATEGORIES = [
             { id: 'autoplayBlock', label: 'Autoplay Block', desc: 'Prevent auto-play of next video' },
             { id: 'loopControl', label: 'Loop Control', desc: 'Full video loop + A-B segment loop' },
             { id: 'miniPlayer', label: 'Mini Player', desc: 'Floating draggable video when scrolling away' },
-            { id: 'keyboardNav', label: 'Keyboard Nav', desc: 'YouTube-style hotkeys (J/K/L, F, M, 0-9)' },
+            { id: 'legacyKeyboardNav', label: 'Keyboard Nav (legacy)', desc: 'YouTube-style hotkeys (J/K/L, F, M, 0-9) — off by default in v2' },
             { id: 'videoStats', label: 'Video Stats', desc: 'Resolution, codec, buffer, frames overlay' },
             { id: 'chapters', label: 'Chapters', desc: 'Parse description timestamps + seekbar markers' },
             { id: 'autoplayScheduler', label: 'Autoplay Queue', desc: 'Queue Rumble URLs, auto-advance at end' },
@@ -10391,6 +10681,9 @@ const features = [
 
 async function boot() {
     await Settings.init();
+    // Wire route lifecycle once. Features that subscribe via Router.onChange
+    // will receive route-transition events for htmx swaps + history nav.
+    try { Router.init(); } catch (e) { console.warn('[RumbleX] Router init failed:', e); }
 
     onReady(() => {
         for (const feat of features) {

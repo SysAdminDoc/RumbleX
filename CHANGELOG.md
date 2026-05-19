@@ -2,6 +2,41 @@
 
 All notable changes to RumbleX will be documented in this file.
 
+## [2.0.0] - 2026-05-19
+
+### v2.0.0 — Core Engine, Schema v2, and Settings Superset (Phase 1 of v2)
+
+First implementation pass against the ROADMAP. Lays foundation for the v2.x feature waves (premium UI, download manager 2.0, RantStats-parity chat, feed/moderation, creator tools, privacy/profiles) without breaking any v1.9 surface.
+
+**Schema v2 migration**
+- Storage gains a `schemaVersion: 2` marker. `Settings.init()` now runs a one-shot migration on load: any pre-v2 `keyboardNav` value is preserved into the new `legacyKeyboardNav` key so users whose hotkeys were on don't silently lose them. The migrated payload is written back immediately so the migration only runs once per profile.
+- Adds 70+ new settings keys covering: core/theming (`denseMode`, `reducedMotion`, `glassIntensity`, `accentColor`, `debugSelectorTelemetry`), layout (`hideThumbnails*`, `compactAccountPagination`, `homeCleanupPreset`, `pageDensity`), player (`qualityMode`, `perChannelVolumeMemory`, `autoplayBlockMode`, `clipExportFormat`, `segmentSkipMode`), downloads + archives (`downloadManager*`, `download{Include,Live,Shorts,Concurrency,Probe}*`, `audioExtractionMode`, `externalPlayer*`, `channelArchive*`), feed/filter (`shortsFilterScope`, `blockedChannelsMeta`, `blockedKeywordsMode`, `filterPreviewBadges`, `politicsFilterPreset`, `remoteCosmeticRules*`), chat/rants (`chatMentionHighlight`, `chatClickToMention`, `chatParticipantsList`, `chatUsernameColors`, `chatTimedMutes`, `chatMuteDurations`, `rantStatsPanel`, `rantExportFormat`, `rantTierFilter`, `rantStickyHighValue`, `multiStreamViewer`), comments (`commentThreadView`, `commentSearch`, `commentMuteDurations`, `commentExport`), automation/creator/integrations (`bulkUnsubscribe*`, `channelNotifierEnabled`, `discordWebhookUrl`, `rssExportEnabled`, `creatorMode`, `uploaderMetadataFill`, `studioSceneTools`, `obsAlertExport`), and privacy/data (`stripTrackingParams`, `privacyReport`, `settingsProfiles`, `activeProfileId`, `backupHistory`, `backupHistoryLimit`, `encryptedGistSync`).
+- All three catalogs (content.js `_defaults`, popup.js `DEFAULTS`, options.js `DEFAULTS` + `META`) extended in lockstep. Five new options-page groups added: **Core**, **Automation**, **Creator & Studio**, **Integrations**, **Privacy & Data**.
+
+**Selector Registry (`Selectors`)**
+- New top-level module loaded before features. Provides `find(key, root)`, `findAll(key, root)`, and `wait(key, { timeout, root })` against a 27-entry named-surface map built from the MHTML ground-truth selector table in `ROADMAP.md`. Each entry has a stable selector (preferring `data-js`, `aria-*`, IDs, structure) and a fallback for Rumble's CSS-utility-heavy DOM.
+- Selector fallbacks and timeouts are logged into an in-memory ring buffer when `debugSelectorTelemetry` is enabled. No network, no auto-upload — drainable via `Selectors.drainTelemetry()` for local export later.
+- Existing features keep their inline selectors for now; new v2.x feature work routes through the registry so Rumble's DOM churn lands in one place.
+
+**Route Lifecycle (`Router`)**
+- New module patches `history.pushState`/`replaceState` once, subscribes to `popstate`, and listens for `htmx:afterSwap`/`htmx:afterSettle`/`htmx:historyRestore`. Emits a single normalized `{ url, prevUrl, page, prevPage, reason, changed }` event to subscribers via `Router.onChange(fn)`. `Page.classify()` now returns one of `home | feed | watch | live | embed | search | channel | account | studio | unknown`.
+- Initialized at the top of `boot()` so feature `init()` calls run with route hooks already wired. v2.1+ features will subscribe instead of installing one MutationObserver per module.
+
+**OLED Green theme**
+- Adds `oledGreen` to `THEMES` — pure-black surfaces tuned for AMOLED, Rumble-green accent (`#85c742`), denser borders, alpha-only glass (no `backdrop-filter`, per house style). Existing `catppuccin` default preserved on upgrade; v2.1 will flip new installs to `oledGreen`.
+
+**KeyboardNav → legacy**
+- `KeyboardNav.id` renamed `keyboardNav` → `legacyKeyboardNav`. Default flipped to **off**, matching the house rule "Never add keyboard shortcuts." Moved out of the **Video Player** options group into **Core** under a "legacy" label.
+- Migration preserves user intent: anyone who explicitly had `keyboardNav: true` in storage gets `legacyKeyboardNav: true` after upgrade — no silent feature loss.
+
+**Catalog parity**
+- 126 (v1.9) → ~197 settings keys across content.js, popup.js, options.js. All three editors continue to match on every key.
+
+### Deferred to v2.1+
+- Full extraction of `core/`, `platform/`, `features/` source layout — v2.0 keeps the current single-file `content.js` for stability; the registry + router are the seams the v2.1 split will pull through.
+- Userscript parity with the new v2 settings — `RumbleX.user.js` stays at its v1.8 baseline until v2.x feature work stabilises (per roadmap acceptance criteria for v3.0.0 distribution).
+- New-feature implementations behind the new toggles (download manager 2.0, RantStats-parity, multi-stream, bulk unsubscribe, creator mode, etc.) — keys + defaults shipped now so the settings UI is ready; feature modules land in v2.2 – v2.6.
+
 ## [1.9.3] - 2026-04-22
 
 ### Settings parity with Astra Deck — full round-trip backup
