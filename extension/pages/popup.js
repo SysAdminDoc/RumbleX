@@ -1,4 +1,4 @@
-// RumbleX v3.20.0 - Popup Script
+// RumbleX v3.21.0 - Popup Script
 'use strict';
 
 // Feature list grouped by category. Order within a group controls display
@@ -400,6 +400,8 @@ const DEFAULTS = {
     encryptedGistSyncId: '',
     // v3.19.0 — In-page "Archive channel" button (Channel Archive Phase 2)
     channelArchiveButton: true,
+    // v3.21.0 — Channel archive max-height quality cap
+    channelArchiveMaxHeight: 'best',
     // v3.20.0 — Per-feature error log ring buffer
     debugErrorLog: false,
 

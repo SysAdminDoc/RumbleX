@@ -1,9 +1,9 @@
-// RumbleX v3.20.0 - Content Script
+// RumbleX v3.21.0 - Content Script
 // Rumble enhancement suite - Chrome/Firefox extension
 'use strict';
 
 // ── Version ──
-const VERSION = chrome.runtime?.getManifest?.()?.version || '3.20.0';
+const VERSION = chrome.runtime?.getManifest?.()?.version || '3.21.0';
 const SCHEMA_VERSION = 2;
 
 // ── Settings Manager (chrome.storage.local) ──
@@ -187,6 +187,10 @@ const Settings = {
         channelArchiveEnabled: false,
         channelArchiveFilterClips: false,
         channelArchiveMaxItems: 50,
+        // v3.21.0 — Max-height cap for channel archive downloads.
+        // Allowed: 'best' | '2160' | '1440' | '1080' | '720' | '480' | '360'.
+        // The discoverer picks the highest direct-MP4 quality at or below this height.
+        channelArchiveMaxHeight: 'best',
         // v3.19.0 — In-page "Archive channel" button on /c/<slug> + /user/<slug>
         channelArchiveButton: true,
         // Feed, filtering & moderation

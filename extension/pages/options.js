@@ -1,4 +1,4 @@
-// RumbleX v3.20.0 - Options Page
+// RumbleX v3.21.0 - Options Page
 // Standalone settings management via chrome.storage.local (rx_settings key).
 // Mirrors Astra Deck's settings page pattern: dirty-draft workflow with
 // search, group nav, stats overview, and export/import/reset.
@@ -228,6 +228,8 @@
         encryptedGistSyncId: '',
         // v3.19.0 — In-page "Archive channel" button (Channel Archive Phase 2)
         channelArchiveButton: true,
+        // v3.21.0 — Channel archive max-height quality cap
+        channelArchiveMaxHeight: 'best',
         // v3.20.0 — Per-feature error log ring buffer
         debugErrorLog: false,
 
@@ -479,6 +481,7 @@
         encryptedGistSyncToken: { group: 'privacy', label: 'Gist Sync GitHub PAT', desc: 'Personal access token with the `gist` scope. Stored locally only.' },
         encryptedGistSyncId: { group: 'privacy', label: 'Gist Sync ID', desc: 'GitHub Gist ID. Set automatically on first push.' },
         channelArchiveButton: { group: 'integrations', label: 'In-Page Archive Button', desc: 'Show "Archive channel" button next to Follow on channel pages.' },
+        channelArchiveMaxHeight: { group: 'downloads', label: 'Archive Max Height', desc: 'Cap archive downloads at this resolution. best | 2160 | 1440 | 1080 | 720 | 480 | 360.' },
         debugErrorLog: { group: 'privacy', label: 'Error Log Ring Buffer', desc: 'Record feature init failures to a local 200-entry ring buffer. Never uploaded.' },
 
         // v3.1.0 — Platform follow-through
@@ -600,6 +603,7 @@
         archiveQueueSummary: document.getElementById('archive-queue-summary'),
         archiveChannelInput: document.getElementById('archive-channel-input'),
         archiveMaxInput: document.getElementById('archive-max-input'),
+        archiveMaxHeightInput: document.getElementById('archive-max-height-input'),
         archiveFilterClipsInput: document.getElementById('archive-filter-clips-input'),
         archiveEnqueueBtn: document.getElementById('archive-enqueue-btn'),
         archivePauseBtn: document.getElementById('archive-pause-btn'),
@@ -2215,6 +2219,15 @@
     // v3.18.0 — Channel Archive Queue UI. Talks to the background drain via
     // the archive* message API; live-refreshes via storage.onChanged.
     async function refreshArchiveQueue() {
+        // Sync the dropdown to the current saved value.
+        if (elements.archiveMaxHeightInput) {
+            try {
+                const got = await new Promise((resolve) => chrome.storage.local.get(['rx_settings'], resolve));
+                const s = (got && got.rx_settings) ? got.rx_settings : {};
+                const cur = String(s.channelArchiveMaxHeight || 'best');
+                elements.archiveMaxHeightInput.value = cur;
+            } catch {}
+        }
         const resp = await chrome.runtime.sendMessage({ action: 'archiveGetQueue' });
         const queue = (resp && resp.ok && resp.queue) ? resp.queue : { jobs: [], paused: false };
         const jobs = queue.jobs || [];
@@ -2702,6 +2715,22 @@
     if (elements.archiveChannelInput) {
         elements.archiveChannelInput.addEventListener('keydown', (e) => {
             if (e.key === 'Enter') { e.preventDefault(); void enqueueArchiveChannel(); }
+        });
+    }
+    // Persist the max-height dropdown to rx_settings on change. SW reads
+    // channelArchiveMaxHeight from storage at job-process time, so the new
+    // value applies to the next discovery without page reload.
+    if (elements.archiveMaxHeightInput) {
+        elements.archiveMaxHeightInput.addEventListener('change', async () => {
+            try {
+                const got = await new Promise((resolve) => chrome.storage.local.get(['rx_settings'], resolve));
+                const s = (got && got.rx_settings && typeof got.rx_settings === 'object') ? got.rx_settings : {};
+                s.channelArchiveMaxHeight = elements.archiveMaxHeightInput.value || 'best';
+                await new Promise((resolve) => chrome.storage.local.set({ rx_settings: s }, resolve));
+                showStatus('Archive max height set to ' + (s.channelArchiveMaxHeight === 'best' ? 'best available' : '≤ ' + s.channelArchiveMaxHeight + 'p') + '.', 'success');
+            } catch (e) {
+                showStatus('Could not save: ' + String(e?.message || e), 'error');
+            }
         });
     }
     // Live-refresh the archive panel when the SW updates the queue.

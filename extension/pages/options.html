@@ -791,6 +791,15 @@
                     <div class="notifier-add">
                         <input type="text" id="archive-channel-input" placeholder="Channel URL (https://rumble.com/c/…)" class="notifier-input" autocomplete="off">
                         <input type="number" id="archive-max-input" min="1" max="500" value="50" class="notifier-input" style="max-width: 90px;" title="Max videos to enqueue from this channel page">
+                        <select id="archive-max-height-input" class="notifier-input" style="max-width: 140px;" title="Cap downloads at this resolution">
+                            <option value="best">Best available</option>
+                            <option value="2160">≤ 2160p (4K)</option>
+                            <option value="1440">≤ 1440p</option>
+                            <option value="1080">≤ 1080p</option>
+                            <option value="720">≤ 720p</option>
+                            <option value="480">≤ 480p</option>
+                            <option value="360">≤ 360p</option>
+                        </select>
                     </div>
                     <div class="checkbox-row" style="margin: 6px 0 10px 2px;">
                         <label><input type="checkbox" id="archive-filter-clips-input"> Skip videos titled "Clip:" or under /clips/</label>

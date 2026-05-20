@@ -435,10 +435,11 @@ function rxArchiveSanitizeFilename(s) {
     return cleaned || 'rumble-video';
 }
 
-async function rxDiscoverVideoQuality(videoSlug) {
+async function rxDiscoverVideoQuality(videoSlug, maxHeight) {
     // videoSlug is the "v..." prefix from the path. embedJS expects the slug
     // *minus* the leading "v". Existing content.js code does the same strip:
     // `embedId.replace('v', '')` — see line ~2886.
+    // maxHeight: number cap (e.g. 1080) or 0 / null for "best".
     const numericId = String(videoSlug || '').replace(/^v/, '');
     if (!numericId) throw new Error('bad-video-id');
     const url = 'https://rumble.com/embedJS/u3/?request=video&ver=2&v=' + encodeURIComponent(numericId);
@@ -446,28 +447,35 @@ async function rxDiscoverVideoQuality(videoSlug) {
     if (!resp.ok) throw new Error('embedJS http-' + resp.status);
     const data = await resp.json();
     const src = data.ua || data.u || {};
+    const cap = (typeof maxHeight === 'number' && maxHeight > 0) ? maxHeight : Infinity;
     let bestUrl = null;
     let bestHeight = 0;
     let bestLabel = '';
     let title = data.title || data.full_title || data.video?.title || null;
+    const consider = (u, h) => {
+        if (!u || !(h > 0)) return;
+        if (h > cap) return;
+        if (h > bestHeight) {
+            bestUrl = u;
+            bestHeight = h;
+            bestLabel = h + 'p';
+        }
+    };
     for (const fmt of ['mp4', 'webm']) {
         const group = src[fmt];
         if (!group || typeof group !== 'object') continue;
-        if (group.url && group.meta?.h > 0 && group.meta.h > bestHeight) {
-            bestUrl = group.url;
-            bestHeight = group.meta.h;
-            bestLabel = group.meta.h + 'p';
-        }
+        if (group.url && group.meta?.h > 0) consider(group.url, group.meta.h);
         for (const [, val] of Object.entries(group)) {
             if (!val?.url || !val?.meta?.h) continue;
-            if (val.meta.h > bestHeight) {
-                bestUrl = val.url;
-                bestHeight = val.meta.h;
-                bestLabel = val.meta.h + 'p';
-            }
+            consider(val.url, val.meta.h);
         }
     }
-    if (!bestUrl) throw new Error('no-direct-mp4');
+    if (!bestUrl) {
+        // If a cap is in effect but no quality fit, throw a specific reason so
+        // the queue UI can show a useful error instead of a generic miss.
+        if (cap !== Infinity) throw new Error('no-direct-mp4-under-' + cap + 'p');
+        throw new Error('no-direct-mp4');
+    }
     return { url: bestUrl, quality: bestLabel, height: bestHeight, title };
 }
 
@@ -520,7 +528,17 @@ async function rxProcessArchiveJob(id) {
     const job = root.jobs.find((j) => j.id === id);
     if (!job) return;
     try {
-        const discovered = await rxDiscoverVideoQuality(job.videoId);
+        // Honor channelArchiveMaxHeight from settings — 'best' / '' / numeric.
+        let cap = 0;
+        try {
+            const got = await chrome.storage.local.get(['rx_settings']);
+            const raw = String(got?.rx_settings?.channelArchiveMaxHeight || 'best').toLowerCase();
+            if (raw !== 'best' && raw !== '') {
+                const n = parseInt(raw, 10);
+                if (Number.isFinite(n) && n > 0) cap = n;
+            }
+        } catch {}
+        const discovered = await rxDiscoverVideoQuality(job.videoId, cap);
         const title = job.videoTitle || discovered.title || job.videoId;
         const filename = 'RumbleX/' + rxArchiveSanitizeFilename(title) + '_' + discovered.quality + '.mp4';
         if (!isAllowedDownloadUrl(discovered.url)) {

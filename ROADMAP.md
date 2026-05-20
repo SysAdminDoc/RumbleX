@@ -1,8 +1,8 @@
 # RumbleX Roadmap
 
-Version: 4.19 — v3.20 RxErrorLog ring buffer (closes Observability workstream Now-tier item)
+Version: 4.20 — v3.21 Channel Archive max-height cap (Phase 3a)
 Date: 2026-05-19
-Current shipped: v3.20.0 (extension), v1.8.0 (userscript)
+Current shipped: v3.21.0 (extension), v1.8.0 (userscript)
 
 This roadmap supersedes the v2026-05-19 v3.0 plan. It is the result of a fresh repo audit plus a 60+ source external research sweep (see [Appendix C — Sources](#appendix-c--sources)). It tracks shipped work in the [Recently shipped](#recently-shipped) summary, then prioritises the next ~12 months of work into **Now / Next / Later / Under Consideration / Rejected** tiers with every claim traceable to a source.
 
@@ -242,6 +242,13 @@ Tier placement above is per-feature; the workstreams below are themes the team s
 ## Recently shipped
 
 Compressed history. Detail per release lives in `CHANGELOG.md`.
+
+### v3.21.0 — Channel Archive max-height cap (2026-05-19)
+
+- New `channelArchiveMaxHeight` setting (default `'best'`, values: best/2160/1440/1080/720/480/360). Caps archive-queue downloads at a chosen resolution.
+- SW `rxDiscoverVideoQuality(videoSlug, maxHeight)` gained the cap param; `rxProcessArchiveJob` reads the setting at job-process time so mid-queue changes take effect on the next pick.
+- Specific failure reason `no-direct-mp4-under-NNNNp` when a cap is in effect but no direct MP4 fits.
+- New options-page dropdown next to the channel-URL + maxItems inputs. Persists immediately to `rx_settings` with confirmation toast. Catalog 205 → 206.
 
 ### v3.20.0 — RxErrorLog ring buffer (2026-05-19)
 

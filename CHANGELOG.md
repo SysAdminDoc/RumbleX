@@ -2,6 +2,31 @@
 
 All notable changes to RumbleX will be documented in this file.
 
+## [3.21.0] - 2026-05-19
+
+### v3.21.0 — Channel Archive max-height quality cap (Phase 3a)
+
+Closes the v3.18 deferred-item "Per-job quality preference" — users can now cap channel-archive downloads at a chosen resolution instead of always grabbing the highest available.
+
+**New `channelArchiveMaxHeight` setting**
+- Default `'best'` (current behavior preserved — highest direct-MP4).
+- Other values: `'2160'`, `'1440'`, `'1080'`, `'720'`, `'480'`, `'360'`. Parsed as a numeric cap; the SW discoverer picks the highest direct-MP4 at-or-below this height.
+- Group: Downloads. Exposed in the settings catalog META.
+
+**SW discoverer update** — `rxDiscoverVideoQuality(videoSlug, maxHeight)` gained an optional `maxHeight` parameter. `rxProcessArchiveJob` reads `channelArchiveMaxHeight` from settings at job-process time (not enqueue time) so a user can change the cap mid-queue and the next pick honors it. Falls back to "best" if the value is missing or malformed.
+- New specific error reason when a cap is in effect but no quality fits: `no-direct-mp4-under-NNNNp`. Shows in the failed-job row with the v3.18 retry button so users can either drop the cap or remove the job.
+
+**Options-page UI**
+- New select dropdown next to the channel-URL + maxItems inputs: "Best available / ≤ 2160p / ≤ 1440p / ≤ 1080p / ≤ 720p / ≤ 480p / ≤ 360p".
+- Change handler persists immediately to `rx_settings` and shows a confirmation toast. Auto-syncs from storage on each panel refresh.
+
+**Catalog parity** 206/206/206/206 (was 205) — added `channelArchiveMaxHeight` (string, default `'best'`). No new permissions. Selector harness 85 pass / 17 fixtures unchanged.
+
+### Deferred to v3.22+
+
+- **HLS fallback for Channel Archive** — videos without `ua.mp4.*` direct URLs still fail with `no-direct-mp4`. Needs offscreen-doc transmux adaptation of the v2.2 mux.js path.
+- **File System Access folder picker for batchDownload** — let users pick a sub-folder under Downloads instead of writing everywhere; persist handle in IndexedDB.
+
 ## [3.20.0] - 2026-05-19
 
 ### v3.20.0 — Per-feature error log ring buffer (Observability workstream)
