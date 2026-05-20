@@ -1,4 +1,4 @@
-// RumbleX v3.23.0 - Popup Script
+// RumbleX v3.24.0 - Popup Script
 'use strict';
 
 // Feature list grouped by category. Order within a group controls display
@@ -402,6 +402,8 @@ const DEFAULTS = {
     channelArchiveButton: true,
     // v3.21.0 — Channel archive max-height quality cap
     channelArchiveMaxHeight: 'best',
+    // v3.24.0 — Channel archive download subfolder
+    channelArchiveSubfolder: 'RumbleX',
     // v3.20.0 — Per-feature error log ring buffer
     debugErrorLog: false,
 

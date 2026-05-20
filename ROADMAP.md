@@ -1,8 +1,8 @@
 # RumbleX Roadmap
 
-Version: 4.22 — v3.23 RxErrorLog Phase 2 (Router + boot + VideoDownloader instrumentation)
+Version: 4.23 — v3.24 Customizable Channel Archive subfolder (sanitized SW-side)
 Date: 2026-05-19
-Current shipped: v3.23.0 (extension), v1.8.0 (userscript)
+Current shipped: v3.24.0 (extension), v1.8.0 (userscript)
 
 This roadmap supersedes the v2026-05-19 v3.0 plan. It is the result of a fresh repo audit plus a 60+ source external research sweep (see [Appendix C — Sources](#appendix-c--sources)). It tracks shipped work in the [Recently shipped](#recently-shipped) summary, then prioritises the next ~12 months of work into **Now / Next / Later / Under Consideration / Rejected** tiers with every claim traceable to a source.
 
@@ -242,6 +242,12 @@ Tier placement above is per-feature; the workstreams below are themes the team s
 ## Recently shipped
 
 Compressed history. Detail per release lives in `CHANGELOG.md`.
+
+### v3.24.0 — Customizable Channel Archive subfolder (2026-05-19)
+
+- New `channelArchiveSubfolder` setting (default `'RumbleX'`). Read by the SW at job-process time so mid-queue changes apply to next job.
+- `rxArchiveSanitizeSubfolder()` helper strips drive letters, backslashes, parent-segments, reserved chars, excess depth (>4 segments). Empty falls back to default. Defense-in-depth — chrome.downloads also rejects absolute paths.
+- New text input in the options-page archive section, below the max-height dropdown. Catalog parity 206 → 207.
 
 ### v3.23.0 — RxErrorLog Phase 2 instrumentation (2026-05-19)
 

@@ -2,6 +2,25 @@
 
 All notable changes to RumbleX will be documented in this file.
 
+## [3.24.0] - 2026-05-19
+
+### v3.24.0 — Customizable Channel Archive download subfolder
+
+Users were dumping every channel-archive download into a hardcoded `RumbleX/` folder under Downloads. This release lets each user pick their own subfolder name (and a shallow tree if they want — e.g., `RumbleArchive/2026/Bongino`).
+
+**New `channelArchiveSubfolder` setting** (default `'RumbleX'`)
+- Read by the SW at job-process time (not enqueue time), same pattern as v3.21's `channelArchiveMaxHeight` — change it mid-queue and the next job lands in the new folder.
+- Sanitized SW-side via new `rxArchiveSanitizeSubfolder()` helper. Strips backslashes, drive letters, parent-segments (`..`), reserved chars (`<>:"|?*`), control chars, and excess depth (>4 segments truncated). Empty input falls back to `'RumbleX'`. **Defense-in-depth** — a malformed value can't escape the user's Downloads root because chrome.downloads also rejects absolute paths.
+
+**Options-page UI** — new text input below the max-height dropdown in the "Channel archive queue" section. Persists immediately on `change`; shows a confirmation toast acknowledging that the value will be sanitized server-side.
+
+**Catalog parity** 207/207/207/207 (was 206) — added `channelArchiveSubfolder` (string, default `'RumbleX'`). No new permissions. Selector harness 85 pass / 17 fixtures unchanged.
+
+### Deferred to v3.25+
+
+- **HLS fallback for Channel Archive** — still the largest remaining roadmap item.
+- **File System Access folder picker** — would let users pick a folder anywhere, not just under Downloads. Doesn't compose with chrome.downloads.download (which expects a relative path under Downloads); would require switching the download path to a fetch-then-stream-to-FileSystemDirectoryHandle implementation. Multi-day work.
+
 ## [3.23.0] - 2026-05-19
 
 ### v3.23.0 — RxErrorLog Phase 2 instrumentation

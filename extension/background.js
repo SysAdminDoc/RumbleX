@@ -435,6 +435,23 @@ function rxArchiveSanitizeFilename(s) {
     return cleaned || 'rumble-video';
 }
 
+// v3.24.0 — Subfolder sanitizer. Strips drive letters, leading slashes,
+// path separators, parent-traversal segments, and unsafe filename chars.
+// Falls back to 'RumbleX' if the cleaned result is empty.
+function rxArchiveSanitizeSubfolder(s) {
+    let raw = String(s == null ? 'RumbleX' : s);
+    // Collapse backslashes to forward slashes for uniform splitting.
+    raw = raw.replace(/\\+/g, '/');
+    const parts = raw.split('/')
+        .map((p) => p.trim())
+        // Drop drive letters, parent-segments, and empty/dot pieces.
+        .filter((p) => p && p !== '.' && p !== '..' && !/^[a-z]:$/i.test(p))
+        .map((p) => p.replace(/[<>:"|?*\u0000-\u001f]+/g, '').replace(/\s+/g, ' ').trim())
+        .filter((p) => p);
+    const joined = parts.slice(0, 4).join('/').slice(0, 120);
+    return joined || 'RumbleX';
+}
+
 async function rxDiscoverVideoQuality(videoSlug, maxHeight) {
     // videoSlug is the "v..." prefix from the path. embedJS expects the slug
     // *minus* the leading "v". Existing content.js code does the same strip:
@@ -540,7 +557,14 @@ async function rxProcessArchiveJob(id) {
         } catch {}
         const discovered = await rxDiscoverVideoQuality(job.videoId, cap);
         const title = job.videoTitle || discovered.title || job.videoId;
-        const filename = 'RumbleX/' + rxArchiveSanitizeFilename(title) + '_' + discovered.quality + '.mp4';
+        // Subfolder sourced from settings (default 'RumbleX'); sanitized so a
+        // malformed user value can't escape the Downloads root.
+        let subfolder = 'RumbleX';
+        try {
+            const got = await chrome.storage.local.get(['rx_settings']);
+            subfolder = rxArchiveSanitizeSubfolder(got?.rx_settings?.channelArchiveSubfolder);
+        } catch {}
+        const filename = subfolder + '/' + rxArchiveSanitizeFilename(title) + '_' + discovered.quality + '.mp4';
         if (!isAllowedDownloadUrl(discovered.url)) {
             await rxUpdateArchiveJob(id, { status: 'failed', error: 'url-not-allowlisted', completedAt: Date.now() });
             return;
