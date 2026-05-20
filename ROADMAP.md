@@ -1,8 +1,8 @@
 # RumbleX Roadmap
 
-Version: 4.21 — v3.22 Live-site smoke harness (opt-in, workflow_dispatch)
+Version: 4.22 — v3.23 RxErrorLog Phase 2 (Router + boot + VideoDownloader instrumentation)
 Date: 2026-05-19
-Current shipped: v3.22.0 (extension), v1.8.0 (userscript)
+Current shipped: v3.23.0 (extension), v1.8.0 (userscript)
 
 This roadmap supersedes the v2026-05-19 v3.0 plan. It is the result of a fresh repo audit plus a 60+ source external research sweep (see [Appendix C — Sources](#appendix-c--sources)). It tracks shipped work in the [Recently shipped](#recently-shipped) summary, then prioritises the next ~12 months of work into **Now / Next / Later / Under Consideration / Rejected** tiers with every claim traceable to a source.
 
@@ -242,6 +242,11 @@ Tier placement above is per-feature; the workstreams below are themes the team s
 ## Recently shipped
 
 Compressed history. Detail per release lives in `CHANGELOG.md`.
+
+### v3.23.0 — RxErrorLog Phase 2 instrumentation (2026-05-19)
+
+- Wires `RxErrorLog.record` into three more silent-catch sites: `Router._fire` route-handler iteration, `boot()` Settings + Router init blocks, `VideoDownloader._loadQualities` catch.
+- All sites use `RxErrorLog?.record` + inner `try/catch` so logger failures can't break host code paths. Disabled by default via `debugErrorLog` setting.
 
 ### v3.22.0 — Live-site smoke harness (2026-05-19)
 

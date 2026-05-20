@@ -1,9 +1,9 @@
-// RumbleX v3.22.0 - Content Script
+// RumbleX v3.23.0 - Content Script
 // Rumble enhancement suite - Chrome/Firefox extension
 'use strict';
 
 // ── Version ──
-const VERSION = chrome.runtime?.getManifest?.()?.version || '3.22.0';
+const VERSION = chrome.runtime?.getManifest?.()?.version || '3.23.0';
 const SCHEMA_VERSION = 2;
 
 // ── Settings Manager (chrome.storage.local) ──
@@ -620,7 +620,15 @@ const Router = {
         this._lastUrl = url;
         this._lastPage = page;
         for (const fn of this._handlers) {
-            try { fn(detail); } catch (e) { console.warn('[RumbleX] router handler failed:', e); }
+            try {
+                fn(detail);
+            } catch (e) {
+                console.warn('[RumbleX] router handler failed:', e);
+                // v3.23.0 — record route-handler failures so a misbehaving
+                // subscriber surfaces in the error log instead of silently
+                // breaking on every navigation.
+                try { RxErrorLog?.record(fn.name || 'routeHandler', e, 'route:' + (detail?.reason || '?')); } catch {}
+            }
         }
     },
     onChange(fn) {
@@ -3028,6 +3036,7 @@ const VideoDownloader = {
             });
         } catch (e) {
             this._setBodyText('rx-dl-error', 'Failed to load video data: ' + (e?.message || e));
+            try { RxErrorLog?.record('VideoDownloader', e, '_loadQualities'); } catch {}
         }
     },
 
@@ -12238,10 +12247,20 @@ const features = [
 ];
 
 async function boot() {
-    await Settings.init();
+    try {
+        await Settings.init();
+    } catch (e) {
+        console.error('[RumbleX] Settings.init failed:', e);
+        try { RxErrorLog?.record('Settings', e, 'init'); } catch {}
+    }
     // Wire route lifecycle once. Features that subscribe via Router.onChange
     // will receive route-transition events for htmx swaps + history nav.
-    try { Router.init(); } catch (e) { console.warn('[RumbleX] Router init failed:', e); }
+    try {
+        Router.init();
+    } catch (e) {
+        console.warn('[RumbleX] Router init failed:', e);
+        try { RxErrorLog?.record('Router', e, 'init'); } catch {}
+    }
 
     onReady(() => {
         for (const feat of features) {

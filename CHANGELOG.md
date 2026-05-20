@@ -2,6 +2,25 @@
 
 All notable changes to RumbleX will be documented in this file.
 
+## [3.23.0] - 2026-05-19
+
+### v3.23.0 — RxErrorLog Phase 2 instrumentation
+
+Expands the v3.20 error-log ring buffer's instrumentation coverage. Phase 2 wires `RxErrorLog.record` into three more high-value catch sites that previously swallowed exceptions silently.
+
+**New instrumentation sites**
+- `Router._fire` route-handler iteration — each subscriber that throws now records `(handlerName || 'routeHandler', error, 'route:<reason>')`. Previously a buggy feature could fail on every htmx swap and only show up as a `console.warn` users would never see.
+- `boot()` — `Settings.init()` failure now records `('Settings', error, 'init')` in addition to console error. Same treatment for `Router.init()`.
+- `VideoDownloader._loadQualities` catch — records `('VideoDownloader', error, '_loadQualities')` so embedJS-fetch failures land in the export-able log instead of just the in-modal red-text message.
+
+All three sites use the `RxErrorLog?.record` optional-chaining pattern + inner `try/catch`, so an error in the error logger itself can't break the host code path. Failures stay silent when `debugErrorLog` is OFF (the default).
+
+**No new permissions, no new settings keys, no new selectors.** Catalog parity 206/206/206/206 unchanged. Selector harness 85 pass / 17 fixtures unchanged. `node --check` clean.
+
+### Deferred to v3.24+
+
+- **Finer-grained instrumentation** — chrome.runtime.onMessage handler catches, VideoDownloader deep-scan inner catch, RantPersist localStorage failures. Each is a small wiring point; aggregate them when the next concrete bug report names one.
+
 ## [3.22.0] - 2026-05-19
 
 ### v3.22.0 — Live-site smoke harness (closes v3.4 testing workstream's deferred item)
