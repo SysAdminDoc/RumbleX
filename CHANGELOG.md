@@ -2,6 +2,38 @@
 
 All notable changes to RumbleX will be documented in this file.
 
+## [3.20.0] - 2026-05-19
+
+### v3.20.0 — Per-feature error log ring buffer (Observability workstream)
+
+Closes the Observability cross-cutting workstream's Now-tier item: "Add a per-feature error-event ring buffer with the same shape: rolling-window-of-200, gated by a debug toggle, exposed via message API, no network." Mirrors the v3.0 selector-telemetry pattern exactly so the disclosure is consistent.
+
+**New `RxErrorLog` content-script module**
+- Rolling 200-entry in-memory ring buffer at `RxErrorLog._buf`. `record(featureId, error, context)` is a no-op unless `debugErrorLog` is on — same gating as `debugSelectorTelemetry`.
+- Per-entry shape: `{ at, featureId, message, stack (top 8 frames), context, page }`. Bounded field sizes (featureId 80, message 500, context 200) so a flood from one bad feature can't blow out the buffer.
+- `drain()` returns a snapshot. `clear()` empties.
+
+**Instrumentation**
+- Feature init loop in `boot()` now records to `RxErrorLog` on every `feat.init()` throw (in addition to the existing `console.error`). `SettingsPanel.init()` ditto.
+- Other try/catch sites unchanged — Phase 1 just covers the highest-value class (feature initialization failures, which currently surface only in DevTools console and are easy to miss).
+
+**Message API**
+- `getErrorLog` → `{ ok, entries }` for export.
+- `clearErrorLog` → `{ ok }` for manual reset.
+
+**Options-page UI**
+- Two new buttons in the v3.1 Privacy report section's button row: "Export error log" and "Clear error log". Same placement style as the existing "Export selector telemetry" button.
+- Export goes through `sendToContent` so it pulls from the active rumble.com tab. Empty buffer shows a hint to enable `debugErrorLog` first.
+
+**Privacy report update** — `rxBuildPrivacyReport.notes` now includes a line stating whether the error-log ring buffer is collecting. Honest disclosure: any debug instrumentation that *could* collect data is enumerated, even when off.
+
+**Catalog parity** 205/205/205/205 (was 204) — added `debugErrorLog` (boolean, default OFF, group: Privacy). No new permissions, no new selectors. Selector harness 85 pass / 17 fixtures unchanged.
+
+### Deferred to v3.21+
+
+- **Finer-grained instrumentation** — Phase 2 will wire `RxErrorLog.record` into Selectors lookup failures, message-handler catch blocks, and high-traffic features (LiveChatEnhance, RantPersist, VideoDownloader). Phase 1 catches the highest-frequency class (boot-time init failures) with one wiring point.
+- **HLS fallback for Channel Archive** — still pending; needs offscreen-doc transmux adaptation.
+
 ## [3.19.0] - 2026-05-19
 
 ### v3.19.0 — Channel Archive Phase 2 (in-page "Archive channel" button)

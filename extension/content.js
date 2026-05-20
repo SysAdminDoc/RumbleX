@@ -1,9 +1,9 @@
-// RumbleX v3.19.0 - Content Script
+// RumbleX v3.20.0 - Content Script
 // Rumble enhancement suite - Chrome/Firefox extension
 'use strict';
 
 // ── Version ──
-const VERSION = chrome.runtime?.getManifest?.()?.version || '3.19.0';
+const VERSION = chrome.runtime?.getManifest?.()?.version || '3.20.0';
 const SCHEMA_VERSION = 2;
 
 // ── Settings Manager (chrome.storage.local) ──
@@ -155,6 +155,10 @@ const Settings = {
         accentColor: 'rumbleGreen',
         legacyKeyboardNav: false,
         debugSelectorTelemetry: false,
+        // v3.20.0 — Per-feature error log ring buffer (Observability workstream)
+        // Default OFF; when ON, feature init failures land in rx_error_log
+        // for export via the options page. Local-only — never shipped remotely.
+        debugErrorLog: false,
         // Layout & UI cleanup
         hideThumbnails: false,
         hideThumbnailsFeeds: false,
@@ -12159,6 +12163,41 @@ const ChatUsernameColors = {
 };
 
 // ═══════════════════════════════════════════
+//  HELPER: RxErrorLog (v3.20.0)
+// ═══════════════════════════════════════════
+// Local-only per-feature error ring buffer. Mirrors the v3.0 selector telemetry
+// pattern: rolling window of last 200 entries, gated by a debug setting, no
+// remote shipping ever. Surfaced via the `getErrorLog` message API on the
+// options page for export.
+const RxErrorLog = {
+    MAX: 200,
+    _buf: [],
+
+    record(featureId, error, context) {
+        if (!Settings._ready || !Settings.get('debugErrorLog')) return;
+        const entry = {
+            at: Date.now(),
+            featureId: String(featureId || 'unknown').slice(0, 80),
+            message: String(error?.message || error || '').slice(0, 500),
+            stack: String(error?.stack || '').split('\n').slice(0, 8).join('\n'),
+            context: context ? String(context).slice(0, 200) : null,
+            page: location.pathname,
+        };
+        this._buf.push(entry);
+        if (this._buf.length > this.MAX) this._buf.splice(0, this._buf.length - this.MAX);
+    },
+
+    drain() {
+        const snapshot = this._buf.slice();
+        return snapshot;
+    },
+
+    clear() {
+        this._buf.length = 0;
+    },
+};
+
+// ═══════════════════════════════════════════
 //  FEATURE REGISTRY & INIT
 // ═══════════════════════════════════════════
 const features = [
@@ -12202,9 +12241,19 @@ async function boot() {
 
     onReady(() => {
         for (const feat of features) {
-            try { feat.init(); } catch (e) { console.error(`[RumbleX] ${feat.id || feat.name} init failed:`, e); }
+            try {
+                feat.init();
+            } catch (e) {
+                console.error(`[RumbleX] ${feat.id || feat.name} init failed:`, e);
+                RxErrorLog.record(feat.id || feat.name, e, 'init');
+            }
         }
-        try { SettingsPanel.init(); } catch (e) { console.error('[RumbleX] Settings panel init failed:', e); }
+        try {
+            SettingsPanel.init();
+        } catch (e) {
+            console.error('[RumbleX] Settings panel init failed:', e);
+            RxErrorLog.record('SettingsPanel', e, 'init');
+        }
 
         // Surface cross-tab / options-page saves. We don't silently hot-reload
         // features here because most of them stash state in their init path;
@@ -12355,6 +12404,7 @@ function rxBuildPrivacyReport() {
         notes: [
             settings.stripTrackingParams ? 'Tracking-param stripping is ON' : 'Tracking-param stripping is OFF',
             settings.debugSelectorTelemetry ? 'Selector telemetry is being collected locally (ring buffer, no upload)' : 'Selector telemetry is disabled',
+            settings.debugErrorLog ? 'Error log ring buffer is being collected locally (200-entry rolling window, no upload)' : 'Error log ring buffer is disabled',
             settings.remoteCosmeticRules ? 'Remote cosmetic rules enabled — signed payloads only' : 'Remote cosmetic rules disabled',
             (settings.encryptedGistSyncToken && settings.encryptedGistSyncId)
                 ? 'Encrypted Gist Sync is configured — payloads are AES-GCM-256 encrypted client-side (PBKDF2-SHA256, 200k iters); passphrase is never stored'
@@ -12446,6 +12496,16 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     }
     if (msg.action === 'getSelectorTelemetry') {
         sendResponse({ ok: true, events: Selectors.drainTelemetry() });
+        return true;
+    }
+    // v3.20.0 — Per-feature error log ring buffer.
+    if (msg.action === 'getErrorLog') {
+        sendResponse({ ok: true, entries: RxErrorLog.drain() });
+        return true;
+    }
+    if (msg.action === 'clearErrorLog') {
+        RxErrorLog.clear();
+        sendResponse({ ok: true });
         return true;
     }
     if (msg.action === 'backupSnapshot') {

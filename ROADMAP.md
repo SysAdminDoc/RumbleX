@@ -1,8 +1,8 @@
 # RumbleX Roadmap
 
-Version: 4.18 — v3.19 Channel Archive Phase 2 (in-page "Archive channel" button on /c/<slug>)
+Version: 4.19 — v3.20 RxErrorLog ring buffer (closes Observability workstream Now-tier item)
 Date: 2026-05-19
-Current shipped: v3.19.0 (extension), v1.8.0 (userscript)
+Current shipped: v3.20.0 (extension), v1.8.0 (userscript)
 
 This roadmap supersedes the v2026-05-19 v3.0 plan. It is the result of a fresh repo audit plus a 60+ source external research sweep (see [Appendix C — Sources](#appendix-c--sources)). It tracks shipped work in the [Recently shipped](#recently-shipped) summary, then prioritises the next ~12 months of work into **Now / Next / Later / Under Consideration / Rejected** tiers with every claim traceable to a source.
 
@@ -188,7 +188,7 @@ Tier placement above is per-feature; the workstreams below are themes the team s
 
 ### Observability (local-only)
 
-- Selector telemetry ring buffer exists (v3.0). Add a per-feature error-event ring buffer with the same shape: rolling-window-of-200, gated by a debug toggle, exposed via message API, no network. **No remote shipping ever** (see Rejected).
+- Selector telemetry ring buffer exists (v3.0). ~~Add a per-feature error-event ring buffer with the same shape: rolling-window-of-200, gated by a debug toggle, exposed via message API, no network.~~ *(v3.20.0 — `RxErrorLog` module ships exactly that shape: 200-entry in-memory ring, gated by `debugErrorLog` setting, `getErrorLog` / `clearErrorLog` message API, bounded field sizes per entry. Phase 1 instrumentation covers feature-init failures in the boot loop. Options-page Export/Clear buttons in the Privacy report section. Privacy report enumerates the buffer in its disclosure.)* **No remote shipping ever** (see Rejected).
 
 ### Testing
 
@@ -242,6 +242,14 @@ Tier placement above is per-feature; the workstreams below are themes the team s
 ## Recently shipped
 
 Compressed history. Detail per release lives in `CHANGELOG.md`.
+
+### v3.20.0 — RxErrorLog ring buffer (2026-05-19)
+
+- New `RxErrorLog` content-script module: 200-entry rolling in-memory ring buffer of `{ at, featureId, message, stack, context, page }` entries. Bounded field sizes so one bad feature can't drown the buffer.
+- Gated by new setting `debugErrorLog` (default OFF, group: Privacy). Same disclosure pattern as `debugSelectorTelemetry`.
+- Phase 1 instrumentation: every `feat.init()` + `SettingsPanel.init()` failure recorded. Future phases wire finer-grained sites (Selectors lookups, message handlers, high-traffic features).
+- Message API: `getErrorLog` / `clearErrorLog`. Options-page Export/Clear buttons in the Privacy report section.
+- Privacy report enumerates the buffer in its `notes` array. Catalog parity 204 → 205.
 
 ### v3.19.0 — Channel Archive Phase 2 — in-page button (2026-05-19)
 

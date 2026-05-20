@@ -1,4 +1,4 @@
-// RumbleX v3.19.0 - Options Page
+// RumbleX v3.20.0 - Options Page
 // Standalone settings management via chrome.storage.local (rx_settings key).
 // Mirrors Astra Deck's settings page pattern: dirty-draft workflow with
 // search, group nav, stats overview, and export/import/reset.
@@ -228,6 +228,8 @@
         encryptedGistSyncId: '',
         // v3.19.0 — In-page "Archive channel" button (Channel Archive Phase 2)
         channelArchiveButton: true,
+        // v3.20.0 — Per-feature error log ring buffer
+        debugErrorLog: false,
 
         // v3.1.0 — Platform follow-through
         disableShortsFeed: false,
@@ -477,6 +479,7 @@
         encryptedGistSyncToken: { group: 'privacy', label: 'Gist Sync GitHub PAT', desc: 'Personal access token with the `gist` scope. Stored locally only.' },
         encryptedGistSyncId: { group: 'privacy', label: 'Gist Sync ID', desc: 'GitHub Gist ID. Set automatically on first push.' },
         channelArchiveButton: { group: 'integrations', label: 'In-Page Archive Button', desc: 'Show "Archive channel" button next to Follow on channel pages.' },
+        debugErrorLog: { group: 'privacy', label: 'Error Log Ring Buffer', desc: 'Record feature init failures to a local 200-entry ring buffer. Never uploaded.' },
 
         // v3.1.0 — Platform follow-through
         disableShortsFeed: { group: 'feed-controls', label: 'Disable Shorts Feed', desc: 'Redirect rumble.com/shorts to /subscriptions on every visit. Launched on web 2026-02-04.' },
@@ -572,6 +575,8 @@
         privacyRefreshBtn: document.getElementById('privacy-refresh-btn'),
         privacyExportBtn: document.getElementById('privacy-export-btn'),
         telemetryExportBtn: document.getElementById('telemetry-export-btn'),
+        errorLogExportBtn: document.getElementById('errorlog-export-btn'),
+        errorLogClearBtn: document.getElementById('errorlog-clear-btn'),
         privacyReportPre: document.getElementById('privacy-report-pre'),
         privacySummary: document.getElementById('privacy-summary'),
         // v3.9.0 — Channel Notifier UI
@@ -1913,6 +1918,26 @@
         showStatus('Telemetry exported (' + events.length + ' events).', 'success');
     }
 
+    // v3.20.0 — Per-feature error log export.
+    async function exportErrorLog() {
+        const resp = await sendToContent('getErrorLog');
+        if (!resp?.ok) { showStatus('Error log unavailable. Open a rumble.com tab so the content script can respond.', 'error'); return; }
+        const entries = Array.isArray(resp.entries) ? resp.entries : [];
+        if (entries.length === 0) {
+            showStatus('Error log is empty — turn on debugErrorLog first, then reload a rumble.com tab to capture any feature init failures.', 'info');
+            return;
+        }
+        const ts = new Date().toISOString().replace(/[:T]/g, '-').replace(/\..+$/, '');
+        downloadJsonBlob('rumblex-error-log-' + ts + '.json', entries);
+        showStatus('Error log exported (' + entries.length + ' entr' + (entries.length === 1 ? 'y' : 'ies') + ').', 'success');
+    }
+
+    async function clearErrorLog() {
+        const resp = await sendToContent('clearErrorLog');
+        if (resp?.ok) showStatus('Error log cleared.', 'success');
+        else showStatus('Could not clear error log — open a rumble.com tab so the content script can respond.', 'error');
+    }
+
     // v3.9.0 — Channel Notifier helpers.
     async function refreshNotifierList() {
         const list = elements.notifierList;
@@ -2645,6 +2670,8 @@
     if (elements.privacyRefreshBtn) elements.privacyRefreshBtn.addEventListener('click', () => void refreshPrivacyReport());
     if (elements.privacyExportBtn) elements.privacyExportBtn.addEventListener('click', () => void exportPrivacyReport());
     if (elements.telemetryExportBtn) elements.telemetryExportBtn.addEventListener('click', () => void exportSelectorTelemetry());
+    if (elements.errorLogExportBtn) elements.errorLogExportBtn.addEventListener('click', () => void exportErrorLog());
+    if (elements.errorLogClearBtn) elements.errorLogClearBtn.addEventListener('click', () => void clearErrorLog());
 
     // v3.9.0 — Channel notifier wiring.
     if (elements.notifierAddBtn) elements.notifierAddBtn.addEventListener('click', () => void addWatchedChannel());
