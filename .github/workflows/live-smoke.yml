@@ -1,0 +1,51 @@
+name: Live smoke (rumble.com, opt-in)
+
+# v3.22.0 — Hits the live rumble.com origin with the extension loaded.
+# Manually dispatched only — covers the case where Rumble itself changes
+# something we haven't captured in MHTML fixtures.
+# Default URL is rumble.com homepage; can be overridden per-run.
+on:
+  workflow_dispatch:
+    inputs:
+      url:
+        description: 'Live URL to smoke-test'
+        required: false
+        default: 'https://rumble.com/'
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  live-smoke:
+    runs-on: ubuntu-latest
+    env:
+      RUMBLEX_LIVE_SMOKE: '1'
+      RUMBLEX_LIVE_URL: ${{ inputs.url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install Playwright (Chromium only)
+        run: |
+          npm install --no-audit --no-fund
+          npx playwright install chromium --with-deps
+
+      - name: Fetch mux.js (extension build prereq)
+        run: |
+          cd extension && bash build.sh
+
+      - name: Run live smoke
+        run: npm run test:e2e:live
+
+      - name: Upload Playwright report
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report-live
+          path: playwright-report/
+          retention-days: 14

@@ -2,6 +2,35 @@
 
 All notable changes to RumbleX will be documented in this file.
 
+## [3.22.0] - 2026-05-19
+
+### v3.22.0 — Live-site smoke harness (closes v3.4 testing workstream's deferred item)
+
+Materializes the "Live-site smoke tests (manually scheduled, not CI)" bullet that the v3.4 testing section deferred. Catches Rumble-server-side changes that don't show up in cached MHTML fixtures.
+
+**New `tests/e2e/live-smoke.spec.js`** (3 tests)
+- `content script boots on live rumble.com` — navigates to `RUMBLEX_LIVE_URL` (default `https://rumble.com/`), waits up to 30s for one of: an `rx-*` class on `documentElement` / `body`, a `#rx-settings-panel-css` style tag, or any `style[data-rx]` element. If none appear, the content script didn't boot.
+- `header surface resolves against live DOM` — waits for the v2.0 selector-registry `header.root` surface (stable `header` or fallback `header.main-menu`). Catches Rumble shipping a new header class that breaks the registry.
+- `service worker responds to getPrivacyReport` — opens a `*://*.rumble.com/*` tab from inside the SW context and verifies the content-script message round-trip works against the live origin.
+
+**Opt-in gating**
+- Spec self-skips when `RUMBLEX_LIVE_SMOKE !== '1'` via inline `test.skip(!LIVE, …)`. Default `npm run test:e2e` keeps showing them as skipped — no live network from regular CI.
+- Routes block `googletagmanager` / `google-analytics` / `doubleclick` / `facebook.net` so noisy third-party loaders don't hang DOMContentLoaded.
+- Per-test timeout 90 s (live network is slow).
+
+**New npm script** — `test:e2e:live` invokes the spec directly. User sets `RUMBLEX_LIVE_SMOKE=1` in their shell (cross-env not introduced as a dep). `RUMBLEX_LIVE_URL` overrides the target.
+
+**New `.github/workflows/live-smoke.yml`** — workflow_dispatch only, takes a `url` input (default rumble.com homepage), sets `RUMBLEX_LIVE_SMOKE=1` + `RUMBLEX_LIVE_URL` in env. Uploads `playwright-report-live` artifact with 14-day retention.
+
+**package.json** bumped to 3.22.0.
+
+### Deferred to v3.23+
+
+- **HLS fallback for Channel Archive** — videos without `ua.mp4.*` direct URLs still error out. Largest remaining roadmap item.
+- **File System Access folder picker** — Chrome-only opt-in for batchDownload + channelArchive target folders.
+- **Userscript regeneration** (v4.0 acceptance criterion, multi-day).
+- **Firefox MV3 conversion** (parallel path, MV2 stays supported indefinitely).
+
 ## [3.21.0] - 2026-05-19
 
 ### v3.21.0 — Channel Archive max-height quality cap (Phase 3a)

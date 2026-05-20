@@ -1,8 +1,8 @@
 # RumbleX Roadmap
 
-Version: 4.20 — v3.21 Channel Archive max-height cap (Phase 3a)
+Version: 4.21 — v3.22 Live-site smoke harness (opt-in, workflow_dispatch)
 Date: 2026-05-19
-Current shipped: v3.21.0 (extension), v1.8.0 (userscript)
+Current shipped: v3.22.0 (extension), v1.8.0 (userscript)
 
 This roadmap supersedes the v2026-05-19 v3.0 plan. It is the result of a fresh repo audit plus a 60+ source external research sweep (see [Appendix C — Sources](#appendix-c--sources)). It tracks shipped work in the [Recently shipped](#recently-shipped) summary, then prioritises the next ~12 months of work into **Now / Next / Later / Under Consideration / Rejected** tiers with every claim traceable to a source.
 
@@ -98,7 +98,7 @@ Items must be Now-tier if (a) source confirms a fresh platform surface change, O
 
 - [x] **MHTML fixture replay harness.** *(v3.4.0 — `test_selectors.py` at repo root. Stdlib-only Python (no pip install). Parses `Selectors._map` directly from `extension/content.js` via regex (handles mixed-quote selectors). For each `Sample Pages/*.mhtml` fixture, asserts every expected surface resolves to at least one element via its stable or fallback selector. Per-fixture `FIXTURE_EXPECTATIONS` so route-scoped surfaces (chat.*, watch.*) only test on relevant captures. 35 resolutions across 4 fixtures pass on first run. Wired into `.github/workflows/build.yml` as a `test` job that gates `build`. Triggered on push to main + every PR.)* Source: [Sample Pages already in repo](https://github.com/SysAdminDoc/RumbleX/tree/main/Sample%20Pages).
 - [x] **Playwright E2E suite (Chromium headed, MV3 extension loaded).** *(v3.5.0 — `package.json` + `playwright.config.js` + `tests/e2e/`. `_fixtures.js` spawns a persistent Chromium with `--load-extension`. First-pass coverage: SW boots within 15s, options page renders snapshot + privacy sections, popup has aria-pressed toggles, settings modal dirty-draft search works, ≥180 settings cards rendered. New `.github/workflows/e2e.yml` is `workflow_dispatch`-only — avoids the ~200 MB Chromium download on every push. Uploads `playwright-report/` artifact.)* Source: [Playwright vs Puppeteer 2026](https://www.browserstack.com/guide/playwright-vs-puppeteer) · [Puppeteer can't headless-test extensions; Playwright with `--headless=new` can](https://www.browserless.io/blog/headless-chrome).
-- [ ] **Live-site smoke tests** (manually scheduled, not CI): a single Playwright test that opens a public Rumble watch page and verifies AdNuker, AutoplayBlock, DarkEnhance all fire and don't throw. The MHTML harness catches selector regressions; the live smoke catches Rumble-server-side changes that don't show in cached HTML. **Deferred to v3.6** — needs a stable rumble.com page URL we're comfortable hitting in CI.
+- [x] **Live-site smoke tests** (manually scheduled, not CI). *(v3.22.0 — `tests/e2e/live-smoke.spec.js` ships 3 tests: content-script boot detection, `header.root` selector resolution against live DOM, SW round-trip via `getPrivacyReport`. Opt-in via `RUMBLEX_LIVE_SMOKE=1` env var + inline `test.skip` — regular `test:e2e` shows them as skipped. Third-party tracker requests blocked via Playwright routes so DOMContentLoaded doesn't hang. Workflow `.github/workflows/live-smoke.yml` is `workflow_dispatch`-only, takes a `url` input defaulting to rumble.com homepage. Catches Rumble-server-side changes the MHTML harness can't.)*
 
 ### v3.5 — Distribution
 
@@ -242,6 +242,14 @@ Tier placement above is per-feature; the workstreams below are themes the team s
 ## Recently shipped
 
 Compressed history. Detail per release lives in `CHANGELOG.md`.
+
+### v3.22.0 — Live-site smoke harness (2026-05-19)
+
+- New `tests/e2e/live-smoke.spec.js` — 3 tests against live rumble.com: content-script boot, `header.root` selector resolves against live DOM, SW round-trip via `getPrivacyReport`.
+- Opt-in via `RUMBLEX_LIVE_SMOKE=1` env var + inline `test.skip(!LIVE, …)`. Regular `test:e2e` shows tests as skipped.
+- Playwright routes block GTM/GA/DoubleClick/FB before navigation so live network noise doesn't hang DOMContentLoaded.
+- New `.github/workflows/live-smoke.yml` — workflow_dispatch only, takes a `url` input. 14-day artifact retention.
+- New `npm run test:e2e:live` script. package.json bumped to 3.22.0.
 
 ### v3.21.0 — Channel Archive max-height cap (2026-05-19)
 
