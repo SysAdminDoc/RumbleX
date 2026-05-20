@@ -2,6 +2,27 @@
 
 All notable changes to RumbleX will be documented in this file.
 
+## [3.19.0] - 2026-05-19
+
+### v3.19.0 — Channel Archive Phase 2 (in-page "Archive channel" button)
+
+Drops the v3.18 enqueue UI from the options page directly into the channel header. One click instead of three.
+
+**New `ChannelArchiveButton` content-script feature module**
+- Activates only on `Page.classify() === 'channel'` pages (`/c/<slug>` or `/user/<slug>`). Setting key `channelArchiveButton` (default ON, group: Integrations).
+- Anchors to the existing Follow/Following toggle via `Selectors.find('profile.followingBtn')` (the selector registered in v3.14 as `button[data-js="button__following"]`).
+- Renders an "Archive channel" pill-free button (border-radius 6, per house style) styled to match the Rumble-accent palette. SVG archive-box icon + label.
+- One click sends `archiveEnqueueChannel` with the current channel URL, default 50 items, no clip filter — same SW handler the v3.18 options-page form uses. Disables itself during the round-trip; re-enables on response.
+- Result surfaces as an in-page toast via the v3.14 `rxShowToast` infrastructure: `Queued N videos. Check RumbleX options → Channel archive queue.` Failure surfaces the same SW reason codes (`bad-channel-url`, `no-videos-found`, …) the options page sees.
+- MutationObserver re-attaches if the Follow button re-renders (Rumble's channel SPA swaps it on follow-state changes).
+
+**Catalog parity** 204/204/204/204 (was 203) — added `channelArchiveButton` boolean. Selector harness 85 pass / 17 fixtures unchanged.
+
+### Deferred to v3.20+
+
+- **HLS fallback for direct-MP4-less videos** — v3.18 only handles `ua.mp4.*` direct URLs. Some uploads only ship HLS segments. Requires adapting the v2.2 mux.js transmux path for SW or offscreen-document context.
+- **Per-job quality preference** — currently picks the absolute highest quality. A future "max height" setting would cap at 720p/1080p for storage reasons.
+
 ## [3.18.0] - 2026-05-19
 
 ### v3.18.0 — Channel Archive Queue Phase 1 (closes the marquee Later-tier item)

@@ -1,8 +1,8 @@
 # RumbleX Roadmap
 
-Version: 4.17 — v3.18 Channel Archive Queue Phase 1 (persistent SW queue + embedJS direct-MP4 drain)
+Version: 4.18 — v3.19 Channel Archive Phase 2 (in-page "Archive channel" button on /c/<slug>)
 Date: 2026-05-19
-Current shipped: v3.18.0 (extension), v1.8.0 (userscript)
+Current shipped: v3.19.0 (extension), v1.8.0 (userscript)
 
 This roadmap supersedes the v2026-05-19 v3.0 plan. It is the result of a fresh repo audit plus a 60+ source external research sweep (see [Appendix C — Sources](#appendix-c--sources)). It tracks shipped work in the [Recently shipped](#recently-shipped) summary, then prioritises the next ~12 months of work into **Now / Next / Later / Under Consideration / Rejected** tiers with every claim traceable to a source.
 
@@ -242,6 +242,12 @@ Tier placement above is per-feature; the workstreams below are themes the team s
 ## Recently shipped
 
 Compressed history. Detail per release lives in `CHANGELOG.md`.
+
+### v3.19.0 — Channel Archive Phase 2 — in-page button (2026-05-19)
+
+- New `ChannelArchiveButton` content-script feature: on `/c/<slug>` and `/user/<slug>` pages, injects an "Archive channel" button next to the existing Follow toggle (anchored via the v3.14 `profile.followingBtn` selector).
+- One click → enqueues the channel via v3.18's `archiveEnqueueChannel` (default 50 items, no clip filter). Result surfaces as a `rxShowToast`.
+- Setting `channelArchiveButton` (default ON, group: Integrations). Catalog 203 → 204.
 
 ### v3.18.0 — Channel Archive Queue Phase 1 (2026-05-19)
 

@@ -1,4 +1,4 @@
-// RumbleX v3.18.0 - Options Page
+// RumbleX v3.19.0 - Options Page
 // Standalone settings management via chrome.storage.local (rx_settings key).
 // Mirrors Astra Deck's settings page pattern: dirty-draft workflow with
 // search, group nav, stats overview, and export/import/reset.
@@ -226,6 +226,8 @@
         encryptedGistSync: false,
         encryptedGistSyncToken: '',
         encryptedGistSyncId: '',
+        // v3.19.0 — In-page "Archive channel" button (Channel Archive Phase 2)
+        channelArchiveButton: true,
 
         // v3.1.0 — Platform follow-through
         disableShortsFeed: false,
@@ -474,6 +476,7 @@
         encryptedGistSync: { group: 'privacy', label: 'Encrypted Gist Sync', desc: 'Cross-device settings sync via your own GitHub gist (AES-GCM encrypted).' },
         encryptedGistSyncToken: { group: 'privacy', label: 'Gist Sync GitHub PAT', desc: 'Personal access token with the `gist` scope. Stored locally only.' },
         encryptedGistSyncId: { group: 'privacy', label: 'Gist Sync ID', desc: 'GitHub Gist ID. Set automatically on first push.' },
+        channelArchiveButton: { group: 'integrations', label: 'In-Page Archive Button', desc: 'Show "Archive channel" button next to Follow on channel pages.' },
 
         // v3.1.0 — Platform follow-through
         disableShortsFeed: { group: 'feed-controls', label: 'Disable Shorts Feed', desc: 'Redirect rumble.com/shorts to /subscriptions on every visit. Launched on web 2026-02-04.' },

@@ -1,9 +1,9 @@
-// RumbleX v3.18.0 - Content Script
+// RumbleX v3.19.0 - Content Script
 // Rumble enhancement suite - Chrome/Firefox extension
 'use strict';
 
 // ── Version ──
-const VERSION = chrome.runtime?.getManifest?.()?.version || '3.18.0';
+const VERSION = chrome.runtime?.getManifest?.()?.version || '3.19.0';
 const SCHEMA_VERSION = 2;
 
 // ── Settings Manager (chrome.storage.local) ──
@@ -183,6 +183,8 @@ const Settings = {
         channelArchiveEnabled: false,
         channelArchiveFilterClips: false,
         channelArchiveMaxItems: 50,
+        // v3.19.0 — In-page "Archive channel" button on /c/<slug> + /user/<slug>
+        channelArchiveButton: true,
         // Feed, filtering & moderation
         shortsFilterScope: 'everywhere',
         blockedChannelsMeta: [],
@@ -4138,6 +4140,110 @@ const ChannelBlocker = {
         this._styleEl?.remove();
         this._obs?.disconnect();
     }
+};
+
+// ═══════════════════════════════════════════
+//  FEATURE: Channel Archive Button (v3.19.0)
+// ═══════════════════════════════════════════
+// Phase 2 of the v3.18 Channel Archive Queue. On any /c/<slug> or /user/<slug>
+// page, injects an "Archive this channel" button next to the existing Follow
+// toggle. One click enqueues the channel (using the v3.18 background API)
+// with sensible defaults — 50 items max, no clip filter. User can fine-tune
+// limits in the options-page "Channel archive queue" section.
+const ChannelArchiveButton = {
+    id: 'channelArchiveButton',
+    name: 'Channel Archive Button',
+    _styleEl: null,
+    _obs: null,
+    _btn: null,
+
+    _css: `
+        .rx-archive-channel-btn {
+            display: inline-flex; align-items: center; gap: 6px;
+            background: rgba(137,180,250,0.12);
+            color: var(--rx-accent, #89b4fa);
+            border: 1px solid rgba(137,180,250,0.35);
+            border-radius: 6px;
+            padding: 6px 12px;
+            font: 600 12px/1 system-ui, sans-serif;
+            cursor: pointer; margin-left: 8px;
+            transition: background .15s, border-color .15s;
+        }
+        .rx-archive-channel-btn:hover {
+            background: rgba(137,180,250,0.22);
+            border-color: rgba(137,180,250,0.55);
+        }
+        .rx-archive-channel-btn[disabled] {
+            opacity: 0.6; cursor: progress;
+        }
+        .rx-archive-channel-btn svg {
+            width: 13px; height: 13px;
+        }
+    `,
+
+    _SVG: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8v13H3V8"/><rect x="1" y="3" width="22" height="5" rx="1"/><line x1="10" y1="12" x2="14" y2="12"/></svg>',
+
+    _attach() {
+        const followBtn = Selectors.find('profile.followingBtn');
+        if (!followBtn || !followBtn.parentNode) return;
+        if (this._btn && this._btn.isConnected) return;
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'rx-archive-channel-btn';
+        btn.innerHTML = this._SVG + '<span>Archive channel</span>';
+        btn.title = 'Queue every video on this page for direct MP4 download via RumbleX';
+        btn.addEventListener('click', () => this._onClick(btn));
+        followBtn.parentNode.insertBefore(btn, followBtn.nextSibling);
+        this._btn = btn;
+    },
+
+    async _onClick(btn) {
+        if (btn.disabled) return;
+        btn.disabled = true;
+        const labelEl = btn.querySelector('span');
+        const originalLabel = labelEl?.textContent || 'Archive channel';
+        if (labelEl) labelEl.textContent = 'Queuing…';
+        try {
+            const resp = await chrome.runtime.sendMessage({
+                action: 'archiveEnqueueChannel',
+                channelUrl: location.origin + location.pathname,
+                maxItems: 50,
+                filterClips: false,
+            });
+            if (!resp?.ok) {
+                const reasonMap = {
+                    'bad-channel-url': 'Not a channel URL.',
+                    'no-videos-found': 'No videos found on this page.',
+                };
+                SettingsPanel._showToast?.('Archive failed: ' + (reasonMap[resp?.reason] || resp?.reason || 'unknown'));
+                return;
+            }
+            const skippedNote = resp.skipped ? (' · ' + resp.skipped + ' already queued') : '';
+            SettingsPanel._showToast?.('Queued ' + resp.enqueued + ' video' + (resp.enqueued === 1 ? '' : 's') + skippedNote + '. Check RumbleX options → Channel archive queue.');
+        } catch (e) {
+            SettingsPanel._showToast?.('Archive failed: ' + String(e?.message || e));
+        } finally {
+            btn.disabled = false;
+            if (labelEl) labelEl.textContent = originalLabel;
+        }
+    },
+
+    init() {
+        if (!Settings.get(this.id)) return;
+        if (!Page.isChannel()) return;
+        this._styleEl = injectStyle(this._css, 'rx-archive-channel-css');
+        // Channel pages render the Follow button client-side; observe until it appears.
+        Selectors.wait('profile.followingBtn', 5000).then(() => this._attach()).catch(() => {});
+        this._obs = new MutationObserver(() => this._attach());
+        this._obs.observe(document.body, { childList: true, subtree: true });
+    },
+
+    destroy() {
+        this._styleEl?.remove();
+        this._obs?.disconnect();
+        this._btn?.remove();
+        this._btn = null;
+    },
 };
 
 // ═══════════════════════════════════════════
@@ -12083,6 +12189,8 @@ const features = [
     ShortsRedirect,
     // v3.12.0 — v2.5 Creator/account tools unlocked by 2026-05-19 MHTML batch
     BulkUnsubscribe,
+    // v3.19.0 — Channel Archive Phase 2 — in-page "Archive channel" button
+    ChannelArchiveButton,
     ...RX_CSS_FEATURES,
 ];
 
