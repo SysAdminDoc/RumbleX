@@ -1,4 +1,4 @@
-// RumbleX v3.24.0 - Options Page
+// RumbleX v3.25.0 - Options Page
 // Standalone settings management via chrome.storage.local (rx_settings key).
 // Mirrors Astra Deck's settings page pattern: dirty-draft workflow with
 // search, group nav, stats overview, and export/import/reset.
@@ -616,6 +616,7 @@
         archiveClearBtn: document.getElementById('archive-clear-btn'),
         archiveTotals: document.getElementById('archive-totals'),
         archiveList: document.getElementById('archive-list'),
+        archiveStatusFilter: document.getElementById('archive-status-filter'),
         // v3.17.0 — Encrypted Gist Sync UI
         gistSyncSummary: document.getElementById('gist-sync-summary'),
         gistSyncTokenInput: document.getElementById('gist-sync-token-input'),
@@ -2255,8 +2256,23 @@
         }
         if (!elements.archiveList) return;
         elements.archiveList.textContent = '';
+        // v3.25.0 — Status filter dropdown. UI-only state, no persistence.
+        const filterValue = elements.archiveStatusFilter?.value || 'all';
+        const matchesFilter = (j) => {
+            if (filterValue === 'all') return true;
+            if (filterValue === 'downloading') return j.status === 'downloading' || j.status === 'discovering';
+            return j.status === filterValue;
+        };
+        const filtered = jobs.filter(matchesFilter);
         // Show newest first.
-        const sorted = jobs.slice().sort((a, b) => (b.addedAt || 0) - (a.addedAt || 0));
+        const sorted = filtered.slice().sort((a, b) => (b.addedAt || 0) - (a.addedAt || 0));
+        if (filterValue !== 'all' && sorted.length === 0 && jobs.length > 0) {
+            const empty = document.createElement('li');
+            empty.style.cssText = 'justify-content: center; color: var(--text-2, #a8b0bc); font-style: italic;';
+            empty.textContent = 'No jobs match the current filter.';
+            elements.archiveList.appendChild(empty);
+            return;
+        }
         for (const j of sorted) {
             const li = document.createElement('li');
             li.className = 'snapshot-item';
@@ -2740,6 +2756,9 @@
                 showStatus('Could not save: ' + String(e?.message || e), 'error');
             }
         });
+    }
+    if (elements.archiveStatusFilter) {
+        elements.archiveStatusFilter.addEventListener('change', () => void refreshArchiveQueue());
     }
     if (elements.archiveSubfolderInput) {
         elements.archiveSubfolderInput.addEventListener('change', async () => {

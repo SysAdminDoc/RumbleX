@@ -815,6 +815,16 @@
                         <button id="archive-clear-btn" type="button" class="danger">Clear all</button>
                     </div>
                     <div class="rant-stats-totals" id="archive-totals" aria-live="polite"></div>
+                    <div class="button-row" style="margin: 6px 0; align-items: center; gap: 8px;">
+                        <label for="archive-status-filter" style="font-size: 12px; color: var(--text-2, #a8b0bc);">Filter:</label>
+                        <select id="archive-status-filter" class="notifier-input" style="max-width: 180px;">
+                            <option value="all">All jobs</option>
+                            <option value="pending">Pending only</option>
+                            <option value="downloading">Active (discovering + downloading)</option>
+                            <option value="completed">Completed only</option>
+                            <option value="failed">Failed only</option>
+                        </select>
+                    </div>
                     <ul class="snapshot-list" id="archive-list" aria-live="polite"></ul>
                 </details>
             </section>

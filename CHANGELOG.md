@@ -2,6 +2,39 @@
 
 All notable changes to RumbleX will be documented in this file.
 
+## [3.25.0] - 2026-05-19
+
+### v3.25.0 — Status filter for the Channel Archive queue panel
+
+Polish release. At-scale (50+ jobs) the archive panel got hard to scan when looking for a specific category (e.g., "what failed and needs my attention?"). This release adds a status filter dropdown to the panel.
+
+**New status filter dropdown**
+- Placed below the totals row, above the job list.
+- Values: `All jobs` (default), `Pending only`, `Active (discovering + downloading)`, `Completed only`, `Failed only`.
+- UI-only state — not persisted; resets to "All jobs" on page reload. Keeps the catalog parity stable.
+- Empty-filter feedback: when the filter excludes every job but the queue isn't empty, shows "No jobs match the current filter." instead of a blank list.
+
+**No new permissions, no new settings keys, no new selectors.** Catalog parity 207/207/207/207 unchanged. Selector harness 85 pass / 17 fixtures unchanged. `node --check` clean.
+
+### Session summary (v3.15 → v3.25)
+
+Eleven releases shipped in this session continuation:
+- **v3.15** Watch History export (SW-fetch + regex parse)
+- **v3.16** RantStats panel (chrome.storage.local mirror + options UI + CSV/JSON export)
+- **v3.17** Encrypted Gist Sync (AES-GCM-256 + PBKDF2-SHA256, zero RumbleX infra)
+- **v3.18** Channel Archive Queue Phase 1 (persistent SW queue + embedJS drain)
+- **v3.19** Channel Archive Phase 2 (in-page "Archive channel" button)
+- **v3.20** RxErrorLog ring buffer (Observability workstream Now-tier closed)
+- **v3.21** Channel Archive max-height quality cap
+- **v3.22** Live-site smoke harness (workflow_dispatch, opt-in)
+- **v3.23** RxErrorLog Phase 2 instrumentation
+- **v3.24** Customizable Channel Archive download subfolder
+- **v3.25** Status filter for archive queue panel
+
+Catalog grew from 201 → 207 keys. Released roadmap items closed: v3.3 RantStats panel, v3.4 Live-site smoke, Encrypted gist sync, Channel archive queue (Phases 1+2+3a), Observability error ring buffer + Phase 2 instrumentation.
+
+**Genuinely blocked and unchanged**: mux.js → Mediabunny migration (multi-day), declarativeNetRequest autoplay rules (need network trace), userscript regeneration (multi-day), Firefox MV3 conversion (multi-day), Chrome Web Store / AMO / Edge listings (need dev accounts), locale `de` (need human-reviewed translation drop).
+
 ## [3.24.0] - 2026-05-19
 
 ### v3.24.0 — Customizable Channel Archive download subfolder

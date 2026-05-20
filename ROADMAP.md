@@ -1,8 +1,8 @@
 # RumbleX Roadmap
 
-Version: 4.23 — v3.24 Customizable Channel Archive subfolder (sanitized SW-side)
+Version: 4.24 — v3.25 Archive queue status filter (UI polish at scale)
 Date: 2026-05-19
-Current shipped: v3.24.0 (extension), v1.8.0 (userscript)
+Current shipped: v3.25.0 (extension), v1.8.0 (userscript)
 
 This roadmap supersedes the v2026-05-19 v3.0 plan. It is the result of a fresh repo audit plus a 60+ source external research sweep (see [Appendix C — Sources](#appendix-c--sources)). It tracks shipped work in the [Recently shipped](#recently-shipped) summary, then prioritises the next ~12 months of work into **Now / Next / Later / Under Consideration / Rejected** tiers with every claim traceable to a source.
 
@@ -242,6 +242,11 @@ Tier placement above is per-feature; the workstreams below are themes the team s
 ## Recently shipped
 
 Compressed history. Detail per release lives in `CHANGELOG.md`.
+
+### v3.25.0 — Archive queue status filter (2026-05-19)
+
+- Polish: new status dropdown above the archive job list. Values: All / Pending / Active / Completed / Failed. UI-only state.
+- Empty-filter feedback when the filter hides every job but the queue isn't empty.
 
 ### v3.24.0 — Customizable Channel Archive subfolder (2026-05-19)
 
