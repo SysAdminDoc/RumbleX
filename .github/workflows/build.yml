@@ -80,6 +80,16 @@ jobs:
 
       - name: Release
         if: startsWith(github.ref, 'refs/tags/')
-        run: gh release upload ${{ github.ref_name }} *.zip --clobber
+        # v3.26.0 — `gh release upload` only uploads to an EXISTING release;
+        # it doesn't create one. Older runs of this workflow have been
+        # uploading nothing because the release wasn't being created first.
+        # Now: create-if-missing (idempotent via `|| true`), then upload.
+        run: |
+          set -e
+          gh release view "${{ github.ref_name }}" >/dev/null 2>&1 \
+            || gh release create "${{ github.ref_name }}" \
+                --title "RumbleX ${{ github.ref_name }}" \
+                --notes "See [CHANGELOG.md](https://github.com/${{ github.repository }}/blob/main/CHANGELOG.md) for release notes."
+          gh release upload "${{ github.ref_name }}" *.zip --clobber
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

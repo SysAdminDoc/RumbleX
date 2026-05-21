@@ -219,12 +219,32 @@ def selector_matches(html, sel):
 
 def main():
     verbose = '--verbose' in sys.argv or '-v' in sys.argv
+    # v3.26.0 — Sample Pages/ is gitignored (logged-in captures may contain
+    # account names / personal info), so CI checkouts never have it. Detect
+    # that case and gracefully skip the fixture-replay portion while still
+    # validating that Selectors._map parses cleanly. Local runs (where the
+    # captures are present on disk) still execute the full regression.
+    allow_missing = ('--allow-missing-fixtures' in sys.argv
+                     or os.environ.get('GITHUB_ACTIONS') == 'true'
+                     or os.environ.get('CI') == 'true')
 
-    if not os.path.isdir(SAMPLE_DIR):
-        print(f'[!] Sample Pages/ not found at {SAMPLE_DIR}', file=sys.stderr)
-        sys.exit(2)
     if not os.path.isfile(CONTENT_JS):
         print(f'[!] extension/content.js not found at {CONTENT_JS}', file=sys.stderr)
+        sys.exit(2)
+    if not os.path.isdir(SAMPLE_DIR):
+        if allow_missing:
+            with open(CONTENT_JS, encoding='utf-8') as f:
+                _content = f.read()
+            _sel = parse_selectors_map(_content)
+            print(f'[*] Parsed {len(_sel)} selector entries from content.js')
+            print(f'[!] Sample Pages/ not found at {SAMPLE_DIR}')
+            print('[*] Fixtures are gitignored (logged-in page captures = privacy);'
+                  ' fixture-replay skipped.')
+            print('[*] Parser-only pass succeeded.')
+            sys.exit(0)
+        print(f'[!] Sample Pages/ not found at {SAMPLE_DIR}', file=sys.stderr)
+        print('[!] Re-run locally where Sample Pages/ exists, or pass'
+              ' --allow-missing-fixtures.', file=sys.stderr)
         sys.exit(2)
 
     with open(CONTENT_JS, encoding='utf-8') as f:
