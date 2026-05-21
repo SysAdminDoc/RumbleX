@@ -1,4 +1,4 @@
-// RumbleX v3.25.0 - Popup Script
+// RumbleX v3.26.0 - Popup Script
 'use strict';
 
 // Feature list grouped by category. Order within a group controls display
@@ -404,6 +404,9 @@ const DEFAULTS = {
     channelArchiveMaxHeight: 'best',
     // v3.24.0 — Channel archive download subfolder
     channelArchiveSubfolder: 'RumbleX',
+    // v3.26.0 — FS Access folder picker label + offline gate for archive queue
+    batchDownloadFolderName: '',
+    archiveQueuePauseOnOffline: true,
     // v3.20.0 — Per-feature error log ring buffer
     debugErrorLog: false,
 

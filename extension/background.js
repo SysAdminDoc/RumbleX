@@ -499,6 +499,21 @@ async function rxDiscoverVideoQuality(videoSlug, maxHeight) {
 async function rxRunArchiveTick() {
     const root = await rxLoadArchiveQueue();
     if (root.paused) return;
+
+    // v3.26.0 — Skip the tick while the device is offline so jobs aren't
+    // burned on guaranteed-fail network ops. The check is gated behind a
+    // setting (default ON) so users who explicitly want offline retry-burn
+    // behavior can flip it. Pure short-circuit: jobs stay 'pending' and the
+    // next online tick picks up where this one left off.
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+        try {
+            const got = await chrome.storage.local.get(['rx_settings']);
+            const s = got.rx_settings || {};
+            const gated = s.archiveQueuePauseOnOffline !== false; // default true
+            if (gated) return;
+        } catch {}
+    }
+
     // Auto-prune old completed jobs.
     const now = Date.now();
     const before = root.jobs.length;

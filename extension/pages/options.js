@@ -1,4 +1,4 @@
-// RumbleX v3.25.0 - Options Page
+// RumbleX v3.26.0 - Options Page
 // Standalone settings management via chrome.storage.local (rx_settings key).
 // Mirrors Astra Deck's settings page pattern: dirty-draft workflow with
 // search, group nav, stats overview, and export/import/reset.
@@ -248,6 +248,11 @@
         // v3.9.0 — Channel Notifier
         watchedChannels: [],
         channelNotifierIntervalMin: 30,
+
+        // v3.26.0 — File System Access folder picker label (handle is in IDB)
+        batchDownloadFolderName: '',
+        // v3.26.0 — Archive queue offline gate (default ON)
+        archiveQueuePauseOnOffline: true,
     };
 
     // Per-key metadata: group + human label + description
@@ -500,6 +505,10 @@
         // v3.9.0 — Channel Notifier
         watchedChannels: { group: 'automation', label: 'Watched Channels', desc: 'Array of channel URLs the notifier monitors. Manage entries in the dedicated panel on this page.' },
         channelNotifierIntervalMin: { group: 'automation', label: 'Notifier Poll Interval (min)', desc: 'How often (minutes) the background alarm checks watched channels. Floor 1 (Chrome MV3 minimum). Default 30.' },
+
+        // v3.26.0 — File System Access folder picker + offline gate
+        batchDownloadFolderName: { group: 'downloads', label: 'Batch Download Folder', desc: 'Display name of the last folder picked via the Batch Download "Pick folder" button. Chrome / Edge only. Empty = use default Downloads. The folder handle itself lives in IndexedDB (rx-fs-access).' },
+        archiveQueuePauseOnOffline: { group: 'downloads', label: 'Pause Archive Queue When Offline', desc: 'Skip channel-archive ticks while the device is offline so jobs aren\u2019t burned on guaranteed-fail network ops. Resumes automatically on the next online tick.' },
     };
 
     const GROUPS = [

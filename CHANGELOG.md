@@ -2,6 +2,32 @@
 
 All notable changes to RumbleX will be documented in this file.
 
+## [3.26.0] - 2026-05-21
+
+### v3.26.0 — FS-Access folder picker + offline-aware archive queue + wallet QR selector
+
+### Batch download — pick a folder once, save N files into it (Chrome / Edge)
+
+- New `RxFsAccess` helper persists a `FileSystemDirectoryHandle` across SW restarts (IndexedDB `rx-fs-access` / `handles`). Spec: <https://wicg.github.io/file-system-access/>.
+- `BatchDownload` bar gains a **Pick folder** button. Picked folder name appears as a green `→ <name>` chip; **Clear folder** reverts to the default Downloads path. The picker is hidden on Firefox MV2 and on Chromium older than 86.
+- Download flow tries the FS-Access path first: `fetch(directMp4)` → `Response.body.pipeTo(writableFile)`. Any failure (permission revoked between sessions, partial-write, network error, unsupported browser) falls back transparently to the existing `chrome.runtime.sendMessage({action:'download'})` path. Worst case = identical to v3.25 behavior.
+- Permission is re-requested at the top of every batch via a user-gesture pre-flight so the prompt fires deterministically before parallel workers start, instead of racing inside `Promise.all`.
+- New setting key `batchDownloadFolderName` records the picked folder's display name (the handle itself can't be JSON-serialized). Catalog parity 207 → 209.
+
+### Channel archive queue — auto-pause while offline
+
+- New setting key `archiveQueuePauseOnOffline` (default **ON**). The `chrome.alarms` archive tick short-circuits when `navigator.onLine === false`, so jobs aren't burned on guaranteed-fail network ops while a laptop is on a flight, tethered to a flaky hotspot, or temporarily firewalled.
+- No state changes while skipped — jobs stay `pending` and the next online tick picks up where this one left off. Flip the setting OFF to restore the prior always-tick behavior.
+
+### Selector registry
+
+- New `wallet.paymentModal` entry. Anchored against `/-htmx/wallet/payment/qr-modal` (the endpoint documented in ROADMAP Appendix B). Conservative stable+fallback — no functional code uses it yet; the entry lands now so the v3.27+ tip-jar hide work is a one-selector tweak away once a logged-in MHTML capture lands.
+- Registry size 51 → 52. Selector regression harness still **85 pass / 0 fail** across 4 fixtures (warn-only fallback hit on `Rumble Studio.mhtml`'s `header.root`, unchanged from v3.25).
+
+### Repo hygiene
+
+- `package.json` version bumped from a stale `3.22.0` (left behind by the v3.22 / v3.23 / v3.24 / v3.25 churn) back into sync with the shipping extension version. Future automation that reads `package.json` for the canonical version (release workflows, badge generators) no longer reports a phantom downgrade.
+
 ## [3.25.0] - 2026-05-19
 
 ### v3.25.0 — Status filter for the Channel Archive queue panel

@@ -1,9 +1,9 @@
-// RumbleX v3.25.0 - Content Script
+// RumbleX v3.26.0 - Content Script
 // Rumble enhancement suite - Chrome/Firefox extension
 'use strict';
 
 // ── Version ──
-const VERSION = chrome.runtime?.getManifest?.()?.version || '3.25.0';
+const VERSION = chrome.runtime?.getManifest?.()?.version || '3.26.0';
 const SCHEMA_VERSION = 2;
 
 // ── Settings Manager (chrome.storage.local) ──
@@ -265,6 +265,21 @@ const Settings = {
         // Poll interval in minutes. chrome.alarms enforces a 1-minute floor in
         // Chrome MV3 — anything lower is silently clamped.
         channelNotifierIntervalMin: 30,
+
+        // ── v3.26.0 — File System Access folder picker (BatchDownload) ──
+        // Display label of the most recently picked folder. Empty string means
+        // "no folder picked, use chrome.downloads.download() default path".
+        // The actual FileSystemDirectoryHandle is NOT JSON-serializable and is
+        // persisted separately in IndexedDB (db: rx-fs-access, store: handles).
+        // Chrome / Edge only; Firefox MV2 ignores the setting and uses the
+        // chrome.downloads path unconditionally.
+        batchDownloadFolderName: '',
+
+        // ── v3.26.0 — Offline resilience for Channel Archive queue ──
+        // When ON (default), the archive-queue alarm tick short-circuits while
+        // navigator.onLine is false so jobs aren't burned on guaranteed-fail
+        // network ops. Resumes automatically on the first online tick.
+        archiveQueuePauseOnOffline: true,
     },
     _writeTimer: null,
     _pendingWrite: false,
@@ -481,6 +496,14 @@ const Selectors = {
         // Appears only for creators who enabled their tip jar — opt-in toggle
         // hides it without breaking creators who want to keep it visible.
         'wallet.tipButton':   { stable: '[data-js="wallet_tip_button"], [data-js="tip_button"]', fallback: 'button[hx-get*="wallet"], [class*="tip-button"], [class*="TipButton"]' },
+        // v3.26.0 — Wallet QR / payment modal surface (post-tip-button click).
+        // Endpoint per ROADMAP Appendix B: `/-htmx/wallet/payment/qr-modal`.
+        // Stable hook: any button or hx-get attribute pointing at that endpoint.
+        // The fallback covers the modal body once it has been swapped into the
+        // portal — `#portal` is the htmx mount point Rumble uses for all
+        // modal-style content. Conservative entry; refine once a logged-in
+        // capture of the wallet payment flow lands in Sample Pages/.
+        'wallet.paymentModal':{ stable: '[hx-get*="wallet/payment/qr-modal"], [hx-post*="wallet/payment/qr-modal"], [data-js*="wallet_payment"], [data-js*="wallet_qr"]', fallback: '#portal [class*="wallet"], #portal [class*="qr-modal"], [class*="WalletQr"], [class*="PaymentQr"]' },
         // v3.12.0 — Account-content surfaces (from new MHTML batch 2026-05-19).
         // recurringSubsCancelBtn = per-row Cancel button on /account/subscriptions
         // (the Recurring Subs page). Stable via data-js attribute.
@@ -10764,6 +10787,189 @@ const AudioOnly = {
 };
 
 // ═══════════════════════════════════════════
+//  HELPER: File System Access — folder-handle persistence
+// ═══════════════════════════════════════════
+// Chrome-only opt-in folder picker plumbing. BatchDownload uses it today; any
+// future direct-write feature (archive queue alternate sink, transcript dump,
+// etc.) can share the same `pick → persist handle in IDB → request permission
+// per-session → stream-pipe to a writable file` flow.
+//
+// Spec: https://wicg.github.io/file-system-access/
+// - Stores a FileSystemDirectoryHandle in IndexedDB so it survives SW restarts
+//   and full-window reloads. JSON serialization can't carry the handle (it's a
+//   live filesystem resource), which is why we DON'T just stuff it into
+//   chrome.storage with the rest of the settings.
+// - Permission MUST be re-granted from a user-gesture every session per spec;
+//   queryPermission() is silent, requestPermission() needs a gesture.
+// - Every error path returns `{ ok: false, reason }` so the caller can fall
+//   back to chrome.downloads.download() without throwing.
+const RxFsAccess = {
+    _IDB_NAME: 'rx-fs-access',
+    _IDB_STORE: 'handles',
+    _IDB_VERSION: 1,
+    _db: null,
+
+    isSupported() {
+        return typeof window !== 'undefined'
+            && typeof window.showDirectoryPicker === 'function'
+            && typeof indexedDB !== 'undefined';
+    },
+
+    async _openDb() {
+        if (this._db) return this._db;
+        return new Promise((resolve, reject) => {
+            let req;
+            try { req = indexedDB.open(this._IDB_NAME, this._IDB_VERSION); }
+            catch (err) { reject(err); return; }
+            req.onupgradeneeded = () => {
+                try {
+                    if (!req.result.objectStoreNames.contains(this._IDB_STORE)) {
+                        req.result.createObjectStore(this._IDB_STORE);
+                    }
+                } catch (err) { reject(err); }
+            };
+            req.onsuccess = () => { this._db = req.result; resolve(this._db); };
+            req.onerror = () => reject(req.error || new Error('idb-open-failed'));
+            req.onblocked = () => reject(new Error('idb-blocked'));
+        });
+    },
+
+    async putHandle(key, handle) {
+        if (!handle) return false;
+        try {
+            const db = await this._openDb();
+            return await new Promise((resolve, reject) => {
+                const tx = db.transaction(this._IDB_STORE, 'readwrite');
+                tx.objectStore(this._IDB_STORE).put(handle, key);
+                tx.oncomplete = () => resolve(true);
+                tx.onerror = () => reject(tx.error || new Error('idb-put-failed'));
+                tx.onabort = () => reject(tx.error || new Error('idb-put-aborted'));
+            });
+        } catch (err) {
+            console.warn('[RumbleX] RxFsAccess.putHandle failed:', err);
+            return false;
+        }
+    },
+
+    async getHandle(key) {
+        try {
+            const db = await this._openDb();
+            return await new Promise((resolve, reject) => {
+                const tx = db.transaction(this._IDB_STORE, 'readonly');
+                const req = tx.objectStore(this._IDB_STORE).get(key);
+                req.onsuccess = () => resolve(req.result || null);
+                req.onerror = () => reject(req.error || new Error('idb-get-failed'));
+            });
+        } catch (err) {
+            console.warn('[RumbleX] RxFsAccess.getHandle failed:', err);
+            return null;
+        }
+    },
+
+    async deleteHandle(key) {
+        try {
+            const db = await this._openDb();
+            return await new Promise((resolve, reject) => {
+                const tx = db.transaction(this._IDB_STORE, 'readwrite');
+                tx.objectStore(this._IDB_STORE).delete(key);
+                tx.oncomplete = () => resolve(true);
+                tx.onerror = () => reject(tx.error || new Error('idb-delete-failed'));
+            });
+        } catch (err) {
+            console.warn('[RumbleX] RxFsAccess.deleteHandle failed:', err);
+            return false;
+        }
+    },
+
+    // Returns true only if permission ends up `granted`. queryPermission is
+    // safe to call without a user gesture; requestPermission requires one,
+    // so callers must invoke this from a click handler the first time per
+    // session.
+    async ensurePermission(handle, mode = 'readwrite') {
+        if (!handle || typeof handle.queryPermission !== 'function') return false;
+        try {
+            const q = await handle.queryPermission({ mode });
+            if (q === 'granted') return true;
+            if (typeof handle.requestPermission !== 'function') return false;
+            const r = await handle.requestPermission({ mode });
+            return r === 'granted';
+        } catch (err) {
+            // Some user agents throw if the handle was created in a different
+            // origin / partition or has been invalidated. Treat as "denied".
+            console.warn('[RumbleX] RxFsAccess.ensurePermission failed:', err);
+            return false;
+        }
+    },
+
+    // Pick a folder via showDirectoryPicker. Persists the handle in IDB under
+    // `key`. MUST be called from a user gesture (click handler).
+    async pickFolder(key, options = {}) {
+        if (!this.isSupported()) throw new Error('not-supported');
+        const handle = await window.showDirectoryPicker({
+            id: options.id || 'rx-batch-downloads',
+            startIn: options.startIn || 'downloads',
+            mode: 'readwrite',
+        });
+        await this.putHandle(key, handle);
+        return handle;
+    },
+
+    // Sanitize a filename — same rules as background.js rxArchiveSanitizeFilename
+    // so cross-pipeline filenames are consistent.
+    sanitizeFilename(name, fallback = 'rumble_video.mp4') {
+        let s = String(name || '').trim();
+        s = s.replace(/[<>:"/\\|?*\u0000-\u001f]/g, '_');
+        s = s.replace(/\s+/g, ' ');
+        if (s.length > 180) s = s.substring(0, 180);
+        return s || fallback;
+    },
+
+    // Write a Response.body / ReadableStream / Blob to a file in the chosen
+    // folder. Returns { ok, path?, reason?, error? } — every failure path
+    // returns rather than throws so the caller can fall back gracefully.
+    async writeStream(handle, filename, source) {
+        if (!handle) return { ok: false, reason: 'no-handle' };
+        const granted = await this.ensurePermission(handle, 'readwrite');
+        if (!granted) return { ok: false, reason: 'permission-denied' };
+
+        const safe = this.sanitizeFilename(filename);
+        let fileHandle;
+        let writable;
+        try {
+            fileHandle = await handle.getFileHandle(safe, { create: true });
+            writable = await fileHandle.createWritable();
+        } catch (err) {
+            return { ok: false, reason: 'open-failed', error: String(err) };
+        }
+
+        try {
+            if (source instanceof Blob) {
+                await writable.write(source);
+                await writable.close();
+            } else if (source && typeof source.pipeTo === 'function') {
+                // Response.body is a ReadableStream and has pipeTo.
+                await source.pipeTo(writable);
+            } else if (source && typeof source.getReader === 'function') {
+                const reader = source.getReader();
+                while (true) {
+                    const { value, done } = await reader.read();
+                    if (done) break;
+                    await writable.write(value);
+                }
+                await writable.close();
+            } else {
+                try { await writable.abort('unknown-source-type'); } catch {}
+                return { ok: false, reason: 'unknown-source-type' };
+            }
+            return { ok: true, path: safe };
+        } catch (err) {
+            try { await writable.abort('write-failed'); } catch {}
+            return { ok: false, reason: 'write-failed', error: String(err) };
+        }
+    },
+};
+
+// ═══════════════════════════════════════════
 //  FEATURE: Batch Download (multi-select from feed)
 // ═══════════════════════════════════════════
 const BatchDownload = {
@@ -10774,6 +10980,11 @@ const BatchDownload = {
     _queue: null,
     _selected: null,
     _busy: false,
+    // v3.26.0 — Optional File System Access folder. When set, downloads stream
+    // directly to the chosen folder via writeStream(); otherwise we fall back
+    // to chrome.downloads via the background SW (same path as v1.8+).
+    _folderHandle: null,
+    _FOLDER_IDB_KEY: 'batchFolder',
 
     _css: `
         .rx-batch-chk {
@@ -10869,18 +11080,124 @@ const BatchDownload = {
         const pick = qualities.find((q) => q.directUrl);
         if (!pick) throw new Error('No direct MP4 available');
         const title = this._titleFromUrl(url);
+        const filename = `${title} - ${pick.label}.mp4`;
+
+        // Path 1 — File System Access: stream directly into the user-picked
+        // folder. Only attempted if the user picked a folder AND we still hold
+        // read/write permission. Any error falls through to chrome.downloads
+        // so partial-write or revoked-permission doesn't strand a download.
+        if (this._folderHandle && RxFsAccess.isSupported()) {
+            try {
+                const resp = await fetch(pick.directUrl, { credentials: 'omit' });
+                if (resp.ok) {
+                    const result = await RxFsAccess.writeStream(this._folderHandle, filename, resp.body);
+                    if (result.ok) return;
+                    console.warn('[RumbleX] BatchDownload: FS-Access write failed, falling back to chrome.downloads', result);
+                } else {
+                    console.warn('[RumbleX] BatchDownload: direct fetch HTTP ' + resp.status + ', falling back');
+                }
+            } catch (err) {
+                console.warn('[RumbleX] BatchDownload: FS-Access path errored, falling back', err);
+            }
+        }
+
+        // Path 2 — chrome.downloads via background SW (default + universal
+        // fallback). Works on Firefox MV2 too.
         await new Promise((resolve) => {
             chrome.runtime.sendMessage({
                 action: 'download',
-                data: { url: pick.directUrl, filename: `${title} - ${pick.label}.mp4` },
-            }, () => resolve());
+                data: { url: pick.directUrl, filename },
+            }, () => { void chrome.runtime.lastError; resolve(); });
         });
+    },
+
+    // v3.26.0 — Folder picker plumbing (Chrome/Edge only)
+
+    _status(msg) {
+        if (!this._queue) return;
+        const status = this._queue.querySelector('.rx-batch-status');
+        if (!status) return;
+        status.textContent = msg;
+        if (msg) setTimeout(() => { if (status.textContent === msg) status.textContent = ''; }, 3500);
+    },
+
+    _updateFolderLabel() {
+        if (!this._queue) return;
+        const label = this._queue.querySelector('.rx-batch-folder');
+        const clearBtn = this._queue.querySelector('.rx-batch-clear-folder');
+        if (!label) return;
+        const name = this._folderHandle?.name || '';
+        if (name) {
+            label.textContent = `→ ${name}`;
+            label.title = `Batch downloads save to folder "${name}"`;
+            label.style.display = '';
+            if (clearBtn) clearBtn.style.display = '';
+        } else {
+            label.textContent = '';
+            label.style.display = 'none';
+            if (clearBtn) clearBtn.style.display = 'none';
+        }
+    },
+
+    async _restoreFolder() {
+        if (!RxFsAccess.isSupported()) return;
+        try {
+            const h = await RxFsAccess.getHandle(this._FOLDER_IDB_KEY);
+            // Don't request permission on init (no user gesture) — only verify
+            // the handle survives. ensurePermission() runs lazily in
+            // _downloadOne / on the explicit "Pick folder" click. If
+            // permission is now revoked, the FS-Access path will fall back
+            // automatically and chrome.downloads picks up the slack.
+            if (h) {
+                this._folderHandle = h;
+                this._updateFolderLabel();
+            }
+        } catch (err) {
+            console.warn('[RumbleX] BatchDownload: restoreFolder failed', err);
+        }
+    },
+
+    async _pickFolder() {
+        if (!RxFsAccess.isSupported()) {
+            this._status('Folder picker requires Chrome / Edge — falling back to default Downloads.');
+            return;
+        }
+        try {
+            const h = await RxFsAccess.pickFolder(this._FOLDER_IDB_KEY);
+            this._folderHandle = h;
+            Settings.set('batchDownloadFolderName', h.name || '');
+            this._updateFolderLabel();
+            this._status(`Saving downloads to "${h.name}"`);
+        } catch (err) {
+            if (err && err.name === 'AbortError') return; // user dismissed
+            console.warn('[RumbleX] BatchDownload: pickFolder failed', err);
+            this._status('Folder picker failed (see console).');
+        }
+    },
+
+    async _clearFolder() {
+        try { await RxFsAccess.deleteHandle(this._FOLDER_IDB_KEY); } catch {}
+        this._folderHandle = null;
+        Settings.set('batchDownloadFolderName', '');
+        this._updateFolderLabel();
+        this._status('Folder cleared — using default Downloads.');
     },
 
     async _downloadAll() {
         if (this._busy) return;
         const items = [...this._selected];
         if (!items.length) return;
+        // v3.26.0 — Pre-flight FS-Access permission inside the user-gesture
+        // context (the "Download all" click). requestPermission() per spec
+        // requires a user activation; doing it here once ensures the prompt
+        // (if any) fires predictably BEFORE the parallel _downloadOne workers
+        // start awaiting, instead of racing with Promise.all's microtask
+        // scheduling. If the user denies, individual _downloadOne calls fall
+        // through to chrome.downloads automatically.
+        if (this._folderHandle && RxFsAccess.isSupported()) {
+            try { await RxFsAccess.ensurePermission(this._folderHandle, 'readwrite'); }
+            catch (err) { console.warn('[RumbleX] BatchDownload: pre-flight permission check failed', err); }
+        }
         const status = this._queue.querySelector('.rx-batch-status');
         const CONCURRENT = 3;
         this._busy = true;
@@ -10925,18 +11242,56 @@ const BatchDownload = {
         if (this._queue) return;
         const bar = document.createElement('div');
         bar.className = 'rx-batch-bar';
-        bar.innerHTML = `
-            <span class="rx-batch-count">0 selected</span>
-            <button class="rx-batch-go">Download all</button>
-            <button class="rx-batch-clear">Clear</button>
-            <span class="rx-batch-status" style="color:#a6adc8;font-size:11px;"></span>`;
+        // Build the bar with DOM builders rather than innerHTML — keeps the
+        // XSS-hardening discipline from v1.9.3 even though no user data flows
+        // through this region today.
+        const count = document.createElement('span');
+        count.className = 'rx-batch-count';
+        count.textContent = '0 selected';
+        const goBtn = document.createElement('button');
+        goBtn.className = 'rx-batch-go';
+        goBtn.textContent = 'Download all';
+        const pickBtn = document.createElement('button');
+        pickBtn.className = 'rx-batch-pick';
+        pickBtn.textContent = 'Pick folder';
+        pickBtn.title = 'Pick a folder to save downloads (Chrome / Edge only)';
+        const folderLabel = document.createElement('span');
+        folderLabel.className = 'rx-batch-folder';
+        folderLabel.style.cssText = 'color:#a6e3a1;font-size:11px;display:none;';
+        const clearFolderBtn = document.createElement('button');
+        clearFolderBtn.className = 'rx-batch-clear-folder';
+        clearFolderBtn.textContent = 'Clear folder';
+        clearFolderBtn.title = 'Stop using the picked folder — revert to default Downloads';
+        clearFolderBtn.style.display = 'none';
+        const clearBtn = document.createElement('button');
+        clearBtn.className = 'rx-batch-clear';
+        clearBtn.textContent = 'Clear';
+        const status = document.createElement('span');
+        status.className = 'rx-batch-status';
+        status.style.cssText = 'color:#a6adc8;font-size:11px;';
+        // Order: count, Download all, Pick folder, [folder label], [clear folder], Clear selection, status
+        bar.appendChild(count);
+        bar.appendChild(goBtn);
+        bar.appendChild(pickBtn);
+        bar.appendChild(folderLabel);
+        bar.appendChild(clearFolderBtn);
+        bar.appendChild(clearBtn);
+        bar.appendChild(status);
         document.body.appendChild(bar);
-        bar.querySelector('.rx-batch-go').addEventListener('click', () => this._downloadAll());
-        bar.querySelector('.rx-batch-clear').addEventListener('click', () => {
+
+        goBtn.addEventListener('click', () => this._downloadAll());
+        pickBtn.addEventListener('click', () => this._pickFolder());
+        clearFolderBtn.addEventListener('click', () => this._clearFolder());
+        clearBtn.addEventListener('click', () => {
             this._selected.clear();
             for (const c of qsa('.rx-batch-chk.checked')) c.classList.remove('checked');
             this._updateBar();
         });
+        // Hide the picker entirely on Firefox MV2 / older Chromium — the rest
+        // of the bar still works via chrome.downloads.
+        if (!RxFsAccess.isSupported()) {
+            pickBtn.style.display = 'none';
+        }
         this._queue = bar;
     },
 
@@ -10952,6 +11307,11 @@ const BatchDownload = {
             this._t = setTimeout(() => this._scan(), 150);
         });
         this._obs.observe(document.body, { childList: true, subtree: true });
+        // Fire-and-forget: restore a previously picked folder handle from IDB
+        // so the label + clear button reflect prior state. Permission isn't
+        // re-requested here (no user gesture); the FS-Access path in
+        // _downloadOne handles re-prompts lazily.
+        this._restoreFolder();
     },
 
     destroy() {
@@ -10960,6 +11320,7 @@ const BatchDownload = {
         this._queue?.remove();
         for (const c of qsa('.rx-batch-chk')) c.remove();
         clearTimeout(this._t);
+        this._folderHandle = null;
     }
 };
 

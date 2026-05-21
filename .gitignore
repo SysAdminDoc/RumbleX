@@ -3,6 +3,7 @@ rumble_decoded.html
 dist/
 *.pem
 CLAUDE.md
+.factory/
 Rumble Enhancement Suite.user.js
 RumbleX-chrome.zip
 RumbleX-firefox.zip
