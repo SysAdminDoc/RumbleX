@@ -1,0 +1,2 @@
+a6a5a43daf04cd6f22b3649977bce26b61f87f5106bdf5fc6f45aa9f19bf9c0f  RumbleX-chrome.zip
+c29c154ae81fe0ea8ce61bafbe2c9a6692885ed06ef380befc92a409b237b022  RumbleX-firefox.zip
