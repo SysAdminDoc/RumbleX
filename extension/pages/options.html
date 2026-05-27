@@ -62,11 +62,11 @@
         .brand-name { font-size: 17px; font-weight: 800; letter-spacing: -0.03em; }
         .brand-version {
             font-size: 11px; font-weight: 700; color: var(--text-muted); letter-spacing: 0.04em;
-            padding: 3px 7px; border-radius: 999px; background: var(--surface-raised); border: 1px solid var(--border);
+            padding: 3px 7px; border-radius: 6px; background: var(--surface-raised); border: 1px solid var(--border);
         }
         .app-status {
             display: inline-flex; align-items: center; gap: 7px; min-height: 30px; padding: 0 11px;
-            border-radius: 999px; border: 1px solid var(--border); background: var(--surface-raised);
+            border-radius: 8px; border: 1px solid var(--border); background: var(--surface-raised);
             color: var(--text-secondary); font-size: 11px; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase;
         }
         .app-status::before {
@@ -338,7 +338,7 @@
         }
         .settings-chip {
             display: inline-flex; align-items: center; gap: 4px;
-            padding: 4px 8px; border-radius: 999px;
+            padding: 4px 8px; border-radius: 6px;
             background: rgba(255, 255, 255, 0.04); border: 1px solid var(--border);
             color: var(--text-muted); font-size: 10px; font-weight: 700; letter-spacing: 0.04em; white-space: nowrap;
         }
@@ -375,7 +375,7 @@
         .settings-search-icon { left: 11px; color: var(--text-muted); pointer-events: none; opacity: 0.7; }
         .settings-search-clear {
             right: 6px; width: 22px; height: 22px; min-height: 22px; padding: 0;
-            border-radius: 999px; border: 0; background: transparent; color: var(--text-muted);
+            border-radius: 50%; border: 0; background: transparent; color: var(--text-muted);
             box-shadow: none; display: flex; align-items: center; justify-content: center;
         }
         .settings-search-clear:hover { background: rgba(255, 255, 255, 0.08); color: var(--text-primary); }
@@ -404,7 +404,7 @@
             color: var(--text-primary); background: rgba(255, 255, 255, 0.09); border-color: rgba(255, 255, 255, 0.14);
         }
         .settings-group-count {
-            padding: 2px 5px; border-radius: 999px; background: rgba(255, 255, 255, 0.06);
+            padding: 2px 5px; border-radius: 6px; background: rgba(255, 255, 255, 0.06);
             color: var(--text-muted); font-size: 9px; font-weight: 800; font-variant-numeric: tabular-nums; flex-shrink: 0;
         }
 
@@ -465,7 +465,7 @@
         }
         .settings-empty-inner { max-width: 300px; }
         .settings-empty-eyebrow {
-            display: inline-flex; padding: 4px 8px; border-radius: 999px;
+            display: inline-flex; padding: 4px 8px; border-radius: 6px;
             background: rgba(116, 199, 236, 0.1); border: 1px solid rgba(116, 199, 236, 0.22);
             color: #ddf3ff; font-size: 9px; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase;
         }
@@ -517,7 +517,7 @@
         }
         .settings-item-badge {
             display: inline-flex; align-items: center; padding: 3px 6px;
-            border-radius: 999px; font-size: 9px; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase;
+            border-radius: 6px; font-size: 9px; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase;
         }
         .settings-item-state {
             color: #c1d6ff; background: rgba(137, 180, 250, 0.14); border: 1px solid rgba(137, 180, 250, 0.24);
@@ -527,7 +527,7 @@
         }
         .settings-item-type {
             color: #ddf3ff; background: rgba(116, 199, 236, 0.12); border: 1px solid rgba(116, 199, 236, 0.2);
-            padding: 3px 6px; border-radius: 999px; font-size: 9px; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase;
+            padding: 3px 6px; border-radius: 6px; font-size: 9px; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase;
         }
         .settings-item-description {
             margin: 0; color: var(--text-muted); font-size: 11px; line-height: 1.55;
@@ -556,7 +556,7 @@
         }
         .settings-item-toggle input { position: absolute; opacity: 0; pointer-events: none; }
         .settings-item-toggle-track {
-            position: relative; width: 44px; height: 26px; border-radius: 999px;
+            position: relative; width: 44px; height: 26px; border-radius: 8px;
             background: rgba(255, 255, 255, 0.12); border: 1px solid var(--border);
             transition: background-color 200ms var(--ease-out), border-color 200ms var(--ease-out);
             flex-shrink: 0;
@@ -590,7 +590,7 @@
         /* Scrollbars */
         .settings-groups::-webkit-scrollbar, .settings-list::-webkit-scrollbar { width: 5px; }
         .settings-groups::-webkit-scrollbar-track, .settings-list::-webkit-scrollbar-track { background: transparent; }
-        .settings-groups::-webkit-scrollbar-thumb, .settings-list::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.1); border-radius: 999px; }
+        .settings-groups::-webkit-scrollbar-thumb, .settings-list::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.1); border-radius: 4px; }
         .settings-groups::-webkit-scrollbar-thumb:hover, .settings-list::-webkit-scrollbar-thumb:hover { background: rgba(255, 255, 255, 0.2); }
 
         .sr-only {

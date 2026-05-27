@@ -2223,7 +2223,7 @@ const VideoDownloader = {
         .rx-dl-type-badge {
             display: inline-block; padding: 1px 6px; margin-left: 6px;
             font: 600 9px/1.4 system-ui, sans-serif; letter-spacing: 0.04em; text-transform: uppercase;
-            border-radius: 999px;
+            border-radius: 6px;
             background: rgba(255,255,255,0.06); color: var(--rx-subtext, #a6adc8);
         }
         .rx-dl-type-badge.type-tar {
