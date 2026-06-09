@@ -18,3 +18,7 @@ test-results/
 __pycache__/
 *.py[cod]
 *.pyc
+
+# Markdown files local-only (except README)
+*.md
+!README.md
