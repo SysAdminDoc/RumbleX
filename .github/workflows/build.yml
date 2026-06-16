@@ -34,7 +34,7 @@ jobs:
           node --check extension/offscreen.js
           node --check extension/pages/popup.js
           node --check extension/pages/options.js
-      - name: Catalog parity (197/197/197/197)
+      - name: Catalog parity (210/210/210)
         run: |
           node -e "
             const fs = require('fs');
