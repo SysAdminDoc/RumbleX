@@ -1,0 +1,130 @@
+{
+  "extName": {
+    "message": "RumbleX",
+    "description": "Name der Erweiterung. Nicht uebersetzen — Eigenname."
+  },
+  "extDescription": {
+    "message": "Erweiterungspaket fuer Rumble — Werbeblocker, Theatermodus, Videodownloads, dunkles Design und ueber 130 konfigurierbare Funktionen.",
+    "description": "Kurzbeschreibung im Erweiterungs-Store. Erstbersetzung — vor Veroeffentlichung pruefen."
+  },
+  "actionTitle": {
+    "message": "RumbleX",
+    "description": "Tooltip des Symbols in der Symbolleiste."
+  },
+  "openSettingsEditor": {
+    "message": "Einstellungseditor oeffnen",
+    "description": "Schaltflaeche auf der Optionsseite, die den Bearbeitungsdialog oeffnet."
+  },
+  "exportBackup": {
+    "message": "Sicherung exportieren",
+    "description": "Schaltflaeche, die das vollstaendige JSON-Backup herunterlaed."
+  },
+  "importBackup": {
+    "message": "Sicherung importieren",
+    "description": "Schaltflaeche, die aus einer zuvor exportierten JSON-Datei wiederherstellt."
+  },
+  "resetAllData": {
+    "message": "Alle Daten zuruecksetzen",
+    "description": "Destruktive Schaltflaeche, die Einstellungen und localStorage pro Herkunft loescht. Erstellt automatisch einen Snapshot, wenn backupHistory aktiviert ist."
+  },
+  "snapshotHistory": {
+    "message": "Snapshot-Verlauf",
+    "description": "Abschnittueberschrift fuer die Snapshot-Liste (v3.1.0)."
+  },
+  "snapshotTakeNow": {
+    "message": "Snapshot jetzt erstellen",
+    "description": "Schaltflaeche, die einen manuellen Snapshot erstellt."
+  },
+  "snapshotRestore": {
+    "message": "Wiederherstellen",
+    "description": "Schaltflaeche pro Snapshot zum Wiederherstellen. Erstellt vorher einen weiteren Snapshot."
+  },
+  "privacyReport": {
+    "message": "Datenschutzbericht",
+    "description": "Abschnittueberschrift fuer den lokalen Datenschutzbericht (v3.1.0)."
+  },
+  "telemetryNone": {
+    "message": "Telemetrie: keine — keine Analysen, keine Fernprotokollierung, keine Nutzungssignale",
+    "description": "Hinweis im Bericht. Muss mit der Zeichenkette `telemetry` in rxBuildPrivacyReport uebereinstimmen."
+  },
+  "settingsTotal": {
+    "message": "Einstellungen",
+    "description": "Pluralsubstantiv neben der Anzahl in der Kopfzeile des Dialogs."
+  },
+  "settingsUnsaved": {
+    "message": "ungespeichert",
+    "description": "Beschriftung fuer den Chip mit geaenderten Schluesseln."
+  },
+  "saveBtn": {
+    "message": "Speichern",
+    "description": "Speichern-Schaltflaeche im Einstellungsdialog."
+  },
+  "discardBtn": {
+    "message": "Verwerfen",
+    "description": "Verwerfen-Schaltflaeche im Einstellungsdialog."
+  },
+  "restoreDefaultsBtn": {
+    "message": "Standardwerte wiederherstellen",
+    "description": "Schaltflaeche, die die Standardwerte in den Entwurf laedt (erfordert Speichern zum Uebernehmen)."
+  },
+  "groupAll": {
+    "message": "Alle Einstellungen",
+    "description": "Name der Seitenleistengruppe, die alle Einstellungen anzeigt."
+  },
+  "groupCore": {
+    "message": "Kern",
+    "description": "Einstellungsgruppe fuer die Kern-Engine, Design und Barrierefreiheit."
+  },
+  "groupAdBlocking": {
+    "message": "Werbeblocker",
+    "description": "Einstellungsgruppe."
+  },
+  "groupVideoPlayer": {
+    "message": "Videoplayer",
+    "description": "Einstellungsgruppe."
+  },
+  "groupDownloads": {
+    "message": "Downloads und Aufnahme",
+    "description": "Einstellungsgruppe."
+  },
+  "groupHistory": {
+    "message": "Verlauf und Lesezeichen",
+    "description": "Einstellungsgruppe."
+  },
+  "groupChat": {
+    "message": "Kommentare und Chat",
+    "description": "Einstellungsgruppe."
+  },
+  "groupFeedControls": {
+    "message": "Feed-Steuerung",
+    "description": "Einstellungsgruppe."
+  },
+  "groupAutomation": {
+    "message": "Automatisierung",
+    "description": "Einstellungsgruppe."
+  },
+  "groupCreator": {
+    "message": "Creator und Studio",
+    "description": "Einstellungsgruppe."
+  },
+  "groupIntegrations": {
+    "message": "Integrationen",
+    "description": "Einstellungsgruppe."
+  },
+  "groupPrivacy": {
+    "message": "Datenschutz und Daten",
+    "description": "Einstellungsgruppe."
+  },
+  "groupAdvanced": {
+    "message": "Erweitert",
+    "description": "Einstellungsgruppe fuer Experten und Debug-Schluessel."
+  },
+  "tipDisableShortsFeed": {
+    "message": "Shorts-Feed deaktivieren",
+    "description": "Bezeichnung des Schalters, der rumble.com/shorts zu /subscriptions umleitet (v3.1.0)."
+  },
+  "tipHideWalletTipButton": {
+    "message": "Wallet-Trinkgeld-Button ausblenden",
+    "description": "Bezeichnung des Schalters, der den Trinkgeld-Button des Rumble Wallet pro Creator ausblendet (v3.1.0)."
+  }
+}

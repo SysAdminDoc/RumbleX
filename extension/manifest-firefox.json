@@ -1,7 +1,7 @@
 {
   "manifest_version": 2,
   "name": "__MSG_extName__",
-  "version": "3.26.0",
+  "version": "3.28.0",
   "description": "__MSG_extDescription__",
   "default_locale": "en",
   "author": "SysAdminDoc",
@@ -52,6 +52,8 @@
   }],
   "web_accessible_resources": [
     "lib/mux.min.js",
+    "lib/mediabunny.min.mjs",
+    "lib/mediabunny.LICENSE",
     "worker.js"
   ]
 }

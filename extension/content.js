@@ -1,9 +1,9 @@
-// RumbleX v3.26.0 - Content Script
+// RumbleX v3.28.0 - Content Script
 // Rumble enhancement suite - Chrome/Firefox extension
 'use strict';
 
 // ── Version ──
-const VERSION = chrome.runtime?.getManifest?.()?.version || '3.26.0';
+const VERSION = chrome.runtime?.getManifest?.()?.version || '3.28.0';
 const SCHEMA_VERSION = 2;
 
 // ── Settings Manager (chrome.storage.local) ──
@@ -181,6 +181,7 @@ const Settings = {
         downloadShorts: true,
         downloadConcurrency: 2,
         downloadProbeCacheTtlHours: 24,
+        downloadMuxerEngine: 'muxjs',
         audioExtractionMode: 'browserIfSupported',
         externalPlayerEnabled: false,
         externalPlayerTemplate: '',
@@ -2372,7 +2373,7 @@ const VideoDownloader = {
         return segments;
     },
 
-    async _getWorker() {
+    async _getMuxWorker() {
         if (this._worker) return this._worker;
         // Fetch worker + mux.js source and create blob Worker
         // (content script can't construct Workers from chrome-extension:// URLs)
@@ -2385,8 +2386,110 @@ const VideoDownloader = {
         return this._worker;
     },
 
-    async _transmuxWithWorker(tsBuffers) {
-        const worker = await this._getWorker();
+    _supportsMediabunnyWorker() {
+        return typeof Worker === 'function'
+            && typeof Blob === 'function'
+            && typeof URL !== 'undefined'
+            && typeof URL.createObjectURL === 'function'
+            && typeof VideoDecoder === 'function';
+    },
+
+    async _getMediabunnyWorker() {
+        if (this._mediabunnyWorker) return this._mediabunnyWorker;
+        if (!this._supportsMediabunnyWorker()) {
+            throw new Error('Mediabunny engine requires module Workers and WebCodecs');
+        }
+        const mediabunnyUrl = chrome.runtime.getURL('lib/mediabunny.min.mjs');
+        const workerCode = `
+import { Input, Output, Conversion, ALL_FORMATS, BlobSource, Mp4OutputFormat, BufferTarget } from ${JSON.stringify(mediabunnyUrl)};
+
+self.addEventListener('message', async (e) => {
+    const { id, action, buffers } = e.data || {};
+    if (action !== 'transmux-mediabunny') return;
+    try {
+        const sourceBlob = new Blob((buffers || []).map((buf) => {
+            if (buf instanceof Uint8Array) return buf;
+            if (buf instanceof ArrayBuffer) return new Uint8Array(buf);
+            return new Uint8Array(buf?.buffer || buf || []);
+        }), { type: 'video/mp2t' });
+        const input = new Input({
+            source: new BlobSource(sourceBlob),
+            formats: ALL_FORMATS,
+        });
+        const target = new BufferTarget();
+        const output = new Output({
+            format: new Mp4OutputFormat(),
+            target,
+        });
+        const conversion = await Conversion.init({
+            input,
+            output,
+            tracks: 'primary',
+            showWarnings: false,
+        });
+        if (!conversion.isValid) {
+            const reasons = (conversion.discardedTracks || [])
+                .map((entry) => entry?.reason || 'discarded-track')
+                .join(', ');
+            throw new Error('Mediabunny conversion rejected tracks' + (reasons ? ': ' + reasons : ''));
+        }
+        await conversion.execute();
+        if (!target.buffer || !target.buffer.byteLength) {
+            throw new Error('Mediabunny produced an empty MP4 buffer');
+        }
+        const buffer = target.buffer;
+        const blob = new Blob([buffer], { type: 'video/mp4' });
+        self.postMessage({ id, blob });
+    } catch (err) {
+        self.postMessage({ id, error: err?.message || 'Mediabunny conversion failed' });
+    }
+});
+`;
+        const blob = new Blob([workerCode], { type: 'application/javascript' });
+        this._mediabunnyWorker = new Worker(URL.createObjectURL(blob), { type: 'module' });
+        return this._mediabunnyWorker;
+    },
+
+    async _transmuxWithMediabunny(tsBuffers) {
+        const worker = await this._getMediabunnyWorker();
+        return new Promise((resolve, reject) => {
+            const id = Date.now() + Math.random();
+
+            const cleanup = () => {
+                worker.removeEventListener('message', handler);
+                worker.removeEventListener('error', errorHandler);
+                worker.removeEventListener('messageerror', errorHandler);
+            };
+            const handler = (e) => {
+                if (e.data.id !== id) return;
+                if (e.data.debug) {
+                    console.log('[RumbleX] Mediabunny debug: ' + e.data.debug);
+                    return;
+                }
+                cleanup();
+                if (e.data.error) reject(new Error(e.data.error));
+                else resolve(e.data.blob);
+            };
+            const errorHandler = (e) => {
+                cleanup();
+                if (this._mediabunnyWorker === worker) {
+                    try { worker.terminate(); } catch {}
+                    this._mediabunnyWorker = null;
+                }
+                reject(new Error(e?.message || 'Mediabunny worker failed'));
+            };
+
+            worker.addEventListener('message', handler);
+            worker.addEventListener('error', errorHandler);
+            worker.addEventListener('messageerror', errorHandler);
+            // Do not transfer here: if the experimental path fails, the mux.js
+            // fallback still needs the original buffers.
+            worker.postMessage({ id, action: 'transmux-mediabunny', buffers: tsBuffers });
+        });
+    },
+
+    async _transmuxWithMuxWorker(tsBuffers) {
+        const worker = await this._getMuxWorker();
         return new Promise((resolve, reject) => {
             const id = Date.now();
 
@@ -2407,6 +2510,17 @@ const VideoDownloader = {
             const transferable = tsBuffers.map(b => b instanceof ArrayBuffer ? b : b.buffer);
             worker.postMessage({ id, action: 'transmux', buffers: tsBuffers }, transferable);
         });
+    },
+
+    async _transmuxWithWorker(tsBuffers) {
+        if (Settings.get('downloadMuxerEngine') === 'mediabunnyWebCodecs') {
+            try {
+                return await this._transmuxWithMediabunny(tsBuffers);
+            } catch (err) {
+                console.warn('[RumbleX] Mediabunny muxer failed; falling back to mux.js:', err);
+            }
+        }
+        return this._transmuxWithMuxWorker(tsBuffers);
     },
 
     _triggerSave(data, filename, mimeType) {

@@ -1,8 +1,8 @@
 # RumbleX
 
-![Version](https://img.shields.io/badge/version-v3.26.0-blue) ![License](https://img.shields.io/badge/license-MIT-green) ![Platform](https://img.shields.io/badge/platform-Chrome%20Extension-lightgrey) ![Firefox](https://img.shields.io/badge/firefox-109%2B-orange)
+![Version](https://img.shields.io/badge/version-v3.28.0-blue) ![License](https://img.shields.io/badge/license-MIT-green) ![Platform](https://img.shields.io/badge/platform-Chrome%20Extension-lightgrey) ![Firefox](https://img.shields.io/badge/firefox-109%2B-orange)
 
-**The ultimate Rumble enhancement suite.** 130+ feature modules across 14 categories — ad blocking, theater mode, video downloads with CDN deep-scan probing, five-theme engine (now including OLED Green), playback controls, chat enhancements with deterministic username colors and tier-filtered rants, chapters, SponsorBlock, clips, live DVR, transcripts, auto-hide chrome, 50+ granular hide-X toggles for every Rumble row/button/player control, thumbnail hider, dense mode, reduced-motion path, tracking-param stripping, external player handoff (MPV/PotPlayer), and full-round-trip backup/restore with snapshot history. Chrome MV3 + Firefox MV2 + userscript.
+**The ultimate Rumble enhancement suite.** 130+ feature modules across 14 categories — ad blocking, theater mode, video downloads with CDN deep-scan probing and an opt-in Mediabunny muxer path, five-theme engine (now including OLED Green), playback controls, chat enhancements with deterministic username colors and tier-filtered rants, chapters, SponsorBlock, clips, live DVR, transcripts, auto-hide chrome, 50+ granular hide-X toggles for every Rumble row/button/player control, thumbnail hider, dense mode, reduced-motion path, tracking-param stripping, external player handoff (MPV/PotPlayer), and full-round-trip backup/restore with snapshot history. Chrome MV3 + Firefox MV2 + userscript.
 
 ### What's new in v2.x
 
@@ -56,7 +56,7 @@
 - **Title Font** — Unbold + normalize title typography
 
 ### Downloads & Capture
-- **Video Download** — Download as direct MP4 or HLS-to-MP4/TS via Web Worker transmuxing. Includes an automatic **Deep Scan (RUD)** that probes `hugh.cdn.rumble.cloud` for every quality variant the embed API didn't surface (1080p/720p/480p/360p/240p × mp4/tar × live/vod), with live progress bar, per-row copy-link buttons, and support for TAR live-replay archives (with inline *extract with 7-Zip, drop the `.m3u8` into VLC* hint).
+- **Video Download** — Download as direct MP4 or HLS-to-MP4/TS via Web Worker transmuxing. Default engine is the pinned mux.js path; advanced settings include an experimental Mediabunny + WebCodecs engine that falls back to mux.js on failure. Includes an automatic **Deep Scan (RUD)** that probes `hugh.cdn.rumble.cloud` for every quality variant the embed API didn't surface (1080p/720p/480p/360p/240p × mp4/tar × live/vod), with live progress bar, per-row copy-link buttons, and support for TAR live-replay archives (with inline *extract with 7-Zip, drop the `.m3u8` into VLC* hint).
 - **Low-Bitrate MP4 (for listening)** — Download the smallest video variant for background audio (saved as `.mp4` — honest naming; Rumble doesn't expose a pure audio track).
 - **Video Clips** — Mark In/Out on the player and export a clip as MP4 (segment slicing + transmux)
 - **Live DVR** — Save the last 30 s / 1 m / 5 m / 10 m of a live stream as MP4
@@ -160,7 +160,8 @@ Install `RumbleX.user.js` directly — note: the userscript version lags behind 
 - Chrome Extension Manifest V3 + Firefox Manifest V2 (parallel manifests)
 - `chrome.storage.local` for settings persistence
 - `localStorage` (per-origin) for watch progress, volume memory, history, rant archives
-- mux.js (bundled) for HLS segment transmuxing in a Web Worker
+- mux.js (bundled) for default HLS segment transmuxing in a Web Worker
+- Mediabunny 1.46.0 (bundled, opt-in) for the experimental WebCodecs-era HLS-to-MP4 path
 - `AbortController` + generation-counter guards for cancellable async work
 - Anti-FOUC: CSS injected at `document_start`
 - GitHub Releases API for update checking

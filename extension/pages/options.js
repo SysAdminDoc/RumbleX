@@ -1,4 +1,4 @@
-// RumbleX v3.26.0 - Options Page
+// RumbleX v3.28.0 - Options Page
 // Standalone settings management via chrome.storage.local (rx_settings key).
 // Mirrors Astra Deck's settings page pattern: dirty-draft workflow with
 // search, group nav, stats overview, and export/import/reset.
@@ -180,6 +180,7 @@
         downloadShorts: true,
         downloadConcurrency: 2,
         downloadProbeCacheTtlHours: 24,
+        downloadMuxerEngine: 'muxjs',
         audioExtractionMode: 'browserIfSupported',
         externalPlayerEnabled: false,
         externalPlayerTemplate: '',
@@ -436,6 +437,7 @@
         downloadShorts: { group: 'downloads', label: 'Download Shorts', desc: 'Treat Shorts as normal downloadable videos.' },
         downloadConcurrency: { group: 'downloads', label: 'Download Concurrency', desc: 'Max parallel downloads (host-safe default: 2).' },
         downloadProbeCacheTtlHours: { group: 'downloads', label: 'Probe Cache TTL (hours)', desc: 'Prevents repeated CDN probes.' },
+        downloadMuxerEngine: { group: 'downloads', label: 'HLS MP4 Muxer Engine', desc: 'muxjs | mediabunnyWebCodecs. Default muxjs; Mediabunny is experimental and falls back to mux.js on failure.' },
         audioExtractionMode: { group: 'downloads', label: 'Audio Extraction', desc: 'off | browserIfSupported | companion | external.' },
         externalPlayerEnabled: { group: 'integrations', label: 'External Player Handoff', desc: 'MPV / PotPlayer / custom URI scheme.' },
         externalPlayerTemplate: { group: 'integrations', label: 'External Player Template', desc: 'Command/URI template, e.g. "mpv://{url}".' },
@@ -1030,6 +1032,7 @@
     };
     const VALID_THEMES = new Set(['catppuccin', 'youtube', 'midnight', 'rumbleGreen']);
     const VALID_SITE_THEMES = new Set(['system', 'dark', 'light']);
+    const VALID_DOWNLOAD_MUXER_ENGINES = new Set(['muxjs', 'mediabunnyWebCodecs']);
 
     function filterToKnownKeys(obj) {
         // Drop any top-level key not present in DEFAULTS. This prevents junk
@@ -1067,6 +1070,9 @@
         }
         if (typeof sanitized.siteTheme === 'string' && !VALID_SITE_THEMES.has(sanitized.siteTheme)) {
             delete sanitized.siteTheme;
+        }
+        if (typeof sanitized.downloadMuxerEngine === 'string' && !VALID_DOWNLOAD_MUXER_ENGINES.has(sanitized.downloadMuxerEngine)) {
+            delete sanitized.downloadMuxerEngine;
         }
 
         // sponsorSegments must be a plain object keyed by videoId; drop if not
@@ -1359,6 +1365,10 @@
             { value: 'system', label: 'System' },
             { value: 'dark', label: 'Dark' },
             { value: 'light', label: 'Light' },
+        ],
+        downloadMuxerEngine: [
+            { value: 'muxjs', label: 'mux.js (default)' },
+            { value: 'mediabunnyWebCodecs', label: 'Mediabunny + WebCodecs (experimental)' },
         ],
     };
 

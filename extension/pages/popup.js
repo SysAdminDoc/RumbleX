@@ -1,4 +1,4 @@
-// RumbleX v3.26.0 - Popup Script
+// RumbleX v3.28.0 - Popup Script
 'use strict';
 
 // Feature list grouped by category. Order within a group controls display
@@ -352,6 +352,7 @@ const DEFAULTS = {
     downloadShorts: true,
     downloadConcurrency: 2,
     downloadProbeCacheTtlHours: 24,
+    downloadMuxerEngine: 'muxjs',
     audioExtractionMode: 'browserIfSupported',
     externalPlayerEnabled: false,
     externalPlayerTemplate: '',
