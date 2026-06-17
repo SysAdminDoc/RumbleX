@@ -1,6 +1,6 @@
 # RumbleX
 
-![Version](https://img.shields.io/badge/version-v3.29.0-blue) ![License](https://img.shields.io/badge/license-MIT-green) ![Platform](https://img.shields.io/badge/platform-Chrome%20Extension-lightgrey) ![Firefox](https://img.shields.io/badge/firefox-109%2B-orange)
+![Version](https://img.shields.io/badge/version-v3.30.0-blue) ![License](https://img.shields.io/badge/license-MIT-green) ![Platform](https://img.shields.io/badge/platform-Chrome%20Extension-lightgrey) ![Firefox](https://img.shields.io/badge/firefox-109%2B-orange)
 
 **The ultimate Rumble enhancement suite.** 130+ feature modules across 14 categories — ad blocking, theater mode, video downloads with CDN deep-scan probing and an opt-in Mediabunny muxer path, five-theme engine (now including OLED Green), playback controls, chat enhancements with deterministic username colors and tier-filtered rants, chapters, SponsorBlock, clips, live DVR, transcripts, auto-hide chrome, 50+ granular hide-X toggles for every Rumble row/button/player control, thumbnail hider, dense mode, reduced-motion path, tracking-param stripping, external player handoff (MPV/PotPlayer), and full-round-trip backup/restore with snapshot history. Chrome MV3 + Firefox MV2 + userscript.
 
@@ -176,9 +176,9 @@ Install `RumbleX.user.js` directly — note: the userscript version lags behind 
 ## Build
 ```bash
 cd extension
-./build.sh       # produces RumbleX-chrome.zip and RumbleX-firefox.zip in the parent dir
+./build.sh       # produces RumbleX-chrome.zip, RumbleX-firefox.zip, and SHA256SUMS.txt in the parent dir
 ```
-Requires `zip` (Git Bash on Windows: use PowerShell `Compress-Archive` fallback). See `CHANGELOG.md` for per-version details.
+Requires `zip`; on Windows without `zip`, the script falls back to the Windows-bundled bsdtar so ZIP entries keep browser-safe forward-slash paths. See `CHANGELOG.md` for per-version details.
 
 ## License
 MIT

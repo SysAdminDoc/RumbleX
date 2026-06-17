@@ -21,6 +21,20 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Shell script line endings
+        run: |
+          node - <<'NODE'
+          const fs = require('fs');
+          const { execFileSync } = require('child_process');
+          const files = execFileSync('git', ['ls-files', '*.sh'], { encoding: 'utf8' })
+            .split(/\r?\n/)
+            .filter(Boolean);
+          const bad = files.filter((file) => fs.readFileSync(file).includes(13));
+          if (bad.length) {
+            console.error('Shell scripts must use LF line endings:\n' + bad.join('\n'));
+            process.exit(1);
+          }
+          NODE
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
@@ -64,19 +78,22 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Build ZIP
+      - name: Build release packages
         run: |
           cd extension
-          # The -x patterns exclude developer-side artifacts; manifest.json,
-          # background.js, content.js, worker.js, lib/, icons/, pages/, and
-          # _locales/ (v3.1.0+) are all included by the implicit `.` walk.
-          zip -r ../${{ github.event.repository.name }}-${{ github.ref_name || 'dev' }}.zip . -x "*.git*" "*.md" "*.py" "*.bak" "*.mhtml" "userscript/*" "*.sh"
+          bash build.sh
+
+      - name: Verify release checksums
+        run: sha256sum -c SHA256SUMS.txt
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: RumbleX-extension
-          path: "*.zip"
+          path: |
+            RumbleX-chrome.zip
+            RumbleX-firefox.zip
+            SHA256SUMS.txt
 
       - name: Release
         if: startsWith(github.ref, 'refs/tags/')
@@ -90,6 +107,6 @@ jobs:
             || gh release create "${{ github.ref_name }}" \
                 --title "RumbleX ${{ github.ref_name }}" \
                 --notes "See [CHANGELOG.md](https://github.com/${{ github.repository }}/blob/main/CHANGELOG.md) for release notes."
-          gh release upload "${{ github.ref_name }}" *.zip --clobber
+          gh release upload "${{ github.ref_name }}" RumbleX-chrome.zip RumbleX-firefox.zip SHA256SUMS.txt --clobber
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -23,6 +23,9 @@ MUX_JS_SHA256="79da5742f8985d9362b14a3ca4d705eea726cea6d513d0d019c359bf4eec856b"
 MEDIABUNNY_VERSION="1.46.0"
 MEDIABUNNY_JS_SHA256="e7514bbc13b132f954e31a3fad423ddaa6926a6ae95749190d7c1caa31225b8e"
 MEDIABUNNY_LICENSE_SHA256="3f3d9e0024b1921b067d6f7f88deb4a60cbe7a78e76c64e3f1d7fc3b779b9d04"
+CHROME_ZIP="../RumbleX-chrome.zip"
+FIREFOX_ZIP="../RumbleX-firefox.zip"
+CHECKSUMS_FILE="../SHA256SUMS.txt"
 
 file_sha256() {
     local file="$1"
@@ -98,14 +101,53 @@ pack_extension() {
             manifest.json background.js content.js worker.js offscreen.html offscreen.js \
             lib/ icons/ pages/ _locales/ \
             -x "manifest-firefox.json" -x "manifest-chrome-backup.json" -x "build.sh" -x "*.DS_Store"
-    elif command -v powershell.exe >/dev/null 2>&1; then
-        powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "\
-\$ErrorActionPreference = 'Stop'; \
-\$paths = @('manifest.json','background.js','content.js','worker.js','offscreen.html','offscreen.js','lib','icons','pages','_locales'); \
-Compress-Archive -Path \$paths -DestinationPath '$dest' -Force"
+    elif [ -x "/c/Windows/System32/tar.exe" ]; then
+        "/c/Windows/System32/tar.exe" -a -c -f "$dest" \
+            manifest.json background.js content.js worker.js offscreen.html offscreen.js \
+            lib icons pages _locales
+    elif command -v bsdtar >/dev/null 2>&1; then
+        bsdtar -a -c -f "$dest" \
+            manifest.json background.js content.js worker.js offscreen.html offscreen.js \
+            lib icons pages _locales
     else
-        echo "[!] Need zip or powershell.exe Compress-Archive to build packages."
+        echo "[!] Need zip, Windows bsdtar, or bsdtar to build packages."
         return 1
+    fi
+}
+
+write_release_checksums() {
+    local pkg
+    rm -f "$CHECKSUMS_FILE"
+    for pkg in "$CHROME_ZIP" "$FIREFOX_ZIP"; do
+        if [ ! -f "$pkg" ]; then
+            echo "[!] Missing package for checksum: $pkg"
+            return 1
+        fi
+        printf '%s  %s\n' "$(file_sha256 "$pkg")" "$(basename "$pkg")" >> "$CHECKSUMS_FILE"
+    done
+    echo "[*] Wrote SHA256SUMS.txt"
+}
+
+verify_release_checksums() {
+    local expected
+    local name
+    local actual
+    while read -r expected name; do
+        [ -n "$expected" ] || continue
+        actual=$(file_sha256 "../$name") || return 1
+        if [ "$actual" != "$expected" ]; then
+            echo "[!] Release package checksum mismatch for $name"
+            echo "    expected: $expected"
+            echo "    got:      $actual"
+            return 1
+        fi
+    done < "$CHECKSUMS_FILE"
+    echo "[*] Release package checksums verified."
+}
+
+restore_chrome_manifest() {
+    if [ -f "manifest-chrome-backup.json" ]; then
+        mv manifest-chrome-backup.json manifest.json
     fi
 }
 
@@ -117,18 +159,23 @@ fi
 
 # Build Chrome ZIP
 echo "[*] Building Chrome package..."
-rm -f "../RumbleX-chrome.zip"
-pack_extension "../RumbleX-chrome.zip"
+rm -f "$CHROME_ZIP"
+pack_extension "$CHROME_ZIP"
 echo "    Created RumbleX-chrome.zip"
 
 # Build Firefox ZIP (swap manifest)
 echo "[*] Building Firefox package..."
-rm -f "../RumbleX-firefox.zip"
+rm -f "$FIREFOX_ZIP"
 cp manifest.json manifest-chrome-backup.json
+trap restore_chrome_manifest EXIT
 cp manifest-firefox.json manifest.json
-pack_extension "../RumbleX-firefox.zip"
-mv manifest-chrome-backup.json manifest.json
+pack_extension "$FIREFOX_ZIP"
+restore_chrome_manifest
+trap - EXIT
 echo "    Created RumbleX-firefox.zip"
+
+write_release_checksums
+verify_release_checksums
 
 echo ""
 echo "=== Build Complete ==="
