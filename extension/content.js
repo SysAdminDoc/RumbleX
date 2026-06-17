@@ -1,9 +1,9 @@
-// RumbleX v3.30.0 - Content Script
+// RumbleX v3.31.0 - Content Script
 // Rumble enhancement suite - Chrome/Firefox extension
 'use strict';
 
 // ── Version ──
-const VERSION = chrome.runtime?.getManifest?.()?.version || '3.30.0';
+const VERSION = chrome.runtime?.getManifest?.()?.version || '3.31.0';
 const SCHEMA_VERSION = 2;
 
 // ── Settings Manager (chrome.storage.local) ──
@@ -12723,6 +12723,12 @@ async function boot() {
         console.error('[RumbleX] Settings.init failed:', e);
         try { RxErrorLog?.record('Settings', e, 'init'); } catch {}
     }
+    try {
+        await rxApplyPendingLocalDataOperation();
+    } catch (e) {
+        console.warn('[RumbleX] pending local-data restore failed:', e);
+        try { RxErrorLog?.record('LocalDataRestore', e, 'boot'); } catch {}
+    }
     // Wire route lifecycle once. Features that subscribe via Router.onChange
     // will receive route-transition events for htmx swaps + history nav.
     try {
@@ -12845,6 +12851,25 @@ function rxWriteLocalStorage(data) {
         console.warn('[RumbleX] localStorage write failed:', e);
     }
     return written;
+}
+
+async function rxApplyPendingLocalDataOperation() {
+    const resp = await chrome.runtime.sendMessage({ action: 'getPendingLocalDataOperation' });
+    const op = resp?.ok && resp.operation && typeof resp.operation === 'object' ? resp.operation : null;
+    if (!op?.id) return { ok: true, skipped: true };
+    let cleared = 0;
+    let written = 0;
+    if (op.clear) cleared = rxClearLocalStorage();
+    if (op.data && typeof op.data === 'object') written = rxWriteLocalStorage(op.data);
+    try {
+        await chrome.runtime.sendMessage({
+            action: 'completePendingLocalDataOperation',
+            id: op.id,
+            cleared,
+            written,
+        });
+    } catch {}
+    return { ok: true, cleared, written };
 }
 
 // ═══════════════════════════════════════════

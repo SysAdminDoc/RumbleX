@@ -1,4 +1,4 @@
-// RumbleX v3.30.0 - Options Page
+// RumbleX v3.31.0 - Options Page
 // Standalone settings management via chrome.storage.local (rx_settings key).
 // Mirrors Astra Deck's settings page pattern: dirty-draft workflow with
 // search, group nav, stats overview, and export/import/reset.
@@ -1031,6 +1031,41 @@
         return sanitized;
     }
 
+    async function createSettingsSnapshot(reason) {
+        const cur = await chrome.storage.local.get([STORAGE_KEY, 'rx_settings_snapshots']);
+        const settings = sanitizeSettingsObject(cur[STORAGE_KEY] || {});
+        if (settings.backupHistory === false) return { ok: false, reason: 'disabled' };
+        const limit = Math.max(1, Number(settings.backupHistoryLimit ?? DEFAULTS.backupHistoryLimit) || 10);
+        const snapshot = {
+            at: Date.now(),
+            reason: typeof reason === 'string' ? reason.slice(0, 80) : 'manual',
+            settings,
+        };
+        const next = Array.isArray(cur.rx_settings_snapshots) ? cur.rx_settings_snapshots.slice() : [];
+        next.push(snapshot);
+        while (next.length > limit) next.shift();
+        await chrome.storage.local.set({ rx_settings_snapshots: next });
+        return { ok: true, count: next.length };
+    }
+
+    async function listSettingsSnapshots() {
+        const cur = await chrome.storage.local.get('rx_settings_snapshots');
+        const list = Array.isArray(cur.rx_settings_snapshots) ? cur.rx_settings_snapshots : [];
+        return list.map((s, i) => ({ index: i, at: s.at, reason: s.reason }));
+    }
+
+    async function restoreSettingsSnapshot(indexOrAt) {
+        const cur = await chrome.storage.local.get('rx_settings_snapshots');
+        const list = Array.isArray(cur.rx_settings_snapshots) ? cur.rx_settings_snapshots : [];
+        const snap = typeof indexOrAt === 'number' && indexOrAt < list.length
+            ? list[indexOrAt]
+            : list.find((s) => s.at === indexOrAt);
+        if (!snap) return { ok: false, reason: 'not-found' };
+        await createSettingsSnapshot('pre-restore');
+        await chrome.storage.local.set({ [STORAGE_KEY]: sanitizeSettingsObject(snap.settings || {}) });
+        return { ok: true, restored: { at: snap.at, reason: snap.reason } };
+    }
+
     async function importSettings(file) {
         if (!file) return;
         try {
@@ -1070,6 +1105,7 @@
                 throw new Error('Import data is too large for extension storage');
             }
 
+            const snapshot = await createSettingsSnapshot('pre-import-settings');
             await chrome.storage.local.set({ [STORAGE_KEY]: sanitized });
 
             // v2+: restore per-site data to any open Rumble tabs. If no tab
@@ -1082,8 +1118,11 @@
                 try {
                     const resp = await chrome.runtime.sendMessage({ action: 'setLocalData', data: localData });
                     if (resp?.ok) {
-                        if (resp.tabs === 0) {
-                            restoreSummary = ' Open a Rumble tab and re-import to restore per-site data (watch history, bookmarks).';
+                        if (resp.pending) {
+                            const staged = resp.pendingKeys || Object.keys(localData).length;
+                            restoreSummary = ` Staged ${staged} per-site ${staged === 1 ? 'key' : 'keys'}; it will restore automatically next time a Rumble tab opens.`;
+                        } else if (resp.tabs === 0) {
+                            restoreSummary = ' No Rumble tab was open; per-site data restore was skipped.';
                         } else {
                             restoreSummary = ` Restored ${resp.written} per-site ${resp.written === 1 ? 'key' : 'keys'} to ${resp.tabs} open ${resp.tabs === 1 ? 'tab' : 'tabs'}.`;
                         }
@@ -1094,7 +1133,8 @@
             await renderStorageInfo();
             await refreshSettingsState({ resetDraft: true });
             if (state.modalOpen) renderSettingsWorkspace();
-            showStatus('Settings imported. Reload open Rumble tabs to apply.' + restoreSummary, 'success');
+            const snapshotNote = snapshot?.ok ? ' Snapshot captured first.' : '';
+            showStatus('Settings imported.' + snapshotNote + ' Reload open Rumble tabs to apply.' + restoreSummary, 'success');
         } catch (err) {
             showStatus('Import failed: ' + err.message, 'error');
         } finally {
@@ -1107,7 +1147,7 @@
             showStatus('Resetting local settings and open Rumble-tab data…', 'info');
             let snapshot = { ok: false };
             try {
-                snapshot = await sendToContent('backupSnapshot', { reason: 'pre-reset-all-data' });
+                snapshot = await createSettingsSnapshot('pre-reset-all-data');
             } catch {
                 snapshot = { ok: false };
             }
@@ -1134,7 +1174,9 @@
             const cleared = broadcast?.cleared || 0;
             const suffix = tabsTouched
                 ? ` Cleared ${cleared} per-site ${cleared === 1 ? 'key' : 'keys'} across ${tabsTouched} open ${tabsTouched === 1 ? 'Rumble tab' : 'Rumble tabs'}.`
-                : ' Open Rumble tabs will reset on next load.';
+                : (broadcast?.pendingClear
+                    ? ' Per-site data clear is staged and will run automatically next time a Rumble tab opens.'
+                    : ' No Rumble tab was open; per-site data was not reachable.');
             const snapshotNote = snapshot?.ok ? ' Snapshot captured first.' : '';
             showStatus('All settings cleared.' + snapshotNote + suffix, 'success');
         } catch (err) {
@@ -1774,12 +1816,13 @@
         if (!list) return;
         list.replaceChildren();
         if (summary) summary.textContent = 'Loading…';
-        const resp = await sendToContent('listSnapshots');
-        if (!resp || !resp.ok) {
-            if (summary) summary.textContent = resp?.reason === 'no-rumble-tab' ? 'Open a Rumble tab to load snapshots.' : 'Unavailable.';
+        let snaps = [];
+        try {
+            snaps = await listSettingsSnapshots();
+        } catch {
+            if (summary) summary.textContent = 'Unavailable.';
             return;
         }
-        const snaps = Array.isArray(resp.snapshots) ? resp.snapshots : [];
         if (summary) summary.textContent = snaps.length + ' ' + pluralize(snaps.length, 'snapshot');
         if (snaps.length === 0) {
             const empty = document.createElement('li');
@@ -1806,11 +1849,14 @@
                 const previous = btn.textContent;
                 btn.disabled = true;
                 btn.textContent = 'Restoring…';
-                const r = await sendToContent('restoreSnapshot', { indexOrAt: s.at });
+                const r = await restoreSettingsSnapshot(s.at);
                 btn.disabled = false;
                 btn.textContent = previous;
                 if (r?.ok) {
                     showStatus('Snapshot from ' + formatTimestamp(s.at) + ' restored. Reload Rumble tabs to apply.', 'success');
+                    await renderStorageInfo();
+                    await refreshSettingsState({ resetDraft: true });
+                    if (state.modalOpen) renderSettingsWorkspace();
                     // Refresh in case the restore created a pre-restore snapshot.
                     await refreshSnapshotList();
                 } else {
@@ -1823,7 +1869,7 @@
     }
 
     async function takeSnapshotNow() {
-        const r = await sendToContent('backupSnapshot', { reason: 'manual-options-page' });
+        const r = await createSettingsSnapshot('manual-options-page');
         if (r?.ok) {
             showStatus('Snapshot taken (' + r.count + ' total).', 'success');
             await refreshSnapshotList();

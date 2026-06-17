@@ -10,6 +10,43 @@ const ALLOWED_DOWNLOAD_HOSTS = [
     '1a-1791.com',
     'rumble.cloud',
 ];
+const PENDING_LOCAL_DATA_OP_KEY = 'rx_pending_local_data_op';
+
+async function rxGetPendingLocalDataOperation() {
+    try {
+        const got = await chrome.storage.local.get(PENDING_LOCAL_DATA_OP_KEY);
+        const op = got[PENDING_LOCAL_DATA_OP_KEY];
+        return op && typeof op === 'object' ? op : null;
+    } catch {
+        return null;
+    }
+}
+
+async function rxStagePendingLocalDataOperation({ source, clear = false, data = null }) {
+    const existing = await rxGetPendingLocalDataOperation();
+    const payload = data && typeof data === 'object' ? data : null;
+    const op = {
+        id: String(Date.now()) + '-' + Math.random().toString(16).slice(2),
+        source: source || 'unknown',
+        createdAt: Date.now(),
+        clear: clear || !!existing?.clear,
+        data: payload || existing?.data || null,
+        keyCount: payload ? Object.keys(payload).length : (existing?.keyCount || 0),
+    };
+    if (clear && !payload) {
+        op.data = null;
+        op.keyCount = 0;
+    }
+    await chrome.storage.local.set({ [PENDING_LOCAL_DATA_OP_KEY]: op });
+    return op;
+}
+
+async function rxCompletePendingLocalDataOperation(id) {
+    const current = await rxGetPendingLocalDataOperation();
+    if (!current || current.id !== id) return { ok: true, cleared: false };
+    await chrome.storage.local.remove(PENDING_LOCAL_DATA_OP_KEY);
+    return { ok: true, cleared: true };
+}
 
 // v3.2.0 — Offscreen document lifecycle.
 // MV3 service workers can't touch the DOM (no DOMParser, no Blob URL creation
@@ -834,17 +871,35 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         // localStorage directly, so this is the only way to actually reset
         // per-site data (watch history, bookmarks, rant archive, etc).
         chrome.tabs.query({ url: ['*://rumble.com/*', '*://*.rumble.com/*'] }, (tabs) => {
-            if (!tabs || !tabs.length) { sendResponse({ ok: true, tabs: 0, cleared: 0 }); return; }
+            if (!tabs || !tabs.length) {
+                rxStagePendingLocalDataOperation({ source: 'reset', clear: true })
+                    .then((op) => sendResponse({ ok: true, tabs: 0, cleared: 0, pendingClear: true, pendingId: op.id }))
+                    .catch((e) => sendResponse({ ok: false, reason: String(e?.message || e) }));
+                return;
+            }
             let totalCleared = 0;
             let answered = 0;
+            let okReplies = 0;
             for (const tab of tabs) {
                 if (typeof tab.id !== 'number') { answered++; continue; }
                 chrome.tabs.sendMessage(tab.id, { action: 'clearLocalData' }, (resp) => {
                     // Swallow lastError (some tabs may not have the CS loaded yet).
                     void chrome.runtime.lastError;
-                    if (resp?.ok && typeof resp.cleared === 'number') totalCleared += resp.cleared;
+                    if (resp?.ok) {
+                        okReplies++;
+                        if (typeof resp.cleared === 'number') totalCleared += resp.cleared;
+                    }
                     answered++;
-                    if (answered === tabs.length) sendResponse({ ok: true, tabs: tabs.length, cleared: totalCleared });
+                    if (answered === tabs.length) {
+                        const base = { ok: true, tabs: tabs.length, cleared: totalCleared };
+                        if (okReplies === 0) {
+                            rxStagePendingLocalDataOperation({ source: 'reset', clear: true })
+                                .then((op) => sendResponse({ ...base, pendingClear: true, pendingId: op.id }))
+                                .catch((e) => sendResponse({ ok: false, reason: String(e?.message || e) }));
+                        } else {
+                            sendResponse(base);
+                        }
+                    }
                 });
             }
         });
@@ -859,7 +914,21 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         // and let the caller proceed with a settings-only export.
         chrome.tabs.query({ url: ['*://rumble.com/*', '*://*.rumble.com/*'] }, (tabs) => {
             const tab = tabs && tabs.find((t) => typeof t.id === 'number');
-            if (!tab) { sendResponse({ ok: true, data: {}, tabs: 0 }); return; }
+            if (!tab) {
+                rxGetPendingLocalDataOperation()
+                    .then((op) => {
+                        const data = op?.data && typeof op.data === 'object' ? op.data : {};
+                        sendResponse({
+                            ok: true,
+                            data,
+                            tabs: 0,
+                            pending: Object.keys(data).length > 0,
+                            keys: Object.keys(data).length,
+                        });
+                    })
+                    .catch(() => sendResponse({ ok: true, data: {}, tabs: 0 }));
+                return;
+            }
             chrome.tabs.sendMessage(tab.id, { action: 'getLocalData' }, (resp) => {
                 void chrome.runtime.lastError;
                 sendResponse({
@@ -878,20 +947,53 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         // They're on the same origin so any one write would be observable in
         // all tabs on refresh, but writing to each avoids needing a reload.
         const payload = message.data || {};
+        const keyCount = payload && typeof payload === 'object' ? Object.keys(payload).length : 0;
         chrome.tabs.query({ url: ['*://rumble.com/*', '*://*.rumble.com/*'] }, (tabs) => {
-            if (!tabs || !tabs.length) { sendResponse({ ok: true, tabs: 0, written: 0 }); return; }
+            if (!tabs || !tabs.length) {
+                rxStagePendingLocalDataOperation({ source: 'import', data: payload })
+                    .then((op) => sendResponse({ ok: true, tabs: 0, written: 0, pending: true, pendingId: op.id, pendingKeys: op.keyCount }))
+                    .catch((e) => sendResponse({ ok: false, reason: String(e?.message || e) }));
+                return;
+            }
             let totalWritten = 0;
             let answered = 0;
+            let okReplies = 0;
             for (const tab of tabs) {
                 if (typeof tab.id !== 'number') { answered++; continue; }
                 chrome.tabs.sendMessage(tab.id, { action: 'setLocalData', data: payload }, (resp) => {
                     void chrome.runtime.lastError;
-                    if (resp?.ok && typeof resp.written === 'number') totalWritten = Math.max(totalWritten, resp.written);
+                    if (resp?.ok) {
+                        okReplies++;
+                        if (typeof resp.written === 'number') totalWritten = Math.max(totalWritten, resp.written);
+                    }
                     answered++;
-                    if (answered === tabs.length) sendResponse({ ok: true, tabs: tabs.length, written: totalWritten });
+                    if (answered === tabs.length) {
+                        const base = { ok: true, tabs: tabs.length, written: totalWritten };
+                        if (keyCount > 0 && okReplies === 0) {
+                            rxStagePendingLocalDataOperation({ source: 'import', data: payload })
+                                .then((op) => sendResponse({ ...base, pending: true, pendingId: op.id, pendingKeys: op.keyCount }))
+                                .catch((e) => sendResponse({ ok: false, reason: String(e?.message || e) }));
+                        } else {
+                            sendResponse(base);
+                        }
+                    }
                 });
             }
         });
+        return true;
+    }
+
+    if (message.action === 'getPendingLocalDataOperation') {
+        rxGetPendingLocalDataOperation()
+            .then((op) => sendResponse({ ok: true, operation: op }))
+            .catch((e) => sendResponse({ ok: false, reason: String(e?.message || e) }));
+        return true;
+    }
+
+    if (message.action === 'completePendingLocalDataOperation') {
+        rxCompletePendingLocalDataOperation(String(message.id || ''))
+            .then((resp) => sendResponse(resp))
+            .catch((e) => sendResponse({ ok: false, reason: String(e?.message || e) }));
         return true;
     }
 
