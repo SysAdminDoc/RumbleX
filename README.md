@@ -1,6 +1,6 @@
 # RumbleX
 
-![Version](https://img.shields.io/badge/version-v3.28.0-blue) ![License](https://img.shields.io/badge/license-MIT-green) ![Platform](https://img.shields.io/badge/platform-Chrome%20Extension-lightgrey) ![Firefox](https://img.shields.io/badge/firefox-109%2B-orange)
+![Version](https://img.shields.io/badge/version-v3.29.0-blue) ![License](https://img.shields.io/badge/license-MIT-green) ![Platform](https://img.shields.io/badge/platform-Chrome%20Extension-lightgrey) ![Firefox](https://img.shields.io/badge/firefox-109%2B-orange)
 
 **The ultimate Rumble enhancement suite.** 130+ feature modules across 14 categories — ad blocking, theater mode, video downloads with CDN deep-scan probing and an opt-in Mediabunny muxer path, five-theme engine (now including OLED Green), playback controls, chat enhancements with deterministic username colors and tier-filtered rants, chapters, SponsorBlock, clips, live DVR, transcripts, auto-hide chrome, 50+ granular hide-X toggles for every Rumble row/button/player control, thumbnail hider, dense mode, reduced-motion path, tracking-param stripping, external player handoff (MPV/PotPlayer), and full-round-trip backup/restore with snapshot history. Chrome MV3 + Firefox MV2 + userscript.
 
@@ -116,9 +116,9 @@ Click the extension icon → **gear button** to open the dedicated options page.
 - 5-card stats overview (Enabled features, Storage size, Channels, Keywords, Chatters)
 - **Full-parity Export / Import** — backups now include both `rx_settings` AND per-origin localStorage (watch progress, watch/search history, bookmarks, volume memory, rant archives). Export format: `exportVersion: 2`; v1 imports still work. Imports are allowlisted by key so a crafted file cannot smuggle arbitrary localStorage keys onto rumble.com.
 - **Reset All Data** broadcasts `clearLocalData` to every open Rumble tab and reports the honest "Cleared N per-site keys across M tabs" count
-- **Settings editor modal** with dirty-draft workflow: search, sidebar group nav (9 groups), chips for unsaved / needs-attention, Restore Defaults / Discard / Save toolbar, per-field Reset buttons
+- **Settings editor modal** with dirty-draft workflow: search, sidebar group nav (9 groups), chips for unsaved / needs-attention, Restore Defaults / Discard / Save toolbar, per-field Reset buttons, and non-blocking close/reset feedback
 - Per-control editors infer from value type: toggle / number / text / textarea / list / JSON / enum-dropdown (theme & siteTheme)
-- Focus trap, `beforeunload` guard on unsaved draft, live re-sync via `chrome.storage.onChanged`
+- Focus trap, no confirmation prompts, live re-sync via `chrome.storage.onChanged`
 
 ### In-page Quick Modal (on-tab)
 Press **Ctrl+Shift+X** on any Rumble page (or **shift-click** the popup gear) to open the original in-page settings modal with:
@@ -131,7 +131,7 @@ Press **Ctrl+Shift+X** on any Rumble page (or **shift-click** the popup gear) to
 
 ### Popup
 Click the extension icon for quick toggles, grouped by category with enabled-count badges:
-- 7 collapsible category groups
+- Polished compact command surface with status feedback, 7 collapsible category groups, visible focus states, and accessible icon labels
 - Debounced writes (120 ms) with `pagehide` flush — rapid toggles coalesce into one write
 - **Settings gear** — Opens the options page (shift-click for in-page modal)
 - **GitHub link** — Direct link to this repository

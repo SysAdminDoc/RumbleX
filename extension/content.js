@@ -1,9 +1,9 @@
-// RumbleX v3.28.0 - Content Script
+// RumbleX v3.29.0 - Content Script
 // Rumble enhancement suite - Chrome/Firefox extension
 'use strict';
 
 // ── Version ──
-const VERSION = chrome.runtime?.getManifest?.()?.version || '3.28.0';
+const VERSION = chrome.runtime?.getManifest?.()?.version || '3.29.0';
 const SCHEMA_VERSION = 2;
 
 // ── Settings Manager (chrome.storage.local) ──
@@ -2568,16 +2568,15 @@ self.addEventListener('message', async (e) => {
         injectStyle(`
             #rx-download-overlay {
                 position: fixed; inset: 0; z-index: 80010;
-                background: rgba(0,0,0,0.65);
+                background: rgba(3,5,9,0.78);
                 display: none; align-items: center; justify-content: center;
-                backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px);
             }
             #rx-download-overlay.open { display: flex; }
             #rx-download-overlay .rx-dl-card {
                 width: min(560px, calc(100vw - 32px));
                 max-height: calc(100vh - 64px); overflow-y: auto;
                 background: #0e1017; color: #cdd6f4;
-                border: 1px solid rgba(255,255,255,0.08); border-radius: 14px;
+                border: 1px solid rgba(255,255,255,0.08); border-radius: 12px;
                 box-shadow: 0 24px 64px rgba(0,0,0,0.55);
                 font-family: system-ui, sans-serif;
             }
@@ -2586,7 +2585,7 @@ self.addEventListener('message', async (e) => {
                 padding: 12px 16px; border-bottom: 1px solid rgba(255,255,255,0.06);
             }
             #rx-download-overlay .rx-dl-card-header h2 {
-                margin: 0; font-size: 15px; font-weight: 700; letter-spacing: -0.01em;
+                margin: 0; font-size: 15px; font-weight: 700; letter-spacing: 0;
             }
             #rx-download-overlay .rx-dl-card-close {
                 background: transparent; border: 0; color: #a6adc8; cursor: pointer;
@@ -4014,8 +4013,6 @@ const WatchProgress = {
             opacity: 0;
             transition: opacity 0.3s, transform 0.3s;
             cursor: pointer;
-            backdrop-filter: blur(12px);
-            -webkit-backdrop-filter: blur(12px);
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
         }
         .rx-resume-toast.rx-visible {
@@ -7160,7 +7157,7 @@ const ChatAutoScroll = {
             z-index: 200;
             background: rgba(137,180,250,0.9);
             color: #1e1e2e;
-            border: none; border-radius: 16px;
+            border: none; border-radius: 8px;
             padding: 5px 14px;
             font: 700 11px/1.4 system-ui, sans-serif;
             cursor: pointer;
@@ -7764,7 +7761,6 @@ const SettingsPanel = {
             color: rgba(255,255,255,0.7); cursor: pointer;
             display: flex; align-items: center; justify-content: center;
             transition: background 0.2s, transform 0.2s, border-color 0.2s;
-            backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
             box-shadow: 0 4px 16px rgba(0,0,0,0.4); text-decoration: none;
         }
         #rx-toolbar .rx-tb-btn:hover {
@@ -7786,7 +7782,7 @@ const SettingsPanel = {
             position: fixed; top: 50%; left: 50%;
             transform: translate(-50%,-50%) scale(0.96);
             width: 95%; max-width: 960px; height: 82vh; max-height: 720px;
-            background: #0a0a0b; border: 1px solid #2a2a2e; border-radius: 20px;
+            background: #0a0a0b; border: 1px solid #2a2a2e; border-radius: 12px;
             box-shadow: 0 24px 64px rgba(0,0,0,0.55), 0 0 0 1px rgba(255,255,255,0.04) inset;
             z-index: 80001; display: flex; flex-direction: column; overflow: hidden;
             opacity: 0; pointer-events: none;
@@ -7806,7 +7802,7 @@ const SettingsPanel = {
         }
         .rx-m-brand { display: flex; align-items: center; gap: 10px; }
         .rx-m-title {
-            font-size: 20px; font-weight: 700; letter-spacing: -0.5px;
+            font-size: 20px; font-weight: 700; letter-spacing: 0;
         }
         .rx-m-title-rx {
             background: linear-gradient(135deg, #85d551 0%, #4aba0e 50%, #85d551 100%);
@@ -7817,7 +7813,7 @@ const SettingsPanel = {
         .rx-m-badge {
             padding: 3px 10px; font-size: 9px; font-weight: 700; text-transform: uppercase;
             color: #fff; background: linear-gradient(135deg, #85d551, #4aba0e);
-            border-radius: 100px; box-shadow: 0 2px 8px rgba(133,213,81,0.35);
+            border-radius: 6px; box-shadow: 0 2px 8px rgba(133,213,81,0.35);
         }
         .rx-m-close {
             display: flex; align-items: center; justify-content: center;
@@ -7871,7 +7867,7 @@ const SettingsPanel = {
         }
         .rx-m-nav-count {
             margin-left: auto; font-size: 10px; font-weight: 600; color: #71717a;
-            background: #17171a; padding: 2px 7px; border-radius: 100px;
+            background: #17171a; padding: 2px 7px; border-radius: 6px;
         }
         .rx-m-nav-btn.active .rx-m-nav-count { background: rgba(255,255,255,0.12); color: #f0f0f0; }
 
@@ -7884,7 +7880,7 @@ const SettingsPanel = {
             display: flex; align-items: center; justify-content: space-between;
             margin: 0 0 16px; padding: 0 0 14px; border-bottom: 1px solid #2a2a2e;
         }
-        .rx-m-pane-title { font-size: 18px; font-weight: 700; letter-spacing: -0.3px; }
+        .rx-m-pane-title { font-size: 18px; font-weight: 700; letter-spacing: 0; }
         .rx-m-toggle-all {
             display: flex; align-items: center; gap: 8px;
             font-size: 11px; color: #a1a1aa; cursor: pointer; user-select: none;
@@ -7914,7 +7910,7 @@ const SettingsPanel = {
         .rx-m-switch input { position: absolute; opacity: 0; width: 100%; height: 100%; cursor: pointer; z-index: 1; margin: 0; }
         .rx-m-switch-track {
             position: absolute; inset: 0; background: #27272a; border: 1px solid #2a2a2e;
-            border-radius: 100px; transition: all 180ms;
+            border-radius: 12px; transition: all 180ms;
         }
         .rx-m-switch.active .rx-m-switch-track {
             background: var(--rx-switch-color, #85d551); border-color: transparent;
@@ -7997,7 +7993,7 @@ const SettingsPanel = {
 
         /* ── Responsive ── */
         @media (max-width: 700px) {
-            #rx-modal { width: 98%; height: 90vh; max-height: none; border-radius: 14px; }
+            #rx-modal { width: 98%; height: 90vh; max-height: none; border-radius: 12px; }
             .rx-m-sidebar { width: 56px; padding: 6px 4px; }
             .rx-m-nav-btn span:not(.rx-m-nav-icon) { display: none; }
             .rx-m-nav-icon { width: 36px; height: 36px; }
@@ -8028,7 +8024,7 @@ const SettingsPanel = {
         this._toastTimer = setTimeout(() => this._toastEl.classList.remove('show'), 2000);
     },
 
-    _makeSwitch(featureId, catColor) {
+    _makeSwitch(featureId, catColor, labelText = featureId) {
         const wrap = document.createElement('label');
         wrap.className = 'rx-m-switch' + (Settings.get(featureId) ? ' active' : '');
         wrap.style.setProperty('--rx-switch-color', catColor);
@@ -8036,14 +8032,11 @@ const SettingsPanel = {
         input.type = 'checkbox';
         input.checked = Settings.get(featureId);
         input.dataset.featureId = featureId;
-        // v3.1.0 — WCAG 2.2 aria-pressed for toggle semantics so screen readers
-        // announce the on/off state, plus a name from the surrounding label.
-        input.setAttribute('aria-pressed', String(!!input.checked));
-        wrap.setAttribute('aria-label', featureId);
+        input.setAttribute('aria-label', labelText);
+        wrap.setAttribute('aria-label', labelText);
         input.addEventListener('change', () => {
             Settings.set(featureId, input.checked);
             wrap.classList.toggle('active', input.checked);
-            input.setAttribute('aria-pressed', String(!!input.checked));
             const card = wrap.closest('.rx-m-card');
             if (card && !card.classList.contains('rx-m-sub')) card.classList.toggle('rx-m-enabled', input.checked);
             this._updateNavCounts();
@@ -8080,7 +8073,7 @@ const SettingsPanel = {
         descDiv.className = 'rx-m-card-desc';
         descDiv.textContent = feat.desc;
         info.append(nameDiv, descDiv);
-        card.append(info, this._makeSwitch(feat.id, catColor));
+        card.append(info, this._makeSwitch(feat.id, catColor, feat.name || feat.id));
         return card;
     },
 
@@ -8113,7 +8106,7 @@ const SettingsPanel = {
         const toggleAll = document.createElement('label');
         toggleAll.className = 'rx-m-toggle-all';
         toggleAll.innerHTML = '<span>Enable All</span>';
-        const allSwitch = this._makeSwitch('_all_' + cat.id, cat.color);
+        const allSwitch = this._makeSwitch('_all_' + cat.id, cat.color, `Enable all ${cat.label}`);
         const mainFeats = cat.features.filter(f => !f.parent);
         const allOn = mainFeats.every(f => Settings.get(f.id));
         allSwitch.classList.toggle('active', allOn);
@@ -9207,7 +9200,7 @@ const CommentSort = {
         }
         .rx-comment-sort-btn {
             background: rgba(49,50,68,0.4); border: 1px solid rgba(255,255,255,0.06);
-            color: #a6adc8; border-radius: 14px; padding: 4px 12px; cursor: pointer;
+            color: #a6adc8; border-radius: 8px; padding: 4px 12px; cursor: pointer;
             font: 600 11px/1 system-ui, sans-serif; transition: all .15s;
         }
         .rx-comment-sort-btn:hover { background: rgba(49,50,68,0.8); }
@@ -9638,7 +9631,6 @@ const AutoplayScheduler = {
             background: rgba(30,30,46,0.9); border: 1px solid rgba(137,180,250,0.25);
             color: rgba(255,255,255,0.7); cursor: pointer;
             display: flex; align-items: center; justify-content: center;
-            backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
             box-shadow: 0 4px 16px rgba(0,0,0,0.4);
         }
         .rx-queue-fab:hover { border-color: rgba(137,180,250,0.6); }
@@ -9650,7 +9642,7 @@ const AutoplayScheduler = {
             border-radius: 12px; padding: 12px;
             color: #cdd6f4; font: 12px system-ui, sans-serif;
             box-shadow: 0 12px 40px rgba(0,0,0,0.6);
-            backdrop-filter: blur(16px); display: none;
+            display: none;
         }
         .rx-queue-panel.open { display: block; }
         .rx-queue-header {

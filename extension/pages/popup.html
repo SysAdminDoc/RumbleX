@@ -1,71 +1,125 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-    <link rel="icon" href="icons/32.png">
+    <link rel="icon" href="../icons/32.png">
 <meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RumbleX</title>
 <style>
+:root {
+    color-scheme: dark;
+    --page-bg: #07090d;
+    --surface: #10141c;
+    --surface-raised: rgba(255,255,255,0.045);
+    --border: rgba(255,255,255,0.085);
+    --border-hover: rgba(255,255,255,0.18);
+    --text-primary: #f5f7fb;
+    --text-secondary: #d3dbea;
+    --text-muted: #97a3b7;
+    --accent: #89b4fa;
+    --rumble-green: #85d551;
+    --error: #f38ba8;
+    --focus-ring: 0 0 0 2px #07090d, 0 0 0 4px rgba(137,180,250,0.6);
+    --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+    --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+}
 * { margin: 0; padding: 0; box-sizing: border-box; }
+[hidden] { display: none !important; }
 body {
-    width: 280px;
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-    background: #0a0a0b;
-    color: #f0f0f0;
+    width: 316px;
+    font-family: 'Segoe UI Variable Display', 'Segoe UI', system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+    background:
+        linear-gradient(180deg, rgba(137,180,250,0.055), transparent 180px),
+        var(--page-bg);
+    color: var(--text-primary);
+    overflow: hidden;
 }
 .header {
-    padding: 14px 16px 10px;
+    padding: 14px 16px 12px;
     display: flex;
     align-items: center;
     gap: 10px;
-    background: #111113;
-    border-bottom: 1px solid #2a2a2e;
+    background: rgba(255,255,255,0.018);
+    border-bottom: 1px solid var(--border);
 }
 .header svg { width: 24px; height: 24px; flex-shrink: 0; }
-.header-text h1 { font-size: 15px; font-weight: 700; line-height: 1.2; }
-.header-text span { font-size: 10px; color: #71717a; }
+.header-text h1 { font-size: 15px; font-weight: 800; line-height: 1.2; letter-spacing: 0; }
+.header-text span { font-size: 10px; color: var(--text-muted); font-weight: 700; }
+
+.popup-status {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    margin: 10px 16px 0;
+    padding: 8px 10px;
+    border: 1px solid rgba(133,213,81,0.24);
+    border-radius: 8px;
+    background: rgba(133,213,81,0.08);
+    color: #d7ffe8;
+    font-size: 11px;
+    font-weight: 750;
+}
+.popup-status::before {
+    content: '';
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--rumble-green);
+    box-shadow: 0 0 0 4px rgba(133,213,81,0.10);
+    flex-shrink: 0;
+}
 
 /* Prominent CTA into the full options page */
 .open-options {
+    width: calc(100% - 32px);
+    min-height: 50px;
     margin: 10px 16px 8px;
     padding: 10px 12px;
-    background: linear-gradient(135deg, rgba(137,180,250,0.18), rgba(116,199,236,0.22));
+    background: linear-gradient(135deg, rgba(133,213,81,0.16), rgba(137,180,250,0.28));
     border: 1px solid rgba(137,180,250,0.35);
     border-radius: 8px;
-    color: #f0f0f0;
+    color: var(--text-primary);
     font-size: 12px;
-    font-weight: 700;
-    letter-spacing: -0.01em;
+    font-weight: 800;
+    letter-spacing: 0;
     cursor: pointer;
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 8px;
     font-family: inherit;
-    transition: border-color 0.15s, background 0.15s, transform 0.1s;
+    transition: border-color 160ms var(--ease-out), background 160ms var(--ease-out), box-shadow 160ms var(--ease-out), transform 140ms var(--ease-out);
 }
 .open-options:hover {
-    background: linear-gradient(135deg, rgba(137,180,250,0.25), rgba(116,199,236,0.30));
+    background: linear-gradient(135deg, rgba(133,213,81,0.22), rgba(137,180,250,0.36));
     border-color: rgba(137,180,250,0.55);
+    box-shadow: 0 10px 22px rgba(137,180,250,0.14);
 }
 .open-options:active { transform: scale(0.99); }
+.open-options:focus-visible { outline: none; box-shadow: var(--focus-ring); }
 .open-options .open-options-hint {
     font-size: 10px;
-    font-weight: 500;
-    color: rgba(240,240,240,0.65);
+    font-weight: 600;
+    color: var(--text-muted);
     display: block;
     margin-top: 2px;
 }
 .open-options svg { width: 14px; height: 14px; flex-shrink: 0; opacity: 0.75; }
 
-.features { padding: 4px 0 8px; max-height: 340px; overflow-y: auto; }
+.features { padding: 4px 10px 8px; max-height: 372px; overflow-y: auto; }
 
 /* Group headers — collapsible sections per category */
 .feat-group {
-    border-top: 1px solid rgba(255,255,255,0.04);
+    border: 1px solid rgba(255,255,255,0.06);
+    border-radius: 8px;
+    background: rgba(255,255,255,0.024);
+    overflow: hidden;
+    margin-bottom: 6px;
 }
-.feat-group:first-child { border-top: none; }
 .feat-group-header {
     width: 100%;
-    padding: 8px 16px 6px;
+    min-height: 36px;
+    padding: 0 10px;
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -73,25 +127,26 @@ body {
     background: transparent;
     border: 0;
     color: #a8a8b2;
-    font: 700 10px/1 -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    font: 800 10px/1 inherit;
     letter-spacing: 0.08em;
     text-transform: uppercase;
     cursor: pointer;
     user-select: none;
-    transition: color 0.15s;
+    transition: color 160ms var(--ease-out), background-color 160ms var(--ease-out);
 }
-.feat-group-header:hover { color: #f0f0f0; }
+.feat-group-header:hover { color: var(--text-primary); background: rgba(255,255,255,0.035); }
+.feat-group-header:focus-visible { outline: none; box-shadow: inset 0 0 0 2px rgba(137,180,250,0.65); }
 .feat-group-header .feat-group-caret {
     width: 10px; height: 10px; opacity: 0.6;
-    transition: transform 0.18s ease;
+    transition: transform 180ms var(--ease-out);
 }
 .feat-group.collapsed .feat-group-caret { transform: rotate(-90deg); }
 .feat-group-count {
     font-weight: 700;
-    color: #6c7086;
+    color: var(--text-muted);
     font-variant-numeric: tabular-nums;
     font-size: 9px;
-    padding: 1px 5px;
+    padding: 2px 5px;
     background: rgba(255,255,255,0.06);
     border-radius: 6px;
 }
@@ -102,59 +157,80 @@ body {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 6px 16px;
-    transition: background 0.1s;
+    gap: 10px;
+    min-height: 34px;
+    padding: 6px 10px;
+    border-top: 1px solid rgba(255,255,255,0.045);
+    transition: background-color 120ms var(--ease-out);
 }
 .feat-row:hover { background: rgba(255,255,255,0.03); }
-.feat-label { font-size: 12px; }
+.feat-label { font-size: 12px; line-height: 1.28; color: var(--text-secondary); }
 /* v3.1.0 — WCAG 2.2 SC 2.5.8 Target Size: 24×24 CSS px minimum.
    Track bumped 34×18 → 40×24, thumb 14 → 20, kept the toggle-switch
    shape exception per the no-pill-backdrops rule (toggle thumbs and
    tracks are explicit allowed uses for full-rounded shapes). */
 .toggle { position: relative; width: 40px; height: 24px; flex-shrink: 0; cursor: pointer; }
-.toggle input { opacity: 0; width: 0; height: 0; position: absolute; }
+.toggle input {
+    position: absolute; inset: 0;
+    width: 100%; height: 100%;
+    margin: 0; opacity: 0;
+    cursor: pointer;
+    z-index: 2;
+}
 .toggle-track {
     position: absolute; inset: 0;
-    background: #27272a;
-    border: 1px solid #2a2a2e;
+    background: rgba(255,255,255,0.12);
+    border: 1px solid var(--border);
     border-radius: 12px;
-    transition: background 0.2s, border-color 0.2s;
+    transition: background-color 200ms var(--ease-out), border-color 200ms var(--ease-out);
+    pointer-events: none;
 }
-.toggle input:checked + .toggle-track { background: #85d551; border-color: transparent; }
+.toggle input:checked + .toggle-track {
+    background: linear-gradient(135deg, var(--rumble-green), var(--accent));
+    border-color: transparent;
+}
+.toggle input:focus-visible + .toggle-track { box-shadow: var(--focus-ring); }
 .toggle-thumb {
     position: absolute; top: 2px; left: 2px;
     width: 20px; height: 20px;
     border-radius: 50%;
     background: #fff;
-    transition: transform 0.2s cubic-bezier(.4,0,.2,1);
+    transition: transform 220ms var(--ease-spring);
     box-shadow: 0 1px 2px rgba(0,0,0,0.3);
+    pointer-events: none;
 }
 .toggle input:checked ~ .toggle-thumb { transform: translateX(16px); }
 
 /* Theme Section */
-.theme-section { padding: 4px 0; border-top: 1px solid #2a2a2e; }
+.theme-section {
+    padding: 6px 10px 10px;
+    border-top: 1px solid var(--border);
+    background: rgba(255,255,255,0.012);
+}
 .theme-label {
-    padding: 10px 16px 6px;
+    padding: 8px 0 6px;
     font-size: 10px; font-weight: 600;
-    color: #71717a;
+    color: var(--text-muted);
     text-transform: uppercase;
     letter-spacing: 0.5px;
 }
-.theme-grid { display: flex; flex-wrap: wrap; gap: 5px; padding: 4px 16px 10px; }
+.theme-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; padding: 0; }
 .theme-chip {
-    font-size: 10px; padding: 4px 10px;
+    min-height: 30px;
+    font-size: 10px; padding: 4px 8px;
     border-radius: 10px;
-    border: 1px solid rgba(255,255,255,0.08);
-    background: #17171a;
-    color: #f0f0f0;
+    border: 1px solid var(--border);
+    background: rgba(255,255,255,0.035);
+    color: var(--text-primary);
     cursor: pointer;
     display: flex; align-items: center; gap: 5px;
-    transition: border-color 0.15s, background 0.15s;
+    transition: border-color 160ms var(--ease-out), background-color 160ms var(--ease-out), color 160ms var(--ease-out);
     font-family: inherit;
 }
-.theme-chip:hover { background: #1e1e22; border-color: rgba(255,255,255,0.15); }
+.theme-chip:hover { background: rgba(255,255,255,0.07); border-color: var(--border-hover); }
+.theme-chip:focus-visible { outline: none; box-shadow: var(--focus-ring); }
 .theme-chip.active {
-    border-color: #85d551;
+    border-color: var(--rumble-green);
     background: rgba(133,213,81,0.1);
     box-shadow: 0 0 6px rgba(133,213,81,0.15);
 }
@@ -167,9 +243,9 @@ body {
 
 /* Footer */
 .footer {
-    padding: 10px 16px;
-    border-top: 1px solid #2a2a2e;
-    background: #111113;
+    padding: 10px 12px;
+    border-top: 1px solid var(--border);
+    background: rgba(255,255,255,0.018);
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -182,47 +258,51 @@ body {
 }
 .footer-btn {
     display: flex; align-items: center; justify-content: center;
-    width: 28px; height: 28px;
-    background: #17171a; border: 1px solid #2a2a2e;
+    width: 30px; height: 30px;
+    background: rgba(255,255,255,0.04); border: 1px solid var(--border);
     border-radius: 6px; cursor: pointer;
-    color: #71717a; transition: all 0.15s;
+    color: var(--text-muted); transition: color 160ms var(--ease-out), background-color 160ms var(--ease-out), border-color 160ms var(--ease-out), box-shadow 160ms var(--ease-out);
     position: relative;
 }
-.footer-btn:hover { background: #1e1e22; color: #f0f0f0; border-color: rgba(255,255,255,0.15); }
+.footer-btn:hover { background: rgba(255,255,255,0.075); color: var(--text-primary); border-color: var(--border-hover); }
+.footer-btn:focus-visible { outline: none; box-shadow: var(--focus-ring); }
 .footer-btn svg { width: 14px; height: 14px; }
-.footer-btn.github:hover { color: #f0f0f0; }
-.footer-btn.settings:hover { color: #85d551; border-color: rgba(133,213,81,0.3); }
-.footer-btn.group-tabs:hover { color: #85d551; border-color: rgba(133,213,81,0.3); }
-.footer-btn.group-tabs.error { color: #f38ba8; border-color: rgba(243,139,168,0.3); }
-.footer-btn.update:hover { color: #89b4fa; border-color: rgba(137,180,250,0.3); }
-.footer-btn.update.has-update { color: #85d551; border-color: #85d551; animation: rx-pulse 2s infinite; }
+.footer-btn.github:hover { color: var(--text-primary); }
+.footer-btn.settings:hover { color: var(--rumble-green); border-color: rgba(133,213,81,0.35); }
+.footer-btn.group-tabs:hover { color: var(--rumble-green); border-color: rgba(133,213,81,0.35); }
+.footer-btn.group-tabs.error { color: var(--error); border-color: rgba(243,139,168,0.35); }
+.footer-btn.update:hover { color: var(--accent); border-color: rgba(137,180,250,0.35); }
+.footer-btn.update.has-update { color: var(--rumble-green); border-color: var(--rumble-green); animation: rx-pulse 2s infinite; }
 .footer-btn.update.checking { opacity: 0.5; pointer-events: none; }
-.footer-btn.update.error { color: #f38ba8; border-color: rgba(243,139,168,0.3); }
-.footer-version { font-size: 10px; color: #52525b; }
-.footer-reload { font-size: 9px; color: #3f3f46; }
+.footer-btn.update.error { color: var(--error); border-color: rgba(243,139,168,0.35); }
+.footer-version { font-size: 10px; color: var(--text-muted); font-weight: 700; }
+.footer-reload { font-size: 9px; color: #646f82; }
 
 /* Update badge */
 .update-dot {
     position: absolute; top: -2px; right: -2px;
     width: 8px; height: 8px;
-    background: #85d551; border-radius: 50%;
-    border: 1.5px solid #111113;
+    background: var(--rumble-green); border-radius: 50%;
+    border: 1.5px solid var(--surface);
     display: none;
 }
 .footer-btn.has-update .update-dot { display: block; }
 
 /* Tooltip */
-.footer-btn[title]::after {
+.footer-btn[data-tooltip]::after {
     content: attr(data-tooltip);
     position: absolute; bottom: calc(100% + 6px); left: 50%;
     transform: translateX(-50%); padding: 4px 8px;
-    background: #27272a; color: #f0f0f0;
+    background: #151a23; color: var(--text-primary);
     font-size: 10px; white-space: nowrap;
+    border: 1px solid var(--border);
     border-radius: 4px; pointer-events: none;
     opacity: 0; transition: opacity 0.15s;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+    box-shadow: 0 8px 18px rgba(0,0,0,0.36);
+    z-index: 10;
 }
-.footer-btn:hover::after { opacity: 1; }
+.footer-btn:hover::after,
+.footer-btn:focus-visible::after { opacity: 1; }
 
 @keyframes rx-pulse {
     0%, 100% { box-shadow: 0 0 0 0 rgba(133,213,81,0.4); }
@@ -232,8 +312,35 @@ body {
 /* Scrollbar */
 .features::-webkit-scrollbar { width: 6px; }
 .features::-webkit-scrollbar-track { background: transparent; }
-.features::-webkit-scrollbar-thumb { background: #27272a; border-radius: 3px; }
-.features::-webkit-scrollbar-thumb:hover { background: #3f3f46; }
+.features::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.12); border-radius: 3px; }
+.features::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.22); }
+
+@media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+        animation: none !important;
+        transition: none !important;
+        scroll-behavior: auto !important;
+    }
+}
+
+@media (forced-colors: active) {
+    body, .header, .popup-status, .open-options, .feat-group, .feat-group-header,
+    .feat-row, .theme-section, .theme-chip, .footer, .footer-btn {
+        forced-color-adjust: none;
+        background: Canvas;
+        color: CanvasText;
+        border-color: CanvasText;
+    }
+    .toggle-track { border-color: CanvasText; background: Canvas; }
+    .toggle input:checked + .toggle-track { background: Highlight; }
+    .toggle-thumb { background: CanvasText; }
+    .open-options:focus-visible, .feat-group-header:focus-visible, .theme-chip:focus-visible,
+    .footer-btn:focus-visible, .toggle input:focus-visible + .toggle-track {
+        outline: 2px solid Highlight;
+        outline-offset: 2px;
+        box-shadow: none;
+    }
+}
 </style>
 </head>
 <body>
@@ -244,6 +351,7 @@ body {
         <span id="version"></span>
     </div>
 </div>
+<div class="popup-status" role="status" aria-live="polite">Local changes autosave</div>
 <button class="open-options" id="open-options" type="button" aria-label="Open full settings editor">
     <span>
         Open full settings editor
@@ -259,16 +367,16 @@ body {
     </div>
     <div class="footer-right">
         <!-- v3.6.0 — Group all open Rumble tabs into one tab group (Chrome only). -->
-        <button class="footer-btn group-tabs" id="btn-group-tabs" data-tooltip="Group all Rumble tabs">
+        <button class="footer-btn group-tabs" id="btn-group-tabs" type="button" aria-label="Group all Rumble tabs" data-tooltip="Group all Rumble tabs">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="6" height="6" rx="1"/><rect x="15" y="4" width="6" height="6" rx="1"/><rect x="3" y="14" width="6" height="6" rx="1"/><rect x="15" y="14" width="6" height="6" rx="1"/></svg>
         </button>
-        <button class="footer-btn settings" id="btn-settings" data-tooltip="Open Settings Modal">
+        <button class="footer-btn settings" id="btn-settings" type="button" aria-label="Open options page" data-tooltip="Open options page">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 00-2 2v.18a2 2 0 01-1 1.73l-.43.25a2 2 0 01-2 0l-.15-.08a2 2 0 00-2.73.73l-.22.38a2 2 0 00.73 2.73l.15.1a2 2 0 011 1.72v.51a2 2 0 01-1 1.74l-.15.09a2 2 0 00-.73 2.73l.22.38a2 2 0 002.73.73l.15-.08a2 2 0 012 0l.43.25a2 2 0 011 1.73V20a2 2 0 002 2h.44a2 2 0 002-2v-.18a2 2 0 011-1.73l.43-.25a2 2 0 012 0l.15.08a2 2 0 002.73-.73l.22-.39a2 2 0 00-.73-2.73l-.15-.08a2 2 0 01-1-1.74v-.5a2 2 0 011-1.74l.15-.09a2 2 0 00.73-2.73l-.22-.38a2 2 0 00-2.73-.73l-.15.08a2 2 0 01-2 0l-.43-.25a2 2 0 01-1-1.73V4a2 2 0 00-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
         </button>
-        <a class="footer-btn github" href="https://github.com/SysAdminDoc/RumbleX" target="_blank" data-tooltip="GitHub Repo">
+        <a class="footer-btn github" href="https://github.com/SysAdminDoc/RumbleX" target="_blank" rel="noopener noreferrer" aria-label="Open GitHub repository" data-tooltip="GitHub repo">
             <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.477 2 2 6.477 2 12c0 4.42 2.865 8.166 6.839 9.489.5.092.682-.217.682-.482 0-.237-.008-.866-.013-1.7-2.782.604-3.369-1.34-3.369-1.34-.454-1.156-1.11-1.463-1.11-1.463-.908-.62.069-.608.069-.608 1.003.07 1.531 1.03 1.531 1.03.892 1.529 2.341 1.087 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.11-4.555-4.943 0-1.091.39-1.984 1.029-2.683-.103-.253-.446-1.27.098-2.647 0 0 .84-.269 2.75 1.025A9.578 9.578 0 0112 6.836c.85.004 1.705.114 2.504.336 1.909-1.294 2.747-1.025 2.747-1.025.546 1.377.203 2.394.1 2.647.64.699 1.028 1.592 1.028 2.683 0 3.842-2.339 4.687-4.566 4.935.359.309.678.919.678 1.852 0 1.336-.012 2.415-.012 2.743 0 .267.18.578.688.48C19.138 20.163 22 16.418 22 12c0-5.523-4.477-10-10-10z"/></svg>
         </a>
-        <button class="footer-btn update" id="btn-update" data-tooltip="Check for Updates">
+        <button class="footer-btn update" id="btn-update" type="button" aria-label="Check for updates" data-tooltip="Check for updates">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 11-6.219-8.56"/><polyline points="21 3 21 9 15 9"/></svg>
             <span class="update-dot"></span>
         </button>

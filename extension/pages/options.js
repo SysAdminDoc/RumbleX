@@ -1,4 +1,4 @@
-// RumbleX v3.28.0 - Options Page
+// RumbleX v3.29.0 - Options Page
 // Standalone settings management via chrome.storage.local (rx_settings key).
 // Mirrors Astra Deck's settings page pattern: dirty-draft workflow with
 // search, group nav, stats overview, and export/import/reset.
@@ -826,57 +826,6 @@
         if (active === last || !root.contains(active)) { event.preventDefault(); first.focus(); }
     }
 
-    // ── Confirmation dialog ──
-    function confirmAction({ eyebrow = 'Confirm', title, message, confirmLabel = 'Continue', cancelLabel = 'Cancel', tone = 'default' }) {
-        return new Promise((resolve) => {
-            const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-            const shell = document.createElement('div');
-            shell.className = 'confirm-shell';
-            const backdrop = document.createElement('div');
-            backdrop.className = 'confirm-backdrop';
-            const dialog = document.createElement('section');
-            dialog.className = 'confirm-dialog' + (tone === 'danger' ? ' is-danger' : '');
-            dialog.setAttribute('role', 'dialog');
-            dialog.setAttribute('aria-modal', 'true');
-            dialog.setAttribute('aria-labelledby', 'confirm-title');
-            dialog.setAttribute('aria-describedby', 'confirm-copy');
-            const eyebrowEl = document.createElement('span');
-            eyebrowEl.className = 'confirm-eyebrow'; eyebrowEl.textContent = eyebrow;
-            const titleEl = document.createElement('h2');
-            titleEl.className = 'confirm-title'; titleEl.id = 'confirm-title'; titleEl.textContent = title;
-            const copyEl = document.createElement('p');
-            copyEl.className = 'confirm-copy'; copyEl.id = 'confirm-copy'; copyEl.textContent = message;
-            const actions = document.createElement('div');
-            actions.className = 'confirm-actions';
-            const cancelButton = document.createElement('button');
-            cancelButton.type = 'button'; cancelButton.textContent = cancelLabel;
-            const confirmButton = document.createElement('button');
-            confirmButton.type = 'button';
-            confirmButton.className = tone === 'danger' ? 'danger' : 'primary';
-            confirmButton.textContent = confirmLabel;
-            actions.append(cancelButton, confirmButton);
-            dialog.append(eyebrowEl, titleEl, copyEl, actions);
-            shell.append(backdrop, dialog);
-            document.body.appendChild(shell);
-            const finish = (confirmed) => {
-                shell.removeEventListener('keydown', handleKeydown);
-                shell.remove();
-                requestAnimationFrame(() => previousFocus?.focus?.());
-                resolve(confirmed);
-            };
-            function handleKeydown(event) {
-                event.stopPropagation();
-                if (event.key === 'Escape') { event.preventDefault(); finish(false); return; }
-                trapFocusWithin(dialog, event);
-            }
-            backdrop.addEventListener('click', () => finish(false));
-            cancelButton.addEventListener('click', () => finish(false));
-            confirmButton.addEventListener('click', () => finish(true));
-            shell.addEventListener('keydown', handleKeydown);
-            requestAnimationFrame(() => (tone === 'danger' ? cancelButton : confirmButton).focus());
-        });
-    }
-
     // ── Storage & state ──
     function isUserFacingSettingKey(key) {
         return !String(key).startsWith(INTERNAL_SETTING_KEY_PREFIX);
@@ -1154,17 +1103,15 @@
     }
 
     async function resetSettings() {
-        const confirmed = await confirmAction({
-            eyebrow: 'Destructive action',
-            title: 'Reset all local data?',
-            message: `This clears ${BRAND_NAME} settings from extension storage AND per-site data ` +
-                     `from open Rumble tabs: watch progress, watch/search history, bookmarks, ` +
-                     `volume memory, and SponsorBlock/rant archives. This cannot be undone.`,
-            confirmLabel: 'Reset All Data',
-            tone: 'danger',
-        });
-        if (!confirmed) return;
         try {
+            showStatus('Resetting local settings and open Rumble-tab data…', 'info');
+            let snapshot = { ok: false };
+            try {
+                snapshot = await sendToContent('backupSnapshot', { reason: 'pre-reset-all-data' });
+            } catch {
+                snapshot = { ok: false };
+            }
+
             // 1) Clear extension storage (settings + popup UI state).
             await chrome.storage.local.remove(STORAGE_KEY);
             try { await chrome.storage.local.remove('rx_popup_ui'); } catch {}
@@ -1188,7 +1135,8 @@
             const suffix = tabsTouched
                 ? ` Cleared ${cleared} per-site ${cleared === 1 ? 'key' : 'keys'} across ${tabsTouched} open ${tabsTouched === 1 ? 'Rumble tab' : 'Rumble tabs'}.`
                 : ' Open Rumble tabs will reset on next load.';
-            showStatus('All settings cleared.' + suffix, 'success');
+            const snapshotNote = snapshot?.ok ? ' Snapshot captured first.' : '';
+            showStatus('All settings cleared.' + snapshotNote + suffix, 'success');
         } catch (err) {
             showStatus('Reset failed: ' + err.message, 'error');
         }
@@ -1344,7 +1292,6 @@
     function applyControlAccessibility(control, key, meta, opts = {}) {
         control.id = meta.controlId;
         control.name = key;
-        control.setAttribute('aria-labelledby', meta.titleId);
         control.setAttribute('aria-describedby', `${meta.descriptionId} ${meta.hintId}`);
         if ('autocomplete' in control) control.autocomplete = opts.autocomplete || 'off';
         if ('spellcheck' in control && opts.spellcheck === false) control.spellcheck = false;
@@ -1391,8 +1338,6 @@
     function renderEnumControl(card, key, value, meta) {
         const select = document.createElement('select');
         applyControlAccessibility(select, key, meta);
-        // Apply consistent styling via the same selectors as other inputs.
-        select.style.cssText = 'width:100%;background:rgba(6,8,12,0.8);color:var(--text-primary);border:1px solid var(--border);border-radius:var(--radius-sm);padding:9px 12px;font:inherit;font-size:12px;';
         const choices = ENUM_CHOICES[key] || [];
         for (const choice of choices) {
             const opt = document.createElement('option');
@@ -1451,15 +1396,12 @@
         const input = document.createElement('input');
         input.type = 'checkbox';
         input.checked = Boolean(value);
-        // v3.1.0 — WCAG 2.2 aria-pressed for screen-reader on/off announce.
-        input.setAttribute('aria-pressed', String(!!input.checked));
         applyControlAccessibility(input, key, meta);
         const track = document.createElement('span');
         track.className = 'settings-item-toggle-track';
         input.addEventListener('change', () => {
             state.draftSettings[key] = input.checked;
             state.invalidKeys.delete(key);
-            input.setAttribute('aria-pressed', String(!!input.checked));
             updateDirtyStateForKey(key);
             updateCardState(card, key);
             updateModalHeaderState();
@@ -1560,9 +1502,10 @@
 
         const titleRow = document.createElement('div');
         titleRow.className = 'settings-item-title-row';
-        const title = document.createElement('h3');
+        const title = document.createElement('label');
         title.className = 'settings-item-title';
         title.id = controlMeta.titleId;
+        title.htmlFor = controlMeta.controlId;
         title.textContent = humanizeKey(key);
         titleRow.appendChild(title);
 
@@ -1720,18 +1663,15 @@
     }
 
     async function requestCloseSettingsModal() {
+        let discardedSummary = '';
         if (state.dirtyKeys.size > 0 || state.invalidKeys.size > 0) {
             const parts = [];
             if (state.dirtyKeys.size > 0) parts.push(`${state.dirtyKeys.size} unsaved ${pluralize(state.dirtyKeys.size, 'change')}`);
             if (state.invalidKeys.size > 0) parts.push(`${state.invalidKeys.size} ${pluralize(state.invalidKeys.size, 'invalid field')}`);
-            const ok = await confirmAction({
-                eyebrow: 'Unsaved draft',
-                title: 'Close without saving?',
-                message: `This will discard ${parts.join(' and ')} and close the settings editor.`,
-                confirmLabel: 'Discard Draft',
-                tone: 'danger',
-            });
-            if (!ok) return;
+            discardedSummary = parts.join(' and ');
+            state.draftSettings = deepClone(state.resolvedSettings);
+            state.dirtyKeys.clear();
+            state.invalidKeys.clear();
         }
         state.modalOpen = false;
         elements.settingsModalShell.hidden = true;
@@ -1746,6 +1686,7 @@
             : elements.openSettingsModalButton;
         state.lastFocusedElement = null;
         requestAnimationFrame(() => restoreTarget?.focus());
+        if (discardedSummary) showStatus(`Closed settings editor and discarded ${discardedSummary}.`, 'info');
     }
 
     async function saveSettingsDraft() {
@@ -2840,7 +2781,7 @@
         void runWithBusyButton(elements.importButton, 'Importing…', () => importSettings(file));
     });
     elements.resetButton.addEventListener('click', () => {
-        void runWithBusyButton(elements.resetButton, 'Confirming…', resetSettings);
+        void runWithBusyButton(elements.resetButton, 'Resetting…', resetSettings);
     });
     elements.openSettingsModalButton.addEventListener('click', () => {
         void runWithBusyButton(elements.openSettingsModalButton, 'Loading…', openSettingsModal);
@@ -2886,13 +2827,6 @@
             const dialog = elements.settingsModalShell.querySelector('.settings-modal');
             trapFocusWithin(dialog, event);
         }
-    });
-
-    window.addEventListener('beforeunload', (event) => {
-        if (!state.modalOpen) return;
-        if (state.dirtyKeys.size === 0 && state.invalidKeys.size === 0) return;
-        event.preventDefault();
-        event.returnValue = '';
     });
 
     chrome.storage.onChanged.addListener((changes, areaName) => {

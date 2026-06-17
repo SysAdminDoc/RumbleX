@@ -1,4 +1,4 @@
-// RumbleX v3.28.0 - Popup Script
+// RumbleX v3.29.0 - Popup Script
 'use strict';
 
 // Feature list grouped by category. Order within a group controls display
@@ -428,19 +428,16 @@ const DEFAULTS = {
 
 const UI_STATE_KEY = 'rx_popup_ui';
 
-function makeToggle(featId, initialChecked, onChange) {
+function makeToggle(featId, labelText, initialChecked, onChange) {
     const toggle = document.createElement('label');
     toggle.className = 'toggle';
-    toggle.setAttribute('aria-label', featId);
+    toggle.setAttribute('aria-label', labelText);
 
     const input = document.createElement('input');
     input.type = 'checkbox';
     input.checked = initialChecked;
-    // v3.1.0 — WCAG 2.2 aria-pressed so screen readers announce on/off state.
-    // Keep in sync with .checked on every change so AT users get accurate state.
-    input.setAttribute('aria-pressed', String(!!initialChecked));
+    input.setAttribute('aria-label', labelText);
     input.addEventListener('change', () => {
-        input.setAttribute('aria-pressed', String(!!input.checked));
         onChange(input.checked);
     });
 
@@ -558,7 +555,7 @@ async function init() {
             rowLabel.className = 'feat-label';
             rowLabel.textContent = feat.label;
 
-            const toggle = makeToggle(feat.id, settings[feat.id] ?? true, (checked) => {
+            const toggle = makeToggle(feat.id, feat.label, settings[feat.id] ?? true, (checked) => {
                 settings[feat.id] = checked;
                 saveSettings(settings);
                 // Keep the enabled-count badge in sync as the user toggles.

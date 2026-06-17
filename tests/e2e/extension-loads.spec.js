@@ -28,5 +28,6 @@ test('popup renders feature groups with toggles', async ({ context, extensionId 
     // At least one toggle should be present and tab-reachable.
     const firstToggle = page.locator('input[type="checkbox"]').first();
     await expect(firstToggle).toBeVisible();
-    await expect(firstToggle).toHaveAttribute('aria-pressed', /^(true|false)$/);
+    await expect(firstToggle).toHaveAttribute('aria-label', /.+/);
+    await expect(firstToggle).not.toHaveAttribute('aria-pressed');
 });

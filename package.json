@@ -1,6 +1,6 @@
 {
   "name": "rumblex-tests",
-  "version": "3.28.0",
+  "version": "3.29.0",
   "private": true,
   "description": "RumbleX Playwright E2E harness (devDependency only — runtime code is in extension/).",
   "scripts": {

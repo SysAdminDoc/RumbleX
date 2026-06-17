@@ -13,7 +13,7 @@
 //
 // Targeted rule changes from the default axe-core ruleset:
 // - 'color-contrast' enforced at AA (default).
-// - 'aria-allowed-attr' enabled — verifies our v3.1 aria-pressed work.
+// - 'aria-allowed-attr' enabled — verifies native controls do not carry unsupported ARIA.
 // - 'aria-live' tags allowed — toasts use role="status" + aria-live="polite".
 // - Region rules disabled where the popup is intentionally a single landmark.
 const { test, expect } = require('./_fixtures');

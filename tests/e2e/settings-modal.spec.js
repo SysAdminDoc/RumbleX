@@ -12,8 +12,11 @@ test('settings modal opens, search filters, save persists', async ({ context, ex
     await search.fill('shorts');
     // The disableShortsFeed setting (v3.1.0) should be the only thing matching
     await expect(page.locator('.settings-item').filter({ hasText: /shorts/i }).first()).toBeVisible();
+    await page.locator('input[name="disableShortsFeed"]').click();
+    await expect(page.locator('#settings-discard-btn')).toBeEnabled();
     // Discard and close
-    await page.locator('#settings-discard-btn').click().catch(() => {});
+    await page.locator('#settings-discard-btn').click();
+    await expect(page.locator('#settings-discard-btn')).toBeDisabled();
     await page.locator('#close-settings-modal-btn').click();
     await expect(page.locator('#settings-modal-shell')).toBeHidden();
 });
