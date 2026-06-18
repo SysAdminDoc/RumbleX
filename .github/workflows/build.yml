@@ -43,11 +43,14 @@ jobs:
         run: python test_selectors.py
       - name: JS syntax check
         run: |
+          node --check scripts/check-dom-sinks.js
           node --check extension/content.js
           node --check extension/background.js
           node --check extension/offscreen.js
           node --check extension/pages/popup.js
           node --check extension/pages/options.js
+      - name: DOM sink guard
+        run: node scripts/check-dom-sinks.js
       - name: Catalog parity (210/210/210)
         run: |
           node -e "

@@ -1,9 +1,9 @@
-// RumbleX v3.31.0 - Content Script
+// RumbleX v3.32.0 - Content Script
 // Rumble enhancement suite - Chrome/Firefox extension
 'use strict';
 
 // ── Version ──
-const VERSION = chrome.runtime?.getManifest?.()?.version || '3.31.0';
+const VERSION = chrome.runtime?.getManifest?.()?.version || '3.32.0';
 const SCHEMA_VERSION = 2;
 
 // ── Settings Manager (chrome.storage.local) ──
@@ -1746,8 +1746,12 @@ const TheaterSplit = {
 
         const info = document.createElement('div');
         info.className = 'rx-header-info';
-        info.innerHTML = `<h3>${titleEl ? titleEl.textContent.trim() : 'Video'}</h3>
-            <span class="rx-channel">${channelEl ? channelEl.textContent.trim() : ''}</span>`;
+        const title = document.createElement('h3');
+        title.textContent = titleEl ? titleEl.textContent.trim() : 'Video';
+        const channel = document.createElement('span');
+        channel.className = 'rx-channel';
+        channel.textContent = channelEl ? channelEl.textContent.trim() : '';
+        info.append(title, channel);
 
         const actions = document.createElement('div');
         actions.className = 'rx-header-actions';
@@ -4124,7 +4128,10 @@ const WatchProgress = {
             const pct = Math.min(100, (progress.t / progress.d) * 100);
             const bar = document.createElement('div');
             bar.className = 'rx-progress-bar';
-            bar.innerHTML = `<div class="rx-progress-fill" style="width:${pct}%"></div>`;
+            const fill = document.createElement('div');
+            fill.className = 'rx-progress-fill';
+            fill.style.width = `${pct}%`;
+            bar.appendChild(fill);
             thumb.style.position = 'relative';
             thumb.appendChild(bar);
         }
@@ -5111,14 +5118,16 @@ const WatchHistoryFeature = {
 
         const header = document.createElement('div');
         header.className = 'rx-history-header';
-        header.innerHTML = `<h2>Watch History (${history.length})</h2><div></div>`;
+        const heading = document.createElement('h2');
+        heading.textContent = `Watch History (${history.length})`;
+        const btnGroup = document.createElement('div');
+        header.append(heading, btnGroup);
 
         const search = document.createElement('input');
         search.className = 'rx-history-search';
         search.placeholder = 'Search history...';
         search.type = 'text';
 
-        const btnGroup = header.querySelector('div');
         const clearBtn = document.createElement('button');
         clearBtn.className = 'rx-history-clear';
         clearBtn.textContent = 'Clear All';
@@ -5128,33 +5137,54 @@ const WatchHistoryFeature = {
         });
         const closeBtn = document.createElement('button');
         closeBtn.className = 'rx-history-close';
-        closeBtn.innerHTML = '&times;';
+        closeBtn.textContent = '\u00d7';
         closeBtn.addEventListener('click', () => overlay.remove());
         btnGroup.appendChild(clearBtn);
         btnGroup.appendChild(closeBtn);
 
         const list = document.createElement('div');
+        const appendEmpty = () => {
+            const empty = document.createElement('div');
+            empty.className = 'rx-history-empty';
+            empty.textContent = 'No watch history yet.';
+            list.appendChild(empty);
+        };
         const renderList = (filter = '') => {
-            list.innerHTML = '';
+            list.textContent = '';
             const filtered = filter
                 ? history.filter(e => e.title.toLowerCase().includes(filter) || e.channel.toLowerCase().includes(filter))
                 : history;
             if (!filtered.length) {
-                list.innerHTML = '<div class="rx-history-empty">No watch history yet.</div>';
+                appendEmpty();
                 return;
             }
             for (const e of filtered) {
                 const a = document.createElement('a');
                 a.className = 'rx-history-item';
-                a.href = e.url;
+                a.href = this._safeRumbleUrl(e.url);
                 const date = new Date(e.time);
                 const ago = this._timeAgo(date);
-                a.innerHTML = `${e.thumb ? `<img src="${e.thumb}" loading="lazy" alt="">` : ''}
-                    <div class="rx-history-meta">
-                        <div class="title">${this._esc(e.title)}</div>
-                        <div class="channel">${this._esc(e.channel)}</div>
-                        <div class="date">${ago}</div>
-                    </div>`;
+                const thumbUrl = this._safeHttpUrl(e.thumb);
+                if (thumbUrl) {
+                    const img = document.createElement('img');
+                    img.src = thumbUrl;
+                    img.loading = 'lazy';
+                    img.alt = '';
+                    a.appendChild(img);
+                }
+                const meta = document.createElement('div');
+                meta.className = 'rx-history-meta';
+                const title = document.createElement('div');
+                title.className = 'title';
+                title.textContent = e.title;
+                const channel = document.createElement('div');
+                channel.className = 'channel';
+                channel.textContent = e.channel;
+                const dateEl = document.createElement('div');
+                dateEl.className = 'date';
+                dateEl.textContent = ago;
+                meta.append(title, channel, dateEl);
+                a.appendChild(meta);
                 list.appendChild(a);
             }
         };
@@ -5170,6 +5200,22 @@ const WatchHistoryFeature = {
     },
 
     _esc(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; },
+
+    _safeHttpUrl(url) {
+        try {
+            const parsed = new URL(String(url || ''), location.origin);
+            return /^https?:$/.test(parsed.protocol) ? parsed.href : '';
+        } catch {
+            return '';
+        }
+    },
+
+    _safeRumbleUrl(url) {
+        const safe = this._safeHttpUrl(url);
+        if (!safe) return '#';
+        const host = new URL(safe).hostname;
+        return host === 'rumble.com' || host.endsWith('.rumble.com') ? safe : '#';
+    },
 
     _timeAgo(date) {
         const s = Math.floor((Date.now() - date.getTime()) / 1000);
@@ -5882,10 +5928,13 @@ const MiniPlayer = {
         this._mini.innerHTML = '';
         const bar = document.createElement('div');
         bar.className = 'rx-miniplayer-bar';
-        bar.innerHTML = `<span class="rx-miniplayer-title">${this._esc(title)}</span>`;
+        const titleEl = document.createElement('span');
+        titleEl.className = 'rx-miniplayer-title';
+        titleEl.textContent = title;
+        bar.appendChild(titleEl);
         const closeBtn = document.createElement('button');
         closeBtn.className = 'rx-miniplayer-close';
-        closeBtn.innerHTML = '&times;';
+        closeBtn.textContent = '\u00d7';
         closeBtn.addEventListener('click', (e) => { e.stopPropagation(); this._hide(); });
         bar.appendChild(closeBtn);
 
@@ -6461,6 +6510,22 @@ const QuickBookmark = {
 
     _esc(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; },
 
+    _safeHttpUrl(url) {
+        try {
+            const parsed = new URL(String(url || ''), location.origin);
+            return /^https?:$/.test(parsed.protocol) ? parsed.href : '';
+        } catch {
+            return '';
+        }
+    },
+
+    _safeRumbleUrl(url) {
+        const safe = this._safeHttpUrl(url);
+        if (!safe) return '#';
+        const host = new URL(safe).hostname;
+        return host === 'rumble.com' || host.endsWith('.rumble.com') ? safe : '#';
+    },
+
     _timeAgo(date) {
         const s = Math.floor((Date.now() - date) / 1000);
         if (s < 60) return 'just now';
@@ -6482,39 +6547,62 @@ const QuickBookmark = {
 
         const header = document.createElement('div');
         header.className = 'rx-bookmarks-header';
-        header.innerHTML = `<h2>Bookmarks (${bookmarks.length})</h2>`;
+        const heading = document.createElement('h2');
+        heading.textContent = `Bookmarks (${bookmarks.length})`;
         const closeBtn = document.createElement('button');
         closeBtn.className = 'rx-bookmarks-close';
-        closeBtn.innerHTML = '&times;';
+        closeBtn.textContent = '\u00d7';
         closeBtn.addEventListener('click', () => overlay.remove());
+        header.appendChild(heading);
         header.appendChild(closeBtn);
         panel.appendChild(header);
 
+        const appendEmpty = (text) => {
+            const empty = document.createElement('div');
+            empty.className = 'rx-bookmarks-empty';
+            empty.textContent = text;
+            panel.appendChild(empty);
+        };
+
         if (!bookmarks.length) {
-            panel.innerHTML += '<div class="rx-bookmarks-empty">No bookmarks yet. Click the bookmark icon on any video to save it.</div>';
+            appendEmpty('No bookmarks yet. Click the bookmark icon on any video to save it.');
         } else {
             for (const bm of bookmarks) {
                 const item = document.createElement('div');
                 item.className = 'rx-bookmark-item';
-                item.innerHTML = `
-                    ${bm.thumb ? `<img src="${this._esc(bm.thumb)}" loading="lazy" alt="">` : ''}
-                    <div class="meta">
-                        <a href="${this._esc(bm.url)}">${this._esc(bm.title)}</a>
-                        <div class="channel">${this._esc(bm.channel)}</div>
-                        <div class="date">${this._timeAgo(bm.time)}</div>
-                    </div>`;
+                const thumbUrl = this._safeHttpUrl(bm.thumb);
+                if (thumbUrl) {
+                    const img = document.createElement('img');
+                    img.src = thumbUrl;
+                    img.loading = 'lazy';
+                    img.alt = '';
+                    item.appendChild(img);
+                }
+                const meta = document.createElement('div');
+                meta.className = 'meta';
+                const link = document.createElement('a');
+                link.href = this._safeRumbleUrl(bm.url);
+                link.textContent = bm.title || '';
+                const channel = document.createElement('div');
+                channel.className = 'channel';
+                channel.textContent = bm.channel || '';
+                const date = document.createElement('div');
+                date.className = 'date';
+                date.textContent = this._timeAgo(bm.time);
+                meta.append(link, channel, date);
+                item.appendChild(meta);
                 const removeBtn = document.createElement('button');
                 removeBtn.className = 'remove-bm';
-                removeBtn.innerHTML = '&times;';
+                removeBtn.textContent = '\u00d7';
                 removeBtn.addEventListener('click', () => {
                     const updated = this._getBookmarks().filter(b => b.url !== bm.url);
                     this._saveBookmarks(updated);
                     item.remove();
                     if (bm.url === location.href) this._btn?.classList.remove('saved');
-                    header.querySelector('h2').textContent = `Bookmarks (${updated.length})`;
+                    heading.textContent = `Bookmarks (${updated.length})`;
                     if (!updated.length) {
                         panel.querySelector('.rx-bookmark-item')?.remove();
-                        panel.innerHTML += '<div class="rx-bookmarks-empty">No bookmarks.</div>';
+                        appendEmpty('No bookmarks.');
                     }
                 });
                 item.appendChild(removeBtn);
