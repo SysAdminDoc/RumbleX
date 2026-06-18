@@ -1,9 +1,9 @@
-// RumbleX v3.32.0 - Content Script
+// RumbleX v3.33.0 - Content Script
 // Rumble enhancement suite - Chrome/Firefox extension
 'use strict';
 
 // ── Version ──
-const VERSION = chrome.runtime?.getManifest?.()?.version || '3.32.0';
+const VERSION = chrome.runtime?.getManifest?.()?.version || '3.33.0';
 const SCHEMA_VERSION = 2;
 
 // ── Settings Manager (chrome.storage.local) ──
@@ -12967,6 +12967,64 @@ async function rxApplyPendingLocalDataOperation() {
 // page can render the "Privacy Report" panel without recomputing client-side.
 // Pure read — no side effects, no network. Every value is either a feature
 // counter, a storage size, or a permission boolean from the manifest.
+const RX_PRIVACY_PERMISSION_DISCLOSURES = Object.freeze({
+    'storage': 'Stores RumbleX settings, backup snapshots, local queue metadata, and opt-in sync configuration in extension storage.',
+    'downloads': 'Starts browser-managed downloads for user-requested video, archive, clip, subtitle, settings, and diagnostic exports.',
+    'offscreen': 'Uses a Chrome MV3 offscreen extension page for DOM parsing and blob/hash work that service workers cannot perform.',
+    'contextMenus': 'Adds local right-click actions for RumbleX-owned workflows.',
+    'scripting': 'Contacts already-open Rumble tabs from extension pages so settings import, reset, and diagnostics can reach the content script.',
+    'tabs': 'Finds open Rumble tabs for settings recovery, import/reset broadcasts, and local diagnostics.',
+    'tabGroups': 'Groups extension-opened tabs for local workflow organization when supported by the browser.',
+    'sidePanel': 'Lets Chromium show the RumbleX options surface in the browser side panel.',
+    'alarms': 'Schedules local archive queue processing and other delayed extension maintenance work.',
+    'notifications': 'Shows local browser notifications for user-triggered completion or failure states.',
+});
+
+const RX_PRIVACY_HOST_DISCLOSURES = Object.freeze({
+    '*://*.rumble.com/*': 'Runs the content script on Rumble pages and fetches Rumble watch/embed data needed for user-triggered features.',
+    '*://*.1a-1791.com/*': 'Accesses Rumble CDN media URLs for user-requested downloads.',
+    '*://*.rumble.cloud/*': 'Accesses Rumble CDN media URLs for user-requested downloads.',
+    'https://api.github.com/*': 'Checks GitHub release metadata and supports opt-in encrypted Gist sync when configured.',
+});
+
+const RX_PRIVACY_WEB_RESOURCE_DISCLOSURES = Object.freeze({
+    'lib/mux.min.js': 'Extension-bundled mux.js worker dependency for HLS-to-MP4 conversion; no remote code fetch.',
+    'lib/mediabunny.min.mjs': 'Extension-bundled experimental Mediabunny muxer path; no remote code fetch.',
+    'lib/mediabunny.LICENSE': 'Bundled Mediabunny license notice exposed for package compliance.',
+    'worker.js': 'Extension-bundled Web Worker used for local video segment processing.',
+    'offscreen.html': 'Chrome MV3 offscreen document shell used only in the extension origin.',
+});
+
+function rxManifestApiPermissions(manifest) {
+    return (manifest.permissions || []).filter((permission) => !String(permission).includes('://'));
+}
+
+function rxManifestHostPermissions(manifest) {
+    return manifest.host_permissions
+        || (manifest.permissions || []).filter((permission) => String(permission).includes('://'))
+        || [];
+}
+
+function rxManifestWebAccessibleResources(manifest) {
+    const resources = manifest.web_accessible_resources || [];
+    const out = [];
+    for (const entry of resources) {
+        if (typeof entry === 'string') {
+            out.push(entry);
+        } else if (entry && Array.isArray(entry.resources)) {
+            out.push(...entry.resources);
+        }
+    }
+    return Array.from(new Set(out));
+}
+
+function rxDisclosureRows(values, disclosures) {
+    return Array.from(new Set(values)).map((value) => ({
+        value,
+        disclosure: disclosures[value] || 'Disclosure missing; update RX_PRIVACY_*_DISCLOSURES before release.',
+    }));
+}
+
 function rxBuildPrivacyReport() {
     const manifest = chrome.runtime?.getManifest?.() || {};
     const settings = Settings._cache || {};
@@ -12988,20 +13046,25 @@ function rxBuildPrivacyReport() {
             }
         }
     } catch {}
+    const permissions = rxManifestApiPermissions(manifest);
+    const hostPermissions = rxManifestHostPermissions(manifest);
+    const webAccessibleResources = rxManifestWebAccessibleResources(manifest);
+    const permissionDisclosures = rxDisclosureRows(permissions, RX_PRIVACY_PERMISSION_DISCLOSURES);
+    const hostPermissionDisclosures = rxDisclosureRows(hostPermissions, RX_PRIVACY_HOST_DISCLOSURES);
+    const webAccessibleResourceDisclosures = rxDisclosureRows(webAccessibleResources, RX_PRIVACY_WEB_RESOURCE_DISCLOSURES);
     return {
         version: VERSION,
+        manifestVersion: manifest.manifest_version || null,
         schemaVersion: settings.schemaVersion || 0,
         featureCount: featureKeys.length,
         enabledFeatures: enabled,
-        permissions: manifest.permissions || [],
-        hostPermissions: manifest.host_permissions || manifest.permissions?.filter((p) => p.includes('://')) || [],
-        externalNetworkSurfaces: [
-            // Honest list of every outbound network surface RumbleX can touch.
-            '*.rumble.com (content script + downloads)',
-            '*.1a-1791.com (Rumble CDN downloads)',
-            '*.rumble.cloud (Rumble CDN downloads)',
-            'api.github.com (release version check + opt-in Encrypted Gist Sync)',
-        ],
+        permissions,
+        hostPermissions,
+        webAccessibleResources,
+        permissionDisclosures,
+        hostPermissionDisclosures,
+        webAccessibleResourceDisclosures,
+        externalNetworkSurfaces: hostPermissionDisclosures.map((entry) => `${entry.value} (${entry.disclosure})`),
         telemetry: 'none — no analytics, no remote logging, no usage beacons',
         localStorage: {
             keys: localKeys,

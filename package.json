@@ -1,6 +1,6 @@
 {
   "name": "rumblex-tests",
-  "version": "3.32.0",
+  "version": "3.33.0",
   "private": true,
   "description": "RumbleX Playwright E2E harness (devDependency only — runtime code is in extension/).",
   "scripts": {
@@ -9,7 +9,8 @@
     "test:e2e:a11y": "playwright test tests/e2e/a11y.spec.js",
     "test:e2e:live": "playwright test tests/e2e/live-smoke.spec.js",
     "test:e2e:install": "playwright install chromium --with-deps",
-    "test:dom-sinks": "node scripts/check-dom-sinks.js"
+    "test:dom-sinks": "node scripts/check-dom-sinks.js",
+    "test:manifest-privacy": "node scripts/check-manifest-privacy.js"
   },
   "devDependencies": {
     "@playwright/test": "^1.49.0",

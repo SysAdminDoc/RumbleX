@@ -51,6 +51,8 @@ jobs:
           node --check extension/pages/options.js
       - name: DOM sink guard
         run: node scripts/check-dom-sinks.js
+      - name: Manifest privacy guard
+        run: node scripts/check-manifest-privacy.js
       - name: Catalog parity (210/210/210)
         run: |
           node -e "
