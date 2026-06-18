@@ -18,8 +18,13 @@
 // - Region rules disabled where the popup is intentionally a single landmark.
 const { test, expect } = require('./_fixtures');
 const { AxeBuilder } = require('@axe-core/playwright');
+const fs = require('fs');
+const path = require('path');
 
 const FAIL_IMPACTS = new Set(['critical', 'serious']);
+const OFFLINE_RUMBLE_FIXTURE = fs.readFileSync(path.join(__dirname, '..', '..', 'rumble_decoded.html'), 'utf8');
+
+test.setTimeout(90_000);
 
 function summarizeViolations(violations) {
     return violations.map((v) => ({
@@ -84,4 +89,38 @@ test('popup passes axe-core WCAG 2.2 AA', async ({ context, extensionId }) => {
         console.error('axe critical/serious violations:', JSON.stringify(summarizeViolations(fails), null, 2));
     }
     expect(fails).toEqual([]);
+});
+
+test('injected settings modal passes axe-core WCAG 2.2 AA on offline Rumble fixture', async ({ context }) => {
+    const page = await context.newPage();
+    await page.route('**/*', (route) => {
+        const url = route.request().url();
+        if (url.startsWith('https://rumble.com/')) {
+            return route.fulfill({ status: 200, contentType: 'text/html', body: OFFLINE_RUMBLE_FIXTURE });
+        }
+        return route.abort();
+    });
+    await page.goto('https://rumble.com/vfixture-local.html', { waitUntil: 'domcontentloaded' });
+    await page.waitForSelector('#rx-settings-btn', { state: 'attached', timeout: 15_000 });
+    await page.evaluate(() => document.querySelector('#rx-settings-btn')?.click());
+    await page.waitForFunction(() => document.body.classList.contains('rx-panel-open'), null, { timeout: 5_000 });
+    await expect(page.locator('#rx-modal')).toHaveAttribute('role', 'dialog');
+    await expect(page.locator('#rx-modal')).toHaveAttribute('aria-modal', 'true');
+    await page.waitForFunction(() => document.activeElement?.classList.contains('rx-m-search'), null, { timeout: 5_000 });
+
+    const results = await new AxeBuilder({ page })
+        .include('#rx-modal')
+        .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa', 'best-practice'])
+        .disableRules(['region'])
+        .analyze();
+    const fails = results.violations.filter((v) => FAIL_IMPACTS.has(v.impact));
+    if (fails.length) {
+        console.error('injected modal axe critical/serious violations:', JSON.stringify(summarizeViolations(fails), null, 2));
+    }
+    expect(fails).toEqual([]);
+
+    await page.keyboard.press('Escape');
+    await page.waitForFunction(() => !document.body.classList.contains('rx-panel-open'), null, { timeout: 5_000 });
+    await expect(page.locator('#rx-modal')).toHaveAttribute('aria-hidden', 'true');
+    expect(await page.locator('#rx-modal').evaluate((modal) => modal.inert)).toBe(true);
 });

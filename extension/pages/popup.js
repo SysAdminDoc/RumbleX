@@ -1,4 +1,4 @@
-// RumbleX v3.33.0 - Popup Script
+// RumbleX v3.34.0 - Popup Script
 'use strict';
 
 // Feature list grouped by category. Order within a group controls display
@@ -427,6 +427,56 @@ const DEFAULTS = {
 };
 
 const UI_STATE_KEY = 'rx_popup_ui';
+const GROUP_MESSAGE_KEYS = {
+    'ad-blocking': 'groupAdBlocking',
+    'video-player': 'groupVideoPlayer',
+    'theme-layout': 'groupThemeLayout',
+    'downloads': 'groupDownloads',
+    'history': 'groupHistory',
+    'comments-chat': 'groupChat',
+    'feed-controls': 'groupFeedControls',
+    'layout': 'groupNavigation',
+    'main-page': 'groupMainPage',
+    'video-page': 'groupVideoPage',
+    'player-controls': 'groupPlayerControls',
+    'video-buttons': 'groupVideoButtons',
+    'comments-extra': 'groupCommentsExtra',
+};
+const FEATURE_MESSAGE_KEYS = {
+    disableShortsFeed: 'tipDisableShortsFeed',
+    hideWalletTipButton: 'tipHideWalletTipButton',
+};
+
+function i18n(key, fallback = '') {
+    if (!key) return fallback;
+    const testMessages = globalThis.__RUMBLEX_TEST_I18N;
+    if (testMessages && typeof testMessages[key] === 'string') return testMessages[key] || fallback;
+    try {
+        return chrome.i18n?.getMessage?.(key) || fallback;
+    } catch {
+        return fallback;
+    }
+}
+
+function applyI18n(root = document) {
+    root.querySelectorAll('[data-i18n]').forEach((el) => {
+        el.textContent = i18n(el.dataset.i18n, el.textContent);
+    });
+    root.querySelectorAll('[data-i18n-aria-label]').forEach((el) => {
+        el.setAttribute('aria-label', i18n(el.dataset.i18nAriaLabel, el.getAttribute('aria-label') || ''));
+    });
+    root.querySelectorAll('[data-i18n-tooltip]').forEach((el) => {
+        el.dataset.tooltip = i18n(el.dataset.i18nTooltip, el.dataset.tooltip || '');
+    });
+}
+
+function groupLabel(group) {
+    return i18n(GROUP_MESSAGE_KEYS[group.id], group.label);
+}
+
+function featureLabel(feature) {
+    return i18n(FEATURE_MESSAGE_KEYS[feature.id], feature.label);
+}
 
 function makeToggle(featId, labelText, initialChecked, onChange) {
     const toggle = document.createElement('label');
@@ -497,6 +547,7 @@ function saveUiState(expanded) {
 }
 
 async function init() {
+    applyI18n();
     const manifest = chrome.runtime.getManifest();
     const ver = `v${manifest.version}`;
     document.getElementById('version').textContent = ver;
@@ -522,7 +573,7 @@ async function init() {
         header.setAttribute('aria-expanded', expanded.has(group.id) ? 'true' : 'false');
 
         const label = document.createElement('span');
-        label.textContent = group.label;
+        label.textContent = groupLabel(group);
 
         const rightWrap = document.createElement('span');
         rightWrap.style.cssText = 'display:flex;align-items:center;gap:6px;';
@@ -553,9 +604,10 @@ async function init() {
 
             const rowLabel = document.createElement('span');
             rowLabel.className = 'feat-label';
-            rowLabel.textContent = feat.label;
+            const localizedLabel = featureLabel(feat);
+            rowLabel.textContent = localizedLabel;
 
-            const toggle = makeToggle(feat.id, feat.label, settings[feat.id] ?? true, (checked) => {
+            const toggle = makeToggle(feat.id, localizedLabel, settings[feat.id] ?? true, (checked) => {
                 settings[feat.id] = checked;
                 saveSettings(settings);
                 // Keep the enabled-count badge in sync as the user toggles.
@@ -587,7 +639,7 @@ async function init() {
     themeSection.className = 'theme-section';
     const themeLabel = document.createElement('div');
     themeLabel.className = 'theme-label';
-    themeLabel.textContent = 'Theme';
+    themeLabel.textContent = i18n('themeLabel', 'Theme');
     themeSection.appendChild(themeLabel);
 
     const themeGrid = document.createElement('div');
@@ -641,11 +693,11 @@ async function init() {
                     groupBtn.classList.add('error');
                     const orig = groupBtn.dataset.tooltip;
                     if (res?.reason === 'no-rumble-tabs') {
-                        groupBtn.dataset.tooltip = 'No Rumble tabs open';
+                        groupBtn.dataset.tooltip = i18n('noRumbleTabsOpen', 'No Rumble tabs open');
                     } else if (res?.reason === 'no-tabgroups-api') {
-                        groupBtn.dataset.tooltip = 'Tab groups not supported in this browser';
+                        groupBtn.dataset.tooltip = i18n('tabGroupsUnsupported', 'Tab groups not supported in this browser');
                     } else {
-                        groupBtn.dataset.tooltip = 'Group failed';
+                        groupBtn.dataset.tooltip = i18n('groupFailed', 'Group failed');
                     }
                     setTimeout(() => {
                         groupBtn.classList.remove('error');
@@ -684,15 +736,15 @@ async function init() {
             return;
         }
         updateBtn.classList.add('checking');
-        updateBtn.dataset.tooltip = 'Checking...';
+        updateBtn.dataset.tooltip = i18n('checkingUpdates', 'Checking...');
         chrome.runtime.sendMessage({ action: 'checkUpdate' }, (res) => {
             updateBtn.classList.remove('checking');
             if (res && res.error) {
                 updateBtn.classList.add('error');
-                updateBtn.dataset.tooltip = 'Check failed';
+                updateBtn.dataset.tooltip = i18n('checkFailed', 'Check failed');
                 setTimeout(() => {
                     updateBtn.classList.remove('error');
-                    updateBtn.dataset.tooltip = 'Check for Updates';
+                    updateBtn.dataset.tooltip = i18n('checkForUpdates', 'Check for updates');
                 }, 3000);
                 return;
             }
@@ -701,8 +753,8 @@ async function init() {
                 updateBtn.dataset.tooltip = `Update available: v${res.latest}`;
                 updateBtn.dataset.releaseUrl = res.url;
             } else {
-                updateBtn.dataset.tooltip = 'Up to date!';
-                setTimeout(() => { updateBtn.dataset.tooltip = 'Check for Updates'; }, 3000);
+                updateBtn.dataset.tooltip = i18n('upToDate', 'Up to date!');
+                setTimeout(() => { updateBtn.dataset.tooltip = i18n('checkForUpdates', 'Check for updates'); }, 3000);
             }
         });
     });

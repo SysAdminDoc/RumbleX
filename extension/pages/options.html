@@ -674,54 +674,54 @@
                 <span class="brand-name">RumbleX</span>
                 <span class="brand-version" id="version"></span>
             </div>
-            <div class="app-status" aria-label="Storage status">Local</div>
+            <div class="app-status" aria-label="Storage status" data-i18n="appStatusLocal" data-i18n-aria-label="storageStatus">Local</div>
         </header>
 
         <main class="options-workspace" aria-labelledby="options-title">
             <section class="workspace-command">
                 <div class="workspace-copy">
-                    <span class="workspace-eyebrow">Control center</span>
-                    <h1 class="workspace-title" id="options-title">Settings and local data</h1>
-                    <p>Review every RumbleX toggle, back up your local data, and manage blocked channels, keywords, chatters, and SponsorBlock segments from one control surface.</p>
+                    <span class="workspace-eyebrow" data-i18n="controlCenter">Control center</span>
+                    <h1 class="workspace-title" id="options-title" data-i18n="optionsSettingsTitle">Settings and local data</h1>
+                    <p data-i18n="optionsIntro">Review every RumbleX toggle, back up your local data, and manage blocked channels, keywords, chatters, and SponsorBlock segments from one control surface.</p>
                 </div>
                 <div class="main-action">
-                    <button id="open-settings-modal-btn" class="cta-button" type="button">Open Settings Editor</button>
+                    <button id="open-settings-modal-btn" class="cta-button" type="button" data-i18n="openSettingsEditor">Open Settings Editor</button>
                 </div>
             </section>
 
-            <section class="storage-overview" aria-label="Storage statistics">
+            <section class="storage-overview" aria-label="Storage statistics" data-i18n-aria-label="storageStatistics">
                 <div class="stat-card">
                     <strong class="stat-card-value" id="stat-features">—</strong>
-                    <span class="stat-card-label">Enabled</span>
+                    <span class="stat-card-label" data-i18n="enabledLabel">Enabled</span>
                 </div>
                 <div class="stat-card">
                     <strong class="stat-card-value" id="stat-size">—</strong>
-                    <span class="stat-card-label">Storage</span>
+                    <span class="stat-card-label" data-i18n="storageLabel">Storage</span>
                 </div>
                 <div class="stat-card">
                     <strong class="stat-card-value" id="stat-channels">—</strong>
-                    <span class="stat-card-label">Channels</span>
+                    <span class="stat-card-label" data-i18n="channelsLabel">Channels</span>
                 </div>
                 <div class="stat-card">
                     <strong class="stat-card-value" id="stat-keywords">—</strong>
-                    <span class="stat-card-label">Keywords</span>
+                    <span class="stat-card-label" data-i18n="keywordsLabel">Keywords</span>
                 </div>
                 <div class="stat-card">
                     <strong class="stat-card-value" id="stat-chatters">—</strong>
-                    <span class="stat-card-label">Chatters</span>
+                    <span class="stat-card-label" data-i18n="chattersLabel">Chatters</span>
                 </div>
             </section>
 
-            <p class="storage-note" id="storage-info" aria-live="polite">Reading local storage…</p>
+            <p class="storage-note" id="storage-info" aria-live="polite" data-i18n="readingLocalStorage">Reading local storage…</p>
 
-            <nav class="actions-row" aria-label="Data management">
+            <nav class="actions-row" aria-label="Data management" data-i18n-aria-label="dataManagement">
                 <div class="button-row">
-                    <button id="export-btn" type="button">Export Backup</button>
-                    <button id="import-btn" type="button">Import Backup</button>
+                    <button id="export-btn" type="button" data-i18n="exportBackup">Export Backup</button>
+                    <button id="import-btn" type="button" data-i18n="importBackup">Import Backup</button>
                     <input type="file" id="import-file" accept=".json,.gz,application/json,application/gzip" hidden>
                 </div>
                 <div class="actions-end">
-                    <button id="reset-btn" class="danger" type="button">Reset All Data</button>
+                    <button id="reset-btn" class="danger" type="button" data-i18n="resetAllData">Reset All Data</button>
                 </div>
             </nav>
 
@@ -732,13 +732,13 @@
             <section class="data-section" id="snapshot-section" aria-labelledby="snapshot-heading">
                 <details class="data-section-details">
                     <summary class="data-section-summary">
-                        <h2 class="data-section-title" id="snapshot-heading">Backup snapshot history</h2>
-                        <span class="data-section-hint" id="snapshot-summary">Loading…</span>
+                        <h2 class="data-section-title" id="snapshot-heading" data-i18n="snapshotHistory">Backup snapshot history</h2>
+                        <span class="data-section-hint" id="snapshot-summary" data-i18n="loading">Loading…</span>
                     </summary>
                     <p class="data-section-copy">RumbleX automatically snapshots your settings before destructive operations (import, reset, restore). Snapshots stay local. Restoring a snapshot snapshots the current state first, so the operation is itself undoable. Cap controlled by <code>backupHistoryLimit</code>.</p>
                     <div class="button-row">
-                        <button id="snapshot-take-btn" type="button">Take snapshot now</button>
-                        <button id="snapshot-refresh-btn" type="button" class="settings-tertiary-button">Refresh list</button>
+                        <button id="snapshot-take-btn" type="button" data-i18n="snapshotTakeNow">Take snapshot now</button>
+                        <button id="snapshot-refresh-btn" type="button" class="settings-tertiary-button" data-i18n="refreshList">Refresh list</button>
                     </div>
                     <ul class="snapshot-list" id="snapshot-list" aria-live="polite"></ul>
                 </details>
@@ -918,16 +918,16 @@
             <section class="data-section" id="privacy-section" aria-labelledby="privacy-heading">
                 <details class="data-section-details">
                     <summary class="data-section-summary">
-                        <h2 class="data-section-title" id="privacy-heading">Privacy report</h2>
-                        <span class="data-section-hint" id="privacy-summary">Loading…</span>
+                        <h2 class="data-section-title" id="privacy-heading" data-i18n="privacyReport">Privacy report</h2>
+                        <span class="data-section-hint" id="privacy-summary" data-i18n="loading">Loading…</span>
                     </summary>
-                    <p class="data-section-copy">Every external network surface RumbleX can touch, telemetry status, and current storage footprint. Pure read — no network calls trigger when you open this.</p>
+                    <p class="data-section-copy" data-i18n="privacyReportCopy">Every external network surface RumbleX can touch, telemetry status, and current storage footprint. Pure read — no network calls trigger when you open this.</p>
                     <div class="button-row">
-                        <button id="privacy-refresh-btn" type="button" class="settings-tertiary-button">Refresh</button>
-                        <button id="privacy-export-btn" type="button" class="settings-tertiary-button">Export JSON</button>
-                        <button id="telemetry-export-btn" type="button" class="settings-tertiary-button">Export selector telemetry</button>
-                        <button id="errorlog-export-btn" type="button" class="settings-tertiary-button">Export error log</button>
-                        <button id="errorlog-clear-btn" type="button" class="settings-tertiary-button">Clear error log</button>
+                        <button id="privacy-refresh-btn" type="button" class="settings-tertiary-button" data-i18n="refresh">Refresh</button>
+                        <button id="privacy-export-btn" type="button" class="settings-tertiary-button" data-i18n="exportJson">Export JSON</button>
+                        <button id="telemetry-export-btn" type="button" class="settings-tertiary-button" data-i18n="exportSelectorTelemetry">Export selector telemetry</button>
+                        <button id="errorlog-export-btn" type="button" class="settings-tertiary-button" data-i18n="exportErrorLog">Export error log</button>
+                        <button id="errorlog-clear-btn" type="button" class="settings-tertiary-button" data-i18n="clearErrorLog">Clear error log</button>
                     </div>
                     <pre class="privacy-report-pre" id="privacy-report-pre"></pre>
                 </details>
@@ -941,48 +941,48 @@
         <section class="settings-modal" role="dialog" aria-modal="true" aria-labelledby="settings-modal-title">
 
             <header class="settings-modal-header">
-                <h2 class="settings-modal-title" id="settings-modal-title">Settings</h2>
+                <h2 class="settings-modal-title" id="settings-modal-title" data-i18n="settingsTitle">Settings</h2>
                 <p class="sr-only" id="settings-modal-summary" aria-live="polite"></p>
                 <div class="settings-chip-row">
-                    <div class="settings-chip"><strong id="settings-total-count">0</strong> settings</div>
-                    <div class="settings-chip"><strong id="settings-dirty-count">0</strong> unsaved</div>
+                    <div class="settings-chip"><strong id="settings-total-count">0</strong> <span data-i18n="settingsTotal">settings</span></div>
+                    <div class="settings-chip"><strong id="settings-dirty-count">0</strong> <span data-i18n="settingsUnsaved">unsaved</span></div>
                     <div class="settings-chip settings-chip-problem" id="settings-problem-chip" hidden>
                         <strong id="settings-problem-count">0</strong> need attention
                     </div>
                 </div>
-                <button id="close-settings-modal-btn" class="icon-button" type="button" aria-label="Close settings"><svg aria-hidden="true" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="3" y1="3" x2="13" y2="13"/><line x1="13" y1="3" x2="3" y2="13"/></svg></button>
+                <button id="close-settings-modal-btn" class="icon-button" type="button" aria-label="Close settings" data-i18n-aria-label="closeSettings"><svg aria-hidden="true" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="3" y1="3" x2="13" y2="13"/><line x1="13" y1="3" x2="3" y2="13"/></svg></button>
             </header>
 
             <div class="settings-modal-toolbar">
                 <div class="settings-search-shell">
                     <svg class="settings-search-icon" aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-                    <input class="settings-search-input" id="settings-search" name="settings-search" type="search" placeholder="Search settings…" aria-label="Search settings" autocomplete="off" spellcheck="false">
-                    <button id="settings-clear-search-btn" class="settings-search-clear" type="button" aria-label="Clear search" hidden><svg aria-hidden="true" width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="1" y1="1" x2="9" y2="9"/><line x1="9" y1="1" x2="1" y2="9"/></svg></button>
+                    <input class="settings-search-input" id="settings-search" name="settings-search" type="search" placeholder="Search settings…" aria-label="Search settings" autocomplete="off" spellcheck="false" data-i18n-placeholder="searchSettings" data-i18n-aria-label="searchSettings">
+                    <button id="settings-clear-search-btn" class="settings-search-clear" type="button" aria-label="Clear search" hidden data-i18n-aria-label="clearSearch"><svg aria-hidden="true" width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="1" y1="1" x2="9" y2="9"/><line x1="9" y1="1" x2="1" y2="9"/></svg></button>
                 </div>
                 <div class="button-row settings-toolbar-actions">
-                    <button id="settings-restore-defaults-btn" type="button">Restore Defaults</button>
-                    <button id="settings-discard-btn" type="button">Discard</button>
-                    <button id="settings-save-btn" class="primary" type="button">Save</button>
+                    <button id="settings-restore-defaults-btn" type="button" data-i18n="restoreDefaultsBtn">Restore Defaults</button>
+                    <button id="settings-discard-btn" type="button" data-i18n="discardBtn">Discard</button>
+                    <button id="settings-save-btn" class="primary" type="button" data-i18n="saveBtn">Save</button>
                 </div>
             </div>
 
             <div class="settings-modal-body">
-                <aside class="settings-groups" id="settings-groups" aria-label="Setting groups"></aside>
+                <aside class="settings-groups" id="settings-groups" aria-label="Setting groups" data-i18n-aria-label="settingGroups"></aside>
                 <div class="settings-editor">
                     <div class="settings-workspace-banner" id="settings-workspace-banner">
                         <div class="settings-workspace-copy">
-                            <strong class="settings-workspace-title" id="settings-workspace-title">In sync</strong>
-                            <span class="settings-workspace-note" id="settings-workspace-note">Changes stay local until you save.</span>
+                            <strong class="settings-workspace-title" id="settings-workspace-title" data-i18n="settingsInSync">In sync</strong>
+                            <span class="settings-workspace-note" id="settings-workspace-note" data-i18n="settingsLocalUntilSave">Changes stay local until you save.</span>
                         </div>
-                        <button id="settings-clear-filters-btn" class="settings-tertiary-button" type="button" hidden>Clear Filters</button>
+                        <button id="settings-clear-filters-btn" class="settings-tertiary-button" type="button" hidden data-i18n="clearFilters">Clear Filters</button>
                     </div>
                     <div class="settings-modal-status" id="settings-modal-status" role="status" aria-live="polite"></div>
                     <div class="settings-empty" id="settings-empty" hidden>
                         <div class="settings-empty-inner">
-                            <span class="settings-empty-eyebrow">Filtered View</span>
-                            <h3 class="settings-empty-title">No settings match</h3>
-                            <p class="settings-empty-copy">Try a broader search or switch group.</p>
-                            <button id="settings-empty-reset-btn" class="settings-tertiary-button" type="button">Clear Filters</button>
+                            <span class="settings-empty-eyebrow" data-i18n="filteredView">Filtered View</span>
+                            <h3 class="settings-empty-title" data-i18n="noSettingsMatch">No settings match</h3>
+                            <p class="settings-empty-copy" data-i18n="broaderSearchOrGroup">Try a broader search or switch group.</p>
+                            <button id="settings-empty-reset-btn" class="settings-tertiary-button" type="button" data-i18n="clearFilters">Clear Filters</button>
                         </div>
                     </div>
                     <div class="settings-list" id="settings-list"></div>

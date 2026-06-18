@@ -126,5 +126,245 @@
   "tipHideWalletTipButton": {
     "message": "Hide Wallet Tip Button",
     "description": "Toggle label that hides the per-creator Rumble Wallet tip-jar button (added v3.1.0)."
+  },
+  "popupLocalAutosave": {
+    "message": "Local changes autosave",
+    "description": "UI string used by popup/options i18n pass."
+  },
+  "popupOpenOptionsHint": {
+    "message": "Search, groups, import/export, reset",
+    "description": "UI string used by popup/options i18n pass."
+  },
+  "reloadAfterChanges": {
+    "message": "Reload after changes",
+    "description": "UI string used by popup/options i18n pass."
+  },
+  "groupRumbleTabs": {
+    "message": "Group all Rumble tabs",
+    "description": "UI string used by popup/options i18n pass."
+  },
+  "openOptionsPage": {
+    "message": "Open options page",
+    "description": "UI string used by popup/options i18n pass."
+  },
+  "githubRepo": {
+    "message": "GitHub repo",
+    "description": "UI string used by popup/options i18n pass."
+  },
+  "checkForUpdates": {
+    "message": "Check for updates",
+    "description": "UI string used by popup/options i18n pass."
+  },
+  "themeLabel": {
+    "message": "Theme",
+    "description": "UI string used by popup/options i18n pass."
+  },
+  "noRumbleTabsOpen": {
+    "message": "No Rumble tabs open",
+    "description": "UI string used by popup/options i18n pass."
+  },
+  "tabGroupsUnsupported": {
+    "message": "Tab groups not supported in this browser",
+    "description": "UI string used by popup/options i18n pass."
+  },
+  "groupFailed": {
+    "message": "Group failed",
+    "description": "UI string used by popup/options i18n pass."
+  },
+  "checkingUpdates": {
+    "message": "Checking...",
+    "description": "UI string used by popup/options i18n pass."
+  },
+  "checkFailed": {
+    "message": "Check failed",
+    "description": "UI string used by popup/options i18n pass."
+  },
+  "upToDate": {
+    "message": "Up to date!",
+    "description": "UI string used by popup/options i18n pass."
+  },
+  "appStatusLocal": {
+    "message": "Local",
+    "description": "UI string used by popup/options i18n pass."
+  },
+  "storageStatus": {
+    "message": "Storage status",
+    "description": "UI string used by popup/options i18n pass."
+  },
+  "controlCenter": {
+    "message": "Control center",
+    "description": "UI string used by popup/options i18n pass."
+  },
+  "optionsSettingsTitle": {
+    "message": "Settings and local data",
+    "description": "UI string used by popup/options i18n pass."
+  },
+  "optionsIntro": {
+    "message": "Review every RumbleX toggle, back up your local data, and manage blocked channels, keywords, chatters, and SponsorBlock segments from one control surface.",
+    "description": "UI string used by popup/options i18n pass."
+  },
+  "storageStatistics": {
+    "message": "Storage statistics",
+    "description": "UI string used by popup/options i18n pass."
+  },
+  "enabledLabel": {
+    "message": "Enabled",
+    "description": "UI string used by popup/options i18n pass."
+  },
+  "storageLabel": {
+    "message": "Storage",
+    "description": "UI string used by popup/options i18n pass."
+  },
+  "channelsLabel": {
+    "message": "Channels",
+    "description": "UI string used by popup/options i18n pass."
+  },
+  "keywordsLabel": {
+    "message": "Keywords",
+    "description": "UI string used by popup/options i18n pass."
+  },
+  "chattersLabel": {
+    "message": "Chatters",
+    "description": "UI string used by popup/options i18n pass."
+  },
+  "readingLocalStorage": {
+    "message": "Reading local storage...",
+    "description": "UI string used by popup/options i18n pass."
+  },
+  "dataManagement": {
+    "message": "Data management",
+    "description": "UI string used by popup/options i18n pass."
+  },
+  "loading": {
+    "message": "Loading...",
+    "description": "UI string used by popup/options i18n pass."
+  },
+  "refreshList": {
+    "message": "Refresh list",
+    "description": "UI string used by popup/options i18n pass."
+  },
+  "privacyReportCopy": {
+    "message": "Every external network surface RumbleX can touch, telemetry status, and current storage footprint. Pure read - no network calls trigger when you open this.",
+    "description": "UI string used by popup/options i18n pass."
+  },
+  "refresh": {
+    "message": "Refresh",
+    "description": "UI string used by popup/options i18n pass."
+  },
+  "exportJson": {
+    "message": "Export JSON",
+    "description": "UI string used by popup/options i18n pass."
+  },
+  "exportSelectorTelemetry": {
+    "message": "Export selector telemetry",
+    "description": "UI string used by popup/options i18n pass."
+  },
+  "exportErrorLog": {
+    "message": "Export error log",
+    "description": "UI string used by popup/options i18n pass."
+  },
+  "clearErrorLog": {
+    "message": "Clear error log",
+    "description": "UI string used by popup/options i18n pass."
+  },
+  "settingsTitle": {
+    "message": "Settings",
+    "description": "UI string used by popup/options i18n pass."
+  },
+  "closeSettings": {
+    "message": "Close settings",
+    "description": "UI string used by popup/options i18n pass."
+  },
+  "searchSettings": {
+    "message": "Search settings...",
+    "description": "UI string used by popup/options i18n pass."
+  },
+  "clearSearch": {
+    "message": "Clear search",
+    "description": "UI string used by popup/options i18n pass."
+  },
+  "settingGroups": {
+    "message": "Setting groups",
+    "description": "UI string used by popup/options i18n pass."
+  },
+  "settingsInSync": {
+    "message": "Everything is in sync",
+    "description": "UI string used by popup/options i18n pass."
+  },
+  "settingsLocalUntilSave": {
+    "message": "Changes stay local until you save them.",
+    "description": "UI string used by popup/options i18n pass."
+  },
+  "clearFilters": {
+    "message": "Clear Filters",
+    "description": "UI string used by popup/options i18n pass."
+  },
+  "filteredView": {
+    "message": "Filtered View",
+    "description": "UI string used by popup/options i18n pass."
+  },
+  "noSettingsMatch": {
+    "message": "No settings match this view",
+    "description": "UI string used by popup/options i18n pass."
+  },
+  "broaderSearchOrGroup": {
+    "message": "Try a broader search or switch back to All Settings.",
+    "description": "UI string used by popup/options i18n pass."
+  },
+  "catalogLabel": {
+    "message": "Catalog",
+    "description": "UI string used by popup/options i18n pass."
+  },
+  "noSettingsAvailable": {
+    "message": "No settings are available",
+    "description": "UI string used by popup/options i18n pass."
+  },
+  "noSettingsFound": {
+    "message": "No defaults or stored settings were found.",
+    "description": "UI string used by popup/options i18n pass."
+  },
+  "noSettingsMatchSearchHere": {
+    "message": "No settings match this search here",
+    "description": "UI string used by popup/options i18n pass."
+  },
+  "switchGroupsOrAll": {
+    "message": "Switch groups or jump back to All Settings.",
+    "description": "UI string used by popup/options i18n pass."
+  },
+  "noSettingsMatchSearch": {
+    "message": "No settings match this search",
+    "description": "UI string used by popup/options i18n pass."
+  },
+  "shorterKeywordOrClear": {
+    "message": "Try a shorter keyword or clear the filter.",
+    "description": "UI string used by popup/options i18n pass."
+  },
+  "groupThemeLayout": {
+    "message": "Theme & Layout",
+    "description": "UI string used by popup/options i18n pass."
+  },
+  "groupNavigation": {
+    "message": "Navigation & Chrome",
+    "description": "UI string used by popup/options i18n pass."
+  },
+  "groupMainPage": {
+    "message": "Main Page Layout",
+    "description": "UI string used by popup/options i18n pass."
+  },
+  "groupVideoPage": {
+    "message": "Video Page Layout",
+    "description": "UI string used by popup/options i18n pass."
+  },
+  "groupPlayerControls": {
+    "message": "Player Controls",
+    "description": "UI string used by popup/options i18n pass."
+  },
+  "groupVideoButtons": {
+    "message": "Video Buttons",
+    "description": "UI string used by popup/options i18n pass."
+  },
+  "groupCommentsExtra": {
+    "message": "Comments & Chat (extras)",
+    "description": "UI string used by popup/options i18n pass."
   }
 }

@@ -53,6 +53,8 @@ jobs:
         run: node scripts/check-dom-sinks.js
       - name: Manifest privacy guard
         run: node scripts/check-manifest-privacy.js
+      - name: I18n key guard
+        run: node scripts/check-i18n.js
       - name: Catalog parity (210/210/210)
         run: |
           node -e "

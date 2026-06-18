@@ -1,9 +1,9 @@
-// RumbleX v3.33.0 - Content Script
+// RumbleX v3.34.0 - Content Script
 // Rumble enhancement suite - Chrome/Firefox extension
 'use strict';
 
 // ── Version ──
-const VERSION = chrome.runtime?.getManifest?.()?.version || '3.33.0';
+const VERSION = chrome.runtime?.getManifest?.()?.version || '3.34.0';
 const SCHEMA_VERSION = 2;
 
 // ── Settings Manager (chrome.storage.local) ──
@@ -7835,6 +7835,7 @@ const SettingsPanel = {
     _panelEl: null,
     _overlayEl: null,
     _toolbarEl: null,
+    _lastFocusedEl: null,
 
     _css: `
         /* ── Toolbar (FAB) ── */
@@ -7906,7 +7907,7 @@ const SettingsPanel = {
         .rx-m-close {
             display: flex; align-items: center; justify-content: center;
             width: 32px; height: 32px; background: #17171a; border: 1px solid #2a2a2e;
-            border-radius: 8px; cursor: pointer; color: #a1a1aa;
+            border-radius: 8px; cursor: pointer; color: #c7d0e0;
             transition: all 180ms cubic-bezier(0.4,0,0.2,1);
         }
         .rx-m-close:hover { background: #ef4444; border-color: #ef4444; color: #fff; }
@@ -7939,7 +7940,7 @@ const SettingsPanel = {
             display: flex; align-items: center; gap: 10px; width: 100%;
             padding: 7px 10px; background: transparent; border: none;
             border-radius: 8px; cursor: pointer; text-align: left;
-            transition: all 180ms; color: #a1a1aa; font-size: 13px; font-weight: 500;
+            transition: all 180ms; color: #c7d0e0; font-size: 13px; font-weight: 600;
         }
         .rx-m-nav-btn:hover { background: #1e1e22; }
         .rx-m-nav-btn.active { background: #27272a; color: #f0f0f0; font-weight: 600; }
@@ -7954,10 +7955,10 @@ const SettingsPanel = {
             box-shadow: 0 2px 10px color-mix(in srgb, var(--rx-cat-color) 40%, transparent);
         }
         .rx-m-nav-count {
-            margin-left: auto; font-size: 10px; font-weight: 600; color: #71717a;
-            background: #17171a; padding: 2px 7px; border-radius: 6px;
+            margin-left: auto; font-size: 10px; font-weight: 700; color: #d3dbea;
+            background: #202632; padding: 2px 7px; border-radius: 6px;
         }
-        .rx-m-nav-btn.active .rx-m-nav-count { background: rgba(255,255,255,0.12); color: #f0f0f0; }
+        .rx-m-nav-btn.active .rx-m-nav-count { background: rgba(255,255,255,0.18); color: #fff; }
 
         /* ── Content ── */
         .rx-m-content { flex: 1; padding: 20px 24px; overflow-y: auto; background: #0a0a0b; }
@@ -7971,7 +7972,7 @@ const SettingsPanel = {
         .rx-m-pane-title { font-size: 18px; font-weight: 700; letter-spacing: 0; }
         .rx-m-toggle-all {
             display: flex; align-items: center; gap: 8px;
-            font-size: 11px; color: #a1a1aa; cursor: pointer; user-select: none;
+            font-size: 11px; color: #c7d0e0; cursor: pointer; user-select: none;
         }
         .rx-m-features-grid { display: flex; flex-direction: column; gap: 6px; }
 
@@ -7990,7 +7991,7 @@ const SettingsPanel = {
         .rx-m-card.rx-m-sub { margin-left: 18px; border-left-width: 2px; }
         .rx-m-card-info { flex: 1; min-width: 0; padding-right: 16px; }
         .rx-m-card-name { font-size: 13px; font-weight: 600; color: #f0f0f0; margin: 0 0 2px; }
-        .rx-m-card-desc { font-size: 11px; color: #71717a; margin: 0; line-height: 1.4; }
+        .rx-m-card-desc { font-size: 11px; color: #aeb8ca; margin: 0; line-height: 1.4; }
 
         /* ── Switch ── */
         /* v3.1.0 — WCAG 2.2 SC 2.5.8 Target Size: bumped 40x22 → 40x24. */
@@ -8014,7 +8015,7 @@ const SettingsPanel = {
 
         /* ── Special Sections ── */
         .rx-m-section-title {
-            font-size: 11px; font-weight: 600; color: #a1a1aa; text-transform: uppercase;
+            font-size: 11px; font-weight: 700; color: #c7d0e0; text-transform: uppercase;
             letter-spacing: 0.5px; margin: 20px 0 10px; padding: 0 0 8px;
             border-bottom: 1px solid rgba(255,255,255,0.04);
         }
@@ -8042,7 +8043,7 @@ const SettingsPanel = {
         }
         .rx-m-slider-row input[type=range] { flex: 1; accent-color: #85d551; height: 4px; }
         .rx-m-slider-label { font-size: 13px; font-weight: 600; color: #85d551; min-width: 36px; }
-        .rx-m-empty { font-size: 11px; color: #71717a; padding: 2px 0; }
+        .rx-m-empty { font-size: 11px; color: #aeb8ca; padding: 2px 0; }
 
         /* ── Footer ── */
         .rx-m-footer {
@@ -8052,8 +8053,8 @@ const SettingsPanel = {
         }
         .rx-m-footer-left { display: flex; align-items: center; gap: 12px; }
         .rx-m-footer-right { display: flex; align-items: center; gap: 8px; }
-        .rx-m-version { font-size: 11px; color: #71717a; }
-        .rx-m-shortcut { font-size: 10px; color: #52525b; padding: 2px 8px; background: #17171a; border-radius: 4px; }
+        .rx-m-version { font-size: 11px; color: #aeb8ca; }
+        .rx-m-shortcut { font-size: 10px; color: #aeb8ca; padding: 2px 8px; background: #17171a; border-radius: 4px; }
         .rx-m-btn {
             display: inline-flex; align-items: center; gap: 6px; padding: 7px 16px;
             font-size: 12px; font-weight: 600; border: none; border-radius: 8px;
@@ -8065,7 +8066,7 @@ const SettingsPanel = {
         }
         .rx-m-btn-primary:hover { transform: translateY(-1px); box-shadow: 0 4px 16px rgba(133,213,81,0.4); }
         .rx-m-btn-secondary {
-            color: #a1a1aa; background: #17171a; border: 1px solid #2a2a2e;
+            color: #c7d0e0; background: #17171a; border: 1px solid #2a2a2e;
         }
         .rx-m-btn-secondary:hover { background: #1e1e22; color: #f0f0f0; }
         .rx-m-reload-note { font-size: 10px; color: rgba(166,173,200,0.5); text-align: center; padding: 12px 0 4px; }
@@ -8444,24 +8445,33 @@ const SettingsPanel = {
         // Overlay
         const overlay = document.createElement('div');
         overlay.id = 'rx-overlay';
+        overlay.setAttribute('aria-hidden', 'true');
         overlay.addEventListener('click', () => this._close());
         this._overlayEl = overlay;
 
         // Modal
         const modal = document.createElement('div');
         modal.id = 'rx-modal';
+        modal.setAttribute('role', 'dialog');
+        modal.setAttribute('aria-modal', 'true');
+        modal.setAttribute('aria-labelledby', 'rx-m-title');
+        modal.setAttribute('aria-hidden', 'true');
+        if ('inert' in modal) modal.inert = true;
 
         // Header
         const header = document.createElement('div');
         header.className = 'rx-m-header';
         header.innerHTML = `
             <div class="rx-m-brand">
-                <span class="rx-m-title"><span class="rx-m-title-rx">Rumble</span>X</span>
+                <span class="rx-m-title" id="rx-m-title"><span class="rx-m-title-rx">Rumble</span>X</span>
                 <span class="rx-m-badge">v${VERSION}</span>
             </div>`;
         const closeBtn = document.createElement('button');
         closeBtn.className = 'rx-m-close';
+        closeBtn.type = 'button';
+        closeBtn.setAttribute('aria-label', 'Close RumbleX settings');
         closeBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>';
+        closeBtn.querySelector('svg')?.setAttribute('aria-hidden', 'true');
         closeBtn.addEventListener('click', () => this._close());
         header.appendChild(closeBtn);
         modal.appendChild(header);
@@ -8480,6 +8490,7 @@ const SettingsPanel = {
         searchInput.className = 'rx-m-search';
         searchInput.placeholder = 'Search features...';
         searchInput.type = 'text';
+        searchInput.setAttribute('aria-label', 'Search RumbleX features');
         let searchTimer = null;
         searchInput.addEventListener('input', () => {
             clearTimeout(searchTimer);
@@ -8590,7 +8601,10 @@ const SettingsPanel = {
 
         const settingsBtn = document.createElement('button');
         settingsBtn.id = 'rx-settings-btn'; settingsBtn.className = 'rx-tb-btn'; settingsBtn.title = 'RumbleX Settings';
+        settingsBtn.type = 'button';
+        settingsBtn.setAttribute('aria-label', 'Open RumbleX settings');
         settingsBtn.innerHTML = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 00-2 2v.18a2 2 0 01-1 1.73l-.43.25a2 2 0 01-2 0l-.15-.08a2 2 0 00-2.73.73l-.22.38a2 2 0 00.73 2.73l.15.1a2 2 0 011 1.72v.51a2 2 0 01-1 1.74l-.15.09a2 2 0 00-.73 2.73l.22.38a2 2 0 002.73.73l.15-.08a2 2 0 012 0l.43.25a2 2 0 011 1.73V20a2 2 0 002 2h.44a2 2 0 002-2v-.18a2 2 0 011-1.73l.43-.25a2 2 0 012 0l.15.08a2 2 0 002.73-.73l.22-.39a2 2 0 00-.73-2.73l-.15-.08a2 2 0 01-1-1.74v-.5a2 2 0 011-1.74l.15-.09a2 2 0 00.73-2.73l-.22-.38a2 2 0 00-2.73-.73l-.15.08a2 2 0 01-2 0l-.43-.25a2 2 0 01-1-1.73V4a2 2 0 00-2-2z"/><circle cx="12" cy="12" r="3"/></svg>';
+        settingsBtn.querySelector('svg')?.setAttribute('aria-hidden', 'true');
         settingsBtn.addEventListener('click', () => this._toggle());
         toolbar.appendChild(settingsBtn);
         this._toolbarEl = toolbar;
@@ -8600,6 +8614,9 @@ const SettingsPanel = {
             if (e.ctrlKey && e.shiftKey && e.key.toLowerCase() === 'x') {
                 e.preventDefault(); this._toggle();
             }
+            if (e.key === 'Tab' && document.body.classList.contains('rx-panel-open')) {
+                this._trapFocus(e);
+            }
             if (e.key === 'Escape' && document.body.classList.contains('rx-panel-open')) {
                 this._close();
             }
@@ -8607,11 +8624,58 @@ const SettingsPanel = {
     },
 
     _toggle() {
-        document.body.classList.toggle('rx-panel-open');
+        if (document.body.classList.contains('rx-panel-open')) this._close();
+        else this._open();
+    },
+
+    _focusableModalElements() {
+        if (!this._panelEl) return [];
+        return Array.from(this._panelEl.querySelectorAll([
+            'a[href]',
+            'button:not([disabled])',
+            'input:not([disabled])',
+            'select:not([disabled])',
+            'textarea:not([disabled])',
+            '[tabindex]:not([tabindex="-1"])',
+        ].join(','))).filter((el) => el instanceof HTMLElement && el.offsetParent !== null);
+    },
+
+    _open() {
+        if (document.body.classList.contains('rx-panel-open')) return;
+        this._lastFocusedEl = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+        this._panelEl?.removeAttribute('aria-hidden');
+        if (this._panelEl && 'inert' in this._panelEl) this._panelEl.inert = false;
+        document.body.classList.add('rx-panel-open');
+        requestAnimationFrame(() => {
+            const target = this._panelEl?.querySelector('.rx-m-search') || this._panelEl?.querySelector('.rx-m-close');
+            if (target instanceof HTMLElement) target.focus({ preventScroll: true });
+        });
     },
 
     _close() {
+        if (!document.body.classList.contains('rx-panel-open')) return;
         document.body.classList.remove('rx-panel-open');
+        this._panelEl?.setAttribute('aria-hidden', 'true');
+        if (this._panelEl && 'inert' in this._panelEl) this._panelEl.inert = true;
+        const returnTarget = this._lastFocusedEl;
+        this._lastFocusedEl = null;
+        if (returnTarget && document.contains(returnTarget)) {
+            requestAnimationFrame(() => returnTarget.focus({ preventScroll: true }));
+        }
+    },
+
+    _trapFocus(e) {
+        const focusable = this._focusableModalElements();
+        if (!focusable.length) return;
+        const first = focusable[0];
+        const last = focusable[focusable.length - 1];
+        if (e.shiftKey && document.activeElement === first) {
+            e.preventDefault();
+            last.focus({ preventScroll: true });
+        } else if (!e.shiftKey && document.activeElement === last) {
+            e.preventDefault();
+            first.focus({ preventScroll: true });
+        }
     },
 
     _switchTab(catId) {

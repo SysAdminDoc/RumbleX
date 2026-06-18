@@ -1,4 +1,4 @@
-// RumbleX v3.33.0 - Options Page
+// RumbleX v3.34.0 - Options Page
 // Standalone settings management via chrome.storage.local (rx_settings key).
 // Mirrors Astra Deck's settings page pattern: dirty-draft workflow with
 // search, group nav, stats overview, and export/import/reset.
@@ -7,6 +7,59 @@
 
     const BRAND_NAME = 'RumbleX';
     const STORAGE_KEY = 'rx_settings';
+    const GROUP_MESSAGE_KEYS = {
+        all: 'groupAll',
+        core: 'groupCore',
+        'ad-blocking': 'groupAdBlocking',
+        'video-player': 'groupVideoPlayer',
+        'video-page': 'groupVideoPage',
+        'video-buttons': 'groupVideoButtons',
+        'main-page': 'groupMainPage',
+        layout: 'groupNavigation',
+        'theme-layout': 'groupThemeLayout',
+        downloads: 'groupDownloads',
+        history: 'groupHistory',
+        'comments-chat': 'groupChat',
+        'feed-controls': 'groupFeedControls',
+        automation: 'groupAutomation',
+        creator: 'groupCreator',
+        integrations: 'groupIntegrations',
+        privacy: 'groupPrivacy',
+        advanced: 'groupAdvanced',
+    };
+
+    function i18n(key, fallback = '') {
+        if (!key) return fallback;
+        const testMessages = globalThis.__RUMBLEX_TEST_I18N;
+        if (testMessages && typeof testMessages[key] === 'string') return testMessages[key] || fallback;
+        try {
+            return chrome.i18n?.getMessage?.(key) || fallback;
+        } catch {
+            return fallback;
+        }
+    }
+
+    function applyI18n(root = document) {
+        root.querySelectorAll('[data-i18n]').forEach((el) => {
+            el.textContent = i18n(el.dataset.i18n, el.textContent);
+        });
+        root.querySelectorAll('[data-i18n-placeholder]').forEach((el) => {
+            el.setAttribute('placeholder', i18n(el.dataset.i18nPlaceholder, el.getAttribute('placeholder') || ''));
+        });
+        root.querySelectorAll('[data-i18n-aria-label]').forEach((el) => {
+            el.setAttribute('aria-label', i18n(el.dataset.i18nAriaLabel, el.getAttribute('aria-label') || ''));
+        });
+        root.querySelectorAll('[data-i18n-title]').forEach((el) => {
+            el.setAttribute('title', i18n(el.dataset.i18nTitle, el.getAttribute('title') || ''));
+        });
+    }
+
+    function groupLabel(groupOrId, fallback = 'Advanced') {
+        const id = typeof groupOrId === 'string' ? groupOrId : groupOrId?.id;
+        const knownGroup = typeof groupOrId === 'string' ? GROUPS.find((group) => group.id === id) : null;
+        const label = typeof groupOrId === 'string' ? knownGroup?.label : groupOrId?.label;
+        return i18n(GROUP_MESSAGE_KEYS[id], label || fallback);
+    }
 
     // Full defaults catalog — must stay in sync with content.js Settings._defaults
     const DEFAULTS = {
@@ -644,6 +697,7 @@
         rantStatsExportCsvBtn: document.getElementById('rant-stats-export-csv-btn'),
         rantStatsClearBtn: document.getElementById('rant-stats-clear-btn'),
     };
+    applyI18n();
 
     const state = {
         modalOpen: false,
@@ -848,7 +902,8 @@
         return hay.includes(state.search);
     }
     function getActiveGroupLabel() {
-        return GROUPS.find((g) => g.id === state.activeGroup)?.label || 'All Settings';
+        const group = GROUPS.find((g) => g.id === state.activeGroup);
+        return group ? groupLabel(group, 'All Settings') : i18n('groupAll', 'All Settings');
     }
     function updateSettingsSearchState() {
         elements.settingsClearSearchButton.hidden = !elements.settingsSearch.value.trim();
@@ -1225,8 +1280,8 @@
         const banner = elements.settingsWorkspaceBanner;
         banner.classList.remove('is-warning', 'is-error', 'is-filtered');
 
-        let title = 'Everything is in sync';
-        let note = 'Changes stay local until you save them.';
+        let title = i18n('settingsInSync', 'Everything is in sync');
+        let note = i18n('settingsLocalUntilSave', 'Changes stay local until you save them.');
 
         if (invalidCount > 0) {
             banner.classList.add('is-error');
@@ -1507,7 +1562,7 @@
             btn.dataset.group = group.id;
             if (state.activeGroup === group.id) btn.setAttribute('aria-current', 'true');
             const label = document.createElement('span');
-            label.textContent = group.label;
+            label.textContent = groupLabel(group);
             const count = document.createElement('span');
             count.className = 'settings-group-count';
             count.textContent = String(counts.get(group.id) || 0);
@@ -1522,7 +1577,7 @@
         const currentValue = state.draftSettings[key];
         const defaultValue = DEFAULTS[key];
         const groupId = inferGroup(key);
-        const groupLabel = GROUPS.find((g) => g.id === groupId)?.label || 'Advanced';
+        const resolvedGroupLabel = groupLabel(groupId, 'Advanced');
         const controlKind = inferControlKind(currentValue, defaultValue, key);
         const controlKindLabel = formatControlKindLabel(controlKind);
         const isToggle = controlKind === 'toggle';
@@ -1553,7 +1608,7 @@
 
         const groupTag = document.createElement('span');
         groupTag.className = 'settings-item-group';
-        groupTag.textContent = groupLabel;
+        groupTag.textContent = resolvedGroupLabel;
         titleRow.appendChild(groupTag);
 
         if (isComplex) {
@@ -1633,22 +1688,22 @@
         const searchValue = elements.settingsSearch.value.trim();
         const activeGroupLabel = getActiveGroupLabel();
         const hasFilters = state.activeGroup !== 'all' || !!searchValue;
-        let eyebrow = 'Filtered View';
-        let title = 'No settings match this view';
-        let copy = 'Try a broader search or switch back to All Settings.';
+        let eyebrow = i18n('filteredView', 'Filtered View');
+        let title = i18n('noSettingsMatch', 'No settings match this view');
+        let copy = i18n('broaderSearchOrGroup', 'Try a broader search or switch back to All Settings.');
         let showReset = hasFilters;
         if (totalCount === 0) {
-            eyebrow = 'Catalog'; title = 'No settings are available';
-            copy = 'No defaults or stored settings were found.'; showReset = false;
+            eyebrow = i18n('catalogLabel', 'Catalog'); title = i18n('noSettingsAvailable', 'No settings are available');
+            copy = i18n('noSettingsFound', 'No defaults or stored settings were found.'); showReset = false;
         } else if (state.activeGroup !== 'all' && searchValue) {
-            title = 'No settings match this search here';
+            title = i18n('noSettingsMatchSearchHere', 'No settings match this search here');
             copy = `Try a broader search or clear the ${activeGroupLabel.toLowerCase()} filter.`;
         } else if (state.activeGroup !== 'all') {
             title = `No settings found in ${activeGroupLabel}`;
-            copy = 'Switch groups or jump back to All Settings.';
+            copy = i18n('switchGroupsOrAll', 'Switch groups or jump back to All Settings.');
         } else if (searchValue) {
-            title = 'No settings match this search';
-            copy = 'Try a shorter keyword or clear the filter.';
+            title = i18n('noSettingsMatchSearch', 'No settings match this search');
+            copy = i18n('shorterKeywordOrClear', 'Try a shorter keyword or clear the filter.');
         }
         elements.settingsEmptyEyebrow.textContent = eyebrow;
         elements.settingsEmptyTitle.textContent = title;
