@@ -1,6 +1,14 @@
 // RumbleX v3.2.0 - Background Service Worker
 'use strict';
 
+// MV3 service workers load the shared extension-origin folder helper here.
+// Firefox MV2 loads it before background.js through manifest-firefox.json.
+if (typeof importScripts === 'function') {
+    try { importScripts('archive-fs.js'); } catch (error) {
+        console.warn('[RumbleX] archive folder helper unavailable:', error);
+    }
+}
+
 // Guard rails for download URLs accepted from the content script. We trust
 // the content script because it can only be injected on rumble.com, but we
 // still refuse downloads targeting unrelated hosts so a compromised page
@@ -55,22 +63,31 @@ async function rxCompletePendingLocalDataOperation(id) {
 // API enforces one offscreen doc per extension per profile so we don't fight
 // the runtime — `hasDocument()` is the contract.
 const OFFSCREEN_URL = chrome.runtime.getURL('offscreen.html');
+let rxOffscreenEnsurePromise = null;
 
 async function ensureOffscreenDocument() {
     if (!chrome.offscreen) return false; // older Chrome / Firefox MV2 — caller falls back
+    if (!rxOffscreenEnsurePromise) {
+        rxOffscreenEnsurePromise = (async () => {
+            const has = await chrome.offscreen.hasDocument();
+            if (has) return true;
+            await chrome.offscreen.createDocument({
+                url: 'offscreen.html',
+                reasons: ['DOM_PARSER', 'BLOBS', 'WORKERS'],
+                justification: 'Parse HTML probe results, hash media blobs, and host long-running download work that the service worker cannot do alone.',
+            });
+            return true;
+        })();
+    }
+    const ensurePromise = rxOffscreenEnsurePromise;
     try {
-        const has = await chrome.offscreen.hasDocument();
-        if (has) return true;
-        await chrome.offscreen.createDocument({
-            url: 'offscreen.html',
-            reasons: ['DOM_PARSER', 'BLOBS', 'WORKERS'],
-            justification: 'Parse HTML probe results, hash media blobs, and host long-running download work that the service worker cannot do alone.',
-        });
-        return true;
+        return await ensurePromise;
     } catch (e) {
         // Swallow — caller falls back to in-content-script processing.
         console.warn('[RumbleX] ensureOffscreenDocument failed:', e);
         return false;
+    } finally {
+        if (rxOffscreenEnsurePromise === ensurePromise) rxOffscreenEnsurePromise = null;
     }
 }
 
@@ -592,6 +609,8 @@ const RX_ARCHIVE_ALARM = 'rx-archive-tick';
 const RX_ARCHIVE_KEY = 'rx_archive_queue';
 const RX_ARCHIVE_MAX_JOBS = 500;
 const RX_ARCHIVE_COMPLETED_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+const RX_ARCHIVE_EXPORT_SCHEMA = 1;
+let rxArchiveMutationQueue = Promise.resolve();
 
 async function rxSyncArchiveAlarm() {
     try {
@@ -614,7 +633,18 @@ async function rxLoadArchiveQueue() {
 }
 
 async function rxSaveArchiveQueue(root) {
-    try { await chrome.storage.local.set({ [RX_ARCHIVE_KEY]: root }); } catch {}
+    await chrome.storage.local.set({ [RX_ARCHIVE_KEY]: root });
+}
+
+function rxMutateArchiveQueue(mutator) {
+    const mutation = rxArchiveMutationQueue.then(async () => {
+        const root = await rxLoadArchiveQueue();
+        const result = await mutator(root);
+        await rxSaveArchiveQueue(root);
+        return result;
+    });
+    rxArchiveMutationQueue = mutation.catch(() => {});
+    return mutation;
 }
 
 function rxArchiveSanitizeFilename(s) {
@@ -659,23 +689,26 @@ async function rxDiscoverVideoQuality(videoSlug, maxHeight) {
     let bestUrl = null;
     let bestHeight = 0;
     let bestLabel = '';
+    let bestSize = null;
     let title = data.title || data.full_title || data.video?.title || null;
-    const consider = (u, h) => {
+    const consider = (u, h, size) => {
         if (!u || !(h > 0)) return;
         if (h > cap) return;
         if (h > bestHeight) {
             bestUrl = u;
             bestHeight = h;
             bestLabel = h + 'p';
+            const parsedSize = Number(size);
+            bestSize = Number.isFinite(parsedSize) && parsedSize > 0 ? Math.floor(parsedSize) : null;
         }
     };
     for (const fmt of ['mp4', 'webm']) {
         const group = src[fmt];
         if (!group || typeof group !== 'object') continue;
-        if (group.url && group.meta?.h > 0) consider(group.url, group.meta.h);
+        if (group.url && group.meta?.h > 0) consider(group.url, group.meta.h, group.meta.size);
         for (const [, val] of Object.entries(group)) {
             if (!val?.url || !val?.meta?.h) continue;
-            consider(val.url, val.meta.h);
+            consider(val.url, val.meta.h, val.meta.size);
         }
     }
     if (!bestUrl) {
@@ -684,12 +717,178 @@ async function rxDiscoverVideoQuality(videoSlug, maxHeight) {
         if (cap !== Infinity) throw new Error('no-direct-mp4-under-' + cap + 'p');
         throw new Error('no-direct-mp4');
     }
-    return { url: bestUrl, quality: bestLabel, height: bestHeight, title };
+    return { url: bestUrl, quality: bestLabel, height: bestHeight, title, estimatedBytes: bestSize };
+}
+
+async function rxGetArchiveMaxHeight() {
+    try {
+        const got = await chrome.storage.local.get(['rx_settings']);
+        const raw = String(got?.rx_settings?.channelArchiveMaxHeight || 'best').toLowerCase();
+        if (raw !== 'best' && raw !== '') {
+            const value = parseInt(raw, 10);
+            if (Number.isFinite(value) && value > 0) return value;
+        }
+    } catch {}
+    return 0;
+}
+
+async function rxGetArchiveFolderState() {
+    const fallback = {
+        available: !!globalThis.RxArchiveFsAccess,
+        offscreen: !!chrome.offscreen,
+        selected: false,
+        name: null,
+        permission: 'missing',
+    };
+    if (!globalThis.RxArchiveFsAccess) return fallback;
+    try {
+        return { ...fallback, ...(await globalThis.RxArchiveFsAccess.getState()) };
+    } catch (error) {
+        return { ...fallback, error: String(error?.message || error).slice(0, 160) };
+    }
+}
+
+async function rxPreflightArchiveQueue() {
+    const cap = await rxGetArchiveMaxHeight();
+    const ids = await rxMutateArchiveQueue((root) => {
+        root.paused = true;
+        return root.jobs
+            .filter((job) => job.status === 'pending' || job.status === 'failed')
+            .map((job) => job.id);
+    });
+    let checked = 0;
+    let knownSize = 0;
+    let estimatedBytes = 0;
+    let failed = 0;
+    const queue = ids.slice();
+    const worker = async () => {
+        while (queue.length) {
+            const id = queue.shift();
+            const snapshot = await rxLoadArchiveQueue();
+            const job = snapshot.jobs.find((entry) => entry.id === id);
+            if (!job) continue;
+            try {
+                const discovered = await rxDiscoverVideoQuality(job.videoId, cap);
+                await rxUpdateArchiveJob(id, {
+                    qualityFound: discovered.quality,
+                    estimatedBytes: discovered.estimatedBytes,
+                    videoTitle: job.videoTitle || discovered.title || job.videoId,
+                    preflightAt: Date.now(),
+                    preflightError: null,
+                });
+                if (discovered.estimatedBytes) {
+                    knownSize++;
+                    estimatedBytes += discovered.estimatedBytes;
+                }
+            } catch (error) {
+                failed++;
+                await rxUpdateArchiveJob(id, {
+                    qualityFound: null,
+                    estimatedBytes: null,
+                    preflightAt: Date.now(),
+                    preflightError: String(error?.message || error).slice(0, 200),
+                });
+            }
+            checked++;
+        }
+    };
+    await Promise.all(Array.from({ length: Math.min(3, Math.max(1, ids.length)) }, () => worker()));
+    return { checked, knownSize, estimatedBytes, failed, paused: true };
+}
+
+function rxArchiveExportJob(job) {
+    return {
+        channelUrl: job.channelUrl || null,
+        channelName: job.channelName || null,
+        videoId: job.videoId,
+        videoUrl: job.videoUrl,
+        videoTitle: job.videoTitle || null,
+        status: job.status,
+        qualityFound: job.qualityFound || null,
+        estimatedBytes: Number.isFinite(job.estimatedBytes) ? job.estimatedBytes : null,
+        filename: job.filename || null,
+        error: job.error || null,
+        preflightError: job.preflightError || null,
+        retryCount: Number.isFinite(job.retryCount) ? job.retryCount : 0,
+        addedAt: job.addedAt || null,
+        completedAt: job.completedAt || null,
+    };
+}
+
+async function rxBuildArchiveQueueExport() {
+    const root = await rxLoadArchiveQueue();
+    return {
+        schemaVersion: RX_ARCHIVE_EXPORT_SCHEMA,
+        exportedAt: new Date().toISOString(),
+        extensionVersion: chrome.runtime.getManifest().version,
+        paused: !!root.paused,
+        jobs: root.jobs.slice(0, RX_ARCHIVE_MAX_JOBS).map(rxArchiveExportJob),
+    };
+}
+
+function rxNormalizeArchiveImportJob(input) {
+    if (!input || typeof input !== 'object') return null;
+    const videoId = String(input.videoId || '').trim().toLowerCase();
+    if (!/^v[a-z0-9]+$/.test(videoId)) return null;
+    const safeRumbleUrl = (raw, pathPattern) => {
+        try {
+            const url = new URL(String(raw || ''));
+            if (url.protocol !== 'https:' || !/(^|\.)rumble\.com$/i.test(url.hostname)) return null;
+            return pathPattern.test(url.pathname) ? url.href.slice(0, 1000) : null;
+        } catch { return null; }
+    };
+    const importedStatus = String(input.status || 'pending');
+    const status = ['completed', 'failed'].includes(importedStatus) ? importedStatus : 'pending';
+    const estimatedBytes = Number(input.estimatedBytes);
+    const addedAt = Number(input.addedAt);
+    const completedAt = Number(input.completedAt);
+    return {
+        id: Math.random().toString(36).slice(2, 10) + Date.now().toString(36),
+        channelUrl: safeRumbleUrl(input.channelUrl, /^\/(?:c|user)\//i),
+        channelName: String(input.channelName || '').slice(0, 160) || null,
+        videoId,
+        videoUrl: safeRumbleUrl(input.videoUrl, /^\/v[a-z0-9]/i) || `https://rumble.com/${videoId}.html`,
+        videoTitle: String(input.videoTitle || '').slice(0, 240) || null,
+        status,
+        qualityFound: String(input.qualityFound || '').slice(0, 40) || null,
+        estimatedBytes: Number.isFinite(estimatedBytes) && estimatedBytes > 0 ? Math.floor(estimatedBytes) : null,
+        filename: String(input.filename || '').slice(0, 500) || null,
+        error: status === 'failed' ? String(input.error || 'imported-failure').slice(0, 200) : null,
+        preflightError: String(input.preflightError || '').slice(0, 200) || null,
+        retryCount: Math.max(0, Math.min(1000, parseInt(input.retryCount, 10) || 0)),
+        addedAt: Number.isFinite(addedAt) && addedAt > 0 ? addedAt : Date.now(),
+        completedAt: (status === 'completed' || status === 'failed') && Number.isFinite(completedAt) && completedAt > 0 ? completedAt : null,
+        importedAt: Date.now(),
+        recoveredFromStatus: ['discovering', 'downloading'].includes(importedStatus) ? importedStatus : null,
+    };
+}
+
+async function rxImportArchiveQueue(payload) {
+    if (!payload || payload.schemaVersion !== RX_ARCHIVE_EXPORT_SCHEMA || !Array.isArray(payload.jobs)) {
+        throw new Error('invalid-archive-queue-export');
+    }
+    return rxMutateArchiveQueue((root) => {
+        root.paused = true;
+        let imported = 0;
+        let skipped = 0;
+        const existing = new Set(root.jobs.map((job) => job.videoId));
+        for (const raw of payload.jobs.slice(0, RX_ARCHIVE_MAX_JOBS)) {
+            const job = rxNormalizeArchiveImportJob(raw);
+            if (!job || existing.has(job.videoId) || root.jobs.length >= RX_ARCHIVE_MAX_JOBS) {
+                skipped++;
+                continue;
+            }
+            root.jobs.push(job);
+            existing.add(job.videoId);
+            imported++;
+        }
+        return { imported, skipped, paused: true };
+    });
 }
 
 async function rxRunArchiveTick() {
-    const root = await rxLoadArchiveQueue();
-    if (root.paused) return;
+    const snapshot = await rxLoadArchiveQueue();
+    if (snapshot.paused) return;
 
     // v3.26.0 — Skip the tick while the device is offline so jobs aren't
     // burned on guaranteed-fail network ops. The check is gated behind a
@@ -705,15 +904,6 @@ async function rxRunArchiveTick() {
         } catch {}
     }
 
-    // Auto-prune old completed jobs.
-    const now = Date.now();
-    const before = root.jobs.length;
-    root.jobs = root.jobs.filter((j) => {
-        if (j.status !== 'completed') return true;
-        return !(j.completedAt && (now - j.completedAt) > RX_ARCHIVE_COMPLETED_TTL_MS);
-    });
-    if (root.jobs.length !== before) await rxSaveArchiveQueue(root);
-
     // Honor downloadConcurrency from settings.
     let concurrency = 2;
     try {
@@ -723,27 +913,51 @@ async function rxRunArchiveTick() {
         if (Number.isFinite(n) && n >= 1 && n <= 8) concurrency = Math.floor(n);
     } catch {}
 
-    const inFlight = root.jobs.filter((j) => j.status === 'discovering' || j.status === 'downloading').length;
-    const slots = Math.max(0, concurrency - inFlight);
-    if (slots === 0) return;
-
-    const pending = root.jobs.filter((j) => j.status === 'pending').slice(0, slots);
-    if (pending.length === 0) return;
-    for (const job of pending) job.status = 'discovering';
-    await rxSaveArchiveQueue(root);
-
-    await Promise.all(pending.map((job) => rxProcessArchiveJob(job.id).catch((e) => {
-        console.warn('[RumbleX] archive job ' + job.id + ' failed:', e);
+    const pendingIds = await rxMutateArchiveQueue((root) => {
+        if (root.paused) return [];
+        const now = Date.now();
+        root.jobs = root.jobs.filter((job) => {
+            if (job.status !== 'completed') return true;
+            return !(job.completedAt && (now - job.completedAt) > RX_ARCHIVE_COMPLETED_TTL_MS);
+        });
+        const inFlight = root.jobs.filter((job) => job.status === 'discovering' || job.status === 'downloading').length;
+        const slots = Math.max(0, concurrency - inFlight);
+        const pending = root.jobs.filter((job) => job.status === 'pending').slice(0, slots);
+        for (const job of pending) {
+            job.status = 'discovering';
+            job.startedAt = Date.now();
+        }
+        return pending.map((job) => job.id);
+    });
+    await Promise.all(pendingIds.map((id) => rxProcessArchiveJob(id).catch((e) => {
+        console.warn('[RumbleX] archive job ' + id + ' failed:', e);
     })));
 }
 
 async function rxUpdateArchiveJob(id, patch) {
-    const root = await rxLoadArchiveQueue();
-    const idx = root.jobs.findIndex((j) => j.id === id);
-    if (idx < 0) return null;
-    root.jobs[idx] = { ...root.jobs[idx], ...patch };
-    await rxSaveArchiveQueue(root);
-    return root.jobs[idx];
+    return rxMutateArchiveQueue((root) => {
+        const idx = root.jobs.findIndex((job) => job.id === id);
+        if (idx < 0) return null;
+        root.jobs[idx] = { ...root.jobs[idx], ...patch };
+        return root.jobs[idx];
+    });
+}
+
+function rxResetArchiveJobForRetry(job) {
+    job.status = 'pending';
+    job.error = null;
+    job.preflightError = null;
+    job.preflightAt = null;
+    job.completedAt = null;
+    job.startedAt = null;
+    job.downloadId = null;
+    job.downloadedBytes = null;
+    job.destination = null;
+    job.destinationName = null;
+    job.folderFallbackReason = null;
+    job.recoveredFromStatus = null;
+    job.retryCount = (Number(job.retryCount) || 0) + 1;
+    job.lastRetryAt = Date.now();
 }
 
 async function rxProcessArchiveJob(id) {
@@ -754,14 +968,7 @@ async function rxProcessArchiveJob(id) {
     let discovered = null;
     try {
         // Honor channelArchiveMaxHeight from settings — 'best' / '' / numeric.
-        try {
-            const got = await chrome.storage.local.get(['rx_settings']);
-            const raw = String(got?.rx_settings?.channelArchiveMaxHeight || 'best').toLowerCase();
-            if (raw !== 'best' && raw !== '') {
-                const n = parseInt(raw, 10);
-                if (Number.isFinite(n) && n > 0) cap = n;
-            }
-        } catch {}
+        cap = await rxGetArchiveMaxHeight();
         discovered = await rxDiscoverVideoQuality(job.videoId, cap);
         const title = job.videoTitle || discovered.title || job.videoId;
         // Subfolder sourced from settings (default 'RumbleX'); sanitized so a
@@ -785,6 +992,42 @@ async function rxProcessArchiveJob(id) {
             });
             return;
         }
+
+        // Chrome/Edge opt-in: stream into the extension-origin persisted folder
+        // from the offscreen document. Revoked/missing permissions or any write
+        // failure fall back to the browser-managed Downloads path below.
+        let folderFallbackReason = null;
+        const folderState = await rxGetArchiveFolderState();
+        if (folderState.selected && folderState.permission === 'granted' && chrome.offscreen) {
+            await rxUpdateArchiveJob(id, {
+                status: 'downloading',
+                qualityFound: discovered.quality,
+                estimatedBytes: discovered.estimatedBytes,
+                videoTitle: title,
+                filename,
+                destination: 'selected-folder',
+                destinationName: folderState.name,
+                downloadId: null,
+            });
+            const folderResult = await callOffscreen('writeArchiveFile', { url: discovered.url, filename });
+            if (folderResult?.ok) {
+                await rxUpdateArchiveJob(id, {
+                    status: 'completed',
+                    completedAt: Date.now(),
+                    filename: folderResult.filename || filename,
+                    downloadedBytes: Number(folderResult.bytesWritten) || discovered.estimatedBytes || null,
+                    estimatedBytes: discovered.estimatedBytes || Number(folderResult.expectedBytes) || null,
+                    folderFallbackReason: null,
+                });
+                return;
+            }
+            folderFallbackReason = String(folderResult?.reason || 'folder-write-failed').slice(0, 120);
+        } else if (folderState.selected) {
+            folderFallbackReason = folderState.permission !== 'granted'
+                ? 'folder-permission-' + folderState.permission
+                : 'offscreen-unavailable';
+        }
+
         const downloadId = await new Promise((resolve, reject) => {
             chrome.downloads.download(
                 { url: discovered.url, filename, saveAs: false, conflictAction: 'uniquify' },
@@ -801,6 +1044,10 @@ async function rxProcessArchiveJob(id) {
             videoTitle: title,
             filename,
             downloadId,
+            estimatedBytes: discovered.estimatedBytes,
+            destination: 'browser-downloads',
+            destinationName: subfolder,
+            folderFallbackReason,
         });
     } catch (e) {
         await rxUpdateArchiveJob(id, {
@@ -820,6 +1067,9 @@ async function rxProcessArchiveJob(id) {
                     height: discovered?.height || null,
                     requestedMaxHeight: cap || 'best',
                 },
+                extra: {
+                    estimatedBytes: discovered?.estimatedBytes || null,
+                },
                 urls: [
                     { role: 'embed-api', url: 'https://rumble.com/embedJS/u3/?request=video&ver=2&v=' + encodeURIComponent(String(job.videoId || '')) },
                     ...(discovered?.url ? [{ role: 'download', url: discovered.url }] : []),
@@ -838,7 +1088,14 @@ if (chrome.downloads?.onChanged) {
         const job = root.jobs.find((j) => j.downloadId === delta.id);
         if (!job) return;
         if (newState === 'complete') {
-            await rxUpdateArchiveJob(job.id, { status: 'completed', completedAt: Date.now() });
+            let downloadedBytes = null;
+            try {
+                const matches = await chrome.downloads.search({ id: delta.id });
+                const item = matches?.[0];
+                const size = Number(item?.fileSize || item?.totalBytes || item?.bytesReceived);
+                if (Number.isFinite(size) && size > 0) downloadedBytes = size;
+            } catch {}
+            await rxUpdateArchiveJob(job.id, { status: 'completed', completedAt: Date.now(), downloadedBytes });
         } else {
             await rxUpdateArchiveJob(job.id, {
                 status: 'failed',
@@ -1802,26 +2059,28 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                 let channelName = null;
                 const ogt = html.match(/<meta[^>]+property="og:title"[^>]+content="([^"]+)"/i);
                 if (ogt) channelName = ogt[1].trim();
-                const root = await rxLoadArchiveQueue();
-                let enqueued = 0;
-                let skipped = 0;
-                for (const v of found) {
-                    // Skip duplicates already in queue (by videoId).
-                    if (root.jobs.some((j) => j.videoId === v.videoId)) { skipped++; continue; }
-                    if (root.jobs.length >= RX_ARCHIVE_MAX_JOBS) break;
-                    root.jobs.push({
-                        id: Math.random().toString(36).slice(2, 10) + Date.now().toString(36),
-                        channelUrl,
-                        channelName,
-                        videoId: v.videoId,
-                        videoUrl: v.videoUrl,
-                        videoTitle: v.videoTitle,
-                        status: 'pending',
-                        addedAt: Date.now(),
-                    });
-                    enqueued++;
-                }
-                await rxSaveArchiveQueue(root);
+                const { enqueued, skipped } = await rxMutateArchiveQueue((root) => {
+                    let enqueuedCount = 0;
+                    let skippedCount = 0;
+                    for (const v of found) {
+                        // Skip duplicates already in queue (by videoId).
+                        if (root.jobs.some((job) => job.videoId === v.videoId)) { skippedCount++; continue; }
+                        if (root.jobs.length >= RX_ARCHIVE_MAX_JOBS) break;
+                        root.jobs.push({
+                            id: Math.random().toString(36).slice(2, 10) + Date.now().toString(36),
+                            channelUrl,
+                            channelName,
+                            videoId: v.videoId,
+                            videoUrl: v.videoUrl,
+                            videoTitle: v.videoTitle,
+                            status: 'pending',
+                            retryCount: 0,
+                            addedAt: Date.now(),
+                        });
+                        enqueuedCount++;
+                    }
+                    return { enqueued: enqueuedCount, skipped: skippedCount };
+                });
                 // Kick a tick now so the user sees progress immediately.
                 rxRunArchiveTick().catch(() => {});
                 sendResponse({ ok: true, enqueued, skipped, channelName });
@@ -1833,66 +2092,108 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     }
 
     if (message.action === 'archiveGetQueue') {
-        rxLoadArchiveQueue().then((root) => sendResponse({ ok: true, queue: root }));
+        Promise.all([rxLoadArchiveQueue(), rxGetArchiveFolderState()])
+            .then(([root, folder]) => sendResponse({ ok: true, queue: root, folder }))
+            .catch((error) => sendResponse({ ok: false, reason: String(error?.message || error) }));
         return true;
     }
 
     if (message.action === 'archivePauseQueue' || message.action === 'archiveResumeQueue') {
         (async () => {
-            const root = await rxLoadArchiveQueue();
-            root.paused = (message.action === 'archivePauseQueue');
-            await rxSaveArchiveQueue(root);
-            sendResponse({ ok: true, paused: root.paused });
-        })();
+            const paused = message.action === 'archivePauseQueue';
+            await rxMutateArchiveQueue((root) => { root.paused = paused; });
+            if (!paused) rxRunArchiveTick().catch(() => {});
+            sendResponse({ ok: true, paused });
+        })().catch((error) => sendResponse({ ok: false, reason: String(error?.message || error) }));
         return true;
     }
 
     if (message.action === 'archiveClearCompleted') {
         (async () => {
-            const root = await rxLoadArchiveQueue();
-            const before = root.jobs.length;
-            root.jobs = root.jobs.filter((j) => j.status !== 'completed');
-            await rxSaveArchiveQueue(root);
-            sendResponse({ ok: true, removed: before - root.jobs.length });
-        })();
+            const removed = await rxMutateArchiveQueue((root) => {
+                const before = root.jobs.length;
+                root.jobs = root.jobs.filter((job) => job.status !== 'completed');
+                return before - root.jobs.length;
+            });
+            sendResponse({ ok: true, removed });
+        })().catch((error) => sendResponse({ ok: false, reason: String(error?.message || error) }));
         return true;
     }
 
     if (message.action === 'archiveClearQueue') {
         (async () => {
-            const root = await rxLoadArchiveQueue();
-            const before = root.jobs.length;
-            root.jobs = [];
-            await rxSaveArchiveQueue(root);
-            sendResponse({ ok: true, removed: before });
-        })();
+            const removed = await rxMutateArchiveQueue((root) => {
+                const before = root.jobs.length;
+                root.jobs = [];
+                return before;
+            });
+            sendResponse({ ok: true, removed });
+        })().catch((error) => sendResponse({ ok: false, reason: String(error?.message || error) }));
         return true;
     }
 
     if (message.action === 'archiveRemoveJob') {
         (async () => {
-            const root = await rxLoadArchiveQueue();
-            const before = root.jobs.length;
-            root.jobs = root.jobs.filter((j) => j.id !== message.id);
-            await rxSaveArchiveQueue(root);
-            sendResponse({ ok: true, removed: before - root.jobs.length });
-        })();
+            const removed = await rxMutateArchiveQueue((root) => {
+                const before = root.jobs.length;
+                root.jobs = root.jobs.filter((job) => job.id !== message.id);
+                return before - root.jobs.length;
+            });
+            sendResponse({ ok: true, removed });
+        })().catch((error) => sendResponse({ ok: false, reason: String(error?.message || error) }));
         return true;
     }
 
     if (message.action === 'archiveRetryJob') {
         (async () => {
-            const root = await rxLoadArchiveQueue();
-            const job = root.jobs.find((j) => j.id === message.id);
-            if (!job) { sendResponse({ ok: false, reason: 'not-found' }); return; }
-            job.status = 'pending';
-            job.error = null;
-            job.completedAt = null;
-            job.downloadId = null;
-            await rxSaveArchiveQueue(root);
+            const found = await rxMutateArchiveQueue((root) => {
+                const job = root.jobs.find((entry) => entry.id === message.id);
+                if (!job) return false;
+                rxResetArchiveJobForRetry(job);
+                return true;
+            });
+            if (!found) { sendResponse({ ok: false, reason: 'not-found' }); return; }
             rxRunArchiveTick().catch(() => {});
             sendResponse({ ok: true });
-        })();
+        })().catch((error) => sendResponse({ ok: false, reason: String(error?.message || error) }));
+        return true;
+    }
+
+    if (message.action === 'archiveRetryFailed') {
+        (async () => {
+            const retried = await rxMutateArchiveQueue((root) => {
+                let count = 0;
+                for (const job of root.jobs) {
+                    if (job.status !== 'failed') continue;
+                    rxResetArchiveJobForRetry(job);
+                    count++;
+                }
+                return count;
+            });
+            rxRunArchiveTick().catch(() => {});
+            sendResponse({ ok: true, retried });
+        })().catch((error) => sendResponse({ ok: false, reason: String(error?.message || error) }));
+        return true;
+    }
+
+    if (message.action === 'archivePreflightQueue') {
+        rxPreflightArchiveQueue()
+            .then((result) => sendResponse({ ok: true, ...result }))
+            .catch((error) => sendResponse({ ok: false, reason: String(error?.message || error) }));
+        return true;
+    }
+
+    if (message.action === 'archiveExportQueue') {
+        rxBuildArchiveQueueExport()
+            .then((payload) => sendResponse({ ok: true, payload }))
+            .catch((error) => sendResponse({ ok: false, reason: String(error?.message || error) }));
+        return true;
+    }
+
+    if (message.action === 'archiveImportQueue') {
+        rxImportArchiveQueue(message.payload)
+            .then((result) => sendResponse({ ok: true, ...result }))
+            .catch((error) => sendResponse({ ok: false, reason: String(error?.message || error) }));
         return true;
     }
 

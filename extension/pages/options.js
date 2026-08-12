@@ -679,6 +679,16 @@
         archiveEnqueueBtn: document.getElementById('archive-enqueue-btn'),
         archivePauseBtn: document.getElementById('archive-pause-btn'),
         archiveRunBtn: document.getElementById('archive-run-btn'),
+        archiveRetryFailedBtn: document.getElementById('archive-retry-failed-btn'),
+        archiveExportBtn: document.getElementById('archive-export-btn'),
+        archiveImportBtn: document.getElementById('archive-import-btn'),
+        archiveImportFile: document.getElementById('archive-import-file'),
+        archivePreflightBtn: document.getElementById('archive-preflight-btn'),
+        archiveEstimateStatus: document.getElementById('archive-estimate-status'),
+        archiveFolderStatus: document.getElementById('archive-folder-status'),
+        archiveFolderPickBtn: document.getElementById('archive-folder-pick-btn'),
+        archiveFolderGrantBtn: document.getElementById('archive-folder-grant-btn'),
+        archiveFolderClearBtn: document.getElementById('archive-folder-clear-btn'),
         archiveClearCompletedBtn: document.getElementById('archive-clear-completed-btn'),
         archiveClearBtn: document.getElementById('archive-clear-btn'),
         archiveTotals: document.getElementById('archive-totals'),
@@ -768,7 +778,9 @@
         if (!Number.isFinite(bytes) || bytes <= 0) return '0 B';
         if (bytes < 1024) return bytes + ' B';
         if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
-        return (bytes / (1024 * 1024)).toFixed(2) + ' MB';
+        if (bytes < 1024 * 1024 * 1024) return (bytes / (1024 * 1024)).toFixed(2) + ' MB';
+        if (bytes < 1024 * 1024 * 1024 * 1024) return (bytes / (1024 * 1024 * 1024)).toFixed(2) + ' GB';
+        return (bytes / (1024 * 1024 * 1024 * 1024)).toFixed(2) + ' TB';
     }
     function deepClone(value) {
         if (typeof structuredClone === 'function') return structuredClone(value);
@@ -2355,6 +2367,37 @@
 
     // v3.18.0 — Channel Archive Queue UI. Talks to the background drain via
     // the archive* message API; live-refreshes via storage.onChanged.
+    async function refreshArchiveFolderState(backgroundState = null) {
+        const helper = globalThis.RxArchiveFsAccess;
+        let state = backgroundState || { selected: false, permission: 'missing', pickerSupported: false };
+        if (helper) {
+            try { state = { ...state, ...(await helper.getState()) }; } catch {}
+        }
+        const subfolder = (elements.archiveSubfolderInput?.value || 'RumbleX').trim() || 'RumbleX';
+        if (elements.archiveFolderStatus) {
+            if (state.selected) {
+                const permissionLabel = state.permission === 'granted'
+                    ? 'write access granted'
+                    : state.permission === 'prompt' ? 'access needs approval' : 'write access unavailable';
+                elements.archiveFolderStatus.textContent = `${state.name || 'Selected folder'} · ${permissionLabel}. Browser Downloads remains the fallback.`;
+            } else {
+                const customNote = state.pickerSupported
+                    ? 'Choose a folder for direct streamed writes.'
+                    : 'Custom folder selection is unavailable in this browser.';
+                elements.archiveFolderStatus.textContent = `Browser Downloads/${subfolder} · ready. ${customNote}`;
+            }
+        }
+        if (elements.archiveFolderPickBtn) {
+            elements.archiveFolderPickBtn.hidden = !state.pickerSupported;
+            elements.archiveFolderPickBtn.textContent = state.selected ? 'Change folder' : 'Choose folder';
+        }
+        if (elements.archiveFolderGrantBtn) {
+            elements.archiveFolderGrantBtn.hidden = !state.selected || state.permission === 'granted';
+        }
+        if (elements.archiveFolderClearBtn) elements.archiveFolderClearBtn.hidden = !state.selected;
+        return state;
+    }
+
     async function refreshArchiveQueue() {
         // Sync the dropdown + subfolder input to the current saved values.
         if (elements.archiveMaxHeightInput || elements.archiveSubfolderInput) {
@@ -2374,6 +2417,25 @@
         const jobs = queue.jobs || [];
         const counts = { pending: 0, discovering: 0, downloading: 0, completed: 0, failed: 0 };
         for (const j of jobs) counts[j.status] = (counts[j.status] || 0) + 1;
+        await refreshArchiveFolderState(resp?.folder);
+        const knownSizeJobs = jobs.filter((job) => Number.isFinite(job.estimatedBytes) && job.estimatedBytes > 0);
+        const estimatedBytes = knownSizeJobs.reduce((sum, job) => sum + job.estimatedBytes, 0);
+        const preflightFailures = jobs.filter((job) => job.preflightError).length;
+        if (elements.archiveEstimateStatus) {
+            if (jobs.length === 0) {
+                elements.archiveEstimateStatus.textContent = 'Queue empty. Enqueue a channel before running preflight.';
+            } else if (knownSizeJobs.length === 0) {
+                elements.archiveEstimateStatus.textContent = `Size unknown for ${jobs.length} job${jobs.length === 1 ? '' : 's'}. Preflight pauses the queue and probes available direct files.`;
+            } else {
+                const unknown = jobs.length - knownSizeJobs.length;
+                elements.archiveEstimateStatus.textContent = `About ${formatBytes(estimatedBytes)} across ${knownSizeJobs.length}/${jobs.length} known job${jobs.length === 1 ? '' : 's'}`
+                    + (unknown ? ` · ${unknown} unknown` : '')
+                    + (preflightFailures ? ` · ${preflightFailures} probe failure${preflightFailures === 1 ? '' : 's'}` : '') + '.';
+            }
+        }
+        if (elements.archivePreflightBtn) elements.archivePreflightBtn.disabled = !jobs.some((job) => job.status === 'pending' || job.status === 'failed');
+        if (elements.archiveRetryFailedBtn) elements.archiveRetryFailedBtn.disabled = counts.failed === 0;
+        if (elements.archiveExportBtn) elements.archiveExportBtn.disabled = jobs.length === 0;
         if (elements.archiveQueueSummary) {
             elements.archiveQueueSummary.textContent = jobs.length === 0
                 ? 'Queue empty.'
@@ -2417,8 +2479,11 @@
             sub.className = 'snapshot-time';
             const statusBits = [j.status];
             if (j.qualityFound) statusBits.push(j.qualityFound);
+            if (Number.isFinite(j.estimatedBytes) && j.estimatedBytes > 0) statusBits.push('~' + formatBytes(j.estimatedBytes));
             if (j.channelName) statusBits.push(j.channelName);
+            if (j.retryCount) statusBits.push('retry ' + j.retryCount);
             if (j.error) statusBits.push('err: ' + j.error);
+            else if (j.preflightError) statusBits.push('probe: ' + j.preflightError);
             sub.textContent = statusBits.join(' · ');
             meta.append(title, sub);
             const row = document.createElement('div');
@@ -2484,6 +2549,105 @@
         }
     }
 
+    async function chooseArchiveFolder() {
+        const helper = globalThis.RxArchiveFsAccess;
+        if (!helper) { showStatus('Custom archive folders are unavailable in this browser.', 'info'); return; }
+        const button = elements.archiveFolderPickBtn;
+        if (button) button.disabled = true;
+        try {
+            const handle = await helper.pickFolder();
+            await refreshArchiveFolderState();
+            showStatus(`Archive destination set to "${handle.name || 'selected folder'}".`, 'success');
+        } catch (error) {
+            if (error?.name !== 'AbortError') showStatus('Could not select archive folder: ' + String(error?.message || error), 'error');
+        } finally {
+            if (button) button.disabled = false;
+        }
+    }
+
+    async function grantArchiveFolderAccess() {
+        const helper = globalThis.RxArchiveFsAccess;
+        if (!helper) return;
+        const button = elements.archiveFolderGrantBtn;
+        if (button) button.disabled = true;
+        try {
+            const handle = await helper.getHandle();
+            const permission = await helper.requestPermission(handle);
+            await refreshArchiveFolderState();
+            showStatus(permission === 'granted' ? 'Archive folder access granted.' : 'Archive folder access was not granted; browser Downloads remains the fallback.', permission === 'granted' ? 'success' : 'info');
+        } catch (error) {
+            showStatus('Could not request archive folder access: ' + String(error?.message || error), 'error');
+        } finally {
+            if (button) button.disabled = false;
+        }
+    }
+
+    async function clearArchiveFolder() {
+        const helper = globalThis.RxArchiveFsAccess;
+        if (!helper) return;
+        try {
+            await helper.deleteHandle();
+            await refreshArchiveFolderState();
+            showStatus('Archive destination reset to browser Downloads.', 'success');
+        } catch (error) {
+            showStatus('Could not clear archive folder: ' + String(error?.message || error), 'error');
+        }
+    }
+
+    async function preflightArchiveQueue() {
+        const button = elements.archivePreflightBtn;
+        if (button) { button.disabled = true; button.dataset.idleLabel = button.dataset.idleLabel || button.textContent; button.textContent = 'Scanning…'; }
+        try {
+            const response = await chrome.runtime.sendMessage({ action: 'archivePreflightQueue' });
+            if (!response?.ok) throw new Error(response?.reason || 'preflight failed');
+            const sizeNote = response.knownSize ? ` About ${formatBytes(response.estimatedBytes)} is known across ${response.knownSize} job${response.knownSize === 1 ? '' : 's'}.` : ' File sizes remain unknown.';
+            showStatus(`Preflight checked ${response.checked} job${response.checked === 1 ? '' : 's'} with ${response.failed} probe failure${response.failed === 1 ? '' : 's'}. Queue paused for review.${sizeNote}`, response.failed ? 'info' : 'success');
+            await refreshArchiveQueue();
+        } catch (error) {
+            showStatus('Archive preflight failed: ' + String(error?.message || error), 'error');
+        } finally {
+            if (button) { button.disabled = false; if (button.dataset.idleLabel) button.textContent = button.dataset.idleLabel; }
+        }
+    }
+
+    async function retryFailedArchiveJobs() {
+        try {
+            const response = await chrome.runtime.sendMessage({ action: 'archiveRetryFailed' });
+            if (!response?.ok) throw new Error(response?.reason || 'retry failed');
+            showStatus(`Queued ${response.retried} failed job${response.retried === 1 ? '' : 's'} for retry.`, 'success');
+            await refreshArchiveQueue();
+        } catch (error) {
+            showStatus('Could not retry archive jobs: ' + String(error?.message || error), 'error');
+        }
+    }
+
+    async function exportArchiveQueue() {
+        try {
+            const response = await chrome.runtime.sendMessage({ action: 'archiveExportQueue' });
+            if (!response?.ok || !response.payload) throw new Error(response?.reason || 'export failed');
+            if (!response.payload.jobs.length) { showStatus('Archive queue is empty.', 'info'); return; }
+            const timestamp = new Date().toISOString().replace(/[:T]/g, '-').replace(/\..+$/, '');
+            downloadJsonBlob('rumblex-archive-queue-' + timestamp + '.json', response.payload);
+            showStatus(`Exported ${response.payload.jobs.length} archive job${response.payload.jobs.length === 1 ? '' : 's'}.`, 'success');
+        } catch (error) {
+            showStatus('Could not export archive queue: ' + String(error?.message || error), 'error');
+        }
+    }
+
+    async function importArchiveQueueFile(file) {
+        if (!file) return;
+        if (file.size > 5 * 1024 * 1024) { showStatus('Archive queue import must be 5 MB or smaller.', 'error'); return; }
+        try {
+            const payload = JSON.parse(await file.text());
+            const response = await chrome.runtime.sendMessage({ action: 'archiveImportQueue', payload });
+            if (!response?.ok) throw new Error(response?.reason || 'import failed');
+            showStatus(`Imported ${response.imported} archive job${response.imported === 1 ? '' : 's'}${response.skipped ? `; skipped ${response.skipped} invalid or duplicate` : ''}. Queue paused for review.`, 'success');
+            await refreshArchiveQueue();
+        } catch (error) {
+            showStatus('Could not import archive queue: ' + String(error?.message || error), 'error');
+        }
+    }
+
     async function toggleArchivePause() {
         const cur = await chrome.runtime.sendMessage({ action: 'archiveGetQueue' });
         const paused = !!(cur?.queue?.paused);
@@ -2494,8 +2658,10 @@
     }
 
     async function runArchiveNow() {
+        const current = await chrome.runtime.sendMessage({ action: 'archiveGetQueue' });
+        if (current?.queue?.paused) await chrome.runtime.sendMessage({ action: 'archiveResumeQueue' });
         await chrome.runtime.sendMessage({ action: 'archiveRunNow' });
-        showStatus('Tick scheduled.', 'success');
+        showStatus(current?.queue?.paused ? 'Queue resumed and tick scheduled.' : 'Tick scheduled.', 'success');
         setTimeout(refreshArchiveQueue, 600);
     }
 
@@ -2869,6 +3035,19 @@
     if (elements.archiveEnqueueBtn) elements.archiveEnqueueBtn.addEventListener('click', () => void enqueueArchiveChannel());
     if (elements.archivePauseBtn) elements.archivePauseBtn.addEventListener('click', () => void toggleArchivePause());
     if (elements.archiveRunBtn) elements.archiveRunBtn.addEventListener('click', () => void runArchiveNow());
+    if (elements.archiveRetryFailedBtn) elements.archiveRetryFailedBtn.addEventListener('click', () => void retryFailedArchiveJobs());
+    if (elements.archivePreflightBtn) elements.archivePreflightBtn.addEventListener('click', () => void preflightArchiveQueue());
+    if (elements.archiveFolderPickBtn) elements.archiveFolderPickBtn.addEventListener('click', () => void chooseArchiveFolder());
+    if (elements.archiveFolderGrantBtn) elements.archiveFolderGrantBtn.addEventListener('click', () => void grantArchiveFolderAccess());
+    if (elements.archiveFolderClearBtn) elements.archiveFolderClearBtn.addEventListener('click', () => void clearArchiveFolder());
+    if (elements.archiveExportBtn) elements.archiveExportBtn.addEventListener('click', () => void exportArchiveQueue());
+    if (elements.archiveImportBtn && elements.archiveImportFile) {
+        elements.archiveImportBtn.addEventListener('click', () => elements.archiveImportFile.click());
+        elements.archiveImportFile.addEventListener('change', () => {
+            const file = elements.archiveImportFile.files?.[0];
+            void importArchiveQueueFile(file).finally(() => { elements.archiveImportFile.value = ''; });
+        });
+    }
     if (elements.archiveClearCompletedBtn) elements.archiveClearCompletedBtn.addEventListener('click', () => void clearArchiveCompleted());
     if (elements.archiveClearBtn) elements.archiveClearBtn.addEventListener('click', () => void clearArchiveAll());
     if (elements.archiveChannelInput) {
@@ -2903,6 +3082,7 @@
                 s.channelArchiveSubfolder = (elements.archiveSubfolderInput.value || 'RumbleX').trim() || 'RumbleX';
                 await new Promise((resolve) => chrome.storage.local.set({ rx_settings: s }, resolve));
                 showStatus('Archive subfolder set to "' + s.channelArchiveSubfolder + '" (sanitized server-side).', 'success');
+                await refreshArchiveFolderState();
             } catch (e) {
                 showStatus('Could not save: ' + String(e?.message || e), 'error');
             }

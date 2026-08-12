@@ -7,6 +7,17 @@ const fs = require('fs');
 const os = require('os');
 
 const EXTENSION_PATH = path.join(__dirname, '..', '..', 'extension');
+const ISOLATED_WINDOW_ARGS = [];
+const isolatedX = Number.parseInt(process.env.RUMBLEX_TEST_WINDOW_X || '', 10);
+const isolatedY = Number.parseInt(process.env.RUMBLEX_TEST_WINDOW_Y || '', 10);
+const isolatedWidth = Number.parseInt(process.env.RUMBLEX_TEST_WINDOW_WIDTH || '', 10);
+const isolatedHeight = Number.parseInt(process.env.RUMBLEX_TEST_WINDOW_HEIGHT || '', 10);
+if ([isolatedX, isolatedY].every(Number.isFinite)) {
+    ISOLATED_WINDOW_ARGS.push(`--window-position=${isolatedX},${isolatedY}`);
+}
+if ([isolatedWidth, isolatedHeight].every((value) => Number.isFinite(value) && value > 0)) {
+    ISOLATED_WINDOW_ARGS.push(`--window-size=${isolatedWidth},${isolatedHeight}`);
+}
 
 // Each test gets its own temp profile so we don't accidentally share rx_settings.
 exports.test = base.extend({
@@ -19,6 +30,7 @@ exports.test = base.extend({
                 `--load-extension=${EXTENSION_PATH}`,
                 '--no-first-run',
                 '--disable-features=DisableLoadExtensionCommandLineSwitch',
+                ...ISOLATED_WINDOW_ARGS,
             ],
         });
         await use(context);

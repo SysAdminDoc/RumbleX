@@ -3,16 +3,29 @@
 // can't have. Spun up by background.js via chrome.offscreen.createDocument
 // with reasons ["DOM_PARSER", "BLOBS", "WORKERS"].
 //
-// Today this scaffold handles three atomic message actions:
+// Today this scaffold handles four atomic message actions:
 //   - parseHtml: take an HTML string, return structured probe data via DOMParser.
 //   - hashBlob: take a URL, fetch as Blob, return its SHA-256 digest.
 //   - getCapabilities: report the local APIs available to diagnostic exports.
+//   - writeArchiveFile: serialize a direct-media stream into a persisted folder.
 //
-// Both are read-only operations. The full deep-scan probe path will move
-// here in v3.3 once Mediabunny replaces mux.js so we can drop the Web Worker
-// + offscreen split for one home. For now the live download flows stay in
-// content.js + worker.js.
+// Probe actions are read-only; archive writes occur only after a user chooses
+// a local folder. The full deep-scan probe path will move here once
+// Mediabunny replaces mux.js so we can drop the Web Worker + offscreen split
+// for one home. For now the live download flows stay in content.js + worker.js.
 'use strict';
+
+let rxArchiveWriteQueue = Promise.resolve();
+
+function rxIsAllowedArchiveMediaUrl(raw) {
+    try {
+        const url = new URL(raw);
+        return url.protocol === 'https:' && ['rumble.com', '1a-1791.com', 'rumble.cloud']
+            .some((host) => url.hostname === host || url.hostname.endsWith('.' + host));
+    } catch {
+        return false;
+    }
+}
 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     if (!msg || msg.target !== 'offscreen') return;
@@ -27,6 +40,23 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
             webCodecs: typeof VideoDecoder === 'function',
         });
         return false;
+    }
+
+    if (msg.action === 'writeArchiveFile') {
+        if (!rxIsAllowedArchiveMediaUrl(msg.url)) {
+            sendResponse({ ok: false, reason: 'url-not-allowlisted' });
+            return false;
+        }
+        if (!globalThis.RxArchiveFsAccess) {
+            sendResponse({ ok: false, reason: 'folder-helper-unavailable' });
+            return false;
+        }
+        const write = rxArchiveWriteQueue.then(() => globalThis.RxArchiveFsAccess.writeUrl(msg.url, msg.filename));
+        rxArchiveWriteQueue = write.catch(() => {});
+        write
+            .then((result) => sendResponse(result))
+            .catch((error) => sendResponse({ ok: false, reason: 'folder-write-failed', error: String(error?.message || error).slice(0, 240) }));
+        return true;
     }
 
     if (msg.action === 'parseHtml') {

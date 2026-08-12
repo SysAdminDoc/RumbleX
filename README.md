@@ -62,6 +62,7 @@
 - **Video Clips** — Mark In/Out on the player and export a clip as MP4 (segment slicing + transmux)
 - **Live DVR** — Save the last 30 s / 1 m / 5 m / 10 m of a live stream as MP4
 - **Batch Download** — Multi-select thumbnails across feeds to bulk-download direct MP4s
+- **Channel Archive Queue** — Queue a channel for persistent background downloads, preflight selected quality and known size, pause/resume or retry failures, round-trip the queue as local JSON, and optionally stream into a persisted Chrome/Edge folder with browser Downloads as the fallback.
 - **Screenshot** — Capture current video frame as PNG
 - **Share@Time** — Copy video URL at current playback timestamp
 - **Subtitle Sidecar** — Load local SRT/VTT and overlay captions on the player

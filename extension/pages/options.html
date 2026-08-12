@@ -272,6 +272,20 @@
             font: 600 12px/1.4 inherit;
         }
         .rant-stats-totals:empty { display: none; }
+        .archive-preflight {
+            display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px 16px;
+            align-items: center; margin: 10px 0; padding: 12px;
+            border: 1px solid var(--border); border-radius: 8px; background: rgba(8, 12, 18, 0.54);
+        }
+        .archive-preflight-copy { min-width: 0; }
+        .archive-preflight-label { display: block; margin-bottom: 3px; color: var(--text); font-size: 12px; font-weight: 750; }
+        .archive-preflight-status { display: block; color: var(--text-muted); font-size: 12px; line-height: 1.45; overflow-wrap: anywhere; }
+        .archive-fields { align-items: end; }
+        .archive-field { display: grid; gap: 4px; min-width: 0; color: var(--text-muted); font-size: 11px; font-weight: 700; }
+        .archive-field > input, .archive-field > select { width: 100%; max-width: none !important; }
+        .archive-field-url { flex: 1 1 320px; }
+        .archive-field-compact { flex: 0 1 170px; }
+        .archive-field-full { flex: 1 1 100%; }
         .snapshot-list .snapshot-link {
             font-size: 12px;
             color: var(--accent, #89b4fa);
@@ -634,6 +648,7 @@
             .data-section-hint { margin-left: 0; text-align: left; }
             .button-row { width: 100%; }
             .button-row button, .actions-end button { flex: 1; }
+            .archive-preflight { grid-template-columns: 1fr; }
             .settings-modal { border-radius: 12px; }
             .settings-modal-header { flex-wrap: wrap; }
             .settings-item-title { white-space: normal; }
@@ -799,21 +814,39 @@
                         <span class="data-section-hint" id="archive-queue-summary">Loading…</span>
                     </summary>
                     <p class="data-section-copy">Paste a Rumble channel URL (e.g. <code>https://rumble.com/c/example</code>) and we'll queue every video from the page for direct MP4 download. Each job picks the highest-quality direct URL via Rumble's <code>embedJS</code> endpoint — same path the in-page Download button uses. Queue survives extension restarts; processed at <em>downloadConcurrency</em> jobs/minute.</p>
-                    <div class="notifier-add">
-                        <input type="text" id="archive-channel-input" placeholder="Channel URL (https://rumble.com/c/…)" class="notifier-input" autocomplete="off">
-                        <input type="number" id="archive-max-input" min="1" max="500" value="50" class="notifier-input" style="max-width: 90px;" title="Max videos to enqueue from this channel page">
-                        <select id="archive-max-height-input" class="notifier-input" style="max-width: 140px;" title="Cap downloads at this resolution">
-                            <option value="best">Best available</option>
-                            <option value="2160">≤ 2160p (4K)</option>
-                            <option value="1440">≤ 1440p</option>
-                            <option value="1080">≤ 1080p</option>
-                            <option value="720">≤ 720p</option>
-                            <option value="480">≤ 480p</option>
-                            <option value="360">≤ 360p</option>
-                        </select>
+                    <div class="archive-preflight">
+                        <div class="archive-preflight-copy">
+                            <strong class="archive-preflight-label">Destination</strong>
+                            <span class="archive-preflight-status" id="archive-folder-status" role="status" aria-live="polite">Checking folder access…</span>
+                        </div>
+                        <div class="button-row">
+                            <button id="archive-folder-pick-btn" type="button">Choose folder</button>
+                            <button id="archive-folder-grant-btn" type="button" hidden>Grant access</button>
+                            <button id="archive-folder-clear-btn" type="button" hidden>Use Downloads</button>
+                        </div>
                     </div>
-                    <div class="notifier-add">
-                        <input type="text" id="archive-subfolder-input" placeholder="Subfolder (default: RumbleX)" class="notifier-input" autocomplete="off" maxlength="120" title="Subfolder under your Downloads folder. Sanitized SW-side.">
+                    <div class="archive-preflight">
+                        <div class="archive-preflight-copy">
+                            <strong class="archive-preflight-label">Queue estimate</strong>
+                            <span class="archive-preflight-status" id="archive-estimate-status" role="status" aria-live="polite">No size estimate yet.</span>
+                        </div>
+                        <button id="archive-preflight-btn" type="button">Preflight queue</button>
+                    </div>
+                    <div class="notifier-add archive-fields">
+                        <label class="archive-field archive-field-url"><span>Channel URL</span><input type="text" id="archive-channel-input" placeholder="https://rumble.com/c/example" class="notifier-input" autocomplete="off"></label>
+                        <label class="archive-field archive-field-compact"><span>Maximum videos</span><input type="number" id="archive-max-input" min="1" max="500" value="50" class="notifier-input" title="Max videos to enqueue from this channel page"></label>
+                        <label class="archive-field archive-field-compact"><span>Maximum quality</span><select id="archive-max-height-input" class="notifier-input" title="Cap downloads at this resolution">
+                                <option value="best">Best available</option>
+                                <option value="2160">≤ 2160p (4K)</option>
+                                <option value="1440">≤ 1440p</option>
+                                <option value="1080">≤ 1080p</option>
+                                <option value="720">≤ 720p</option>
+                                <option value="480">≤ 480p</option>
+                                <option value="360">≤ 360p</option>
+                            </select></label>
+                    </div>
+                    <div class="notifier-add archive-fields">
+                        <label class="archive-field archive-field-full"><span>Subfolder inside the destination</span><input type="text" id="archive-subfolder-input" placeholder="RumbleX" class="notifier-input" autocomplete="off" maxlength="120" title="Subfolder under your selected folder or Downloads. Sanitized service-worker side."></label>
                     </div>
                     <div class="checkbox-row" style="margin: 6px 0 10px 2px;">
                         <label><input type="checkbox" id="archive-filter-clips-input"> Skip videos titled "Clip:" or under /clips/</label>
@@ -822,6 +855,10 @@
                         <button id="archive-enqueue-btn" type="button">Enqueue channel</button>
                         <button id="archive-pause-btn" type="button">Pause queue</button>
                         <button id="archive-run-btn" type="button">Run now</button>
+                        <button id="archive-retry-failed-btn" type="button">Retry failed</button>
+                        <button id="archive-export-btn" type="button">Export queue</button>
+                        <button id="archive-import-btn" type="button">Import queue</button>
+                        <input id="archive-import-file" type="file" accept="application/json,.json" hidden>
                         <button id="archive-clear-completed-btn" type="button">Clear completed</button>
                         <button id="archive-clear-btn" type="button" class="danger">Clear all</button>
                     </div>
@@ -995,6 +1032,7 @@
         </section>
     </div>
 
+    <script src="../archive-fs.js"></script>
     <script src="options.js"></script>
 </body>
 </html>
