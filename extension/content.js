@@ -1,9 +1,9 @@
-// RumbleX v3.34.0 - Content Script
+// RumbleX v3.35.0 - Content Script
 // Rumble enhancement suite - Chrome/Firefox extension
 'use strict';
 
 // ── Version ──
-const VERSION = chrome.runtime?.getManifest?.()?.version || '3.34.0';
+const VERSION = chrome.runtime?.getManifest?.()?.version || '3.35.0';
 const SCHEMA_VERSION = 2;
 
 // ── Settings Manager (chrome.storage.local) ──
