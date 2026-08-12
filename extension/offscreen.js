@@ -17,12 +17,19 @@
 'use strict';
 
 let rxArchiveWriteQueue = Promise.resolve();
+let rxArchiveWritesPaused = false;
+let rxArchiveWriteGeneration = 0;
+const rxArchiveWriteControllers = new Map();
 let rxMediaInspectorModulePromise = null;
 const RX_MEDIA_INSPECT_MAX_BYTES = 2 * 1024 * 1024;
 
 function rxIsAllowedArchiveMediaUrl(raw) {
     try {
         const url = new URL(raw);
+        const extensionOrigin = new URL(chrome.runtime.getURL('/')).origin;
+        // Same-origin packaged resources are safe and keep the stream/write
+        // contract deterministically testable without weakening remote hosts.
+        if (url.origin === extensionOrigin) return true;
         return url.protocol === 'https:' && ['rumble.com', '1a-1791.com', 'rumble.cloud']
             .some((host) => url.hostname === host || url.hostname.endsWith('.' + host));
     } catch {
@@ -101,12 +108,40 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
             sendResponse({ ok: false, reason: 'folder-helper-unavailable' });
             return false;
         }
-        const write = rxArchiveWriteQueue.then(() => globalThis.RxArchiveFsAccess.writeUrl(msg.url, msg.filename));
+        const operationId = String(msg.operationId || Date.now() + '-' + Math.random().toString(16).slice(2));
+        const writeGeneration = rxArchiveWriteGeneration;
+        const write = rxArchiveWriteQueue.then(async () => {
+            if (rxArchiveWritesPaused || writeGeneration !== rxArchiveWriteGeneration) {
+                return { ok: false, reason: 'offline-paused' };
+            }
+            const controller = new AbortController();
+            rxArchiveWriteControllers.set(operationId, controller);
+            try {
+                return await globalThis.RxArchiveFsAccess.writeUrl(msg.url, msg.filename, { signal: controller.signal });
+            } finally {
+                rxArchiveWriteControllers.delete(operationId);
+            }
+        });
         rxArchiveWriteQueue = write.catch(() => {});
         write
             .then((result) => sendResponse(result))
             .catch((error) => sendResponse({ ok: false, reason: 'folder-write-failed', error: String(error?.message || error).slice(0, 240) }));
         return true;
+    }
+
+    if (msg.action === 'pauseArchiveWrites') {
+        rxArchiveWritesPaused = true;
+        rxArchiveWriteGeneration++;
+        const active = rxArchiveWriteControllers.size;
+        for (const controller of rxArchiveWriteControllers.values()) controller.abort('network-offline');
+        sendResponse({ ok: true, paused: true, active });
+        return false;
+    }
+
+    if (msg.action === 'resumeArchiveWrites') {
+        rxArchiveWritesPaused = false;
+        sendResponse({ ok: true, paused: false });
+        return false;
     }
 
     if (msg.action === 'inspectMedia') {

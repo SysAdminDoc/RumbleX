@@ -189,17 +189,21 @@
         }
     }
 
-    async function writeUrl(url, relativePath) {
+    async function writeUrl(url, relativePath, options = {}) {
         const handle = await getHandle(ARCHIVE_FOLDER_KEY);
         if (!handle) return { ok: false, reason: 'folder-missing' };
         try {
-            const response = await fetch(url, { credentials: 'omit' });
+            const response = await fetch(url, { credentials: 'omit', signal: options.signal });
             if (!response.ok) return { ok: false, reason: 'http-' + response.status };
             if (!response.body) return { ok: false, reason: 'response-body-missing' };
             const expectedBytes = Number(response.headers.get('content-length')) || null;
             const result = await writeSource(handle, relativePath, response.body);
+            if (options.signal?.aborted) return { ok: false, reason: 'offline-paused' };
             return { ...result, expectedBytes };
         } catch (error) {
+            if (options.signal?.aborted || error?.name === 'AbortError') {
+                return { ok: false, reason: 'offline-paused' };
+            }
             return { ok: false, reason: 'folder-fetch-failed', error: String(error?.message || error).slice(0, 240) };
         }
     }

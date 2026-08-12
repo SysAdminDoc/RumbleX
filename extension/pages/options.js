@@ -482,7 +482,7 @@
         clipExportFormat: { group: 'downloads', label: 'Clip Export Format', desc: 'mp4 | webm | manifestOnly.' },
         segmentSkipMode: { group: 'ad-blocking', label: 'Segment Skip Mode', desc: 'localOnly | community (community DB later).' },
         // Downloads & archives
-        downloadManagerEnabled: { group: 'downloads', label: 'Download Manager', desc: 'Owns all download UI and queue state.' },
+        downloadManagerEnabled: { group: 'downloads', label: 'Download Manager', desc: 'Track RumbleX-owned browser downloads, pause them when the device goes offline, and resume recoverable transfers when connectivity returns.' },
         downloadQualityPreference: { group: 'downloads', label: 'Default Quality', desc: 'best | 1080p | 720p | 480p | lowest | askInline.' },
         downloadIncludeMetadata: { group: 'downloads', label: 'Include Metadata Sidecar', desc: 'Write a JSON sidecar next to downloads.' },
         downloadIncludeThumbnail: { group: 'downloads', label: 'Include Thumbnail', desc: 'Save the thumbnail next to downloads.' },
@@ -2414,6 +2414,11 @@
         }
         const resp = await chrome.runtime.sendMessage({ action: 'archiveGetQueue' });
         const queue = (resp && resp.ok && resp.queue) ? resp.queue : { jobs: [], paused: false };
+        const recovery = (resp && resp.ok && resp.recovery) ? resp.recovery : {
+            enabled: true,
+            networkStatus: navigator.onLine === false ? 'offline' : 'online',
+            resumePending: 0,
+        };
         const jobs = queue.jobs || [];
         const counts = { pending: 0, discovering: 0, downloading: 0, completed: 0, failed: 0 };
         for (const j of jobs) counts[j.status] = (counts[j.status] || 0) + 1;
@@ -2437,9 +2442,16 @@
         if (elements.archiveRetryFailedBtn) elements.archiveRetryFailedBtn.disabled = counts.failed === 0;
         if (elements.archiveExportBtn) elements.archiveExportBtn.disabled = jobs.length === 0;
         if (elements.archiveQueueSummary) {
-            elements.archiveQueueSummary.textContent = jobs.length === 0
+            const recoveryNote = !recovery.enabled
+                ? 'Network recovery off. '
+                : recovery.networkStatus === 'offline'
+                    ? `Offline · ${recovery.resumePending || 0} browser download${recovery.resumePending === 1 ? '' : 's'} queued to resume. `
+                    : recovery.resumePending
+                        ? `${recovery.resumePending} browser download${recovery.resumePending === 1 ? '' : 's'} waiting to resume. `
+                        : '';
+            elements.archiveQueueSummary.textContent = recoveryNote + (jobs.length === 0
                 ? 'Queue empty.'
-                : (queue.paused ? 'Paused. ' : '') + jobs.length + ' job' + (jobs.length === 1 ? '' : 's') + ' · ' + counts.pending + ' pending, ' + counts.downloading + ' downloading, ' + counts.completed + ' done, ' + counts.failed + ' failed';
+                : (queue.paused ? 'Paused. ' : '') + jobs.length + ' job' + (jobs.length === 1 ? '' : 's') + ' · ' + counts.pending + ' pending, ' + counts.downloading + ' downloading, ' + counts.completed + ' done, ' + counts.failed + ' failed');
         }
         if (elements.archiveTotals) {
             if (jobs.length === 0) elements.archiveTotals.textContent = '';
@@ -2482,6 +2494,7 @@
             if (Number.isFinite(j.estimatedBytes) && j.estimatedBytes > 0) statusBits.push('~' + formatBytes(j.estimatedBytes));
             if (j.channelName) statusBits.push(j.channelName);
             if (j.retryCount) statusBits.push('retry ' + j.retryCount);
+            if (j.networkResumePending) statusBits.push('waiting for connection');
             if (j.error) statusBits.push('err: ' + j.error);
             else if (j.preflightError) statusBits.push('probe: ' + j.preflightError);
             sub.textContent = statusBits.join(' · ');
@@ -3091,7 +3104,7 @@
     // Live-refresh the archive panel when the SW updates the queue.
     try {
         chrome.storage.onChanged.addListener((changes, area) => {
-            if (area === 'local' && changes && changes.rx_archive_queue) {
+            if (area === 'local' && changes && (changes.rx_archive_queue || changes.rx_download_recovery)) {
                 void refreshArchiveQueue();
             }
         });

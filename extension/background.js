@@ -281,6 +281,8 @@ chrome.runtime.onInstalled.addListener(() => {
     rxSyncChannelNotifier().catch((e) => console.warn('[RumbleX] notifier sync failed:', e));
     // v3.18.0 — ensure the archive-queue drain alarm exists across SW restarts.
     rxSyncArchiveAlarm().catch((e) => console.warn('[RumbleX] archive alarm sync failed:', e));
+    // v3.35.0 — reconcile any persisted offline resume jobs after updates.
+    rxHandleCurrentNetworkState({ runArchive: false }).catch((e) => console.warn('[RumbleX] download recovery sync failed:', e));
 });
 
 // chrome.runtime.onStartup re-registers the alarm if the browser restarted
@@ -290,6 +292,7 @@ if (chrome.runtime?.onStartup) {
     chrome.runtime.onStartup.addListener(() => {
         rxSyncArchiveAlarm().catch(() => {});
         rxSyncChannelNotifier().catch(() => {});
+        rxHandleCurrentNetworkState({ runArchive: false }).catch(() => {});
     });
 }
 
@@ -407,6 +410,14 @@ if (chrome.storage?.onChanged) {
         rxSyncContextMenus().catch(() => {});
         rxSyncSidePanel().catch(() => {});
         rxSyncChannelNotifier().catch(() => {});
+        const oldEnabled = changes.rx_settings.oldValue?.downloadManagerEnabled !== false;
+        const newEnabled = changes.rx_settings.newValue?.downloadManagerEnabled !== false;
+        if (oldEnabled !== newEnabled) {
+            // Turning the manager off must not strand files it paused earlier;
+            // online handling releases only RumbleX-owned resume jobs.
+            if (!newEnabled) rxHandleNetworkOnline({ runArchive: false }).catch(() => {});
+            else rxHandleCurrentNetworkState({ runArchive: false }).catch(() => {});
+        }
     });
 }
 
@@ -589,7 +600,9 @@ if (chrome.alarms?.onAlarm) {
             rxRunNotifierPass().catch((e) => console.warn('[RumbleX] notifier pass failed:', e));
         }
         if (alarm.name === RX_ARCHIVE_ALARM) {
-            rxRunArchiveTick().catch((e) => console.warn('[RumbleX] archive tick failed:', e));
+            rxHandleCurrentNetworkState({ runArchive: false })
+                .then(() => rxRunArchiveTick())
+                .catch((e) => console.warn('[RumbleX] archive/recovery tick failed:', e));
         }
     });
 }
@@ -899,7 +912,8 @@ async function rxRunArchiveTick() {
         try {
             const got = await chrome.storage.local.get(['rx_settings']);
             const s = got.rx_settings || {};
-            const gated = s.archiveQueuePauseOnOffline !== false; // default true
+            const gated = s.downloadManagerEnabled !== false
+                && s.archiveQueuePauseOnOffline !== false; // both default true
             if (gated) return;
         } catch {}
     }
@@ -960,17 +974,484 @@ function rxResetArchiveJobForRetry(job) {
     job.lastRetryAt = Date.now();
 }
 
+// v3.35.0 — Network-aware download recovery. Only downloads started by
+// RumbleX are tracked; raw media URLs are deliberately not persisted. When
+// the worker receives an offline event, active managed browser downloads are
+// paused and represented as small resume jobs keyed by chrome download ID.
+// An online event (or the archive alarm fallback) resumes those IDs and
+// releases archive jobs that were still discovering/streaming to a selected
+// folder. `downloadManagerEnabled` is the master gate.
+const RX_DOWNLOAD_RECOVERY_KEY = 'rx_download_recovery';
+const RX_DOWNLOAD_RECOVERY_MAX = 200;
+let rxDownloadRecoveryMutationQueue = Promise.resolve();
+let rxNetworkTransitionQueue = Promise.resolve();
+let rxArchiveNetworkGeneration = 0;
+
+const rxDownloadsApi = {
+    download(options) {
+        return new Promise((resolve, reject) => {
+            chrome.downloads.download(options, (downloadId) => {
+                const error = chrome.runtime.lastError;
+                if (error) reject(new Error(error.message));
+                else if (!Number.isInteger(downloadId)) reject(new Error('download-id-missing'));
+                else resolve(downloadId);
+            });
+        });
+    },
+    search(query) {
+        return new Promise((resolve, reject) => {
+            chrome.downloads.search(query, (items) => {
+                const error = chrome.runtime.lastError;
+                if (error) reject(new Error(error.message));
+                else resolve(Array.isArray(items) ? items : []);
+            });
+        });
+    },
+    pause(downloadId) {
+        return new Promise((resolve, reject) => {
+            chrome.downloads.pause(downloadId, () => {
+                const error = chrome.runtime.lastError;
+                if (error) reject(new Error(error.message));
+                else resolve();
+            });
+        });
+    },
+    resume(downloadId) {
+        return new Promise((resolve, reject) => {
+            chrome.downloads.resume(downloadId, () => {
+                const error = chrome.runtime.lastError;
+                if (error) reject(new Error(error.message));
+                else resolve();
+            });
+        });
+    },
+    cancel(downloadId) {
+        return new Promise((resolve, reject) => {
+            chrome.downloads.cancel(downloadId, () => {
+                const error = chrome.runtime.lastError;
+                if (error) reject(new Error(error.message));
+                else resolve();
+            });
+        });
+    },
+};
+
+function rxNormalizeDownloadRecovery(root) {
+    const jobs = Array.isArray(root?.jobs) ? root.jobs : [];
+    return {
+        version: 1,
+        networkStatus: root?.networkStatus === 'offline' ? 'offline' : 'online',
+        lastTransitionAt: Number(root?.lastTransitionAt) || null,
+        jobs: jobs
+            .filter((job) => Number.isInteger(job?.downloadId) && job.downloadId >= 0)
+            .slice(-RX_DOWNLOAD_RECOVERY_MAX)
+            .map((job) => ({
+                downloadId: job.downloadId,
+                operation: String(job.operation || 'download').replace(/[^a-z0-9_.-]/gi, '').slice(0, 60) || 'download',
+                archiveJobId: String(job.archiveJobId || '').slice(0, 80) || null,
+                trackedAt: Number(job.trackedAt) || Date.now(),
+                updatedAt: Number(job.updatedAt) || Date.now(),
+                resumePending: job.resumePending === true,
+                status: ['active', 'paused-offline', 'interrupted-offline'].includes(job.status) ? job.status : 'active',
+                bytesReceived: job.bytesReceived == null
+                    ? null
+                    : (Number.isFinite(Number(job.bytesReceived)) ? Math.max(0, Number(job.bytesReceived)) : null),
+                resumeAttempts: Math.max(0, Math.min(100, Number(job.resumeAttempts) || 0)),
+                lastError: String(job.lastError || '').slice(0, 200) || null,
+            })),
+    };
+}
+
+async function rxLoadDownloadRecovery() {
+    try {
+        const stored = await chrome.storage.local.get(RX_DOWNLOAD_RECOVERY_KEY);
+        return rxNormalizeDownloadRecovery(stored[RX_DOWNLOAD_RECOVERY_KEY]);
+    } catch {
+        return rxNormalizeDownloadRecovery(null);
+    }
+}
+
+async function rxSaveDownloadRecovery(root) {
+    await chrome.storage.local.set({ [RX_DOWNLOAD_RECOVERY_KEY]: rxNormalizeDownloadRecovery(root) });
+}
+
+function rxMutateDownloadRecovery(mutator) {
+    const mutation = rxDownloadRecoveryMutationQueue.then(async () => {
+        const root = await rxLoadDownloadRecovery();
+        const result = await mutator(root);
+        await rxSaveDownloadRecovery(root);
+        return result;
+    });
+    rxDownloadRecoveryMutationQueue = mutation.catch(() => {});
+    return mutation;
+}
+
+function rxQueueNetworkTransition(task) {
+    const transition = rxNetworkTransitionQueue.then(task);
+    rxNetworkTransitionQueue = transition.catch(() => {});
+    return transition;
+}
+
+async function rxIsDownloadManagerEnabled() {
+    const settings = await rxGetSettings();
+    return settings.downloadManagerEnabled !== false;
+}
+
+async function rxIsArchiveOfflinePauseEnabled() {
+    const settings = await rxGetSettings();
+    return settings.downloadManagerEnabled !== false
+        && settings.archiveQueuePauseOnOffline !== false;
+}
+
+async function rxShouldPauseArchiveQueueOffline() {
+    return typeof navigator !== 'undefined'
+        && navigator.onLine === false
+        && await rxIsArchiveOfflinePauseEnabled();
+}
+
+async function rxTrackManagedDownload(downloadId, metadata = {}) {
+    if (!Number.isInteger(downloadId) || !(await rxIsDownloadManagerEnabled())) return false;
+    return rxMutateDownloadRecovery((root) => {
+        root.jobs = root.jobs.filter((job) => job.downloadId !== downloadId);
+        root.jobs.push({
+            downloadId,
+            operation: metadata.operation || 'download',
+            archiveJobId: metadata.archiveJobId || null,
+            trackedAt: Date.now(),
+            updatedAt: Date.now(),
+            resumePending: false,
+            status: 'active',
+            bytesReceived: null,
+            resumeAttempts: 0,
+            lastError: null,
+        });
+        root.jobs = root.jobs.slice(-RX_DOWNLOAD_RECOVERY_MAX);
+        return true;
+    });
+}
+
+async function rxUpdateManagedDownload(downloadId, patch) {
+    return rxMutateDownloadRecovery((root) => {
+        const job = root.jobs.find((entry) => entry.downloadId === downloadId);
+        if (!job) return null;
+        Object.assign(job, patch, { updatedAt: Date.now() });
+        return { ...job };
+    });
+}
+
+async function rxUntrackManagedDownload(downloadId) {
+    return rxMutateDownloadRecovery((root) => {
+        const before = root.jobs.length;
+        root.jobs = root.jobs.filter((job) => job.downloadId !== downloadId);
+        return before !== root.jobs.length;
+    });
+}
+
+async function rxGetManagedDownload(downloadId) {
+    const root = await rxLoadDownloadRecovery();
+    return root.jobs.find((job) => job.downloadId === downloadId) || null;
+}
+
+async function rxStartManagedDownload(options, metadata = {}) {
+    const downloadId = await rxDownloadsApi.download(options);
+    await rxTrackManagedDownload(downloadId, metadata);
+    return downloadId;
+}
+
+async function rxGetDownloadItem(downloadId) {
+    return (await rxDownloadsApi.search({ id: downloadId }))[0] || null;
+}
+
+async function rxCallOpenOffscreen(action) {
+    if (!chrome.offscreen?.hasDocument) return { ok: false, reason: 'no-offscreen' };
+    try {
+        if (!(await chrome.offscreen.hasDocument())) return { ok: false, reason: 'no-offscreen-document' };
+    } catch {
+        return { ok: false, reason: 'offscreen-state-unavailable' };
+    }
+    return new Promise((resolve) => {
+        chrome.runtime.sendMessage({ target: 'offscreen', action }, (response) => {
+            void chrome.runtime.lastError;
+            resolve(response || { ok: false, reason: 'no-response' });
+        });
+    });
+}
+
+async function rxMarkArchiveJobsOffline(pausedDownloadIds) {
+    const paused = new Set(pausedDownloadIds);
+    return rxMutateArchiveQueue((root) => {
+        let queued = 0;
+        for (const job of root.jobs) {
+            const browserPaused = Number.isInteger(job.downloadId) && paused.has(job.downloadId);
+            const restartableStage = job.status === 'discovering'
+                || (job.status === 'downloading' && !Number.isInteger(job.downloadId));
+            if (!browserPaused && !restartableStage) continue;
+            if (restartableStage) {
+                job.status = 'pending';
+                job.startedAt = null;
+                job.downloadId = null;
+            }
+            job.networkState = 'waiting-online';
+            job.networkResumePending = true;
+            job.networkPausedAt = Date.now();
+            job.error = null;
+            job.completedAt = null;
+            queued++;
+        }
+        return queued;
+    });
+}
+
+async function rxReleaseArchiveNetworkWait(resumedDownloadIds) {
+    const resumed = new Set(resumedDownloadIds);
+    return rxMutateArchiveQueue((root) => {
+        let released = 0;
+        for (const job of root.jobs) {
+            if (!job.networkResumePending) continue;
+            if (Number.isInteger(job.downloadId) && !resumed.has(job.downloadId)) continue;
+            job.networkState = null;
+            job.networkResumePending = false;
+            job.networkResumedAt = Date.now();
+            released++;
+        }
+        return released;
+    });
+}
+
+async function rxHandleNetworkOfflineNow() {
+    if (!(await rxIsDownloadManagerEnabled())) return { enabled: false, paused: 0, queued: 0 };
+    // Invalidates archive discovery/write work that began before this
+    // transition. A rapid offline -> online flip must not let the stale pass
+    // race the newly released queue and dispatch the same job twice.
+    rxArchiveNetworkGeneration++;
+    await rxMutateDownloadRecovery((root) => {
+        if (root.networkStatus !== 'offline') {
+            root.networkStatus = 'offline';
+            root.lastTransitionAt = Date.now();
+        }
+    });
+
+    const snapshot = await rxLoadDownloadRecovery();
+    const pausedIds = [];
+    let queued = 0;
+    for (const job of snapshot.jobs) {
+        const item = await rxGetDownloadItem(job.downloadId);
+        if (!item || item.state === 'complete') {
+            await rxUntrackManagedDownload(job.downloadId);
+            continue;
+        }
+        if (item.state === 'interrupted' && item.canResume) {
+            await rxUpdateManagedDownload(job.downloadId, {
+                resumePending: true,
+                status: 'interrupted-offline',
+                bytesReceived: item.bytesReceived,
+                lastError: item.error || 'network-interrupted',
+            });
+            pausedIds.push(job.downloadId);
+            queued++;
+            continue;
+        }
+        if (item.state === 'interrupted' && !item.canResume) {
+            await rxUntrackManagedDownload(job.downloadId);
+            if (job.archiveJobId) {
+                await rxUpdateArchiveJob(job.archiveJobId, {
+                    status: 'pending',
+                    startedAt: null,
+                    downloadId: null,
+                    error: null,
+                    completedAt: null,
+                    networkState: 'waiting-online',
+                    networkResumePending: true,
+                    networkPausedAt: Date.now(),
+                });
+                queued++;
+            }
+            continue;
+        }
+        if (item.state !== 'in_progress') continue;
+        if (item.paused && !job.resumePending) continue; // user-paused; never auto-resume
+        if (!item.paused) {
+            // Persist intent before asking Chrome to pause so a service-worker
+            // suspension cannot strand an unrecorded paused download.
+            await rxUpdateManagedDownload(job.downloadId, {
+                resumePending: true,
+                status: 'paused-offline',
+                bytesReceived: item.bytesReceived,
+                lastError: null,
+            });
+            try {
+                await rxDownloadsApi.pause(job.downloadId);
+            } catch (error) {
+                const refreshed = await rxGetDownloadItem(job.downloadId);
+                if (!refreshed || refreshed.state === 'complete') {
+                    await rxUntrackManagedDownload(job.downloadId);
+                    continue;
+                }
+                if (!(refreshed.paused || (refreshed.state === 'interrupted' && refreshed.canResume))) {
+                    await rxUpdateManagedDownload(job.downloadId, {
+                        resumePending: false,
+                        status: 'active',
+                        lastError: String(error?.message || error).slice(0, 200),
+                    });
+                    continue;
+                }
+            }
+        }
+        pausedIds.push(job.downloadId);
+        queued++;
+    }
+
+    let archiveQueued = 0;
+    if (await rxIsArchiveOfflinePauseEnabled()) {
+        await rxCallOpenOffscreen('pauseArchiveWrites');
+        archiveQueued = await rxMarkArchiveJobsOffline(pausedIds);
+    }
+    return { enabled: true, paused: pausedIds.length, queued, archiveQueued };
+}
+
+async function rxHandleNetworkOnlineNow({ runArchive = true } = {}) {
+    const snapshot = await rxLoadDownloadRecovery();
+    const resumedIds = [];
+    for (const job of snapshot.jobs.filter((entry) => entry.resumePending)) {
+        const item = await rxGetDownloadItem(job.downloadId);
+        if (!item || item.state === 'complete') {
+            await rxUntrackManagedDownload(job.downloadId);
+            continue;
+        }
+        if (item.state === 'interrupted' && !item.canResume) {
+            await rxUntrackManagedDownload(job.downloadId);
+            if (job.archiveJobId) {
+                await rxUpdateArchiveJob(job.archiveJobId, {
+                    status: 'pending',
+                    startedAt: null,
+                    downloadId: null,
+                    error: null,
+                    completedAt: null,
+                    networkState: 'waiting-online',
+                    networkResumePending: true,
+                });
+            } else {
+                try {
+                    await rxRecordDownloadDiagnostic({
+                        source: 'background',
+                        operation: job.operation || 'direct-download',
+                        stage: 'browser-download',
+                        error: {
+                            message: 'Browser download can no longer resume',
+                            code: item.error || 'download-not-resumable',
+                        },
+                        browserDownloadId: job.downloadId,
+                    });
+                } catch {}
+            }
+            continue;
+        }
+        if (item.state === 'in_progress' && !item.paused) {
+            await rxUpdateManagedDownload(job.downloadId, {
+                resumePending: false,
+                status: 'active',
+                lastError: null,
+            });
+            resumedIds.push(job.downloadId);
+            continue;
+        }
+        if (!(item.paused || item.canResume)) continue;
+        try {
+            await rxDownloadsApi.resume(job.downloadId);
+            await rxUpdateManagedDownload(job.downloadId, {
+                resumePending: false,
+                status: 'active',
+                resumeAttempts: (job.resumeAttempts || 0) + 1,
+                lastError: null,
+            });
+            resumedIds.push(job.downloadId);
+        } catch (error) {
+            await rxUpdateManagedDownload(job.downloadId, {
+                resumeAttempts: (job.resumeAttempts || 0) + 1,
+                lastError: String(error?.message || error).slice(0, 200),
+            });
+        }
+    }
+
+    await rxMutateDownloadRecovery((root) => {
+        if (root.networkStatus !== 'online') {
+            root.networkStatus = 'online';
+            root.lastTransitionAt = Date.now();
+        }
+    });
+    await rxCallOpenOffscreen('resumeArchiveWrites');
+    const archiveReleased = await rxReleaseArchiveNetworkWait(resumedIds);
+    if (runArchive) rxRunArchiveTick().catch((error) => console.warn('[RumbleX] online archive resume failed:', error));
+    return { resumed: resumedIds.length, archiveReleased };
+}
+
+function rxHandleNetworkOffline() {
+    return rxQueueNetworkTransition(() => rxHandleNetworkOfflineNow());
+}
+
+function rxHandleNetworkOnline(options) {
+    return rxQueueNetworkTransition(() => rxHandleNetworkOnlineNow(options));
+}
+
+function rxHandleCurrentNetworkState(options) {
+    return typeof navigator !== 'undefined' && navigator.onLine === false
+        ? rxHandleNetworkOffline()
+        : rxHandleNetworkOnline(options);
+}
+
+async function rxGetDownloadRecoverySummary() {
+    const [root, enabled] = await Promise.all([rxLoadDownloadRecovery(), rxIsDownloadManagerEnabled()]);
+    return {
+        enabled,
+        networkStatus: root.networkStatus,
+        tracked: root.jobs.length,
+        resumePending: root.jobs.filter((job) => job.resumePending).length,
+        lastTransitionAt: root.lastTransitionAt,
+    };
+}
+
+if (typeof self !== 'undefined' && typeof self.addEventListener === 'function') {
+    self.addEventListener('offline', () => {
+        rxHandleNetworkOffline().catch((error) => console.warn('[RumbleX] offline download pause failed:', error));
+    });
+    self.addEventListener('online', () => {
+        rxHandleNetworkOnline().catch((error) => console.warn('[RumbleX] online download resume failed:', error));
+    });
+}
+
+// Every service-worker activation reconciles persisted jobs. This complements
+// online/offline events on browsers that do not wake a dormant worker for the
+// standard WorkerGlobalScope connectivity events.
+Promise.resolve()
+    .then(() => rxHandleCurrentNetworkState({ runArchive: false }))
+    .catch((error) => console.warn('[RumbleX] initial download recovery failed:', error));
+
 async function rxProcessArchiveJob(id) {
     const root = await rxLoadArchiveQueue();
     const job = root.jobs.find((j) => j.id === id);
     if (!job) return;
+    const networkGeneration = rxArchiveNetworkGeneration;
+    const wasSuperseded = () => networkGeneration !== rxArchiveNetworkGeneration;
     let cap = 0;
     let discovered = null;
     try {
         // Honor channelArchiveMaxHeight from settings — 'best' / '' / numeric.
         cap = await rxGetArchiveMaxHeight();
         discovered = await rxDiscoverVideoQuality(job.videoId, cap);
+        if (wasSuperseded()) return;
         const title = job.videoTitle || discovered.title || job.videoId;
+        if (await rxShouldPauseArchiveQueueOffline()) {
+            await rxUpdateArchiveJob(id, {
+                status: 'pending',
+                startedAt: null,
+                error: null,
+                completedAt: null,
+                networkState: 'waiting-online',
+                networkResumePending: true,
+                networkPausedAt: Date.now(),
+            });
+            return;
+        }
         // Subfolder sourced from settings (default 'RumbleX'); sanitized so a
         // malformed user value can't escape the Downloads root.
         let subfolder = 'RumbleX';
@@ -998,6 +1479,7 @@ async function rxProcessArchiveJob(id) {
         // failure fall back to the browser-managed Downloads path below.
         let folderFallbackReason = null;
         const folderState = await rxGetArchiveFolderState();
+        if (wasSuperseded()) return;
         if (folderState.selected && folderState.permission === 'granted' && chrome.offscreen) {
             await rxUpdateArchiveJob(id, {
                 status: 'downloading',
@@ -1009,7 +1491,7 @@ async function rxProcessArchiveJob(id) {
                 destinationName: folderState.name,
                 downloadId: null,
             });
-            const folderResult = await callOffscreen('writeArchiveFile', { url: discovered.url, filename });
+            const folderResult = await callOffscreen('writeArchiveFile', { url: discovered.url, filename, operationId: id });
             if (folderResult?.ok) {
                 await rxUpdateArchiveJob(id, {
                     status: 'completed',
@@ -1021,6 +1503,20 @@ async function rxProcessArchiveJob(id) {
                 });
                 return;
             }
+            if (wasSuperseded()) return;
+            if (folderResult?.reason === 'offline-paused' || await rxShouldPauseArchiveQueueOffline()) {
+                await rxUpdateArchiveJob(id, {
+                    status: 'pending',
+                    startedAt: null,
+                    downloadId: null,
+                    error: null,
+                    completedAt: null,
+                    networkState: 'waiting-online',
+                    networkResumePending: true,
+                    networkPausedAt: Date.now(),
+                });
+                return;
+            }
             folderFallbackReason = String(folderResult?.reason || 'folder-write-failed').slice(0, 120);
         } else if (folderState.selected) {
             folderFallbackReason = folderState.permission !== 'granted'
@@ -1028,16 +1524,31 @@ async function rxProcessArchiveJob(id) {
                 : 'offscreen-unavailable';
         }
 
-        const downloadId = await new Promise((resolve, reject) => {
-            chrome.downloads.download(
-                { url: discovered.url, filename, saveAs: false, conflictAction: 'uniquify' },
-                (dlId) => {
-                    const err = chrome.runtime.lastError;
-                    if (err) reject(new Error(err.message));
-                    else resolve(dlId);
-                }
-            );
-        });
+        if (await rxShouldPauseArchiveQueueOffline()) {
+            await rxUpdateArchiveJob(id, {
+                status: 'pending',
+                startedAt: null,
+                error: null,
+                completedAt: null,
+                networkState: 'waiting-online',
+                networkResumePending: true,
+                networkPausedAt: Date.now(),
+            });
+            return;
+        }
+        if (wasSuperseded()) return;
+        const downloadId = await rxStartManagedDownload(
+            { url: discovered.url, filename, saveAs: false, conflictAction: 'uniquify' },
+            { operation: 'archive-download', archiveJobId: id },
+        );
+        if (wasSuperseded()) {
+            // The transfer crossed an offline boundary before the queue could
+            // adopt its ID. Remove only this stale RumbleX-owned dispatch so
+            // the current queue generation remains the single source of truth.
+            await rxUntrackManagedDownload(downloadId);
+            try { await rxDownloadsApi.cancel(downloadId); } catch {}
+            return;
+        }
         await rxUpdateArchiveJob(id, {
             status: 'downloading',
             qualityFound: discovered.quality,
@@ -1048,8 +1559,27 @@ async function rxProcessArchiveJob(id) {
             destination: 'browser-downloads',
             destinationName: subfolder,
             folderFallbackReason,
+            networkState: null,
+            networkResumePending: false,
         });
+        if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+            rxHandleNetworkOffline().catch(() => {});
+        }
     } catch (e) {
+        if (wasSuperseded()) return;
+        if (await rxShouldPauseArchiveQueueOffline()) {
+            await rxUpdateArchiveJob(id, {
+                status: 'pending',
+                startedAt: null,
+                downloadId: null,
+                error: null,
+                completedAt: null,
+                networkState: 'waiting-online',
+                networkResumePending: true,
+                networkPausedAt: Date.now(),
+            });
+            return;
+        }
         await rxUpdateArchiveJob(id, {
             status: 'failed',
             error: String(e?.message || e).slice(0, 200),
@@ -1079,41 +1609,118 @@ async function rxProcessArchiveJob(id) {
     }
 }
 
-if (chrome.downloads?.onChanged) {
-    chrome.downloads.onChanged.addListener(async (delta) => {
-        if (!delta.state) return;
-        const newState = delta.state.current;
-        if (newState !== 'complete' && newState !== 'interrupted') return;
-        const root = await rxLoadArchiveQueue();
-        const job = root.jobs.find((j) => j.downloadId === delta.id);
-        if (!job) return;
-        if (newState === 'complete') {
-            let downloadedBytes = null;
-            try {
-                const matches = await chrome.downloads.search({ id: delta.id });
-                const item = matches?.[0];
-                const size = Number(item?.fileSize || item?.totalBytes || item?.bytesReceived);
-                if (Number.isFinite(size) && size > 0) downloadedBytes = size;
-            } catch {}
-            await rxUpdateArchiveJob(job.id, { status: 'completed', completedAt: Date.now(), downloadedBytes });
-        } else {
-            await rxUpdateArchiveJob(job.id, {
-                status: 'failed',
-                error: 'download-interrupted',
+async function rxHandleManagedDownloadChanged(delta) {
+    if (!delta?.state) return { handled: false };
+    const newState = delta.state.current;
+    if (newState !== 'complete' && newState !== 'interrupted') return { handled: false };
+
+    const [root, managed] = await Promise.all([
+        rxLoadArchiveQueue(),
+        rxGetManagedDownload(delta.id),
+    ]);
+    const archiveJob = root.jobs.find((job) => job.downloadId === delta.id) || null;
+    if (!archiveJob && !managed) return { handled: false };
+
+    const item = await rxGetDownloadItem(delta.id);
+    if (newState === 'complete') {
+        await rxUntrackManagedDownload(delta.id);
+        if (archiveJob) {
+            const size = Number(item?.fileSize || item?.totalBytes || item?.bytesReceived);
+            await rxUpdateArchiveJob(archiveJob.id, {
+                status: 'completed',
                 completedAt: Date.now(),
+                downloadedBytes: Number.isFinite(size) && size > 0 ? size : null,
+                networkState: null,
+                networkResumePending: false,
             });
-            try {
-                await rxRecordDownloadDiagnostic({
-                    source: 'background',
-                    operation: 'archive-download',
-                    operationId: job.id,
-                    stage: 'browser-download',
-                    error: { message: 'Browser download was interrupted', code: 'download-interrupted' },
-                    quality: { label: job.qualityFound || null },
-                    browserDownloadId: delta.id,
-                });
-            } catch {}
         }
+        return { handled: true, completed: true };
+    }
+
+    const reason = String(delta.error?.current || item?.error || 'download-interrupted');
+    const networkIssue = (typeof navigator !== 'undefined' && navigator.onLine === false)
+        || /^NETWORK_/i.test(reason);
+    const recoveryEnabled = await rxIsDownloadManagerEnabled();
+    if (networkIssue && recoveryEnabled && item?.canResume) {
+        if (!managed) {
+            await rxTrackManagedDownload(delta.id, {
+                operation: 'archive-download',
+                archiveJobId: archiveJob?.id || null,
+            });
+        }
+        await rxUpdateManagedDownload(delta.id, {
+            resumePending: true,
+            status: 'interrupted-offline',
+            bytesReceived: item.bytesReceived,
+            lastError: reason,
+        });
+        if (archiveJob) {
+            await rxUpdateArchiveJob(archiveJob.id, {
+                status: 'downloading',
+                error: null,
+                completedAt: null,
+                networkState: 'waiting-online',
+                networkResumePending: true,
+                networkPausedAt: Date.now(),
+            });
+        }
+        return { handled: true, queued: true, resumable: true };
+    }
+
+    // Archive entries can always restart from their stable video ID even when
+    // Chrome says the partial transfer itself cannot resume. Manual downloads
+    // intentionally do not persist their signed raw URLs, so only archive jobs
+    // receive this full-restart fallback.
+    if (networkIssue && recoveryEnabled && archiveJob) {
+        await rxUntrackManagedDownload(delta.id);
+        await rxUpdateArchiveJob(archiveJob.id, {
+            status: 'pending',
+            startedAt: null,
+            downloadId: null,
+            error: null,
+            completedAt: null,
+            networkState: 'waiting-online',
+            networkResumePending: true,
+            networkPausedAt: Date.now(),
+        });
+        return { handled: true, queued: true, resumable: false };
+    }
+
+    await rxUntrackManagedDownload(delta.id);
+    if (archiveJob) {
+        await rxUpdateArchiveJob(archiveJob.id, {
+            status: 'failed',
+            error: reason,
+            completedAt: Date.now(),
+            networkState: null,
+            networkResumePending: false,
+        });
+    }
+    try {
+        await rxRecordDownloadDiagnostic({
+            source: 'background',
+            operation: archiveJob ? 'archive-download' : (managed?.operation || 'direct-download'),
+            operationId: archiveJob?.id || null,
+            stage: 'browser-download',
+            error: { message: 'Browser download was interrupted', code: reason },
+            quality: { label: archiveJob?.qualityFound || null },
+            browserDownloadId: delta.id,
+        });
+    } catch {}
+    return { handled: true, failed: true };
+}
+
+if (chrome.downloads?.onChanged) {
+    chrome.downloads.onChanged.addListener((delta) => {
+        rxHandleManagedDownloadChanged(delta).catch((error) => {
+            console.warn('[RumbleX] managed download change failed:', error);
+        });
+    });
+}
+
+if (chrome.downloads?.onErased) {
+    chrome.downloads.onErased.addListener((downloadId) => {
+        rxUntrackManagedDownload(downloadId).catch(() => {});
     });
 }
 
@@ -1976,27 +2583,41 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                 .catch(() => sendResponse({ error: 'Download URL is not allowed' }));
             return true;
         }
-        chrome.downloads.download(
+        rxStartManagedDownload(
             { url, filename, saveAs: true },
-            (downloadId) => {
-                const err = chrome.runtime.lastError;
-                if (err) {
-                    rxRecordDownloadDiagnostic({
-                        ...baseDiagnostic,
-                        stage: 'browser-download',
-                        error: { name: 'DownloadApiError', message: err.message, code: 'chrome-downloads-error' },
-                    })
-                        .then((entry) => sendResponse({ error: err.message, diagnosticId: entry.id }))
-                        .catch(() => sendResponse({ error: err.message }));
-                } else {
-                    sendResponse({ downloadId });
-                }
+            { operation: baseDiagnostic.operation },
+        ).then(async (downloadId) => {
+            if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+                rxHandleNetworkOffline().catch(() => {});
             }
-        );
+            sendResponse({ downloadId, recoveryManaged: !!(await rxGetManagedDownload(downloadId)) });
+        }).catch((error) => {
+            rxRecordDownloadDiagnostic({
+                ...baseDiagnostic,
+                stage: 'browser-download',
+                error: { name: 'DownloadApiError', message: error?.message || error, code: 'chrome-downloads-error' },
+            })
+                .then((entry) => sendResponse({ error: error?.message || String(error), diagnosticId: entry.id }))
+                .catch(() => sendResponse({ error: error?.message || String(error) }));
+        });
         return true;
     }
 
     // v3.18.0 — Channel Archive Queue message API.
+    if (message.action === 'downloadRecoveryGetState') {
+        rxGetDownloadRecoverySummary()
+            .then((recovery) => sendResponse({ ok: true, recovery }))
+            .catch((error) => sendResponse({ ok: false, reason: String(error?.message || error) }));
+        return true;
+    }
+
+    if (message.action === 'downloadRecoveryRunNow') {
+        rxHandleCurrentNetworkState({ runArchive: true })
+            .then((result) => sendResponse({ ok: true, result }))
+            .catch((error) => sendResponse({ ok: false, reason: String(error?.message || error) }));
+        return true;
+    }
+
     if (message.action === 'archiveEnqueueChannel') {
         (async () => {
             try {
@@ -2092,8 +2713,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     }
 
     if (message.action === 'archiveGetQueue') {
-        Promise.all([rxLoadArchiveQueue(), rxGetArchiveFolderState()])
-            .then(([root, folder]) => sendResponse({ ok: true, queue: root, folder }))
+        Promise.all([rxLoadArchiveQueue(), rxGetArchiveFolderState(), rxGetDownloadRecoverySummary()])
+            .then(([root, folder, recovery]) => sendResponse({ ok: true, queue: root, folder, recovery }))
             .catch((error) => sendResponse({ ok: false, reason: String(error?.message || error) }));
         return true;
     }
@@ -2198,7 +2819,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     }
 
     if (message.action === 'archiveRunNow') {
-        rxRunArchiveTick().then(() => sendResponse({ ok: true })).catch((e) => sendResponse({ ok: false, reason: String(e?.message || e) }));
+        rxHandleCurrentNetworkState({ runArchive: false })
+            .then(() => rxRunArchiveTick())
+            .then(() => sendResponse({ ok: true }))
+            .catch((e) => sendResponse({ ok: false, reason: String(e?.message || e) }));
         return true;
     }
 });
