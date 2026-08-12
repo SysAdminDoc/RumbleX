@@ -3,11 +3,12 @@
 // can't have. Spun up by background.js via chrome.offscreen.createDocument
 // with reasons ["DOM_PARSER", "BLOBS", "WORKERS"].
 //
-// Today this scaffold handles four atomic message actions:
+// Today this scaffold handles five atomic message actions:
 //   - parseHtml: take an HTML string, return structured probe data via DOMParser.
 //   - hashBlob: take a URL, fetch as Blob, return its SHA-256 digest.
 //   - getCapabilities: report the local APIs available to diagnostic exports.
 //   - writeArchiveFile: serialize a direct-media stream into a persisted folder.
+//   - inspectMedia: read bounded local MP4 metadata for muxer verification.
 //
 // Probe actions are read-only; archive writes occur only after a user chooses
 // a local folder. The full deep-scan probe path will move here once
@@ -16,6 +17,8 @@
 'use strict';
 
 let rxArchiveWriteQueue = Promise.resolve();
+let rxMediaInspectorModulePromise = null;
+const RX_MEDIA_INSPECT_MAX_BYTES = 2 * 1024 * 1024;
 
 function rxIsAllowedArchiveMediaUrl(raw) {
     try {
@@ -24,6 +27,53 @@ function rxIsAllowedArchiveMediaUrl(raw) {
             .some((host) => url.hostname === host || url.hostname.endsWith('.' + host));
     } catch {
         return false;
+    }
+}
+
+function rxGetMediaInspectorModule() {
+    if (!rxMediaInspectorModulePromise) {
+        rxMediaInspectorModulePromise = import(chrome.runtime.getURL('lib/mediabunny.min.mjs'));
+    }
+    return rxMediaInspectorModulePromise;
+}
+
+async function rxInspectMedia(rawBytes) {
+    if (!Array.isArray(rawBytes) || rawBytes.length === 0) throw new Error('media-bytes-missing');
+    if (rawBytes.length > RX_MEDIA_INSPECT_MAX_BYTES) throw new Error('media-inspection-limit');
+    const bytes = Uint8Array.from(rawBytes, (value) => {
+        const numeric = Number(value);
+        if (!Number.isInteger(numeric) || numeric < 0 || numeric > 255) throw new Error('media-byte-invalid');
+        return numeric;
+    });
+    const { Input, ALL_FORMATS, BlobSource } = await rxGetMediaInspectorModule();
+    const input = new Input({
+        source: new BlobSource(new Blob([bytes], { type: 'video/mp4' })),
+        formats: ALL_FORMATS,
+    });
+    try {
+        const [mimeType, duration, videoTrack, audioTrack] = await Promise.all([
+            input.getMimeType(),
+            input.computeDuration(),
+            input.getPrimaryVideoTrack(),
+            input.getPrimaryAudioTrack(),
+        ]);
+        return {
+            ok: true,
+            mimeType,
+            duration,
+            video: videoTrack ? {
+                codec: await videoTrack.getCodec(),
+                width: await videoTrack.getDisplayWidth(),
+                height: await videoTrack.getDisplayHeight(),
+            } : null,
+            audio: audioTrack ? {
+                codec: await audioTrack.getCodec(),
+                sampleRate: await audioTrack.getSampleRate(),
+                channels: await audioTrack.getNumberOfChannels(),
+            } : null,
+        };
+    } finally {
+        if (typeof input.dispose === 'function') await input.dispose();
     }
 }
 
@@ -56,6 +106,17 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         write
             .then((result) => sendResponse(result))
             .catch((error) => sendResponse({ ok: false, reason: 'folder-write-failed', error: String(error?.message || error).slice(0, 240) }));
+        return true;
+    }
+
+    if (msg.action === 'inspectMedia') {
+        if (sender.id !== chrome.runtime.id) {
+            sendResponse({ ok: false, reason: 'extension-sender-required' });
+            return false;
+        }
+        rxInspectMedia(msg.bytes)
+            .then(sendResponse)
+            .catch((error) => sendResponse({ ok: false, reason: String(error?.message || error).slice(0, 240) }));
         return true;
     }
 

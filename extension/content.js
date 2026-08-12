@@ -2405,62 +2405,15 @@ const VideoDownloader = {
         if (!this._supportsMediabunnyWorker()) {
             throw new Error('Mediabunny engine requires module Workers and WebCodecs');
         }
-        const mediabunnyUrl = chrome.runtime.getURL('lib/mediabunny.min.mjs');
-        const workerCode = `
-import { Input, Output, Conversion, ALL_FORMATS, BlobSource, Mp4OutputFormat, BufferTarget } from ${JSON.stringify(mediabunnyUrl)};
-
-self.addEventListener('message', async (e) => {
-    const { id, action, buffers } = e.data || {};
-    if (action !== 'transmux-mediabunny') return;
-    let stage = 'mediabunny-input';
-    try {
-        const sourceBlob = new Blob((buffers || []).map((buf) => {
-            if (buf instanceof Uint8Array) return buf;
-            if (buf instanceof ArrayBuffer) return new Uint8Array(buf);
-            return new Uint8Array(buf?.buffer || buf || []);
-        }), { type: 'video/mp2t' });
-        const input = new Input({
-            source: new BlobSource(sourceBlob),
-            formats: ALL_FORMATS,
-        });
-        const target = new BufferTarget();
-        stage = 'mediabunny-output';
-        const output = new Output({
-            format: new Mp4OutputFormat(),
-            target,
-        });
-        stage = 'mediabunny-conversion-init';
-        const conversion = await Conversion.init({
-            input,
-            output,
-            tracks: 'primary',
-            showWarnings: false,
-        });
-        if (!conversion.isValid) {
-            const reasons = (conversion.discardedTracks || [])
-                .map((entry) => entry?.reason || 'discarded-track')
-                .join(', ');
-            throw new Error('Mediabunny conversion rejected tracks' + (reasons ? ': ' + reasons : ''));
-        }
-        stage = 'mediabunny-conversion';
-        await conversion.execute();
-        stage = 'mediabunny-output-validate';
-        if (!target.buffer || !target.buffer.byteLength) {
-            throw new Error('Mediabunny produced an empty MP4 buffer');
-        }
-        const buffer = target.buffer;
-        const blob = new Blob([buffer], { type: 'video/mp4' });
-        self.postMessage({ id, blob });
-    } catch (err) {
-        self.postMessage({
-            id,
-            error: err?.message || 'Mediabunny conversion failed',
-            diagnostic: { engine: 'mediabunnyWebCodecs', stage, inputBuffers: Array.isArray(buffers) ? buffers.length : 0 },
-        });
-    }
-});
-`;
-        const blob = new Blob([workerCode], { type: 'application/javascript' });
+        const [workerSrc, mediabunnyUrl] = await Promise.all([
+            fetch(chrome.runtime.getURL('mediabunny-worker.js')).then((response) => {
+                if (!response.ok) throw new Error('Mediabunny worker source http-' + response.status);
+                return response.text();
+            }),
+            Promise.resolve(chrome.runtime.getURL('lib/mediabunny.min.mjs')),
+        ]);
+        const bootstrap = 'const RUMBLEX_MEDIABUNNY_URL = ' + JSON.stringify(mediabunnyUrl) + ';\n';
+        const blob = new Blob([bootstrap, workerSrc], { type: 'application/javascript' });
         this._mediabunnyWorker = new Worker(URL.createObjectURL(blob), { type: 'module' });
         return this._mediabunnyWorker;
     },
@@ -2469,8 +2422,25 @@ self.addEventListener('message', async (e) => {
         const worker = await this._getMediabunnyWorker();
         return new Promise((resolve, reject) => {
             const id = Date.now() + Math.random();
+            const inputBytes = tsBuffers.reduce((total, buffer) => total + (buffer?.byteLength || 0), 0);
+            const timeoutMs = Math.min(
+                10 * 60 * 1000,
+                Math.max(20 * 1000, 15 * 1000 + Math.ceil(inputBytes / 1024) * 5),
+            );
+            let workerDiagnostic = { engine: 'mediabunnyWebCodecs', stage: 'worker-dispatch', inputBytes };
+            const timeout = setTimeout(() => {
+                cleanup();
+                if (this._mediabunnyWorker === worker) {
+                    try { worker.terminate(); } catch {}
+                    this._mediabunnyWorker = null;
+                }
+                const error = new Error('Mediabunny conversion timed out after ' + Math.ceil(timeoutMs / 1000) + 's');
+                error.rxWorkerDiagnostic = { ...workerDiagnostic, timeoutMs };
+                reject(error);
+            }, timeoutMs);
 
             const cleanup = () => {
+                clearTimeout(timeout);
                 worker.removeEventListener('message', handler);
                 worker.removeEventListener('error', errorHandler);
                 worker.removeEventListener('messageerror', errorHandler);
@@ -2478,7 +2448,8 @@ self.addEventListener('message', async (e) => {
             const handler = (e) => {
                 if (e.data.id !== id) return;
                 if (e.data.debug) {
-                    console.log('[RumbleX] Mediabunny debug: ' + e.data.debug);
+                    workerDiagnostic = { ...workerDiagnostic, ...e.data.debug };
+                    console.log('[RumbleX] Mediabunny stage: ' + (e.data.debug.stage || 'unknown'));
                     return;
                 }
                 cleanup();
@@ -2486,7 +2457,10 @@ self.addEventListener('message', async (e) => {
                     const error = new Error(e.data.error);
                     error.rxWorkerDiagnostic = e.data.diagnostic || null;
                     reject(error);
-                } else resolve(e.data.blob);
+                } else {
+                    workerDiagnostic = { ...workerDiagnostic, ...(e.data.diagnostic || {}) };
+                    resolve(e.data.blob);
+                }
             };
             const errorHandler = (e) => {
                 cleanup();
@@ -2494,7 +2468,9 @@ self.addEventListener('message', async (e) => {
                     try { worker.terminate(); } catch {}
                     this._mediabunnyWorker = null;
                 }
-                reject(new Error(e?.message || 'Mediabunny worker failed'));
+                const error = new Error(e?.message || 'Mediabunny worker failed');
+                error.rxWorkerDiagnostic = { ...workerDiagnostic, stage: workerDiagnostic.stage || 'worker-runtime' };
+                reject(error);
             };
 
             worker.addEventListener('message', handler);
@@ -13436,6 +13412,7 @@ const RX_PRIVACY_WEB_RESOURCE_DISCLOSURES = Object.freeze({
     'lib/mediabunny.min.mjs': 'Extension-bundled experimental Mediabunny muxer path; no remote code fetch.',
     'lib/mediabunny.LICENSE': 'Bundled Mediabunny license notice exposed for package compliance.',
     'worker.js': 'Extension-bundled Web Worker used for local video segment processing.',
+    'mediabunny-worker.js': 'Extension-bundled module Worker used for local Mediabunny media conversion.',
     'offscreen.html': 'Chrome MV3 offscreen document shell used only in the extension origin.',
 });
 

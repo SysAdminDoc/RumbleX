@@ -54,6 +54,7 @@
     "lib/mux.min.js",
     "lib/mediabunny.min.mjs",
     "lib/mediabunny.LICENSE",
-    "worker.js"
+    "worker.js",
+    "mediabunny-worker.js"
   ]
 }

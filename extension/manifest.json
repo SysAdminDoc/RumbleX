@@ -72,6 +72,7 @@
         "lib/mediabunny.min.mjs",
         "lib/mediabunny.LICENSE",
         "worker.js",
+        "mediabunny-worker.js",
         "offscreen.html"
       ],
       "matches": [

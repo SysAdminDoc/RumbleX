@@ -98,16 +98,16 @@ pack_extension() {
     local dest="$1"
     if command -v zip >/dev/null 2>&1; then
         zip -r "$dest" \
-            manifest.json archive-fs.js background.js content.js worker.js offscreen.html offscreen.js \
+            manifest.json archive-fs.js background.js content.js worker.js mediabunny-worker.js offscreen.html offscreen.js \
             lib/ icons/ pages/ _locales/ \
             -x "manifest-firefox.json" -x "manifest-chrome-backup.json" -x "build.sh" -x "*.DS_Store"
     elif [ -x "/c/Windows/System32/tar.exe" ]; then
         "/c/Windows/System32/tar.exe" -a -c -f "$dest" \
-            manifest.json archive-fs.js background.js content.js worker.js offscreen.html offscreen.js \
+            manifest.json archive-fs.js background.js content.js worker.js mediabunny-worker.js offscreen.html offscreen.js \
             lib icons pages _locales
     elif command -v bsdtar >/dev/null 2>&1; then
         bsdtar -a -c -f "$dest" \
-            manifest.json archive-fs.js background.js content.js worker.js offscreen.html offscreen.js \
+            manifest.json archive-fs.js background.js content.js worker.js mediabunny-worker.js offscreen.html offscreen.js \
             lib icons pages _locales
     else
         echo "[!] Need zip, Windows bsdtar, or bsdtar to build packages."
