@@ -497,6 +497,10 @@ const Selectors = {
         // Appears only for creators who enabled their tip jar — opt-in toggle
         // hides it without breaking creators who want to keep it visible.
         'wallet.tipButton':   { stable: '[data-js="wallet_tip_button"], [data-js="tip_button"]', fallback: 'button[hx-get*="wallet"], [class*="tip-button"], [class*="TipButton"]' },
+        // v3.35.0 — Premium / Perplexity Pro promotion surface. Keep the
+        // endpoint hook first: it is also the contract used by AdNuker and
+        // the dedicated hide-Premium/Join CSS toggle.
+        'premium.promo':      { stable: '[hx-get*="premium-value-prop"], [data-js="premium_perplexity_promo"]', fallback: '[class*="premium-banner"], [id*="premium__promo"]' },
         // v3.26.0 — Wallet QR / payment modal surface (post-tip-button click).
         // Endpoint per ROADMAP Appendix B: `/-htmx/wallet/payment/qr-modal`.
         // Stable hook: any button or hx-get attribute pointing at that endpoint.

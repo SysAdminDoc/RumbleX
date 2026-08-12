@@ -20,6 +20,7 @@
 - **Hide Reposts** — Hide reposted videos from feeds
 - **Hide Premium** — Hide premium/PPV videos via CSS `:has()`
 - **Shorts Filter** — Hide Shorts cards from all feeds
+- **Platform Cleanup** — Optionally redirect the dedicated Shorts feed, hide Rumble Wallet tip controls, and remove Premium/Perplexity promos
 - **SponsorBlock** — Per-video local segments with auto-skip (sponsor / intro / outro / selfpromo / interaction), progress-bar markers, JSON import + export
 
 ### Video Player

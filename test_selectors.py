@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 """
-RumbleX MHTML selector regression harness — v3.4 deliverable.
+RumbleX selector regression harness — v3.4 deliverable.
 
-Walks every MHTML fixture in Sample Pages/, extracts the HTML payload,
-then asserts every named surface in extension/content.js Selectors._map
-matches at least one element via its stable or fallback selector.
+Always checks the release-safe HTML contracts in tests/fixtures/platform/.
+When the private MHTML captures are available, it also walks Sample Pages/
+and extracts their HTML payload. Every named surface must match at least one
+element via its stable or fallback selector.
 
 The asserter uses regex/substring matching, not a real CSS engine. That's
 intentional — we want a stdlib-only script (matches analyze_pages.py
@@ -35,7 +36,16 @@ import sys
 
 REPO_ROOT = os.path.dirname(os.path.abspath(__file__))
 SAMPLE_DIR = os.path.join(REPO_ROOT, 'Sample Pages')
+PLATFORM_FIXTURE_DIR = os.path.join(REPO_ROOT, 'tests', 'fixtures', 'platform')
 CONTENT_JS = os.path.join(REPO_ROOT, 'extension', 'content.js')
+
+# Small, synthetic contracts are committed so CI and release checkouts always
+# gate the platform surfaces whose real captures require a logged-in account.
+PLATFORM_FIXTURE_EXPECTATIONS = {
+    'shorts-route.html': ['shorts.feed', 'shorts.card', 'shorts.player', 'shorts.navItem'],
+    'wallet-tip.html': ['wallet.tipButton'],
+    'premium-promo.html': ['premium.promo'],
+}
 
 # Map from MHTML filename → list of surfaces we expect to resolve there.
 # Empty list ⇒ test every key in Selectors._map against the fixture (the
@@ -231,21 +241,6 @@ def main():
     if not os.path.isfile(CONTENT_JS):
         print(f'[!] extension/content.js not found at {CONTENT_JS}', file=sys.stderr)
         sys.exit(2)
-    if not os.path.isdir(SAMPLE_DIR):
-        if allow_missing:
-            with open(CONTENT_JS, encoding='utf-8') as f:
-                _content = f.read()
-            _sel = parse_selectors_map(_content)
-            print(f'[*] Parsed {len(_sel)} selector entries from content.js')
-            print(f'[!] Sample Pages/ not found at {SAMPLE_DIR}')
-            print('[*] Fixtures are gitignored (logged-in page captures = privacy);'
-                  ' fixture-replay skipped.')
-            print('[*] Parser-only pass succeeded.')
-            sys.exit(0)
-        print(f'[!] Sample Pages/ not found at {SAMPLE_DIR}', file=sys.stderr)
-        print('[!] Re-run locally where Sample Pages/ exists, or pass'
-              ' --allow-missing-fixtures.', file=sys.stderr)
-        sys.exit(2)
 
     with open(CONTENT_JS, encoding='utf-8') as f:
         content = f.read()
@@ -255,21 +250,15 @@ def main():
     failures = []
     passes = 0
 
-    for fname in sorted(os.listdir(SAMPLE_DIR)):
-        if not fname.endswith('.mhtml'):
-            continue
-        path = os.path.join(SAMPLE_DIR, fname)
-        html = extract_html_from_mhtml(path)
-        expected = FIXTURE_EXPECTATIONS.get(fname, list(selectors.keys()))
+    def check_fixture(fname, html, expected, source):
+        nonlocal passes
         if verbose:
-            print(f'\n[*] {fname} ({len(html):,} chars HTML, checking {len(expected)} surfaces)')
+            print(f'\n[*] {source}/{fname} ({len(html):,} chars HTML, checking {len(expected)} surfaces)')
         for surface in expected:
             entry = selectors.get(surface)
             if not entry:
-                # Surface in expectations but not in map — skip rather than fail
-                # so the harness doesn't break when names drift.
-                if verbose:
-                    print(f'    SKIP   {surface}  (not in Selectors._map)')
+                failures.append((f'{source}/{fname}', surface, '<missing registry entry>', '<missing registry entry>'))
+                print(f'    FAIL   {source}/{fname} / {surface}  (missing from Selectors._map)')
                 continue
             stable_ok = selector_matches(html, entry['stable'])
             fallback_ok = selector_matches(html, entry['fallback'])
@@ -279,10 +268,40 @@ def main():
                     print(f'    OK     {surface}  (stable)')
             elif fallback_ok:
                 passes += 1
-                print(f'    WARN   {fname} / {surface}  (only fallback selector matched)')
+                print(f'    WARN   {source}/{fname} / {surface}  (only fallback selector matched)')
             else:
-                failures.append((fname, surface, entry['stable'], entry['fallback']))
-                print(f'    FAIL   {fname} / {surface}  (neither stable nor fallback matched)')
+                failures.append((f'{source}/{fname}', surface, entry['stable'], entry['fallback']))
+                print(f'    FAIL   {source}/{fname} / {surface}  (neither stable nor fallback matched)')
+
+    # These checked-in fixtures are mandatory. Missing files are a release
+    # failure, not a privacy-capture skip.
+    for fname, expected in PLATFORM_FIXTURE_EXPECTATIONS.items():
+        path = os.path.join(PLATFORM_FIXTURE_DIR, fname)
+        if not os.path.isfile(path):
+            failures.append((f'platform/{fname}', '<fixture>', '<missing fixture file>', '<missing fixture file>'))
+            print(f'    FAIL   platform/{fname}  (required fixture file is missing)')
+            continue
+        with open(path, encoding='utf-8') as f:
+            check_fixture(fname, f.read(), expected, 'platform')
+
+    if not os.path.isdir(SAMPLE_DIR):
+        if allow_missing:
+            print(f'[!] Sample Pages/ not found at {SAMPLE_DIR}')
+            print('[*] Private MHTML replay skipped; checked-in platform contracts still ran.')
+        else:
+            print(f'[!] Sample Pages/ not found at {SAMPLE_DIR}', file=sys.stderr)
+            print('[!] Re-run locally where Sample Pages/ exists, or pass'
+                  ' --allow-missing-fixtures.', file=sys.stderr)
+            sys.exit(2)
+
+    if os.path.isdir(SAMPLE_DIR):
+        for fname in sorted(os.listdir(SAMPLE_DIR)):
+            if not fname.endswith('.mhtml'):
+                continue
+            path = os.path.join(SAMPLE_DIR, fname)
+            html = extract_html_from_mhtml(path)
+            expected = FIXTURE_EXPECTATIONS.get(fname, list(selectors.keys()))
+            check_fixture(fname, html, expected, 'Sample Pages')
 
     print(f'\n[*] {passes} pass, {len(failures)} fail')
     if failures:
