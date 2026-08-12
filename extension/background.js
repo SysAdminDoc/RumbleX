@@ -89,6 +89,160 @@ async function callOffscreen(action, payload) {
     });
 }
 
+// v3.35.0 — Local-only downloader diagnostics. Failures are persisted in a
+// small extension-storage ring so the options page can export them even when
+// the originating Rumble tab is gone. Every value is defensively sanitized at
+// this boundary; cookies, credentials, query values, URL fragments, signed CDN
+// path segments, and other token-like data never enter the stored bundle.
+const RX_DOWNLOAD_DIAGNOSTICS_KEY = 'rx_download_diagnostics';
+const RX_DOWNLOAD_DIAGNOSTICS_MAX = 50;
+const RX_DIAGNOSTIC_SECRET_KEY_RE = /(?:authorization|cookie|credential|password|passphrase|secret|bearer|access[_-]?token|refresh[_-]?token|api[_-]?key|private[_-]?key|signature|signed[_-]?url|github[_-]?pat)/i;
+let rxDownloadDiagnosticWriteQueue = Promise.resolve();
+
+function rxRedactDiagnosticPathSegment(segment) {
+    if (!segment) return '';
+    let decoded = segment;
+    try { decoded = decodeURIComponent(segment); } catch {}
+    if (/^(?:embedJS|u[0-4]|hls-vod|playlist(?:\.m3u8)?|master(?:\.m3u8)?|manifest(?:\.m3u8)?|video|videos|clip|clips)$/i.test(decoded)) {
+        return decoded;
+    }
+    const extension = decoded.match(/\.(?:m3u8|mp4|webm|m4a|ts|tar|json)$/i)?.[0] || '';
+    return '[redacted]' + extension;
+}
+
+function rxRedactDiagnosticUrl(raw) {
+    const value = String(raw || '').slice(0, 4096);
+    try {
+        const parsed = new URL(value);
+        if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return '[redacted-url]';
+        const path = parsed.pathname
+            .split('/')
+            .map(rxRedactDiagnosticPathSegment)
+            .join('/');
+        const queryKeys = [...new Set([...parsed.searchParams.keys()])]
+            .map((key) => RX_DIAGNOSTIC_SECRET_KEY_RE.test(key) ? '[redacted]' : key.replace(/[^a-z0-9_.-]/gi, '').slice(0, 32))
+            .filter(Boolean)
+            .slice(0, 12);
+        const query = queryKeys.length ? '?params=' + encodeURIComponent(queryKeys.join(',')) : '';
+        return parsed.origin + (path || '/') + query;
+    } catch {
+        return '[redacted-url]';
+    }
+}
+
+function rxSanitizeDiagnosticString(raw) {
+    let value = String(raw || '').slice(0, 1200);
+    value = value.replace(/https?:\/\/[^\s<>"')]+/gi, (url) => rxRedactDiagnosticUrl(url));
+    value = value.replace(/\b(?:bearer\s+)[a-z0-9._~+\/-]+=*/gi, 'Bearer [redacted]');
+    value = value.replace(/\b(authorization|cookie|password|passphrase|secret|access[_-]?token|refresh[_-]?token|api[_-]?key|signature)\s*[:=]\s*[^\s,;]+/gi, '$1=[redacted]');
+    value = value.replace(/\beyJ[a-z0-9_-]+\.[a-z0-9_-]+\.[a-z0-9_-]+\b/gi, '[redacted-token]');
+    value = value.replace(/\b(?:github_pat_|gh[pousr]_)[a-z0-9_=-]+\b/gi, '[redacted-token]');
+    value = value.replace(/\b[a-z0-9+\/_=-]{48,}\b/gi, '[redacted-token]');
+    return value;
+}
+
+function rxSanitizeDiagnostic(value, key = '', depth = 0) {
+    if (RX_DIAGNOSTIC_SECRET_KEY_RE.test(key)) return '[redacted]';
+    if (depth > 5) return '[truncated]';
+    if (value == null || typeof value === 'boolean') return value;
+    if (typeof value === 'number') return Number.isFinite(value) ? value : null;
+    if (typeof value === 'string') {
+        if (/url$/i.test(key) || /^(?:url|href|src)$/i.test(key)) return rxRedactDiagnosticUrl(value);
+        return rxSanitizeDiagnosticString(value);
+    }
+    if (Array.isArray(value)) {
+        return value.slice(0, 30).map((item) => rxSanitizeDiagnostic(item, key, depth + 1));
+    }
+    if (typeof value === 'object') {
+        const out = {};
+        for (const [childKey, childValue] of Object.entries(value).slice(0, 40)) {
+            const safeKey = rxSanitizeDiagnosticString(childKey).slice(0, 80);
+            out[safeKey] = rxSanitizeDiagnostic(childValue, childKey, depth + 1);
+        }
+        return out;
+    }
+    return rxSanitizeDiagnosticString(value);
+}
+
+async function rxGetDownloadDiagnosticCapabilities(probeOffscreen = false) {
+    const capabilities = {
+        downloadsApi: typeof chrome.downloads?.download === 'function',
+        offscreenApi: !!chrome.offscreen,
+        offscreenDocument: false,
+        offscreenRuntime: null,
+    };
+    if (chrome.offscreen?.hasDocument) {
+        try { capabilities.offscreenDocument = await chrome.offscreen.hasDocument(); } catch {}
+    }
+    if (probeOffscreen && chrome.offscreen) {
+        const response = await callOffscreen('getCapabilities', {});
+        capabilities.offscreenRuntime = rxSanitizeDiagnostic(response);
+        if (response?.ok) capabilities.offscreenDocument = true;
+    }
+    return capabilities;
+}
+
+async function rxLoadDownloadDiagnostics() {
+    try {
+        const stored = await chrome.storage.local.get(RX_DOWNLOAD_DIAGNOSTICS_KEY);
+        const entries = stored[RX_DOWNLOAD_DIAGNOSTICS_KEY];
+        return Array.isArray(entries) ? entries.slice(-RX_DOWNLOAD_DIAGNOSTICS_MAX) : [];
+    } catch {
+        return [];
+    }
+}
+
+async function rxPersistDownloadDiagnostic(input) {
+    const sanitized = rxSanitizeDiagnostic(input && typeof input === 'object' ? input : {});
+    const capabilities = await rxGetDownloadDiagnosticCapabilities(false);
+    const entry = {
+        ...sanitized,
+        id: 'rxd-' + Date.now() + '-' + Math.random().toString(16).slice(2, 10),
+        at: new Date().toISOString(),
+        extensionVersion: chrome.runtime.getManifest().version,
+        status: 'failed',
+        source: sanitized.source || 'unknown',
+        operation: sanitized.operation || 'download',
+        stage: sanitized.stage || 'unknown',
+        capabilities: {
+            ...(sanitized.capabilities && typeof sanitized.capabilities === 'object' ? sanitized.capabilities : {}),
+            ...capabilities,
+        },
+    };
+    const entries = await rxLoadDownloadDiagnostics();
+    entries.push(entry);
+    if (entries.length > RX_DOWNLOAD_DIAGNOSTICS_MAX) {
+        entries.splice(0, entries.length - RX_DOWNLOAD_DIAGNOSTICS_MAX);
+    }
+    await chrome.storage.local.set({ [RX_DOWNLOAD_DIAGNOSTICS_KEY]: entries });
+    return entry;
+}
+
+function rxRecordDownloadDiagnostic(input) {
+    const write = rxDownloadDiagnosticWriteQueue.then(() => rxPersistDownloadDiagnostic(input));
+    rxDownloadDiagnosticWriteQueue = write.catch(() => {});
+    return write;
+}
+
+function rxClearDownloadDiagnostics() {
+    const clear = rxDownloadDiagnosticWriteQueue.then(() => chrome.storage.local.remove(RX_DOWNLOAD_DIAGNOSTICS_KEY));
+    rxDownloadDiagnosticWriteQueue = clear.catch(() => {});
+    return clear;
+}
+
+async function rxBuildDownloadDiagnosticsBundle() {
+    const attempts = await rxLoadDownloadDiagnostics();
+    return {
+        schemaVersion: 1,
+        generatedAt: new Date().toISOString(),
+        extensionVersion: chrome.runtime.getManifest().version,
+        count: attempts.length,
+        privacy: 'Local-only diagnostic data. URL query values, fragments, credentials, cookies, and token-like path segments are redacted before storage.',
+        capabilities: await rxGetDownloadDiagnosticCapabilities(true),
+        attempts,
+    };
+}
+
 function isAllowedDownloadUrl(url) {
     try {
         const u = new URL(url);
@@ -596,9 +750,10 @@ async function rxProcessArchiveJob(id) {
     const root = await rxLoadArchiveQueue();
     const job = root.jobs.find((j) => j.id === id);
     if (!job) return;
+    let cap = 0;
+    let discovered = null;
     try {
         // Honor channelArchiveMaxHeight from settings — 'best' / '' / numeric.
-        let cap = 0;
         try {
             const got = await chrome.storage.local.get(['rx_settings']);
             const raw = String(got?.rx_settings?.channelArchiveMaxHeight || 'best').toLowerCase();
@@ -607,7 +762,7 @@ async function rxProcessArchiveJob(id) {
                 if (Number.isFinite(n) && n > 0) cap = n;
             }
         } catch {}
-        const discovered = await rxDiscoverVideoQuality(job.videoId, cap);
+        discovered = await rxDiscoverVideoQuality(job.videoId, cap);
         const title = job.videoTitle || discovered.title || job.videoId;
         // Subfolder sourced from settings (default 'RumbleX'); sanitized so a
         // malformed user value can't escape the Downloads root.
@@ -619,6 +774,15 @@ async function rxProcessArchiveJob(id) {
         const filename = subfolder + '/' + rxArchiveSanitizeFilename(title) + '_' + discovered.quality + '.mp4';
         if (!isAllowedDownloadUrl(discovered.url)) {
             await rxUpdateArchiveJob(id, { status: 'failed', error: 'url-not-allowlisted', completedAt: Date.now() });
+            await rxRecordDownloadDiagnostic({
+                source: 'background',
+                operation: 'archive-download',
+                operationId: id,
+                stage: 'url-validation',
+                error: { message: 'Discovered download URL is not allowlisted', code: 'url-not-allowlisted' },
+                quality: { label: discovered.quality, height: discovered.height, requestedMaxHeight: cap || 'best' },
+                urls: [{ role: 'download', url: discovered.url }],
+            });
             return;
         }
         const downloadId = await new Promise((resolve, reject) => {
@@ -644,6 +808,24 @@ async function rxProcessArchiveJob(id) {
             error: String(e?.message || e).slice(0, 200),
             completedAt: Date.now(),
         });
+        try {
+            await rxRecordDownloadDiagnostic({
+                source: 'background',
+                operation: 'archive-download',
+                operationId: id,
+                stage: discovered ? 'download-dispatch' : 'quality-discovery',
+                error: { name: e?.name || 'Error', message: e?.message || e },
+                quality: {
+                    label: discovered?.quality || null,
+                    height: discovered?.height || null,
+                    requestedMaxHeight: cap || 'best',
+                },
+                urls: [
+                    { role: 'embed-api', url: 'https://rumble.com/embedJS/u3/?request=video&ver=2&v=' + encodeURIComponent(String(job.videoId || '')) },
+                    ...(discovered?.url ? [{ role: 'download', url: discovered.url }] : []),
+                ],
+            });
+        } catch {}
     }
 }
 
@@ -663,6 +845,17 @@ if (chrome.downloads?.onChanged) {
                 error: 'download-interrupted',
                 completedAt: Date.now(),
             });
+            try {
+                await rxRecordDownloadDiagnostic({
+                    source: 'background',
+                    operation: 'archive-download',
+                    operationId: job.id,
+                    stage: 'browser-download',
+                    error: { message: 'Browser download was interrupted', code: 'download-interrupted' },
+                    quality: { label: job.qualityFound || null },
+                    browserDownloadId: delta.id,
+                });
+            } catch {}
         }
     });
 }
@@ -818,6 +1011,27 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         chrome.storage.local.set({ rx_settings: message.data }, () => {
             sendResponse({ success: true });
         });
+        return true;
+    }
+
+    if (message.action === 'recordDownloadDiagnostic') {
+        rxRecordDownloadDiagnostic(message.diagnostic)
+            .then((entry) => sendResponse({ ok: true, id: entry.id }))
+            .catch((e) => sendResponse({ ok: false, reason: rxSanitizeDiagnosticString(e?.message || e) }));
+        return true;
+    }
+
+    if (message.action === 'getDownloadDiagnostics') {
+        rxBuildDownloadDiagnosticsBundle()
+            .then((bundle) => sendResponse({ ok: true, bundle }))
+            .catch((e) => sendResponse({ ok: false, reason: rxSanitizeDiagnosticString(e?.message || e) }));
+        return true;
+    }
+
+    if (message.action === 'clearDownloadDiagnostics') {
+        rxClearDownloadDiagnostics()
+            .then(() => sendResponse({ ok: true }))
+            .catch((e) => sendResponse({ ok: false, reason: rxSanitizeDiagnosticString(e?.message || e) }));
         return true;
     }
 
@@ -1486,16 +1700,40 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message.action === 'download') {
         const url = message?.data?.url;
         const filename = message?.data?.filename;
+        const baseDiagnostic = {
+            ...(message?.diagnostic && typeof message.diagnostic === 'object' ? message.diagnostic : {}),
+            source: 'background',
+            operation: message?.diagnostic?.operation || 'direct-download',
+            urls: [
+                ...(Array.isArray(message?.diagnostic?.urls) ? message.diagnostic.urls : []),
+                { role: 'download', url },
+            ],
+        };
         if (!isAllowedDownloadUrl(url)) {
-            sendResponse({ error: 'Download URL is not allowed' });
+            rxRecordDownloadDiagnostic({
+                ...baseDiagnostic,
+                stage: 'url-validation',
+                error: { message: 'Download URL is not allowed', code: 'url-not-allowlisted' },
+            })
+                .then((entry) => sendResponse({ error: 'Download URL is not allowed', diagnosticId: entry.id }))
+                .catch(() => sendResponse({ error: 'Download URL is not allowed' }));
             return true;
         }
         chrome.downloads.download(
             { url, filename, saveAs: true },
             (downloadId) => {
                 const err = chrome.runtime.lastError;
-                if (err) sendResponse({ error: err.message });
-                else sendResponse({ downloadId });
+                if (err) {
+                    rxRecordDownloadDiagnostic({
+                        ...baseDiagnostic,
+                        stage: 'browser-download',
+                        error: { name: 'DownloadApiError', message: err.message, code: 'chrome-downloads-error' },
+                    })
+                        .then((entry) => sendResponse({ error: err.message, diagnosticId: entry.id }))
+                        .catch(() => sendResponse({ error: err.message }));
+                } else {
+                    sendResponse({ downloadId });
+                }
             }
         );
         return true;

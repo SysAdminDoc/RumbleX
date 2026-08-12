@@ -267,6 +267,54 @@
     "message": "Limpar log de erros",
     "description": "UI string used by popup/options i18n pass."
   },
+  "copyDownloadDiagnostics": {
+    "message": "Copiar diagnosticos de download",
+    "description": "Copia o pacote local e sanitizado de falhas de download."
+  },
+  "exportDownloadDiagnostics": {
+    "message": "Exportar diagnosticos de download",
+    "description": "Exporta o pacote local e sanitizado de falhas de download."
+  },
+  "clearDownloadDiagnostics": {
+    "message": "Limpar diagnosticos de download",
+    "description": "Limpa o registro local de falhas de download."
+  },
+  "preparingDownloadDiagnostics": {
+    "message": "Preparando diagnosticos sanitizados…",
+    "description": "Status mostrado enquanto o pacote de diagnostico e preparado."
+  },
+  "downloadDiagnosticsUnavailable": {
+    "message": "Diagnosticos indisponiveis:",
+    "description": "Prefixo mostrado quando a copia ou exportacao falha."
+  },
+  "downloadDiagnosticsCopied": {
+    "message": "Diagnosticos sanitizados copiados.",
+    "description": "Status apos copiar os diagnosticos de download."
+  },
+  "downloadDiagnosticsExported": {
+    "message": "Diagnosticos sanitizados exportados.",
+    "description": "Status apos exportar os diagnosticos de download."
+  },
+  "downloadDiagnosticsEmpty": {
+    "message": "Os diagnosticos de download estao vazios. Uma entrada sanitizada e capturada automaticamente apos uma falha de download ou exportacao de clipe.",
+    "description": "Status mostrado quando nenhuma falha de download foi capturada."
+  },
+  "downloadDiagnosticsCleared": {
+    "message": "Diagnosticos de download limpos.",
+    "description": "Status apos limpar os diagnosticos de download."
+  },
+  "copyDownloadDiagnosticsFailed": {
+    "message": "Nao foi possivel copiar os diagnosticos de download:",
+    "description": "Prefixo mostrado quando a copia dos diagnosticos falha."
+  },
+  "exportDownloadDiagnosticsFailed": {
+    "message": "Nao foi possivel exportar os diagnosticos de download:",
+    "description": "Prefixo mostrado quando a exportacao dos diagnosticos falha."
+  },
+  "clearDownloadDiagnosticsFailed": {
+    "message": "Nao foi possivel limpar os diagnosticos de download:",
+    "description": "Prefixo mostrado quando a limpeza dos diagnosticos falha."
+  },
   "settingsTitle": {
     "message": "Configuracoes",
     "description": "UI string used by popup/options i18n pass."

@@ -2081,6 +2081,8 @@ const VideoDownloader = {
     name: 'Video Download',
     _styleEl: null,
     _worker: null,
+    _mediabunnyWorker: null,
+    _lastMuxerContext: null,
 
     _css: `
         #rx-download-btn:hover { border-color: rgba(166,227,161,0.6) !important; }
@@ -2287,7 +2289,7 @@ const VideoDownloader = {
     async _fetchEmbedData(embedId) {
         const url = `https://rumble.com/embedJS/u3/?request=video&ver=2&v=${embedId}`;
         const resp = await fetch(url);
-        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        if (!resp.ok) throw this._httpError(resp, 'embed-api', url);
         return resp.json();
     },
 
@@ -2410,6 +2412,7 @@ import { Input, Output, Conversion, ALL_FORMATS, BlobSource, Mp4OutputFormat, Bu
 self.addEventListener('message', async (e) => {
     const { id, action, buffers } = e.data || {};
     if (action !== 'transmux-mediabunny') return;
+    let stage = 'mediabunny-input';
     try {
         const sourceBlob = new Blob((buffers || []).map((buf) => {
             if (buf instanceof Uint8Array) return buf;
@@ -2421,10 +2424,12 @@ self.addEventListener('message', async (e) => {
             formats: ALL_FORMATS,
         });
         const target = new BufferTarget();
+        stage = 'mediabunny-output';
         const output = new Output({
             format: new Mp4OutputFormat(),
             target,
         });
+        stage = 'mediabunny-conversion-init';
         const conversion = await Conversion.init({
             input,
             output,
@@ -2437,7 +2442,9 @@ self.addEventListener('message', async (e) => {
                 .join(', ');
             throw new Error('Mediabunny conversion rejected tracks' + (reasons ? ': ' + reasons : ''));
         }
+        stage = 'mediabunny-conversion';
         await conversion.execute();
+        stage = 'mediabunny-output-validate';
         if (!target.buffer || !target.buffer.byteLength) {
             throw new Error('Mediabunny produced an empty MP4 buffer');
         }
@@ -2445,7 +2452,11 @@ self.addEventListener('message', async (e) => {
         const blob = new Blob([buffer], { type: 'video/mp4' });
         self.postMessage({ id, blob });
     } catch (err) {
-        self.postMessage({ id, error: err?.message || 'Mediabunny conversion failed' });
+        self.postMessage({
+            id,
+            error: err?.message || 'Mediabunny conversion failed',
+            diagnostic: { engine: 'mediabunnyWebCodecs', stage, inputBuffers: Array.isArray(buffers) ? buffers.length : 0 },
+        });
     }
 });
 `;
@@ -2471,8 +2482,11 @@ self.addEventListener('message', async (e) => {
                     return;
                 }
                 cleanup();
-                if (e.data.error) reject(new Error(e.data.error));
-                else resolve(e.data.blob);
+                if (e.data.error) {
+                    const error = new Error(e.data.error);
+                    error.rxWorkerDiagnostic = e.data.diagnostic || null;
+                    reject(error);
+                } else resolve(e.data.blob);
             };
             const errorHandler = (e) => {
                 cleanup();
@@ -2497,6 +2511,11 @@ self.addEventListener('message', async (e) => {
         return new Promise((resolve, reject) => {
             const id = Date.now();
 
+            const cleanup = () => {
+                worker.removeEventListener('message', handler);
+                worker.removeEventListener('error', errorHandler);
+                worker.removeEventListener('messageerror', errorHandler);
+            };
             const handler = (e) => {
                 if (e.data.id !== id) return;
                 // Debug message (not final result)
@@ -2504,12 +2523,27 @@ self.addEventListener('message', async (e) => {
                     console.log('[RumbleX] Transmux debug:\n' + e.data.debug);
                     return;
                 }
-                worker.removeEventListener('message', handler);
-                if (e.data.error) reject(new Error(e.data.error));
-                else resolve(e.data.blob);
+                cleanup();
+                if (e.data.error) {
+                    const error = new Error(e.data.error);
+                    error.rxWorkerDiagnostic = e.data.diagnostic || null;
+                    reject(error);
+                } else resolve(e.data.blob);
+            };
+            const errorHandler = (e) => {
+                cleanup();
+                if (this._worker === worker) {
+                    try { worker.terminate(); } catch {}
+                    this._worker = null;
+                }
+                const error = new Error(e?.message || 'mux.js worker failed');
+                error.rxWorkerDiagnostic = { engine: 'muxjs', stage: 'worker-runtime' };
+                reject(error);
             };
 
             worker.addEventListener('message', handler);
+            worker.addEventListener('error', errorHandler);
+            worker.addEventListener('messageerror', errorHandler);
             // Transfer ArrayBuffers to worker (zero-copy)
             const transferable = tsBuffers.map(b => b instanceof ArrayBuffer ? b : b.buffer);
             worker.postMessage({ id, action: 'transmux', buffers: tsBuffers }, transferable);
@@ -2517,14 +2551,35 @@ self.addEventListener('message', async (e) => {
     },
 
     async _transmuxWithWorker(tsBuffers) {
-        if (Settings.get('downloadMuxerEngine') === 'mediabunnyWebCodecs') {
+        const requested = Settings.get('downloadMuxerEngine') || 'muxjs';
+        this._lastMuxerContext = {
+            requested,
+            used: requested === 'mediabunnyWebCodecs' ? 'mediabunnyWebCodecs' : 'muxjs',
+            fallback: false,
+            fallbackReason: null,
+            workerDiagnostic: null,
+        };
+        if (requested === 'mediabunnyWebCodecs') {
             try {
                 return await this._transmuxWithMediabunny(tsBuffers);
             } catch (err) {
                 console.warn('[RumbleX] Mediabunny muxer failed; falling back to mux.js:', err);
+                this._lastMuxerContext = {
+                    requested,
+                    used: 'muxjs',
+                    fallback: true,
+                    fallbackReason: err?.message || 'Mediabunny conversion failed',
+                    workerDiagnostic: err?.rxWorkerDiagnostic || null,
+                };
             }
         }
-        return this._transmuxWithMuxWorker(tsBuffers);
+        try {
+            return await this._transmuxWithMuxWorker(tsBuffers);
+        } catch (err) {
+            this._lastMuxerContext.workerDiagnostic = err?.rxWorkerDiagnostic || null;
+            err.rxMuxerContext = { ...this._lastMuxerContext };
+            throw err;
+        }
     },
 
     _triggerSave(data, filename, mimeType) {
@@ -3033,7 +3088,14 @@ self.addEventListener('message', async (e) => {
 
     async _loadQualities() {
         const embedId = this._getEmbedId();
-        if (!embedId) { this._setBody('<div class="rx-dl-error">Could not find video embed ID</div>'); return; }
+        const operationId = this._newOperationId('quality-discovery');
+        if (!embedId) {
+            const body = this._setBodyText('rx-dl-error', 'Could not find video embed ID');
+            const error = new Error('Could not find video embed ID');
+            error.code = 'missing-embed-id';
+            void this._reportFailure({ operation: 'quality-discovery', operationId, stage: 'page-detection', error }, body);
+            return;
+        }
 
         // Cancel any previous scan before starting a new one.
         this._scanController?.abort();
@@ -3178,8 +3240,15 @@ self.addEventListener('message', async (e) => {
                 console.warn('[RumbleX] deep scan failed:', e);
             });
         } catch (e) {
-            this._setBodyText('rx-dl-error', 'Failed to load video data: ' + (e?.message || e));
+            const body = this._setBodyText('rx-dl-error', 'Failed to load video data: ' + (e?.message || e));
             try { RxErrorLog?.record('VideoDownloader', e, '_loadQualities'); } catch {}
+            void this._reportFailure({
+                operation: 'quality-discovery',
+                operationId,
+                stage: 'embed-api',
+                error: e,
+                urls: [{ role: 'embed-api', url: e?.rxUrl || `https://rumble.com/embedJS/u3/?request=video&ver=2&v=${embedId}` }],
+            }, body);
         }
     },
 
@@ -3221,10 +3290,64 @@ self.addEventListener('message', async (e) => {
         row.appendChild(makeBtn('TS', 'Raw stream (fast)', () => this._startDownload(quality, title, 'ts')));
     },
 
+    _newOperationId(prefix) {
+        try { return `${prefix}-${crypto.randomUUID()}`; } catch {}
+        return `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2, 10)}`;
+    },
+
+    _qualityDiagnostic(quality, format) {
+        return {
+            label: quality?.label || null,
+            height: Number.isFinite(quality?.height) ? quality.height : null,
+            width: Number.isFinite(quality?.width) ? quality.width : null,
+            type: quality?.type || (quality?.directUrl ? 'direct' : 'hls'),
+            format: format || null,
+        };
+    },
+
+    _httpError(response, stage, url) {
+        const error = new Error(`${stage} returned HTTP ${response?.status || 'unknown'}`);
+        error.rxStage = stage;
+        error.rxUrl = url;
+        error.rxStatus = response?.status || null;
+        return error;
+    },
+
+    _diagnosticDetails({ operation, operationId, stage, error, quality, format, urls, extra }) {
+        return {
+            source: 'content',
+            operation,
+            operationId,
+            stage: error?.rxStage || stage || 'unknown',
+            error: {
+                name: error?.name || 'Error',
+                message: error?.message || String(error || 'Unknown download failure'),
+                code: error?.code || (error?.rxStatus ? `http-${error.rxStatus}` : null),
+                worker: error?.rxWorkerDiagnostic || null,
+            },
+            quality: this._qualityDiagnostic(quality, format),
+            muxer: error?.rxMuxerContext || this._lastMuxerContext || {
+                requested: Settings.get('downloadMuxerEngine') || 'muxjs',
+                used: null,
+                fallback: false,
+            },
+            urls: (urls || []).filter((entry) => entry?.url).slice(0, 12),
+            extra: extra || null,
+        };
+    },
+
+    _reportFailure(details, host) {
+        const payload = this._diagnosticDetails(details);
+        return RxDownloadDiagnostics.record(payload)
+            .catch(() => ({ ok: false }))
+            .finally(() => RxDownloadDiagnostics.mountActions(host || this._getBody()));
+    },
+
     async _startDirectDownload(quality, title) {
         // Honour a per-quality extension — RUD results may be .tar archives.
         const ext = quality.type === 'tar' ? 'tar' : (quality.ext || 'mp4');
         const filename = `${title} - ${quality.label}.${ext}`;
+        const operationId = this._newOperationId('direct-download');
 
         // Build progress block with DOM APIs so no response text or error
         // message can ever reach the HTML parser.
@@ -3243,27 +3366,67 @@ self.addEventListener('message', async (e) => {
             chrome.runtime.sendMessage({
                 action: 'download',
                 data: { url: quality.directUrl, filename },
+                diagnostic: this._diagnosticDetails({
+                    operation: 'direct-download',
+                    operationId,
+                    stage: 'browser-download',
+                    quality,
+                    format: ext,
+                    urls: [{ role: 'download', url: quality.directUrl }],
+                }),
             }, (resp) => {
                 if (chrome.runtime.lastError) {
-                    console.error('[RumbleX] Download message error:', chrome.runtime.lastError);
-                    this._setBodyText('rx-dl-error', 'Download failed: ' + chrome.runtime.lastError.message);
+                    const error = new Error(chrome.runtime.lastError.message || 'Background download message failed');
+                    error.code = 'runtime-message-error';
+                    console.error('[RumbleX] Download message error:', error);
+                    const errorBody = this._setBodyText('rx-dl-error', 'Download failed: ' + error.message);
+                    void this._reportFailure({
+                        operation: 'direct-download', operationId, stage: 'background-message', error,
+                        quality, format: ext, urls: [{ role: 'download', url: quality.directUrl }],
+                    }, errorBody);
                     return;
                 }
                 if (resp?.error) {
-                    this._setBodyText('rx-dl-error', 'Download rejected: ' + resp.error);
+                    const errorBody = this._setBodyText('rx-dl-error', 'Download rejected: ' + resp.error);
+                    // The background records allowlist/downloads API failures
+                    // before replying. Only create a content-side fallback when
+                    // that persistence step itself did not return an id.
+                    if (!resp.diagnosticId) {
+                        const error = new Error(resp.error);
+                        error.code = 'download-rejected';
+                        void this._reportFailure({
+                            operation: 'direct-download', operationId, stage: 'browser-download', error,
+                            quality, format: ext, urls: [{ role: 'download', url: quality.directUrl }],
+                        }, errorBody);
+                    } else {
+                        RxDownloadDiagnostics.mountActions(errorBody);
+                    }
                 } else if (resp?.downloadId) {
                     this._setBodyText('rx-dl-done', 'Download started! Check your browser downloads.');
                 } else {
-                    this._setBodyText('rx-dl-error', 'Download failed to start');
+                    const error = new Error('Download failed to start');
+                    error.code = 'missing-download-id';
+                    const errorBody = this._setBodyText('rx-dl-error', error.message);
+                    void this._reportFailure({
+                        operation: 'direct-download', operationId, stage: 'browser-download', error,
+                        quality, format: ext, urls: [{ role: 'download', url: quality.directUrl }],
+                    }, errorBody);
                 }
             });
         } catch (e) {
-            this._setBodyText('rx-dl-error', 'Error: ' + (e?.message || e));
+            const errorBody = this._setBodyText('rx-dl-error', 'Error: ' + (e?.message || e));
             console.error('[RumbleX] Direct download failed:', e);
+            void this._reportFailure({
+                operation: 'direct-download', operationId, stage: 'background-message', error: e,
+                quality, format: ext, urls: [{ role: 'download', url: quality.directUrl }],
+            }, errorBody);
         }
     },
 
     async _startDownload(quality, title, format) {
+        const operationId = this._newOperationId('hls-download');
+        let stage = 'master-playlist';
+        const diagnosticUrls = [];
         const body = this._setBody(`
             <div class="rx-dl-progress-wrap">
                 <div class="rx-dl-status">Fetching stream playlist...</div>
@@ -3279,19 +3442,25 @@ self.addEventListener('message', async (e) => {
 
         try {
             // Fetch master playlist
+            diagnosticUrls.push({ role: 'master-playlist', url: this._hlsUrl });
             const masterResp = await fetch(this._hlsUrl);
+            if (!masterResp.ok) throw this._httpError(masterResp, stage, this._hlsUrl);
             const masterText = await masterResp.text();
             const variants = this._parseMasterPlaylist(masterText, this._hlsUrl);
 
             // Find matching quality variant
+            stage = 'quality-selection';
             let variant = variants.find(v => v.height === quality.height);
             if (!variant) variant = variants.reduce((a, b) =>
                 Math.abs(b.height - quality.height) < Math.abs(a.height - quality.height) ? b : a, variants[0]);
             if (!variant) throw new Error('No matching stream variant found');
 
+            stage = 'segment-playlist';
+            diagnosticUrls.push({ role: 'segment-playlist', url: variant.url });
             setProgress(2, 'Fetching segment list...');
 
             const variantResp = await fetch(variant.url);
+            if (!variantResp.ok) throw this._httpError(variantResp, stage, variant.url);
             const variantText = await variantResp.text();
             const segmentUrls = this._parseSegmentPlaylist(variantText, variant.url);
 
@@ -3303,6 +3472,7 @@ self.addEventListener('message', async (e) => {
 
             if (format === 'mp4') {
                 // MP4: download all segments then transmux in Web Worker
+                stage = 'segment-download';
                 setProgress(5, `Downloading 0/${total} segments...`);
                 const tsBuffers = [];
 
@@ -3310,6 +3480,7 @@ self.addEventListener('message', async (e) => {
                     const batch = segmentUrls.slice(i, i + CONCURRENT);
                     const results = await Promise.all(batch.map(async (url) => {
                         const resp = await fetch(url);
+                        if (!resp.ok) throw this._httpError(resp, stage, url);
                         return resp.arrayBuffer();
                     }));
                     tsBuffers.push(...results);
@@ -3318,15 +3489,18 @@ self.addEventListener('message', async (e) => {
                     setProgress(pct, `Downloading ${completed}/${total} segments...`);
                 }
 
+                stage = 'mux';
                 setProgress(78, 'Converting to MP4 (Web Worker)...');
                 const mp4Blob = await this._transmuxWithWorker(tsBuffers);
                 tsBuffers.length = 0;
 
+                stage = 'save';
                 setProgress(100, 'Starting download...');
                 this._triggerSave(mp4Blob, `${title} - ${quality.label}.mp4`, 'video/mp4');
                 this._setBody('<div class="rx-dl-done">Download complete!</div>');
             } else {
                 // TS: download in chunks, build Blob
+                stage = 'segment-download';
                 setProgress(5, `Downloading 0/${total} segments...`);
                 const tsParts = [];
 
@@ -3334,6 +3508,7 @@ self.addEventListener('message', async (e) => {
                     const batch = segmentUrls.slice(i, i + CONCURRENT);
                     const results = await Promise.all(batch.map(async (url) => {
                         const resp = await fetch(url);
+                        if (!resp.ok) throw this._httpError(resp, stage, url);
                         return resp.arrayBuffer();
                     }));
                     tsParts.push(...results);
@@ -3342,6 +3517,7 @@ self.addEventListener('message', async (e) => {
                     setProgress(pct, `Downloading ${completed}/${total} segments...`);
                 }
 
+                stage = 'save';
                 setProgress(95, 'Preparing download...');
                 const blob = new Blob(tsParts, { type: 'video/mp2t' });
                 tsParts.length = 0;
@@ -3352,9 +3528,19 @@ self.addEventListener('message', async (e) => {
         } catch (e) {
             const errorEl = document.createElement('div');
             errorEl.className = 'rx-dl-error';
-            errorEl.textContent = 'Error: ' + e.message;
+            errorEl.textContent = 'Error: ' + (e?.message || e);
             body.appendChild(errorEl);
             console.error('[RumbleX] Download failed:', e);
+            if (e?.rxUrl) diagnosticUrls.push({ role: e.rxStage || stage, url: e.rxUrl });
+            void this._reportFailure({
+                operation: 'hls-download',
+                operationId,
+                stage,
+                error: e,
+                quality,
+                format,
+                urls: diagnosticUrls,
+            }, body);
         }
     },
 
@@ -3372,6 +3558,10 @@ self.addEventListener('message', async (e) => {
         this._closeDownloadOverlay?.();
         this._styleEl?.remove();
         this._worker?.terminate();
+        this._worker = null;
+        this._mediabunnyWorker?.terminate();
+        this._mediabunnyWorker = null;
+        this._lastMuxerContext = null;
     }
 };
 
@@ -10464,6 +10654,11 @@ const VideoClips = {
             this._setStatus('Set In and Out first'); return;
         }
         this._busy = true;
+        const operationId = VideoDownloader._newOperationId('clip-export');
+        let stage = 'embed-api';
+        let selectedVariant = null;
+        const diagnosticUrls = [];
+        this._panel?.querySelector('.rx-diagnostic-actions')?.remove();
         const exportBtn = this._panel?.querySelector('.rx-clip-export');
         if (exportBtn) exportBtn.disabled = true;
         try {
@@ -10475,14 +10670,20 @@ const VideoClips = {
                 VideoDownloader._hlsUrl = data.u?.hls?.auto?.url || data.ua?.hls?.auto?.url ||
                     `https://rumble.com/hls-vod/${embedId.replace('v','')}/playlist.m3u8`;
             }
+            stage = 'master-playlist';
+            diagnosticUrls.push({ role: 'master-playlist', url: VideoDownloader._hlsUrl });
             const masterResp = await fetch(VideoDownloader._hlsUrl);
+            if (!masterResp.ok) throw VideoDownloader._httpError(masterResp, stage, VideoDownloader._hlsUrl);
             const variants = VideoDownloader._parseMasterPlaylist(await masterResp.text(), VideoDownloader._hlsUrl);
-            const variant = variants.sort((a, b) => b.height - a.height)[0];
-            if (!variant) throw new Error('No variant');
+            selectedVariant = variants.sort((a, b) => b.height - a.height)[0];
+            if (!selectedVariant) throw new Error('No stream variant');
+            stage = 'segment-playlist';
+            diagnosticUrls.push({ role: 'segment-playlist', url: selectedVariant.url });
             this._setStatus('Parsing segments...', 5);
-            const variantResp = await fetch(variant.url);
+            const variantResp = await fetch(selectedVariant.url);
+            if (!variantResp.ok) throw VideoDownloader._httpError(variantResp, stage, selectedVariant.url);
             const vtxt = await variantResp.text();
-            const segUrls = VideoDownloader._parseSegmentPlaylist(vtxt, variant.url);
+            const segUrls = VideoDownloader._parseSegmentPlaylist(vtxt, selectedVariant.url);
             const segDurs = [];
             for (const line of vtxt.split('\n')) {
                 const m = line.match(/^#EXTINF:([\d.]+)/);
@@ -10495,22 +10696,49 @@ const VideoClips = {
                 acc += segDurs[i];
             }
             const picked = segUrls.slice(inIdx, outIdx + 1);
+            if (!picked.length) throw new Error('No media segments overlap the selected clip range');
             const title = VideoDownloader._getTitle();
             const CONCURRENT = 6;
             const buffers = [];
+            stage = 'segment-download';
             for (let i = 0; i < picked.length; i += CONCURRENT) {
                 const batch = picked.slice(i, i + CONCURRENT);
-                const results = await Promise.all(batch.map(u => fetch(u).then(r => r.arrayBuffer())));
+                const results = await Promise.all(batch.map(async (url) => {
+                    const response = await fetch(url);
+                    if (!response.ok) throw VideoDownloader._httpError(response, stage, url);
+                    return response.arrayBuffer();
+                }));
                 buffers.push(...results);
                 this._setStatus(`Downloading ${buffers.length}/${picked.length}...`, 5 + (buffers.length / picked.length) * 70);
             }
+            stage = 'mux';
             this._setStatus('Converting to MP4...', 80);
             const blob = await VideoDownloader._transmuxWithWorker(buffers);
+            stage = 'save';
             this._setStatus('Saving clip...', 100);
             VideoDownloader._triggerSave(blob, `${title} - clip ${this._fmt(this._inT)}-${this._fmt(this._outT)}.mp4`, 'video/mp4');
             this._setStatus('Clip saved!', 100);
         } catch (e) {
-            this._setStatus('Error: ' + e.message);
+            this._setStatus('Error: ' + (e?.message || e));
+            if (e?.rxUrl) diagnosticUrls.push({ role: e.rxStage || stage, url: e.rxUrl });
+            void VideoDownloader._reportFailure({
+                operation: 'clip-export',
+                operationId,
+                stage,
+                error: e,
+                quality: selectedVariant ? {
+                    label: selectedVariant.height ? `${selectedVariant.height}p` : 'best',
+                    height: selectedVariant.height,
+                    width: selectedVariant.width,
+                    type: 'hls',
+                } : null,
+                format: 'mp4',
+                urls: diagnosticUrls,
+                extra: {
+                    clipStartSeconds: this._inT,
+                    clipEndSeconds: this._outT,
+                },
+            }, this._panel);
         } finally {
             this._busy = false;
             const btn = this._panel?.querySelector('.rx-clip-export');
@@ -10544,7 +10772,10 @@ const VideoClips = {
         });
         panel.querySelector('.rx-clip-export').addEventListener('click', () => this._export());
         panel.querySelector('.rx-clip-reset').addEventListener('click', () => {
-            this._inT = this._outT = null; this._updateInfo(); this._setStatus('', 0);
+            this._inT = this._outT = null;
+            this._updateInfo();
+            this._setStatus('', 0);
+            this._panel?.querySelector('.rx-diagnostic-actions')?.remove();
         });
     },
 
@@ -12829,6 +13060,155 @@ const RxErrorLog = {
 
     clear() {
         this._buf.length = 0;
+    },
+};
+
+// Local-only downloader failure bundle client. The service worker owns the
+// persisted, sanitized ring; this helper records content/worker context and
+// mounts copy/export affordances directly beside failed download and clip UI.
+const RxDownloadDiagnostics = {
+    _styleEl: null,
+
+    _t(key, fallback) {
+        try { return chrome.i18n?.getMessage(key) || fallback; } catch { return fallback; }
+    },
+
+    _message(action, data = {}) {
+        return new Promise((resolve, reject) => {
+            try {
+                chrome.runtime.sendMessage({ action, ...data }, (response) => {
+                    const error = chrome.runtime.lastError;
+                    if (error) reject(new Error(error.message));
+                    else resolve(response || { ok: false, reason: 'no-response' });
+                });
+            } catch (error) {
+                reject(error);
+            }
+        });
+    },
+
+    record(diagnostic) {
+        const payload = {
+            ...(diagnostic || {}),
+            pageUrl: location.href,
+            capabilities: {
+                ...(diagnostic?.capabilities || {}),
+                contentWorker: typeof Worker === 'function',
+                moduleWorker: typeof Worker === 'function' && typeof Blob === 'function'
+                    && typeof URL !== 'undefined' && typeof URL.createObjectURL === 'function',
+                webCodecs: typeof VideoDecoder === 'function',
+                online: navigator.onLine !== false,
+            },
+        };
+        return this._message('recordDownloadDiagnostic', { diagnostic: payload });
+    },
+
+    async getBundle() {
+        const response = await this._message('getDownloadDiagnostics');
+        if (!response?.ok || !response.bundle) {
+            throw new Error(response?.reason || 'Download diagnostics are unavailable');
+        }
+        return response.bundle;
+    },
+
+    async _copy(text) {
+        try {
+            await navigator.clipboard.writeText(text);
+            return true;
+        } catch {}
+        try {
+            const textarea = document.createElement('textarea');
+            textarea.value = text;
+            textarea.setAttribute('readonly', '');
+            textarea.style.position = 'fixed';
+            textarea.style.left = '-9999px';
+            document.body.appendChild(textarea);
+            textarea.select();
+            const copied = document.execCommand('copy');
+            textarea.remove();
+            return copied;
+        } catch {
+            return false;
+        }
+    },
+
+    _download(bundle) {
+        const blob = new Blob([JSON.stringify(bundle, null, 2) + '\n'], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const anchor = document.createElement('a');
+        anchor.href = url;
+        anchor.download = `rumblex-download-diagnostics-${new Date().toISOString().replace(/[:.]/g, '-')}.json`;
+        document.body.appendChild(anchor);
+        anchor.click();
+        anchor.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+    },
+
+    _ensureStyle() {
+        if (this._styleEl?.isConnected) return;
+        this._styleEl = injectStyle(`
+            .rx-diagnostic-actions {
+                display: flex; flex-wrap: wrap; align-items: center; gap: 6px;
+                margin-top: 10px; padding-top: 10px;
+                border-top: 1px solid rgba(255,255,255,0.08);
+            }
+            .rx-diagnostic-action {
+                border: 1px solid rgba(137,180,250,0.28); border-radius: 6px;
+                background: rgba(49,50,68,0.55); color: #cdd6f4;
+                padding: 6px 9px; font: 600 11px/1 system-ui, sans-serif; cursor: pointer;
+            }
+            .rx-diagnostic-action:hover { background: rgba(49,50,68,0.85); border-color: rgba(137,180,250,0.5); }
+            .rx-diagnostic-action:focus-visible { outline: 2px solid #89b4fa; outline-offset: 2px; }
+            .rx-diagnostic-action:disabled { opacity: 0.55; cursor: wait; }
+            .rx-diagnostic-status { flex-basis: 100%; color: #a6adc8; font: 11px/1.4 system-ui, sans-serif; }
+        `, 'rx-download-diagnostics-css');
+    },
+
+    mountActions(host) {
+        if (!host || !host.isConnected) return;
+        this._ensureStyle();
+        host.querySelector('.rx-diagnostic-actions')?.remove();
+
+        const row = document.createElement('div');
+        row.className = 'rx-diagnostic-actions';
+        const status = document.createElement('span');
+        status.className = 'rx-diagnostic-status';
+        status.setAttribute('role', 'status');
+        status.setAttribute('aria-live', 'polite');
+
+        const makeButton = (label, handler) => {
+            const button = document.createElement('button');
+            button.type = 'button';
+            button.className = 'rx-diagnostic-action';
+            button.textContent = label;
+            button.addEventListener('click', async () => {
+                for (const peer of row.querySelectorAll('button')) peer.disabled = true;
+                status.textContent = this._t('preparingDownloadDiagnostics', 'Preparing sanitized diagnostics…');
+                try {
+                    await handler();
+                } catch (error) {
+                    status.textContent = this._t('downloadDiagnosticsUnavailable', 'Diagnostics unavailable:') + ' ' + (error?.message || error);
+                } finally {
+                    for (const peer of row.querySelectorAll('button')) peer.disabled = false;
+                }
+            });
+            return button;
+        };
+
+        const copyButton = makeButton(this._t('copyDownloadDiagnostics', 'Copy diagnostics'), async () => {
+            const bundle = await this.getBundle();
+            const copied = await this._copy(JSON.stringify(bundle, null, 2));
+            if (!copied) throw new Error('Clipboard write failed');
+            status.textContent = this._t('downloadDiagnosticsCopied', 'Sanitized diagnostics copied.');
+        });
+        const exportButton = makeButton(this._t('exportDownloadDiagnostics', 'Export diagnostics'), async () => {
+            const bundle = await this.getBundle();
+            this._download(bundle);
+            status.textContent = this._t('downloadDiagnosticsExported', 'Sanitized diagnostics exported.');
+        });
+
+        row.append(copyButton, exportButton, status);
+        host.appendChild(row);
     },
 };
 

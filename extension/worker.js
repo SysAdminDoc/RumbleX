@@ -419,6 +419,7 @@ self.addEventListener('message', (e) => {
     const { id, action, buffers } = e.data;
     if (action !== 'transmux') return;
 
+    let stage = 'muxjs-init';
     try {
         // Step 1: Transmux TS → fMP4 using mux.js
         const transmuxer = new muxjs.mp4.Transmuxer({
@@ -438,6 +439,7 @@ self.addEventListener('message', (e) => {
             }
         });
 
+        stage = 'muxjs-transmux';
         for (let i = 0; i < buffers.length; i++) {
             const buf = buffers[i];
             transmuxer.push(new Uint8Array(buf instanceof ArrayBuffer ? buf : buf.buffer || buf));
@@ -447,11 +449,16 @@ self.addEventListener('message', (e) => {
         transmuxer.dispose();
 
         if (!initSegment) {
-            self.postMessage({ id, error: 'Transmux produced no init segment' });
+            self.postMessage({
+                id,
+                error: 'Transmux produced no init segment',
+                diagnostic: { engine: 'muxjs', stage: 'muxjs-transmux', inputBuffers: buffers.length },
+            });
             return;
         }
 
         // Step 2: Defragment fMP4 → regular MP4 (VLC-compatible)
+        stage = 'mp4-defragment';
         const { ftyp, tracks } = parseInit(initSegment);
         const mdatSlices = parseFragments(fmp4Fragments, tracks);
         fmp4Fragments.length = 0; // free memory
@@ -461,11 +468,16 @@ self.addEventListener('message', (e) => {
         ).join(', ');
         self.postMessage({ id, debug: `Defragmented: ${trackInfo}` });
 
+        stage = 'mp4-assemble';
         const blob = buildRegularMP4(ftyp, tracks, mdatSlices);
         mdatSlices.length = 0;
 
         self.postMessage({ id, blob });
     } catch (err) {
-        self.postMessage({ id, error: err.message || 'Transmux failed' });
+        self.postMessage({
+            id,
+            error: err.message || 'Transmux failed',
+            diagnostic: { engine: 'muxjs', stage, inputBuffers: Array.isArray(buffers) ? buffers.length : 0 },
+        });
     }
 });

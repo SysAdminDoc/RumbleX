@@ -267,6 +267,54 @@
     "message": "Fehlerprotokoll leeren",
     "description": "UI string used by popup/options i18n pass."
   },
+  "copyDownloadDiagnostics": {
+    "message": "Download-Diagnose kopieren",
+    "description": "Kopiert das lokale bereinigte Fehlerpaket fuer Downloads."
+  },
+  "exportDownloadDiagnostics": {
+    "message": "Download-Diagnose exportieren",
+    "description": "Exportiert das lokale bereinigte Fehlerpaket fuer Downloads."
+  },
+  "clearDownloadDiagnostics": {
+    "message": "Download-Diagnose leeren",
+    "description": "Leert den lokalen Ringpuffer fuer Downloadfehler."
+  },
+  "preparingDownloadDiagnostics": {
+    "message": "Bereinigte Diagnose wird vorbereitet…",
+    "description": "Status waehrend der Erstellung des Diagnosepakets."
+  },
+  "downloadDiagnosticsUnavailable": {
+    "message": "Diagnose nicht verfuegbar:",
+    "description": "Praefix bei fehlgeschlagenem Kopieren oder Exportieren."
+  },
+  "downloadDiagnosticsCopied": {
+    "message": "Bereinigte Diagnose kopiert.",
+    "description": "Erfolgsmeldung nach dem Kopieren der Download-Diagnose."
+  },
+  "downloadDiagnosticsExported": {
+    "message": "Bereinigte Diagnose exportiert.",
+    "description": "Erfolgsmeldung nach dem Export der Download-Diagnose."
+  },
+  "downloadDiagnosticsEmpty": {
+    "message": "Die Download-Diagnose ist leer. Nach einem fehlgeschlagenen Download oder Clip-Export wird automatisch ein bereinigter Eintrag erfasst.",
+    "description": "Status, wenn noch keine Downloadfehler erfasst wurden."
+  },
+  "downloadDiagnosticsCleared": {
+    "message": "Download-Diagnose geleert.",
+    "description": "Erfolgsmeldung nach dem Leeren der Download-Diagnose."
+  },
+  "copyDownloadDiagnosticsFailed": {
+    "message": "Download-Diagnose konnte nicht kopiert werden:",
+    "description": "Praefix, wenn das Kopieren der Download-Diagnose fehlschlaegt."
+  },
+  "exportDownloadDiagnosticsFailed": {
+    "message": "Download-Diagnose konnte nicht exportiert werden:",
+    "description": "Praefix, wenn der Export der Download-Diagnose fehlschlaegt."
+  },
+  "clearDownloadDiagnosticsFailed": {
+    "message": "Download-Diagnose konnte nicht geleert werden:",
+    "description": "Praefix, wenn das Leeren der Download-Diagnose fehlschlaegt."
+  },
   "settingsTitle": {
     "message": "Einstellungen",
     "description": "UI string used by popup/options i18n pass."

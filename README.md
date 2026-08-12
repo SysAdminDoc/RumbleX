@@ -57,6 +57,7 @@
 
 ### Downloads & Capture
 - **Video Download** — Download as direct MP4 or HLS-to-MP4/TS via Web Worker transmuxing. Default engine is the pinned mux.js path; advanced settings include an experimental Mediabunny + WebCodecs engine that falls back to mux.js on failure. Includes an automatic **Deep Scan (RUD)** that probes `hugh.cdn.rumble.cloud` for every quality variant the embed API didn't surface (1080p/720p/480p/360p/240p × mp4/tar × live/vod), with live progress bar, per-row copy-link buttons, and support for TAR live-replay archives (with inline *extract with 7-Zip, drop the `.m3u8` into VLC* hint).
+- **Failure diagnostics** — Failed quality discovery, direct downloads, HLS fetches, clip exports, archive jobs, and muxing paths expose copy/export controls beside the error and in Options → Privacy & Data. The local-only 50-attempt ring includes failure stage, selected quality, muxer/fallback path, and worker/offscreen capabilities; URL credentials, query values, fragments, cookies, and token-like data are redacted before storage.
 - **Low-Bitrate MP4 (for listening)** — Download the smallest video variant for background audio (saved as `.mp4` — honest naming; Rumble doesn't expose a pure audio track).
 - **Video Clips** — Mark In/Out on the player and export a clip as MP4 (segment slicing + transmux)
 - **Live DVR** — Save the last 30 s / 1 m / 5 m / 10 m of a live stream as MP4
@@ -172,6 +173,7 @@ Install `RumbleX.user.js` directly — note: the userscript version lags behind 
 - All download URLs are validated against a host allowlist before hitting `chrome.downloads`.
 - `LiveChatEnhance` uses a `TreeWalker` on `Text` nodes only — Rumble's chat markup is never re-parsed through `innerHTML`.
 - Download UI is built via DOM APIs; no network-influenced text (error messages, response bodies, CDN probe results) ever reaches the HTML parser.
+- Download diagnostics never leave the browser automatically and are sanitized before entering extension storage; exports contain redacted source paths and capability metadata only.
 - Backup imports are allowlisted: `setLocalData` rejects any key outside the `RX_LOCAL_STORAGE_KEYS` list + `rx_rants_` prefix, so a crafted file cannot write arbitrary keys to rumble.com's origin.
 
 ## Build

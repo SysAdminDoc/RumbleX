@@ -267,6 +267,54 @@
     "message": "Clear error log",
     "description": "UI string used by popup/options i18n pass."
   },
+  "copyDownloadDiagnostics": {
+    "message": "Copy download diagnostics",
+    "description": "Copies the local sanitized downloader failure bundle."
+  },
+  "exportDownloadDiagnostics": {
+    "message": "Export download diagnostics",
+    "description": "Exports the local sanitized downloader failure bundle."
+  },
+  "clearDownloadDiagnostics": {
+    "message": "Clear download diagnostics",
+    "description": "Clears the local downloader failure ring buffer."
+  },
+  "preparingDownloadDiagnostics": {
+    "message": "Preparing sanitized diagnostics…",
+    "description": "Status shown while a downloader diagnostic bundle is prepared."
+  },
+  "downloadDiagnosticsUnavailable": {
+    "message": "Diagnostics unavailable:",
+    "description": "Prefix shown when diagnostic copy/export fails."
+  },
+  "downloadDiagnosticsCopied": {
+    "message": "Sanitized diagnostics copied.",
+    "description": "Success status after copying downloader diagnostics."
+  },
+  "downloadDiagnosticsExported": {
+    "message": "Sanitized diagnostics exported.",
+    "description": "Success status after exporting downloader diagnostics."
+  },
+  "downloadDiagnosticsEmpty": {
+    "message": "Download diagnostics are empty. A sanitized entry is captured automatically after a failed download or clip export.",
+    "description": "Status shown when no downloader failures have been captured."
+  },
+  "downloadDiagnosticsCleared": {
+    "message": "Download diagnostics cleared.",
+    "description": "Success status after clearing downloader diagnostics."
+  },
+  "copyDownloadDiagnosticsFailed": {
+    "message": "Could not copy download diagnostics:",
+    "description": "Prefix shown when copying downloader diagnostics fails."
+  },
+  "exportDownloadDiagnosticsFailed": {
+    "message": "Could not export download diagnostics:",
+    "description": "Prefix shown when exporting downloader diagnostics fails."
+  },
+  "clearDownloadDiagnosticsFailed": {
+    "message": "Could not clear download diagnostics:",
+    "description": "Prefix shown when clearing downloader diagnostics fails."
+  },
   "settingsTitle": {
     "message": "Settings",
     "description": "UI string used by popup/options i18n pass."

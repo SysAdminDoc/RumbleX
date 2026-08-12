@@ -267,6 +267,54 @@
     "message": "Borrar registro de errores",
     "description": "UI string used by popup/options i18n pass."
   },
+  "copyDownloadDiagnostics": {
+    "message": "Copiar diagnosticos de descarga",
+    "description": "Copia el paquete local y saneado de fallos de descarga."
+  },
+  "exportDownloadDiagnostics": {
+    "message": "Exportar diagnosticos de descarga",
+    "description": "Exporta el paquete local y saneado de fallos de descarga."
+  },
+  "clearDownloadDiagnostics": {
+    "message": "Borrar diagnosticos de descarga",
+    "description": "Borra el registro local de fallos de descarga."
+  },
+  "preparingDownloadDiagnostics": {
+    "message": "Preparando diagnosticos saneados…",
+    "description": "Estado mostrado mientras se prepara el paquete de diagnostico."
+  },
+  "downloadDiagnosticsUnavailable": {
+    "message": "Diagnosticos no disponibles:",
+    "description": "Prefijo mostrado cuando falla la copia o exportacion."
+  },
+  "downloadDiagnosticsCopied": {
+    "message": "Diagnosticos saneados copiados.",
+    "description": "Estado tras copiar los diagnosticos de descarga."
+  },
+  "downloadDiagnosticsExported": {
+    "message": "Diagnosticos saneados exportados.",
+    "description": "Estado tras exportar los diagnosticos de descarga."
+  },
+  "downloadDiagnosticsEmpty": {
+    "message": "Los diagnosticos de descarga estan vacios. Se captura automaticamente una entrada saneada tras un fallo de descarga o exportacion de clip.",
+    "description": "Estado mostrado cuando no se han capturado fallos de descarga."
+  },
+  "downloadDiagnosticsCleared": {
+    "message": "Diagnosticos de descarga borrados.",
+    "description": "Estado tras borrar los diagnosticos de descarga."
+  },
+  "copyDownloadDiagnosticsFailed": {
+    "message": "No se pudieron copiar los diagnosticos de descarga:",
+    "description": "Prefijo mostrado cuando falla la copia de diagnosticos."
+  },
+  "exportDownloadDiagnosticsFailed": {
+    "message": "No se pudieron exportar los diagnosticos de descarga:",
+    "description": "Prefijo mostrado cuando falla la exportacion de diagnosticos."
+  },
+  "clearDownloadDiagnosticsFailed": {
+    "message": "No se pudieron borrar los diagnosticos de descarga:",
+    "description": "Prefijo mostrado cuando falla el borrado de diagnosticos."
+  },
   "settingsTitle": {
     "message": "Ajustes",
     "description": "UI string used by popup/options i18n pass."

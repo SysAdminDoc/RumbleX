@@ -647,6 +647,9 @@
         telemetryExportBtn: document.getElementById('telemetry-export-btn'),
         errorLogExportBtn: document.getElementById('errorlog-export-btn'),
         errorLogClearBtn: document.getElementById('errorlog-clear-btn'),
+        downloadDiagnosticsCopyBtn: document.getElementById('download-diagnostics-copy-btn'),
+        downloadDiagnosticsExportBtn: document.getElementById('download-diagnostics-export-btn'),
+        downloadDiagnosticsClearBtn: document.getElementById('download-diagnostics-clear-btn'),
         privacyReportPre: document.getElementById('privacy-report-pre'),
         privacySummary: document.getElementById('privacy-summary'),
         // v3.9.0 — Channel Notifier UI
@@ -2008,6 +2011,74 @@
         else showStatus('Could not clear error log — open a rumble.com tab so the content script can respond.', 'error');
     }
 
+    async function getDownloadDiagnosticsBundle() {
+        const response = await chrome.runtime.sendMessage({ action: 'getDownloadDiagnostics' });
+        if (!response?.ok || !response.bundle) {
+            throw new Error(response?.reason || 'Download diagnostics unavailable');
+        }
+        return response.bundle;
+    }
+
+    async function copyTextToClipboard(text) {
+        try {
+            await navigator.clipboard.writeText(text);
+            return true;
+        } catch {}
+        const textarea = document.createElement('textarea');
+        textarea.value = text;
+        textarea.setAttribute('readonly', '');
+        textarea.setAttribute('aria-hidden', 'true');
+        textarea.style.position = 'fixed';
+        textarea.style.left = '-9999px';
+        document.body.appendChild(textarea);
+        textarea.select();
+        try {
+            return document.execCommand('copy');
+        } finally {
+            textarea.remove();
+        }
+    }
+
+    async function copyDownloadDiagnostics() {
+        try {
+            const bundle = await getDownloadDiagnosticsBundle();
+            if (!bundle.count) {
+                showStatus(i18n('downloadDiagnosticsEmpty', 'Download diagnostics are empty. A sanitized entry is captured automatically after a failed download or clip export.'), 'info');
+                return;
+            }
+            const copied = await copyTextToClipboard(JSON.stringify(bundle, null, 2));
+            if (!copied) throw new Error('Clipboard write failed');
+            showStatus(i18n('downloadDiagnosticsCopied', 'Sanitized diagnostics copied.'), 'success');
+        } catch (error) {
+            showStatus(i18n('copyDownloadDiagnosticsFailed', 'Could not copy download diagnostics:') + ' ' + String(error?.message || error), 'error');
+        }
+    }
+
+    async function exportDownloadDiagnostics() {
+        try {
+            const bundle = await getDownloadDiagnosticsBundle();
+            if (!bundle.count) {
+                showStatus(i18n('downloadDiagnosticsEmpty', 'Download diagnostics are empty. A sanitized entry is captured automatically after a failed download or clip export.'), 'info');
+                return;
+            }
+            const timestamp = new Date().toISOString().replace(/[:T]/g, '-').replace(/\..+$/, '');
+            downloadJsonBlob('rumblex-download-diagnostics-' + timestamp + '.json', bundle);
+            showStatus(i18n('downloadDiagnosticsExported', 'Sanitized diagnostics exported.'), 'success');
+        } catch (error) {
+            showStatus(i18n('exportDownloadDiagnosticsFailed', 'Could not export download diagnostics:') + ' ' + String(error?.message || error), 'error');
+        }
+    }
+
+    async function clearDownloadDiagnostics() {
+        try {
+            const response = await chrome.runtime.sendMessage({ action: 'clearDownloadDiagnostics' });
+            if (!response?.ok) throw new Error(response?.reason || 'clear failed');
+            showStatus(i18n('downloadDiagnosticsCleared', 'Download diagnostics cleared.'), 'success');
+        } catch (error) {
+            showStatus(i18n('clearDownloadDiagnosticsFailed', 'Could not clear download diagnostics:') + ' ' + String(error?.message || error), 'error');
+        }
+    }
+
     // v3.9.0 — Channel Notifier helpers.
     async function refreshNotifierList() {
         const list = elements.notifierList;
@@ -2770,6 +2841,9 @@
     if (elements.telemetryExportBtn) elements.telemetryExportBtn.addEventListener('click', () => void exportSelectorTelemetry());
     if (elements.errorLogExportBtn) elements.errorLogExportBtn.addEventListener('click', () => void exportErrorLog());
     if (elements.errorLogClearBtn) elements.errorLogClearBtn.addEventListener('click', () => void clearErrorLog());
+    if (elements.downloadDiagnosticsCopyBtn) elements.downloadDiagnosticsCopyBtn.addEventListener('click', () => void copyDownloadDiagnostics());
+    if (elements.downloadDiagnosticsExportBtn) elements.downloadDiagnosticsExportBtn.addEventListener('click', () => void exportDownloadDiagnostics());
+    if (elements.downloadDiagnosticsClearBtn) elements.downloadDiagnosticsClearBtn.addEventListener('click', () => void clearDownloadDiagnostics());
 
     // v3.9.0 — Channel notifier wiring.
     if (elements.notifierAddBtn) elements.notifierAddBtn.addEventListener('click', () => void addWatchedChannel());

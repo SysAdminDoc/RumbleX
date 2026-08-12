@@ -3,9 +3,10 @@
 // can't have. Spun up by background.js via chrome.offscreen.createDocument
 // with reasons ["DOM_PARSER", "BLOBS", "WORKERS"].
 //
-// Today this scaffold handles two atomic message actions:
+// Today this scaffold handles three atomic message actions:
 //   - parseHtml: take an HTML string, return structured probe data via DOMParser.
 //   - hashBlob: take a URL, fetch as Blob, return its SHA-256 digest.
+//   - getCapabilities: report the local APIs available to diagnostic exports.
 //
 // Both are read-only operations. The full deep-scan probe path will move
 // here in v3.3 once Mediabunny replaces mux.js so we can drop the Web Worker
@@ -15,6 +16,18 @@
 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     if (!msg || msg.target !== 'offscreen') return;
+
+    if (msg.action === 'getCapabilities') {
+        sendResponse({
+            ok: true,
+            domParser: typeof DOMParser === 'function',
+            blob: typeof Blob === 'function',
+            worker: typeof Worker === 'function',
+            webCrypto: !!globalThis.crypto?.subtle,
+            webCodecs: typeof VideoDecoder === 'function',
+        });
+        return false;
+    }
 
     if (msg.action === 'parseHtml') {
         try {
