@@ -171,6 +171,64 @@ Install `RumbleX.user.js` directly — note: the userscript version lags behind 
 - GitHub Releases API for update checking
 - Download host allowlist (`rumble.com`, `1a-1791.com`, `rumble.cloud`) enforced in the background worker
 
+## Architecture
+
+```mermaid
+flowchart LR
+    Site[Rumble page] --> Content[content.js]
+    Content --> Core[Settings + Page + Selectors + Router]
+    Core --> Features[Feature modules]
+    Content <--> Worker[worker.js / mediabunny-worker.js]
+    Content <--> Background[background.js service worker]
+    Popup[Popup / Options / Side panel] <--> Background
+    Content <--> Storage[chrome.storage.local + site localStorage]
+    Background <--> Storage
+    Background --> Downloads[chrome.downloads]
+    Background <--> Offscreen[offscreen document]
+```
+
+`content.js` owns page classification, selector contracts, route lifecycle, and injected features. `background.js` is the privileged boundary for downloads, context menus, notifications, tab operations, queue alarms, and offscreen work. Popup/options/side-panel pages edit the same settings catalog in `chrome.storage.local`; per-Rumble history and bookmark data remains on the Rumble origin.
+
+### Feature-module template
+
+```js
+const ExampleFeature = {
+    id: 'exampleFeature',
+    name: 'Example Feature',
+    _control: null,
+    _routerUnsub: null,
+
+    _mount() {
+        const anchor = Selectors.find('watch.share');
+        if (!anchor || this._control) return;
+        this._control = document.createElement('button');
+        this._control.type = 'button';
+        this._control.textContent = 'Example';
+        anchor.after(this._control);
+    },
+
+    init() {
+        if (!Settings.get(this.id)) return;
+        this._mount();
+        this._routerUnsub ||= Router.onChange(({ changed }) => {
+            if (!changed) return;
+            this._control?.remove();
+            this._control = null;
+            this._mount();
+        });
+    },
+
+    destroy() {
+        this._routerUnsub?.();
+        this._routerUnsub = null;
+        this._control?.remove();
+        this._control = null;
+    },
+};
+```
+
+Add the module to `features`, put new DOM contracts in `Selectors._map`, and keep its setting/default metadata synchronized across content, popup, and options catalogs. `destroy()` must remove every node, style, observer, listener, timer, and route subscription created by `init()`.
+
 ## Security Notes
 - All download URLs are validated against a host allowlist before hitting `chrome.downloads`.
 - `LiveChatEnhance` uses a `TreeWalker` on `Text` nodes only — Rumble's chat markup is never re-parsed through `innerHTML`.
