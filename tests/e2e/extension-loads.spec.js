@@ -19,6 +19,7 @@ test('options page renders with snapshot + privacy sections', async ({ context, 
     await expect(page.locator('#privacy-section')).toBeVisible();
     // "Open Settings Editor" CTA exists
     await expect(page.locator('#open-settings-modal-btn')).toBeVisible();
+    await expect(page.locator('.network-shield-title')).toHaveText('Network shield active');
 });
 
 test('popup renders feature groups with toggles', async ({ context, extensionId }) => {
@@ -30,6 +31,7 @@ test('popup renders feature groups with toggles', async ({ context, extensionId 
     await expect(firstToggle).toBeVisible();
     await expect(firstToggle).toHaveAttribute('aria-label', /.+/);
     await expect(firstToggle).not.toHaveAttribute('aria-pressed');
+    await expect(page.locator('.popup-shield')).toHaveText('Network shield active');
 });
 
 test('options and popup consume localized UI messages', async ({ context, extensionId }) => {

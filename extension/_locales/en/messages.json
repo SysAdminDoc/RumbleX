@@ -414,5 +414,29 @@
   "groupCommentsExtra": {
     "message": "Comments & Chat (extras)",
     "description": "UI string used by popup/options i18n pass."
+  },
+  "networkShieldActive": {
+    "message": "Network shield active",
+    "description": "Status shown when request-level ad blocking is active."
+  },
+  "networkShieldDescription": {
+    "message": "Verified ad delivery and measurement requests are blocked before page code can run.",
+    "description": "Explains the extension request-level ad shield."
+  },
+  "networkShieldVerified": {
+    "message": "7 verified request rules",
+    "description": "Count of audited request-level ad blocking rules."
+  },
+  "networkShieldDomNote": {
+    "message": "Ad Nuker controls the remaining DOM cleanup.",
+    "description": "Distinguishes request blocking from DOM cleanup."
+  },
+  "networkShieldManagerLimited": {
+    "message": "Network shield depends on your userscript manager",
+    "description": "Userscript limitation status."
+  },
+  "networkShieldManagerNote": {
+    "message": "DOM cleanup stays active; Chromium MV3 managers cannot expose early request blocking.",
+    "description": "Userscript request-blocking limitation detail."
   }
 }

@@ -1,4 +1,4 @@
-// RumbleX v3.35.0 - Shared Content Core
+// RumbleX v3.36.0 - Shared Content Core
 // Rumble enhancement suite - Chrome/Firefox extension
 'use strict';
 
@@ -8,7 +8,7 @@
 // DOM feature ship from one canonical source.
 const RXPlatform = globalThis.RumbleXPlatform;
 if (!RXPlatform) throw new Error('RumbleX platform adapter is missing');
-const VERSION = RXPlatform.version || '3.35.0';
+const VERSION = RXPlatform.version || '3.36.0';
 const SCHEMA_VERSION = 2;
 
 // ── Settings Manager (chrome.storage.local) ──
@@ -928,7 +928,6 @@ const ANTI_FOUC_CSS = `
 const earlyStyle = document.createElement('style');
 earlyStyle.id = 'rumblex-antifouc';
 earlyStyle.textContent = ANTI_FOUC_CSS;
-(document.head || document.documentElement).appendChild(earlyStyle);
 const osMotionStyle = document.createElement('style');
 osMotionStyle.id = 'rumblex-os-reduced-motion';
 osMotionStyle.textContent = `
@@ -943,15 +942,27 @@ osMotionStyle.textContent = `
         html.rumblex-active .rx-shimmer { animation: none !important; }
     }
 `;
-(document.head || document.documentElement).appendChild(osMotionStyle);
-document.documentElement.classList.add('rumblex-active');
+let antiFoucEnabled = true;
+let bootstrapRootObserver = null;
+function mountDocumentStartStyles() {
+    const root = document.head || document.documentElement;
+    if (!root) return false;
+    if (antiFoucEnabled && !earlyStyle.isConnected) root.appendChild(earlyStyle);
+    if (!osMotionStyle.isConnected) root.appendChild(osMotionStyle);
+    document.documentElement?.classList.add('rumblex-active');
+    bootstrapRootObserver?.disconnect();
+    bootstrapRootObserver = null;
+    return true;
+}
+if (!mountDocumentStartStyles()) {
+    bootstrapRootObserver = new MutationObserver(() => mountDocumentStartStyles());
+    bootstrapRootObserver.observe(document, { childList: true, subtree: true });
+}
 
 function syncAntiFoucStyle() {
-    if (Settings.get('adNuker')) {
-        if (!earlyStyle.isConnected) (document.head || document.documentElement).appendChild(earlyStyle);
-    } else {
-        earlyStyle.remove();
-    }
+    antiFoucEnabled = !!Settings.get('adNuker');
+    if (antiFoucEnabled) mountDocumentStartStyles();
+    else earlyStyle.remove();
 }
 
 // ── Wait for DOM ready ──
@@ -8630,10 +8641,10 @@ const PlaylistQuickSave = {
 // ═══════════════════════════════════════════
 const RX_CATEGORIES = [
     {
-        id: 'ad-blocking', label: 'Ad Blocking', color: '#f38ba8',
+        id: 'ad-blocking', label: 'Ad Blocking', color: '#85d551',
         icon: '<path d="M18.36 6.64a1 1 0 00-1.41 0L12 11.59 7.05 6.64a1 1 0 10-1.41 1.41L10.59 13l-4.95 4.95a1 1 0 101.41 1.41L12 14.41l4.95 4.95a1 1 0 001.41-1.41L13.41 13l4.95-4.95a1 1 0 000-1.41z"/>',
         features: [
-            { id: 'adNuker', label: 'Ad Nuker', desc: 'Block ads, pause overlays, premium nags, IMA SDK' },
+            { id: 'adNuker', label: 'Ad Nuker', desc: 'DOM cleanup for ad containers, pause overlays, and premium nags after the network shield runs' },
             { id: 'feedCleanup', label: 'Feed Cleanup', desc: 'Remove premium promos from feeds' },
             { id: 'hideReposts', label: 'Hide Reposts', desc: 'Hide reposted videos from feeds', parent: 'feedCleanup' },
             { id: 'hidePremium', label: 'Hide Premium', desc: 'Hide premium/PPV videos from feeds' },
@@ -8882,7 +8893,7 @@ const SettingsPanel = {
         #rx-modal {
             position: fixed; top: 50%; left: 50%;
             transform: translate(-50%,-50%) scale(0.96);
-            width: 95%; max-width: 960px; height: 82vh; max-height: 720px;
+            width: 95%; max-width: 1120px; height: 86vh; max-height: 780px;
             background: #0a0a0b; border: 1px solid #2a2a2e; border-radius: 12px;
             box-shadow: 0 24px 64px rgba(0,0,0,0.55), 0 0 0 1px rgba(255,255,255,0.04) inset;
             z-index: 80001; display: flex; flex-direction: column; overflow: hidden;
@@ -8903,6 +8914,7 @@ const SettingsPanel = {
                 border-right: 0; border-bottom: 1px solid #2a2a2e;
             }
             .rx-m-search-wrap { flex: 0 0 min(240px, 55vw); margin: 0 4px 0 0; }
+            .rx-m-tablist { flex: 0 0 auto; flex-direction: row; gap: 2px; }
             .rx-m-nav-btn { flex: 0 0 auto; width: auto; min-height: 44px; }
             .rx-m-nav-count { display: none; }
             .rx-m-content { padding: 14px; }
@@ -8943,10 +8955,11 @@ const SettingsPanel = {
 
         /* ── Sidebar ── */
         .rx-m-sidebar {
-            display: flex; flex-direction: column; width: 220px;
+            display: flex; flex-direction: column; width: 240px;
             padding: 8px 6px; background: #111113; border-right: 1px solid #2a2a2e;
             overflow-y: auto; flex-shrink: 0; gap: 2px;
         }
+        .rx-m-tablist { display: flex; flex-direction: column; gap: 2px; }
         .rx-m-search-wrap {
             position: relative; padding: 4px 6px 8px;
         }
@@ -9000,6 +9013,21 @@ const SettingsPanel = {
             font-size: 11px; color: #c7d0e0; cursor: pointer; user-select: none;
         }
         .rx-m-features-grid { display: flex; flex-direction: column; gap: 6px; }
+        .rx-m-shield-status {
+            display: flex; align-items: center; gap: 10px; min-height: 40px;
+            margin: -4px 0 14px; padding: 9px 12px; border-radius: 8px;
+            border: 1px solid rgba(133,213,81,0.26); background: rgba(133,213,81,0.055);
+            color: #a8b3c5; font-size: 11px; line-height: 1.4;
+        }
+        .rx-m-shield-status::before {
+            content: ''; width: 8px; height: 8px; border-radius: 50%; flex: 0 0 auto;
+            background: #85d551; box-shadow: 0 0 0 4px rgba(133,213,81,0.10);
+        }
+        .rx-m-shield-status.is-limited { border-color: rgba(249,226,175,0.24); background: rgba(249,226,175,0.05); }
+        .rx-m-shield-status.is-limited::before { background: #f9e2af; box-shadow: 0 0 0 4px rgba(249,226,175,0.09); }
+        .rx-m-shield-title { color: #85d551; font-weight: 800; white-space: nowrap; }
+        .rx-m-shield-status.is-limited .rx-m-shield-title { color: #f9e2af; }
+        .rx-m-shield-note { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
         /* ── Feature Card ── */
         .rx-m-card {
@@ -9028,7 +9056,7 @@ const SettingsPanel = {
         }
         .rx-m-switch.active .rx-m-switch-track {
             background: var(--rx-switch-color, #85d551); border-color: transparent;
-            box-shadow: 0 0 14px color-mix(in srgb, var(--rx-switch-color, #85d551) 45%, transparent);
+            box-shadow: 0 0 8px color-mix(in srgb, var(--rx-switch-color, #85d551) 24%, transparent);
         }
         .rx-m-switch-thumb {
             /* v3.1.0 — thumb bumped 16 → 18 to match the 24px track height. */
@@ -9079,7 +9107,6 @@ const SettingsPanel = {
         .rx-m-footer-left { display: flex; align-items: center; gap: 12px; }
         .rx-m-footer-right { display: flex; align-items: center; gap: 8px; }
         .rx-m-version { font-size: 11px; color: #aeb8ca; }
-        .rx-m-shortcut { font-size: 10px; color: #aeb8ca; padding: 2px 8px; background: #17171a; border-radius: 4px; }
         .rx-m-btn {
             display: inline-flex; align-items: center; gap: 6px; padding: 7px 16px;
             font-size: 12px; font-weight: 600; border: none; border-radius: 8px;
@@ -9233,6 +9260,25 @@ const SettingsPanel = {
         toggleAll.appendChild(allSwitch);
         header.appendChild(toggleAll);
         pane.appendChild(header);
+
+        if (cat.id === 'ad-blocking') {
+            const shield = document.createElement('div');
+            const requestBlocking = !!RXPlatform.capabilities.requestBlocking;
+            shield.className = 'rx-m-shield-status' + (requestBlocking ? '' : ' is-limited');
+            shield.setAttribute('role', 'status');
+            const shieldTitle = document.createElement('strong');
+            shieldTitle.className = 'rx-m-shield-title';
+            shieldTitle.textContent = requestBlocking
+                ? (RXPlatform.t('networkShieldActive') || 'Network shield active')
+                : (RXPlatform.t('networkShieldManagerLimited') || 'Network shield depends on your userscript manager');
+            const shieldNote = document.createElement('span');
+            shieldNote.className = 'rx-m-shield-note';
+            shieldNote.textContent = requestBlocking
+                ? (RXPlatform.t('networkShieldVerified') || '7 verified request rules')
+                : (RXPlatform.t('networkShieldManagerNote') || 'DOM cleanup stays active; Chromium MV3 managers cannot expose early request blocking.');
+            shield.append(shieldTitle, shieldNote);
+            pane.appendChild(shield);
+        }
 
         // Feature cards
         const grid = document.createElement('div');
@@ -9508,10 +9554,8 @@ const SettingsPanel = {
         body.className = 'rx-m-body';
 
         // Sidebar
-        const sidebar = document.createElement('nav');
+        const sidebar = document.createElement('div');
         sidebar.className = 'rx-m-sidebar';
-        sidebar.setAttribute('role', 'tablist');
-        sidebar.setAttribute('aria-label', 'RumbleX settings categories');
         const searchWrap = document.createElement('div');
         searchWrap.className = 'rx-m-search-wrap';
         searchWrap.innerHTML = '<span class="rx-m-search-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></span>';
@@ -9527,6 +9571,11 @@ const SettingsPanel = {
         });
         searchWrap.appendChild(searchInput);
         sidebar.appendChild(searchWrap);
+        const tablist = document.createElement('nav');
+        tablist.className = 'rx-m-tablist';
+        tablist.setAttribute('role', 'tablist');
+        tablist.setAttribute('aria-label', 'RumbleX settings categories');
+        sidebar.appendChild(tablist);
 
         // Content
         const content = document.createElement('div');
@@ -9558,7 +9607,7 @@ const SettingsPanel = {
             navCount.textContent = `${enabledCount}/${mainFeats.length}`;
             navBtn.append(navIcon, navLabel, navCount);
             navBtn.addEventListener('click', () => this._switchTab(cat.id));
-            sidebar.appendChild(navBtn);
+            tablist.appendChild(navBtn);
             this._navBtns.push(navBtn);
 
             // Pane
@@ -9567,7 +9616,7 @@ const SettingsPanel = {
             else pane.hidden = true;
             content.appendChild(pane);
         }
-        sidebar.addEventListener('keydown', (e) => {
+        tablist.addEventListener('keydown', (e) => {
             if (!['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End'].includes(e.key)) return;
             const current = this._navBtns.indexOf(document.activeElement);
             if (current < 0) return;
@@ -14313,13 +14362,36 @@ const RX_PRIVACY_PERMISSION_DISCLOSURES = Object.freeze({
     'sidePanel': 'Lets Chromium show the RumbleX options surface in the browser side panel.',
     'alarms': 'Schedules local archive queue processing and other delayed extension maintenance work.',
     'notifications': 'Shows local browser notifications for user-triggered completion or failure states.',
+    'declarativeNetRequest': 'Blocks the verified Rumble ad-delivery and ad-measurement request surface before it reaches the page in Chromium.',
+    'webRequest': 'Lets Firefox inspect only the declared Rumble/ad request hosts so its MV2 background can cancel verified ad traffic.',
+    'webRequestBlocking': 'Lets Firefox cancel matched ad requests before they leave the browser.',
+    'GM_getValue': 'Reads RumbleX settings and local diagnostics from the userscript manager\'s private value store.',
+    'GM_setValue': 'Writes RumbleX settings and local diagnostics to the userscript manager\'s private value store.',
+    'GM_deleteValue': 'Deletes RumbleX-owned values when the user resets or clears local data.',
+    'GM_addValueChangeListener': 'Keeps open Rumble tabs synchronized when a userscript setting changes.',
+    'GM_removeValueChangeListener': 'Removes userscript value listeners during page teardown.',
+    'GM_xmlhttpRequest': 'Fetches approved HTTPS Rumble and Rumble-CDN media URLs for user-requested downloads.',
+    'GM_download': 'Starts user-requested downloads through the userscript manager when available.',
+    'userscriptWebRequest': 'Requests early cancellation of the verified ad-host surface in compatible userscript managers; Chromium MV3 managers may not expose this capability.',
 });
 
 const RX_PRIVACY_HOST_DISCLOSURES = Object.freeze({
     '*://*.rumble.com/*': 'Runs the content script on Rumble pages and fetches Rumble watch/embed data needed for user-triggered features.',
+    'https://rumble.com/*': 'Runs the userscript on the Rumble apex and accesses same-origin watch/embed data needed for user-triggered features.',
+    'https://*.rumble.com/*': 'Runs the userscript on HTTPS Rumble subdomains and accesses Rumble watch/embed data needed for user-triggered features.',
     '*://*.1a-1791.com/*': 'Accesses Rumble CDN media URLs for user-requested downloads.',
+    'https://1a-1791.com/*': 'Allows userscript requests to the Rumble media CDN apex for user-requested downloads.',
+    'https://*.1a-1791.com/*': 'Allows userscript requests to Rumble media CDN subdomains for user-requested downloads.',
     '*://*.rumble.cloud/*': 'Accesses Rumble CDN media URLs for user-requested downloads.',
+    'https://rumble.cloud/*': 'Allows userscript requests to the Rumble Cloud apex for user-requested downloads.',
+    'https://*.rumble.cloud/*': 'Allows userscript requests to Rumble Cloud subdomains for user-requested downloads.',
     'https://api.github.com/*': 'Checks GitHub release metadata and supports opt-in encrypted Gist sync when configured.',
+    '*://a.ads.rmbl.ws/*': 'Firefox-only access to cancel Rumble\'s dedicated ad-delivery host before requests complete.',
+    '*://imasdk.googleapis.com/*': 'Firefox-only access to cancel the Google Interactive Media Ads SDK when initiated by Rumble.',
+    '*://s0.2mdn.net/*': 'Firefox-only access to cancel the IMA in-stream video client when initiated by Rumble.',
+    '*://pagead2.googlesyndication.com/*': 'Firefox-only access to cancel the ad measurement SDK when initiated by Rumble.',
+    '*://*.doubleclick.net/*': 'Firefox-only access to cancel DoubleClick ad delivery when initiated by Rumble.',
+    '*://*.googleadservices.com/*': 'Firefox-only access to cancel Google ad delivery when initiated by Rumble.',
 });
 
 const RX_PRIVACY_WEB_RESOURCE_DISCLOSURES = Object.freeze({

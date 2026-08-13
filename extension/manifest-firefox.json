@@ -1,7 +1,7 @@
 {
   "manifest_version": 2,
   "name": "__MSG_extName__",
-  "version": "3.35.0",
+  "version": "3.36.0",
   "description": "__MSG_extDescription__",
   "default_locale": "en",
   "author": "SysAdminDoc",
@@ -18,7 +18,15 @@
     "contextMenus",
     "alarms",
     "notifications",
+    "webRequest",
+    "webRequestBlocking",
     "*://*.rumble.com/*",
+    "*://a.ads.rmbl.ws/*",
+    "*://imasdk.googleapis.com/*",
+    "*://s0.2mdn.net/*",
+    "*://pagead2.googlesyndication.com/*",
+    "*://*.doubleclick.net/*",
+    "*://*.googleadservices.com/*",
     "*://*.1a-1791.com/*",
     "*://*.rumble.cloud/*"
   ],
@@ -29,7 +37,7 @@
     }
   },
   "background": {
-    "scripts": ["browser-polyfill.js", "archive-fs.js", "background.js"]
+    "scripts": ["browser-polyfill.js", "ad-blocker.js", "archive-fs.js", "background.js"]
   },
   "content_security_policy": "script-src 'self'; object-src 'self'; base-uri 'self'",
   "browser_action": {

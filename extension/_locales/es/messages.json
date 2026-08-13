@@ -414,5 +414,29 @@
   "groupCommentsExtra": {
     "message": "Comentarios y chat (extras)",
     "description": "UI string used by popup/options i18n pass."
+  },
+  "networkShieldActive": {
+    "message": "Escudo de red activo",
+    "description": "Estado del bloqueo de anuncios a nivel de solicitud."
+  },
+  "networkShieldDescription": {
+    "message": "Las solicitudes verificadas de entrega y medicion de anuncios se bloquean antes de ejecutar el codigo de la pagina.",
+    "description": "Explica el escudo de red de la extension."
+  },
+  "networkShieldVerified": {
+    "message": "7 reglas de solicitudes verificadas",
+    "description": "Cantidad de reglas auditadas de bloqueo de anuncios."
+  },
+  "networkShieldDomNote": {
+    "message": "Ad Nuker controla la limpieza restante del DOM.",
+    "description": "Distingue el bloqueo de solicitudes de la limpieza del DOM."
+  },
+  "networkShieldManagerLimited": {
+    "message": "El escudo de red depende del gestor de userscripts",
+    "description": "Estado de limitacion del userscript."
+  },
+  "networkShieldManagerNote": {
+    "message": "La limpieza del DOM sigue activa; los gestores Chromium MV3 no exponen el bloqueo temprano de solicitudes.",
+    "description": "Detalle de la limitacion del userscript."
   }
 }

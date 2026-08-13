@@ -159,6 +159,7 @@ async function main() {
 
     const manifest = platform.getManifest();
     assert.ok(manifest.permissions.includes('GM_removeValueChangeListener'));
+    assert.ok(manifest.permissions.includes('userscriptWebRequest'));
     assert.ok(manifest.host_permissions.includes('https://*.rumble.com/*'));
     assert.equal(platform.capabilities.persistentBackground, false);
 

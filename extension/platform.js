@@ -72,6 +72,7 @@
             packagedAssets: true,
             mediabunny: true,
             externalMessages: true,
+            requestBlocking: true,
         }),
         storage,
         fetch: (...args) => fetch(...args),

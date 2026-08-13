@@ -73,6 +73,10 @@ function stripCommentsAndStrings(source) {
 const executableCore = stripCommentsAndStrings(core);
 if (/\bchrome\s*\./.test(executableCore)) fail('canonical content core still executes chrome.* directly');
 if (/\b(?:unsafeWindow|eval)\b|new\s+Function\s*\(/.test(executableCore)) fail('canonical content core contains dynamic-code execution');
+if (!core.startsWith(`// RumbleX v${pkg.version} - Shared Content Core`)
+    || !core.includes(`const VERSION = RXPlatform.version || '${pkg.version}';`)) {
+    fail('canonical core header/fallback version does not match package.json');
+}
 if (!core.includes('if (!RXPlatform.capabilities.persistentBackground) return;')) {
     fail('extension-only persistent-background feature is not capability-gated');
 }
@@ -80,8 +84,21 @@ if (!core.includes('if (!RXPlatform.capabilities.persistentBackground) return;')
 for (const forbidden of ['unsafeWindow', 'cdn.jsdelivr.net', 'GM_loadScript', 'new Function(', 'eval(']) {
     if (generated.includes(forbidden)) fail(`generated userscript contains forbidden token: ${forbidden}`);
 }
-for (const required of ['@noframes', 'GM_xmlhttpRequest', 'GM_download', 'RumbleXPlatform', "kind: 'userscript'"]) {
+for (const required of [
+    '@noframes', 'GM_xmlhttpRequest', 'GM_download', 'RumbleXPlatform',
+    "kind: 'userscript'", 'mediabunny-worker.js', 'lib/mediabunny.min.mjs',
+    'mediabunny: hasMediabunnyAssets', 'assetUrl',
+]) {
     if (!generated.includes(required)) fail(`generated userscript is missing required contract: ${required}`);
+}
+const metadata = generated.match(/\/\/ ==UserScript==([\s\S]*?)\/\/ ==\/UserScript==/)?.[1] || '';
+const grants = [...metadata.matchAll(/^\/\/ @grant\s+(\S+)/gm)].map((match) => match[1]);
+const expectedGrants = [
+    'GM_getValue', 'GM_setValue', 'GM_deleteValue', 'GM_addValueChangeListener',
+    'GM_removeValueChangeListener', 'GM_xmlhttpRequest', 'GM_download',
+];
+if (JSON.stringify(grants) !== JSON.stringify(expectedGrants)) {
+    fail(`userscript grants drift: ${grants.join(', ')}`);
 }
 for (const requiredMetadata of [
     '// @match        https://rumble.com/*',
@@ -89,6 +106,7 @@ for (const requiredMetadata of [
     '// @connect      rumble.com',
     '// @connect      1a-1791.com',
     '// @connect      rumble.cloud',
+    '// @webRequest   [{"selector":"https://a.ads.rmbl.ws/*"',
 ]) {
     if (!generated.includes(requiredMetadata)) fail(`generated metadata is missing: ${requiredMetadata}`);
 }

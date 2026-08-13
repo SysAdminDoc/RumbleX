@@ -32,7 +32,7 @@ async function inContent(serviceWorker, targetTabId, action, args = []) {
             world: 'ISOLATED',
             func: (name, values) => {
                 if (name === 'videoCardsReady') return typeof VideoCards !== 'undefined';
-                if (name === 'settingsReady') return typeof Settings !== 'undefined';
+                if (name === 'settingsReady') return typeof Settings !== 'undefined' && Settings._ready && !!Settings._cache;
                 if (name === 'cards') {
                     return VideoCards.related().map((card) => ({
                         title: VideoCards.title(card),
@@ -123,6 +123,7 @@ test('modern card adapter drives related, keyword, progress, and channel feature
     const page = await openWatch(context);
     const id = await tabId(serviceWorker, page.url());
     await expect.poll(() => inContent(serviceWorker, id, 'videoCardsReady')).toBe(true);
+    await expect.poll(() => inContent(serviceWorker, id, 'settingsReady')).toBe(true);
 
     const cards = await inContent(serviceWorker, id, 'cards');
     expect(cards).toEqual([
@@ -195,4 +196,14 @@ test('shared trust boundaries reject malicious settings, media URLs, and modifie
     expect(result.rejectedHls).toBeNull();
     expect(result.modifiedPrevented).toBe(false);
     expect(result.plainPrevented).toBe(true);
+});
+
+test('in-page settings reports extension request blocking separately from Ad Nuker', async ({ context }) => {
+    const page = await openWatch(context, 'vmodern-shield-settings.html');
+    await page.locator('#rx-settings-btn').waitFor({ state: 'attached', timeout: 15_000 });
+    await page.evaluate(() => document.querySelector('#rx-settings-btn')?.click());
+    await expect(page.locator('.rx-m-shield-status')).not.toHaveClass(/is-limited/);
+    await expect(page.locator('.rx-m-shield-title')).toHaveText('Network shield active');
+    await expect(page.locator('.rx-m-shield-note')).toHaveText('7 verified request rules');
+    await expect(page.locator('div.rx-m-card[data-feature-id="adNuker"]')).toContainText('after the network shield runs');
 });

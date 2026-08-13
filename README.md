@@ -1,10 +1,19 @@
 # RumbleX
 
-![Version](https://img.shields.io/badge/version-v3.35.0-blue) ![License](https://img.shields.io/badge/license-MIT-green) ![Platform](https://img.shields.io/badge/platform-Chrome%20Extension-lightgrey) ![Firefox](https://img.shields.io/badge/firefox-109%2B-orange)
+![Version](https://img.shields.io/badge/version-v3.36.0-blue) ![License](https://img.shields.io/badge/license-MIT-green) ![Platform](https://img.shields.io/badge/platform-Extension%20%2B%20Userscript-lightgrey) ![Firefox](https://img.shields.io/badge/firefox-109%2B-orange)
 
 **The ultimate Rumble enhancement suite.** 130+ feature modules across 14 categories — ad blocking, theater mode, video downloads with CDN deep-scan probing and an opt-in Mediabunny muxer path, five-theme engine (now including OLED Green), playback controls, chat enhancements with deterministic username colors and tier-filtered rants, chapters, SponsorBlock, clips, live DVR, transcripts, auto-hide chrome, 50+ granular hide-X toggles for every Rumble row/button/player control, thumbnail hider, dense mode, reduced-motion path, tracking-param stripping, external player handoff (MPV/PotPlayer), and full-round-trip backup/restore with snapshot history. Chrome MV3 + Firefox MV2 + userscript.
 
-### What's new in v2.x
+### What's new in v3.36
+
+- **One shared feature core** — Chrome MV3, Firefox MV2, Tampermonkey, and Violentmonkey now execute the same canonical page-feature code. A build-time guard rejects stale userscripts, version drift, missing settings/modules, direct `chrome.*` use, and remote code loading.
+- **Current Rumble support** — modern `<rum-video-thumbnail>` cards, SPA watch-route changes, visible action anchors, and every current embed HLS response shape are covered by committed fixtures and loaded-extension tests.
+- **Safer downloads and imports** — downloads are cancellable and bounded before large media can exhaust tab memory; imported settings, snapshots, queue URLs, and compressed backups are size- and schema-validated.
+- **Complete local media bundle** — the userscript embeds the pinned mux.js and Mediabunny workers/libraries. It never fetches or evaluates executable code from a CDN.
+- **Request-level ad shield** — Chrome/Edge/Brave use a Rumble-scoped MV3 ruleset and Firefox uses a scoped MV2 blocking listener for the verified ad-delivery/measurement surface; Ad Nuker remains the DOM cleanup layer for sponsored cards, overlays, and reserved space.
+- **Desktop settings redesign** — the options control center, complete settings editor, popup, and in-page modal now share an OLED-black/Rumble-green system with clearer discovery, network-shield state, save/reset feedback, and verified 1440×900 and 1920×1080 layouts.
+
+### Earlier v2.x milestones
 
 - **v2.0** — Core engine: schema-v2 migration, selector registry (27 named surfaces with stable+fallback selectors), route lifecycle (history + htmx hooks), 70+ new settings keys, OLED Green theme.
 - **v2.1** — Premium UI superset: thumbnail hider (master/feeds/related scopes), dense mode, account-pagination compaction, reduced-motion path, home cleanup presets (focused/minimal/custom), DarkEnhance now writes Rumble's native CSS tokens.
@@ -15,7 +24,8 @@
 ## Features
 
 ### Ad Blocking
-- **Ad Nuker** — CSS + DOM removal of ads, pause overlays, premium nags, IMA SDK, LRT
+- **Network Shield (extension)** — blocks the verified Rumble ad-delivery and measurement request surface before page code runs. Chrome-family browsers use seven Rumble-scoped Declarative Net Request rules; Firefox uses its scoped blocking webRequest listener.
+- **Ad Nuker** — CSS + DOM cleanup of ad containers, pause overlays, premium nags, sponsored units, and reserved whitespace, including content reinserted after navigation.
 - **Feed Cleanup** — Remove premium promos from feeds
 - **Hide Reposts** — Hide reposted videos from feeds
 - **Hide Premium** — Hide premium/PPV videos via CSS `:has()`
@@ -40,11 +50,12 @@
 - **Autoplay Queue** — FAB-pinned queue of Rumble URLs, auto-advances when current video ends
 
 ### Theme & Layout
-- **Dark Theme** — Multi-theme engine with 4 built-in themes and player bar coloring
+- **Dark Theme** — Multi-theme engine with 5 built-in themes and player bar coloring
   - Catppuccin Mocha (default) — Purple/blue accents
   - YouTubify — YouTube dark-mode look with red accent and progress bar
   - Midnight AMOLED — Pure black with indigo accents
   - Rumble Green — Dark with Rumble's native green identity
+  - OLED Green — Near-black OLED surfaces with Rumble-green accents
 - **Site Theme Sync** — Mirror Rumble's native system / dark / light setting
 - **Wide Layout** — Full-width responsive grid on home and subscriptions
 - **Auto-Hide Header** — Fade the header out, reveal on top-edge cursor
@@ -125,7 +136,7 @@ Click the extension icon → **gear button** to open the dedicated options page.
 - Major popup/options labels and settings groups resolve through the shipped locale catalogs with English fallbacks.
 
 ### In-page Quick Modal (on-tab)
-Press **Ctrl+Shift+X** on any Rumble page (or **shift-click** the popup gear) to open the original in-page settings modal with:
+Click the visible **RumbleX settings** gear on any Rumble page (or **shift-click** the extension popup gear) to open the in-page settings modal with:
 - 7 categorized sidebar tabs with color-coded icons
 - Theme picker with live preview dots
 - Playback speed slider
@@ -149,20 +160,22 @@ Click the extension icon for quick toggles, grouped by category with enabled-cou
 3. Visit `chrome://extensions` and enable **Developer mode**
 4. Click **Load unpacked** and select the extracted folder
 
-Or drag `RumbleX-v1.9.3.crx` directly onto `chrome://extensions` (Developer mode on).
-
 ### Firefox (109+)
 1. Download `RumbleX-firefox.zip` from [Releases](https://github.com/SysAdminDoc/RumbleX/releases)
 2. Go to `about:debugging#/runtime/this-firefox`
 3. Click **Load Temporary Add-on** and select `manifest.json` inside the extracted folder
 
 ### Tampermonkey (Userscript)
-Install `RumbleX.user.js` directly — note: the userscript version lags behind the extension on download features (no Web Worker / mux.js bundle).
+Install [`RumbleX.user.js`](https://raw.githubusercontent.com/SysAdminDoc/RumbleX/main/RumbleX.user.js) directly. It is generated from the byte-identical shared page-feature core and embeds the pinned mux.js and Mediabunny media workers.
+
+The userscript supports settings, themes, page cleanup, selectors/routes, screenshots, direct/HLS/clip/audio/batch downloads, diagnostics, and local backup data. Browser-extension-only capabilities that require a persistent privileged background remain intentionally unavailable: the channel archive queue/recovery service, alarms, native notifications, context menus, side panel, and tab grouping.
+
+Its metadata also requests early ad cancellation through the userscript-manager `@webRequest` facility. Manager/browser support is not uniform: current Chromium MV3 Tampermonkey does not expose that request hook, so the userscript UI reports the shield as manager-dependent and does not claim extension-level network blocking there. Ad Nuker still performs document-start and reinsertion cleanup.
 
 ## Tech Stack
-- Vanilla JavaScript — no frameworks, no build step
+- Vanilla JavaScript — no runtime framework; a deterministic build generates the single-file userscript
 - Chrome Extension Manifest V3 + Firefox Manifest V2 (parallel manifests)
-- `chrome.storage.local` for settings persistence
+- `chrome.storage.local` (extensions) or `GM_*Value` (userscript) for settings persistence
 - `localStorage` (per-origin) for watch progress, volume memory, history, rant archives
 - mux.js (bundled) for default HLS segment transmuxing in a Web Worker
 - Mediabunny 1.46.0 (bundled, opt-in) for the experimental WebCodecs-era HLS-to-MP4 path
@@ -176,6 +189,8 @@ Install `RumbleX.user.js` directly — note: the userscript version lags behind 
 ```mermaid
 flowchart LR
     Site[Rumble page] --> Content[content.js]
+    Extension[Chrome / Firefox adapter] --> Content
+    Userscript[Tampermonkey / Violentmonkey adapter] --> Content
     Content --> Core[Settings + Page + Selectors + Router]
     Core --> Features[Feature modules]
     Content <--> Worker[worker.js / mediabunny-worker.js]
@@ -185,9 +200,10 @@ flowchart LR
     Background <--> Storage
     Background --> Downloads[chrome.downloads]
     Background <--> Offscreen[offscreen document]
+    Userscript --> Embedded[Embedded pinned media workers]
 ```
 
-`content.js` owns page classification, selector contracts, route lifecycle, and injected features. `background.js` is the privileged boundary for downloads, context menus, notifications, tab operations, queue alarms, and offscreen work. Popup/options/side-panel pages edit the same settings catalog in `chrome.storage.local`; per-Rumble history and bookmark data remains on the Rumble origin.
+`content.js` is the canonical shared core and owns page classification, selector contracts, route lifecycle, and injected features. `extension/platform.js` and `userscript/platform.js` adapt storage, downloads, network requests, assets, localization, and capabilities. `background.js` is the extension-only privileged boundary for persistent downloads, context menus, notifications, tab operations, queue alarms, and offscreen work. Popup/options/side-panel pages edit the same settings catalog in `chrome.storage.local`; per-Rumble history and bookmark data remains on the Rumble origin.
 
 ### Feature-module template
 

@@ -1,4 +1,4 @@
-// RumbleX v3.35.0 - Options Page
+// RumbleX v3.36.0 - Options Page
 // Standalone settings management via chrome.storage.local (rx_settings key).
 // Mirrors Astra Deck's settings page pattern: dirty-draft workflow with
 // search, group nav, stats overview, and export/import/reset.
@@ -311,7 +311,7 @@
 
     // Per-key metadata: group + human label + description
     const META = {
-        adNuker: { group: 'ad-blocking', label: 'Ad Nuker', desc: 'Block ads, pause overlays, premium nags, IMA SDK' },
+        adNuker: { group: 'ad-blocking', label: 'Ad Nuker', desc: 'DOM cleanup for ad containers, pause overlays, and premium nags after the network shield runs' },
         feedCleanup: { group: 'ad-blocking', label: 'Feed Cleanup', desc: 'Remove premium promos from feeds' },
         hideReposts: { group: 'ad-blocking', label: 'Hide Reposts', desc: 'Hide reposted videos from feeds' },
         hidePremium: { group: 'ad-blocking', label: 'Hide Premium', desc: 'Hide premium/PPV videos from feeds' },
@@ -1392,7 +1392,7 @@
         updateSettingsSearchState();
 
         const banner = elements.settingsWorkspaceBanner;
-        banner.classList.remove('is-warning', 'is-error', 'is-filtered');
+        banner.classList.remove('is-warning', 'is-error', 'is-filtered', 'is-shield');
 
         let title = i18n('settingsInSync', 'Everything is in sync');
         let note = i18n('settingsLocalUntilSave', 'Changes stay local until you save them.');
@@ -1405,6 +1405,11 @@
             banner.classList.add('is-warning');
             title = `${dirtyCount} unsaved ${pluralize(dirtyCount, 'change')} ready`;
             note = 'Review the highlighted cards, then save to apply. Reload open Rumble tabs after save.';
+        } else if (state.activeGroup === 'ad-blocking' && !searchValue) {
+            banner.classList.add('is-shield');
+            title = i18n('networkShieldActive', 'Network shield active');
+            note = i18n('networkShieldVerified', '7 verified request rules') + ' · '
+                + i18n('networkShieldDomNote', 'Ad Nuker controls the remaining DOM cleanup.');
         } else if (hasFilters) {
             banner.classList.add('is-filtered');
             title = visibleCount === 0 ? 'Filtered view is empty' : `Showing ${visibleCount} ${pluralize(visibleCount, 'setting')}`;

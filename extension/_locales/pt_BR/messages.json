@@ -414,5 +414,29 @@
   "groupCommentsExtra": {
     "message": "Comentarios e chat (extras)",
     "description": "UI string used by popup/options i18n pass."
+  },
+  "networkShieldActive": {
+    "message": "Protecao de rede ativa",
+    "description": "Status do bloqueio de anuncios no nivel da solicitacao."
+  },
+  "networkShieldDescription": {
+    "message": "Solicitacoes verificadas de entrega e medicao de anuncios sao bloqueadas antes da execucao do codigo da pagina.",
+    "description": "Explica a protecao de rede da extensao."
+  },
+  "networkShieldVerified": {
+    "message": "7 regras de solicitacao verificadas",
+    "description": "Quantidade de regras auditadas de bloqueio de anuncios."
+  },
+  "networkShieldDomNote": {
+    "message": "O Ad Nuker controla a limpeza restante do DOM.",
+    "description": "Distingue o bloqueio de solicitacoes da limpeza do DOM."
+  },
+  "networkShieldManagerLimited": {
+    "message": "A protecao de rede depende do gerenciador de userscript",
+    "description": "Status da limitacao do userscript."
+  },
+  "networkShieldManagerNote": {
+    "message": "A limpeza do DOM continua ativa; gerenciadores Chromium MV3 nao oferecem bloqueio antecipado de solicitacoes.",
+    "description": "Detalhe da limitacao do userscript."
   }
 }

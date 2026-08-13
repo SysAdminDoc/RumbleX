@@ -26,32 +26,31 @@
 * { margin: 0; padding: 0; box-sizing: border-box; }
 [hidden] { display: none !important; }
 body {
-    width: 316px;
+    width: 440px;
     font-family: 'Segoe UI Variable Display', 'Segoe UI', system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
     background:
-        linear-gradient(180deg, rgba(137,180,250,0.055), transparent 180px),
+        linear-gradient(180deg, rgba(133,213,81,0.035), transparent 180px),
         var(--page-bg);
     color: var(--text-primary);
     overflow: hidden;
 }
 .header {
-    padding: 14px 16px 12px;
+    padding: 16px 18px 14px;
     display: flex;
     align-items: center;
     gap: 10px;
     background: rgba(255,255,255,0.018);
     border-bottom: 1px solid var(--border);
 }
-.header svg { width: 24px; height: 24px; flex-shrink: 0; }
-.header-text h1 { font-size: 15px; font-weight: 800; line-height: 1.2; letter-spacing: 0; }
+.header svg { width: 30px; height: 30px; flex-shrink: 0; }
+.header-text h1 { font-size: 17px; font-weight: 800; line-height: 1.2; letter-spacing: 0; }
 .header-text span { font-size: 10px; color: var(--text-muted); font-weight: 700; }
 
 .popup-status {
     display: flex;
     align-items: center;
-    gap: 7px;
-    margin: 10px 16px 0;
-    padding: 8px 10px;
+    justify-content: space-between; gap: 12px;
+    margin: 12px 16px 0; padding: 10px 12px;
     border: 1px solid rgba(133,213,81,0.24);
     border-radius: 8px;
     background: rgba(133,213,81,0.08);
@@ -59,8 +58,9 @@ body {
     font-size: 11px;
     font-weight: 750;
 }
-.popup-status::before {
-    content: '';
+.popup-autosave, .popup-shield { display: inline-flex; align-items: center; gap: 7px; min-width: 0; }
+.popup-autosave::before, .popup-shield::before {
+    content: ''; display: block;
     width: 7px;
     height: 7px;
     border-radius: 50%;
@@ -68,18 +68,20 @@ body {
     box-shadow: 0 0 0 4px rgba(133,213,81,0.10);
     flex-shrink: 0;
 }
+.popup-shield { color: var(--rumble-green); white-space: nowrap; }
+.popup-shield::before { width: 5px; height: 5px; box-shadow: none; }
 
 /* Prominent CTA into the full options page */
 .open-options {
     width: calc(100% - 32px);
-    min-height: 50px;
+    min-height: 58px;
     margin: 10px 16px 8px;
-    padding: 10px 12px;
-    background: linear-gradient(135deg, rgba(133,213,81,0.16), rgba(137,180,250,0.28));
-    border: 1px solid rgba(137,180,250,0.35);
+    padding: 10px 14px;
+    background: rgba(137,180,250,0.12);
+    border: 1px solid rgba(137,180,250,0.42);
     border-radius: 8px;
     color: var(--text-primary);
-    font-size: 12px;
+    font-size: 13px;
     font-weight: 800;
     letter-spacing: 0;
     cursor: pointer;
@@ -91,7 +93,7 @@ body {
     transition: border-color 160ms var(--ease-out), background 160ms var(--ease-out), box-shadow 160ms var(--ease-out), transform 140ms var(--ease-out);
 }
 .open-options:hover {
-    background: linear-gradient(135deg, rgba(133,213,81,0.22), rgba(137,180,250,0.36));
+    background: rgba(137,180,250,0.18);
     border-color: rgba(137,180,250,0.55);
     box-shadow: 0 10px 22px rgba(137,180,250,0.14);
 }
@@ -104,22 +106,25 @@ body {
     display: block;
     margin-top: 2px;
 }
+.open-options-copy { flex: 1; text-align: left; }
+.open-options-icon { width: 34px; height: 34px; padding: 7px; border: 1px solid rgba(137,180,250,0.32); border-radius: 8px; color: #cfe0ff; flex: 0 0 auto; }
 .open-options svg { width: 14px; height: 14px; flex-shrink: 0; opacity: 0.75; }
+.open-options .open-options-icon { width: 34px; height: 34px; opacity: 1; }
 
-.features { padding: 4px 10px 8px; max-height: 372px; overflow-y: auto; }
+.features { padding: 6px 12px 10px; max-height: 548px; overflow-y: auto; }
 
 /* Group headers — collapsible sections per category */
 .feat-group {
     border: 1px solid rgba(255,255,255,0.06);
-    border-radius: 8px;
+    border-radius: 10px;
     background: rgba(255,255,255,0.024);
     overflow: hidden;
-    margin-bottom: 6px;
+    margin-bottom: 8px;
 }
 .feat-group-header {
     width: 100%;
-    min-height: 36px;
-    padding: 0 10px;
+    min-height: 42px;
+    padding: 0 12px;
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -158,13 +163,13 @@ body {
     align-items: center;
     justify-content: space-between;
     gap: 10px;
-    min-height: 34px;
-    padding: 6px 10px;
+    min-height: 42px;
+    padding: 8px 12px;
     border-top: 1px solid rgba(255,255,255,0.045);
     transition: background-color 120ms var(--ease-out);
 }
 .feat-row:hover { background: rgba(255,255,255,0.03); }
-.feat-label { font-size: 12px; line-height: 1.28; color: var(--text-secondary); }
+.feat-label { font-size: 12.5px; line-height: 1.28; color: var(--text-secondary); }
 /* v3.1.0 — WCAG 2.2 SC 2.5.8 Target Size: 24×24 CSS px minimum.
    Track bumped 34×18 → 40×24, thumb 14 → 20, kept the toggle-switch
    shape exception per the no-pill-backdrops rule (toggle thumbs and
@@ -186,8 +191,7 @@ body {
     pointer-events: none;
 }
 .toggle input:checked + .toggle-track {
-    background: linear-gradient(135deg, var(--rumble-green), var(--accent));
-    border-color: transparent;
+    background: var(--rumble-green); border-color: rgba(133,213,81,0.72);
 }
 .toggle input:focus-visible + .toggle-track { box-shadow: var(--focus-ring); }
 .toggle-thumb {
@@ -243,7 +247,7 @@ body {
 
 /* Footer */
 .footer {
-    padding: 10px 12px;
+    padding: 11px 14px;
     border-top: 1px solid var(--border);
     background: rgba(255,255,255,0.018);
     display: flex;
@@ -258,7 +262,7 @@ body {
 }
 .footer-btn {
     display: flex; align-items: center; justify-content: center;
-    width: 30px; height: 30px;
+    width: 34px; height: 34px;
     background: rgba(255,255,255,0.04); border: 1px solid var(--border);
     border-radius: 6px; cursor: pointer;
     color: var(--text-muted); transition: color 160ms var(--ease-out), background-color 160ms var(--ease-out), border-color 160ms var(--ease-out), box-shadow 160ms var(--ease-out);
@@ -351,9 +355,13 @@ body {
         <span id="version"></span>
     </div>
 </div>
-<div class="popup-status" role="status" aria-live="polite" data-i18n="popupLocalAutosave">Local changes autosave</div>
+<div class="popup-status" role="status" aria-live="polite">
+    <span class="popup-autosave" data-i18n="popupLocalAutosave">Local changes autosave</span>
+    <span class="popup-shield" data-i18n="networkShieldActive">Network shield active</span>
+</div>
 <button class="open-options" id="open-options" type="button" aria-label="Open full settings editor" data-i18n-aria-label="openSettingsEditor">
-    <span>
+    <svg class="open-options-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12.22 2h-.44a2 2 0 00-2 2v.18a2 2 0 01-1 1.73l-.43.25a2 2 0 01-2 0l-.15-.08a2 2 0 00-2.73.73l-.22.38a2 2 0 00.73 2.73l.15.1a2 2 0 011 1.72v.51a2 2 0 01-1 1.74l-.15.09a2 2 0 00-.73 2.73l.22.38a2 2 0 002.73.73l.15-.08a2 2 0 012 0l.43.25a2 2 0 011 1.73V20a2 2 0 002 2h.44a2 2 0 002-2v-.18a2 2 0 011-1.73l.43-.25a2 2 0 012 0l.15.08a2 2 0 002.73-.73l.22-.39a2 2 0 00-.73-2.73l-.15-.08a2 2 0 01-1-1.74v-.5a2 2 0 011-1.74l.15-.09a2 2 0 00.73-2.73l-.22-.38a2 2 0 00-2.73-.73l-.15.08a2 2 0 01-2 0l-.43-.25a2 2 0 01-1-1.73V4a2 2 0 00-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
+    <span class="open-options-copy">
         <span data-i18n="openSettingsEditor">Open full settings editor</span>
         <span class="open-options-hint" data-i18n="popupOpenOptionsHint">Search, groups, import/export, reset</span>
     </span>

@@ -272,7 +272,7 @@
     const manifest = Object.freeze({
         manifest_version: null,
         version: VERSION,
-        permissions: ['GM_getValue', 'GM_setValue', 'GM_deleteValue', 'GM_addValueChangeListener', 'GM_removeValueChangeListener', 'GM_xmlhttpRequest', 'GM_download'],
+        permissions: ['GM_getValue', 'GM_setValue', 'GM_deleteValue', 'GM_addValueChangeListener', 'GM_removeValueChangeListener', 'GM_xmlhttpRequest', 'GM_download', 'userscriptWebRequest'],
         host_permissions: ['https://rumble.com/*', 'https://*.rumble.com/*', 'https://1a-1791.com/*', 'https://*.1a-1791.com/*', 'https://rumble.cloud/*', 'https://*.rumble.cloud/*'],
         web_accessible_resources: [],
     });
@@ -301,6 +301,7 @@
             packagedAssets: true,
             mediabunny: hasMediabunnyAssets && typeof URL.createObjectURL === 'function',
             externalMessages: false,
+            requestBlocking: false,
         }),
         storage,
         fetch: platformFetch,

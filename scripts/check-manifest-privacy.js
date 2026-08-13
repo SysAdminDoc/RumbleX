@@ -10,6 +10,7 @@ const MANIFEST_PATHS = [
     path.join(ROOT, 'extension', 'manifest.json'),
     path.join(ROOT, 'extension', 'manifest-firefox.json'),
 ];
+const USERSCRIPT_PLATFORM_PATH = path.join(ROOT, 'userscript', 'platform.js');
 
 function readJson(file) {
     return JSON.parse(fs.readFileSync(file, 'utf8'));
@@ -80,6 +81,14 @@ function extractObjectKeys(source, constName) {
     throw new Error(`Unterminated ${constName}`);
 }
 
+function extractUserscriptManifestArray(source, key) {
+    const manifestStart = source.indexOf('const manifest = Object.freeze({');
+    if (manifestStart < 0) throw new Error('Missing userscript manifest disclosure object');
+    const match = source.slice(manifestStart).match(new RegExp(`\\b${key}:\\s*\\[([^\\]]*)\\]`));
+    if (!match) throw new Error(`Missing userscript manifest ${key}`);
+    return Array.from(match[1].matchAll(/'([^']+)'/g), (entry) => entry[1]);
+}
+
 function compareSet(label, expected, actual) {
     const missing = expected.filter((value) => !actual.includes(value));
     const stale = actual.filter((value) => !expected.includes(value));
@@ -91,8 +100,15 @@ function compareSet(label, expected, actual) {
 }
 
 const manifests = MANIFEST_PATHS.map(readJson);
-const expectedPermissions = union(manifests.flatMap(normalizeApiPermissions));
-const expectedHosts = union(manifests.flatMap(normalizeHostPermissions));
+const userscriptPlatform = fs.readFileSync(USERSCRIPT_PLATFORM_PATH, 'utf8');
+const expectedPermissions = union([
+    ...manifests.flatMap(normalizeApiPermissions),
+    ...extractUserscriptManifestArray(userscriptPlatform, 'permissions'),
+]);
+const expectedHosts = union([
+    ...manifests.flatMap(normalizeHostPermissions),
+    ...extractUserscriptManifestArray(userscriptPlatform, 'host_permissions'),
+]);
 const expectedResources = union(manifests.flatMap(normalizeWebAccessibleResources));
 const content = fs.readFileSync(CONTENT_PATH, 'utf8');
 

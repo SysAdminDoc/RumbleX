@@ -99,17 +99,17 @@ pack_extension() {
     local dest="$1"
     if command -v zip >/dev/null 2>&1; then
         zip -r "$dest" \
-            manifest.json browser-polyfill.js archive-fs.js background.js platform.js content.js worker.js mediabunny-worker.js offscreen.html offscreen.js \
-            lib/ icons/ pages/ _locales/ \
+            manifest.json browser-polyfill.js ad-blocker.js archive-fs.js background.js platform.js content.js worker.js mediabunny-worker.js offscreen.html offscreen.js \
+            lib/ icons/ pages/ rules/ _locales/ \
             -x "manifest-firefox.json" -x "manifest-chrome-backup.json" -x "build.sh" -x "*.DS_Store"
     elif [ -x "/c/Windows/System32/tar.exe" ]; then
         "/c/Windows/System32/tar.exe" -a -c -f "$dest" \
-            manifest.json browser-polyfill.js archive-fs.js background.js platform.js content.js worker.js mediabunny-worker.js offscreen.html offscreen.js \
-            lib icons pages _locales
+            manifest.json browser-polyfill.js ad-blocker.js archive-fs.js background.js platform.js content.js worker.js mediabunny-worker.js offscreen.html offscreen.js \
+            lib icons pages rules _locales
     elif command -v bsdtar >/dev/null 2>&1; then
         bsdtar -a -c -f "$dest" \
-            manifest.json browser-polyfill.js archive-fs.js background.js platform.js content.js worker.js mediabunny-worker.js offscreen.html offscreen.js \
-            lib icons pages _locales
+            manifest.json browser-polyfill.js ad-blocker.js archive-fs.js background.js platform.js content.js worker.js mediabunny-worker.js offscreen.html offscreen.js \
+            lib icons pages rules _locales
     else
         echo "[!] Need zip, Windows bsdtar, or bsdtar to build packages."
         return 1

@@ -414,5 +414,29 @@
   "groupCommentsExtra": {
     "message": "Kommentare und Chat (Extras)",
     "description": "UI string used by popup/options i18n pass."
+  },
+  "networkShieldActive": {
+    "message": "Netzwerkschutz aktiv",
+    "description": "Status der Anfrageblockierung fur Werbung."
+  },
+  "networkShieldDescription": {
+    "message": "Verifizierte Anfragen zur Anzeigenauslieferung und Messung werden vor dem Seitencode blockiert.",
+    "description": "Erklart den Netzwerkschutz der Erweiterung."
+  },
+  "networkShieldVerified": {
+    "message": "7 verifizierte Anfrageregeln",
+    "description": "Anzahl der gepruften Regeln zur Werbeblockierung."
+  },
+  "networkShieldDomNote": {
+    "message": "Ad Nuker steuert die verbleibende DOM-Bereinigung.",
+    "description": "Unterscheidet Anfrageblockierung und DOM-Bereinigung."
+  },
+  "networkShieldManagerLimited": {
+    "message": "Der Netzwerkschutz hangt vom Userscript-Manager ab",
+    "description": "Status der Userscript-Einschrankung."
+  },
+  "networkShieldManagerNote": {
+    "message": "Die DOM-Bereinigung bleibt aktiv; Chromium-MV3-Manager bieten keine fruhe Anfrageblockierung.",
+    "description": "Detail zur Userscript-Einschrankung."
   }
 }

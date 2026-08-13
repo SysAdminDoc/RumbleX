@@ -1,0 +1,72 @@
+[
+  {
+    "id": 1,
+    "priority": 100,
+    "action": { "type": "block" },
+    "condition": {
+      "requestDomains": ["a.ads.rmbl.ws"],
+      "initiatorDomains": ["rumble.com"],
+      "resourceTypes": ["sub_frame", "script", "image", "xmlhttprequest", "ping", "media", "websocket", "other"]
+    }
+  },
+  {
+    "id": 2,
+    "priority": 100,
+    "action": { "type": "block" },
+    "condition": {
+      "requestDomains": ["imasdk.googleapis.com"],
+      "initiatorDomains": ["rumble.com", "a.ads.rmbl.ws"],
+      "resourceTypes": ["sub_frame", "script", "xmlhttprequest", "other"]
+    }
+  },
+  {
+    "id": 3,
+    "priority": 100,
+    "action": { "type": "block" },
+    "condition": {
+      "urlFilter": "||s0.2mdn.net/instream/video/",
+      "initiatorDomains": ["rumble.com", "imasdk.googleapis.com"],
+      "resourceTypes": ["sub_frame", "script", "xmlhttprequest", "other"]
+    }
+  },
+  {
+    "id": 4,
+    "priority": 100,
+    "action": { "type": "block" },
+    "condition": {
+      "urlFilter": "||pagead2.googlesyndication.com/omsdk/",
+      "initiatorDomains": ["rumble.com", "imasdk.googleapis.com"],
+      "resourceTypes": ["sub_frame", "script", "xmlhttprequest", "other"]
+    }
+  },
+  {
+    "id": 5,
+    "priority": 100,
+    "action": { "type": "block" },
+    "condition": {
+      "requestDomains": ["doubleclick.net"],
+      "initiatorDomains": ["rumble.com", "a.ads.rmbl.ws", "imasdk.googleapis.com"],
+      "resourceTypes": ["sub_frame", "script", "image", "xmlhttprequest", "ping", "media", "other"]
+    }
+  },
+  {
+    "id": 6,
+    "priority": 100,
+    "action": { "type": "block" },
+    "condition": {
+      "urlFilter": "||googleadservices.com/pagead/",
+      "initiatorDomains": ["rumble.com", "a.ads.rmbl.ws", "imasdk.googleapis.com"],
+      "resourceTypes": ["sub_frame", "script", "image", "xmlhttprequest", "ping", "other"]
+    }
+  },
+  {
+    "id": 7,
+    "priority": 100,
+    "action": { "type": "block" },
+    "condition": {
+      "regexFilter": "^https://(?:[^/]+\\.)?rumble\\.com/l/[^?]*\\?.*(?:[?&])af=",
+      "initiatorDomains": ["rumble.com"],
+      "resourceTypes": ["ping", "xmlhttprequest", "other"]
+    }
+  }
+]
