@@ -46,6 +46,7 @@ test('ad blocking group distinguishes request shield from DOM cleanup', async ({
     await expect(page.locator('#settings-workspace-banner')).toHaveClass(/is-shield/);
     await expect(page.locator('#settings-workspace-title')).toHaveText('Network shield active');
     await expect(page.locator('#settings-workspace-note')).toContainText('7 verified request rules');
+    await expect(page.locator('#settings-workspace-note')).toContainText('Chromium DNR');
     await expect(page.locator('#settings-workspace-note')).toContainText('Ad Nuker controls the remaining DOM cleanup');
 });
 
@@ -72,4 +73,57 @@ test('download muxer engine renders as a guarded choice', async ({ context, exte
         'mux.js (default)',
         'Mediabunny + WebCodecs (experimental)',
     ]);
+});
+
+test('snapshot restore applies the same trust boundary as file import', async ({ context, extensionId }) => {
+    const page = await context.newPage();
+    await page.goto(`chrome-extension://${extensionId}/pages/options.html`);
+    const snapshotAt = 1_723_500_000_000;
+    await page.evaluate(({ snapshotAt }) => new Promise((resolve) => {
+        chrome.storage.local.set({
+            rx_settings: { backupHistory: true, backupHistoryLimit: 10 },
+            rx_settings_snapshots: [{
+                at: snapshotAt,
+                reason: 'legacy-malicious-fixture',
+                settings: {
+                    theme: 'not-a-theme',
+                    splitRatio: 999,
+                    blockedKeywords: [{ bad: true }, 'safe phrase'],
+                    hiddenCategories: ['news', 'x} body { display:none } /*'],
+                    autoplayQueue: [
+                        'javascript://rumble.com/%0Aalert(1)',
+                        'https://example.com/off-site',
+                        'https://rumble.com/vsafe-fixture.html',
+                    ],
+                    watchedChannels: [
+                        { url: 'javascript://rumble.com/bad', name: 'bad' },
+                        { url: 'https://rumble.com/c/safe', name: 'Safe' },
+                    ],
+                },
+            }],
+        }, resolve);
+    }), { snapshotAt });
+    await page.reload();
+    await page.locator('#snapshot-section summary').click();
+    await page.locator('#snapshot-refresh-btn').click();
+    await expect(page.locator('#snapshot-list')).toContainText('legacy-malicious-fixture');
+
+    await page.locator('#snapshot-list li')
+        .filter({ hasText: 'legacy-malicious-fixture' })
+        .getByRole('button', { name: 'Restore' })
+        .click();
+    await expect(page.locator('#status')).toContainText('restored');
+
+    const restored = await page.evaluate(() => new Promise((resolve) => {
+        chrome.storage.local.get('rx_settings', (value) => resolve(value.rx_settings));
+    }));
+    expect(restored.theme).toBeUndefined();
+    expect(restored.splitRatio).toBe(95);
+    expect(restored.blockedKeywords).toEqual(['safe phrase']);
+    expect(restored.hiddenCategories).toEqual(['news']);
+    expect(restored.autoplayQueue).toEqual(['https://rumble.com/vsafe-fixture.html']);
+    expect(restored.watchedChannels).toEqual([expect.objectContaining({
+        url: 'https://rumble.com/c/safe',
+        name: 'Safe',
+    })]);
 });

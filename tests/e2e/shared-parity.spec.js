@@ -33,6 +33,7 @@ async function inContent(serviceWorker, targetTabId, action, args = []) {
             func: (name, values) => {
                 if (name === 'videoCardsReady') return typeof VideoCards !== 'undefined';
                 if (name === 'settingsReady') return typeof Settings !== 'undefined' && Settings._ready && !!Settings._cache;
+                if (name === 'privacyReport') return rxBuildPrivacyReport();
                 if (name === 'cards') {
                     return VideoCards.related().map((card) => ({
                         title: VideoCards.title(card),
@@ -110,6 +111,85 @@ async function inContent(serviceWorker, targetTabId, action, args = []) {
                         return { __error: String(error?.stack || error) };
                     }
                 }
+                if (name === 'streamToDisk') {
+                    return (async () => {
+                        const originalFetch = globalThis.fetch;
+                        const originalHls = VideoDownloader._hlsUrl;
+                        const payloads = new Map([
+                            ['https://rumble.com/master.m3u8', '#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=900000,RESOLUTION=1280x720\nhttps://rumble.com/variant-720.m3u8\n'],
+                            ['https://rumble.com/variant-720.m3u8', '#EXTM3U\n#EXTINF:2,\nhttps://cdn.1a-1791.com/a.ts\n#EXTINF:2,\nhttps://cdn.1a-1791.com/b.ts\n'],
+                            ['https://rumble.com/direct.m3u8', '#EXTM3U\n#EXTINF:2,\nhttps://cdn.1a-1791.com/direct.ts\n'],
+                        ]);
+                        const bytesByUrl = new Map([
+                            ['https://cdn.1a-1791.com/a.ts', new Uint8Array([1, 2, 3])],
+                            ['https://cdn.1a-1791.com/b.ts', new Uint8Array([4, 5])],
+                            ['https://cdn.1a-1791.com/direct.ts', new Uint8Array([9, 8])],
+                        ]);
+                        globalThis.fetch = async (input) => {
+                            const url = String(input instanceof Request ? input.url : input);
+                            if (payloads.has(url)) return new Response(payloads.get(url), { status: 200 });
+                            if (bytesByUrl.has(url)) return new Response(bytesByUrl.get(url), { status: 200 });
+                            return new Response('', { status: 404 });
+                        };
+                        const makeWritable = () => {
+                            const state = { bytes: [], closed: false, aborted: false };
+                            return {
+                                state,
+                                async write(chunk) { state.bytes.push(...new Uint8Array(chunk)); },
+                                async close() { state.closed = true; },
+                                async abort() { state.aborted = true; },
+                            };
+                        };
+                        try {
+                            VideoDownloader._hlsUrl = 'https://rumble.com/master.m3u8';
+                            const writable = makeWritable();
+                            const progress = [];
+                            const normal = await VideoDownloader._streamHlsToWritable(
+                                { height: 720, label: '720p' }, writable, {
+                                    onProgress: (entry) => progress.push(entry),
+                                },
+                            );
+                            await writable.close();
+
+                            const abortedWritable = makeWritable();
+                            const controller = new AbortController();
+                            let abortName = null;
+                            try {
+                                await VideoDownloader._streamHlsToWritable(
+                                    { height: 720, label: '720p' }, abortedWritable, {
+                                        signal: controller.signal,
+                                        onProgress: ({ completed }) => {
+                                            if (completed === 1) controller.abort();
+                                        },
+                                    },
+                                );
+                            } catch (error) {
+                                abortName = error?.name || String(error);
+                                await abortedWritable.abort();
+                            }
+
+                            VideoDownloader._hlsUrl = 'https://rumble.com/direct.m3u8';
+                            const directWritable = makeWritable();
+                            const direct = await VideoDownloader._streamHlsToWritable(
+                                { height: 720, label: '720p' }, directWritable,
+                            );
+                            return {
+                                normal,
+                                normalBytes: writable.state.bytes,
+                                normalClosed: writable.state.closed,
+                                progress,
+                                abortName,
+                                abortedBytes: abortedWritable.state.bytes,
+                                abortCalled: abortedWritable.state.aborted,
+                                direct,
+                                directBytes: directWritable.state.bytes,
+                            };
+                        } finally {
+                            globalThis.fetch = originalFetch;
+                            VideoDownloader._hlsUrl = originalHls;
+                        }
+                    })();
+                }
                 throw new Error(`Unknown shared-parity operation: ${name}`);
             },
             args: [operation, callArgs],
@@ -151,7 +231,10 @@ test('Theater has usable geometry, keyboard semantics, exit, and route remountin
     }).toBeGreaterThan(200);
     const geometry = await inContent(serviceWorker, id, 'theaterGeometry');
     expect(geometry.rightWidth).toBeGreaterThan(200);
-    expect(geometry.dividerWidth).toBeGreaterThanOrEqual(6);
+    // Chromium can report a nominal 6px CSS track a few hundredths below
+    // six after fractional layout/device scaling. Keep the assertion focused
+    // on a usable divider rather than exact floating-point rasterization.
+    expect(geometry.dividerWidth).toBeGreaterThanOrEqual(5.5);
     expect(geometry.separatorRole).toBe('separator');
     expect(geometry.closeLabel).toBe('Exit theater mode');
     expect(geometry.commentsCount).toBe(1);
@@ -198,12 +281,53 @@ test('shared trust boundaries reject malicious settings, media URLs, and modifie
     expect(result.plainPrevented).toBe(true);
 });
 
+test('privacy report exposes the request-shield mode and critical selector health', async ({ context, serviceWorker }) => {
+    const page = await openWatch(context, 'vmodern-health-report.html');
+    const id = await tabId(serviceWorker, page.url());
+    await expect.poll(() => inContent(serviceWorker, id, 'settingsReady')).toBe(true);
+
+    const report = await inContent(serviceWorker, id, 'privacyReport');
+    expect(report.requestShield).toEqual({
+        active: true,
+        enforcement: 'chromium-dnr',
+        declaredRules: 7,
+        assurance: 'runtime-enforced',
+    });
+    expect(report.selectorHealth.status).toBe('healthy');
+    expect(report.selectorHealth.page).toBe('watch');
+    expect(report.selectorHealth.missing).toEqual([]);
+    expect(report.selectorHealth.checks).toEqual(expect.arrayContaining([
+        { key: 'watch.player', state: 'stable' },
+        { key: 'watch.relatedCard', state: 'stable' },
+    ]));
+});
+
+test('HLS TS streams to a selected file in bounded chunks and aborts partial work', async ({ context, serviceWorker }) => {
+    const page = await openWatch(context, 'vmodern-stream-to-disk.html');
+    const id = await tabId(serviceWorker, page.url());
+    await expect.poll(() => inContent(serviceWorker, id, 'settingsReady')).toBe(true);
+
+    const result = await inContent(serviceWorker, id, 'streamToDisk');
+    expect(result.normal).toEqual({ bytes: 5, segments: 2 });
+    expect(result.normalBytes).toEqual([1, 2, 3, 4, 5]);
+    expect(result.normalClosed).toBe(true);
+    expect(result.progress).toEqual([
+        { completed: 1, total: 2, bytes: 3 },
+        { completed: 2, total: 2, bytes: 5 },
+    ]);
+    expect(result.abortName).toBe('AbortError');
+    expect(result.abortedBytes).toEqual([1, 2, 3]);
+    expect(result.abortCalled).toBe(true);
+    expect(result.direct).toEqual({ bytes: 2, segments: 1 });
+    expect(result.directBytes).toEqual([9, 8]);
+});
+
 test('in-page settings reports extension request blocking separately from Ad Nuker', async ({ context }) => {
     const page = await openWatch(context, 'vmodern-shield-settings.html');
     await page.locator('#rx-settings-btn').waitFor({ state: 'attached', timeout: 15_000 });
     await page.evaluate(() => document.querySelector('#rx-settings-btn')?.click());
     await expect(page.locator('.rx-m-shield-status')).not.toHaveClass(/is-limited/);
     await expect(page.locator('.rx-m-shield-title')).toHaveText('Network shield active');
-    await expect(page.locator('.rx-m-shield-note')).toHaveText('7 verified request rules');
+    await expect(page.locator('.rx-m-shield-note')).toHaveText('7 verified request rules · Chromium DNR');
     await expect(page.locator('div.rx-m-card[data-feature-id="adNuker"]')).toContainText('after the network shield runs');
 });

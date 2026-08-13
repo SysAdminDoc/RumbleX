@@ -87,7 +87,7 @@ for (const forbidden of ['unsafeWindow', 'cdn.jsdelivr.net', 'GM_loadScript', 'n
 for (const required of [
     '@noframes', 'GM_xmlhttpRequest', 'GM_download', 'RumbleXPlatform',
     "kind: 'userscript'", 'mediabunny-worker.js', 'lib/mediabunny.min.mjs',
-    'mediabunny: hasMediabunnyAssets', 'assetUrl',
+    'mediabunny: hasMediabunnyAssets', 'streamingFileSave', 'requestBlockingMode', 'assetUrl',
 ]) {
     if (!generated.includes(required)) fail(`generated userscript is missing required contract: ${required}`);
 }

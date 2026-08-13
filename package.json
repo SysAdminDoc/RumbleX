@@ -1,6 +1,6 @@
 {
   "name": "rumblex-tests",
-  "version": "3.36.0",
+  "version": "3.37.0",
   "private": true,
   "description": "RumbleX Playwright E2E harness (devDependency only — runtime code is in extension/).",
   "scripts": {
@@ -17,6 +17,7 @@
     "test:parity": "node scripts/check-userscript-parity.js",
     "test:userscript-platform": "node scripts/test-userscript-platform.js",
     "test:extension-platform": "node scripts/test-extension-platform.js",
+    "test:firefox-extension": "node scripts/test-firefox-extension.js",
     "test:ad-blocking": "node scripts/test-ad-blocking.js"
   },
   "devDependencies": {

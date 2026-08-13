@@ -14,6 +14,20 @@ const TARGETS = [
 
 const AD_REQUEST_RE = /(^https:\/\/a\.ads\.rmbl\.ws(?:[/:?#]|$)|imasdk\.googleapis\.com|s0\.2mdn\.net\/instream\/video\/|pagead2\.googlesyndication\.com\/omsdk\/|(?:[^/]+\.)?doubleclick\.net|(?:[^/]+\.)?googleadservices\.com\/pagead\/|^https:\/\/(?:[^/]+\.)?rumble\.com\/l\/[^?]*\?.*(?:[?&])af=)/i;
 
+function sanitizeAuditUrl(value) {
+    if (!value) return '';
+    try {
+        const url = new URL(String(value || ''));
+        url.username = '';
+        url.password = '';
+        for (const key of [...url.searchParams.keys()]) url.searchParams.set(key, '<redacted>');
+        url.hash = '';
+        return url.toString();
+    } catch {
+        return '<invalid-url>';
+    }
+}
+
 test.describe('live request-level ad audit', () => {
     test.skip(!LIVE, 'opt-in: set RUMBLEX_AD_NETWORK_AUDIT=1');
 
@@ -32,14 +46,14 @@ test.describe('live request-level ad audit', () => {
             const failed = [];
             page.on('request', (request) => {
                 const url = request.url();
-                if (/^https?:/i.test(url)) requests.push({ url, method: request.method(), type: request.resourceType() });
+                if (/^https?:/i.test(url)) requests.push({ url: sanitizeAuditUrl(url), method: request.method(), type: request.resourceType() });
             });
             page.on('response', (response) => {
                 const url = response.url();
-                if (AD_REQUEST_RE.test(url)) completedAdRequests.push({ url, status: response.status(), type: response.request().resourceType() });
+                if (AD_REQUEST_RE.test(url)) completedAdRequests.push({ url: sanitizeAuditUrl(url), status: response.status(), type: response.request().resourceType() });
             });
             page.on('requestfailed', (request) => {
-                failed.push({ url: request.url(), type: request.resourceType(), error: request.failure()?.errorText || '' });
+                failed.push({ url: sanitizeAuditUrl(request.url()), type: request.resourceType(), error: request.failure()?.errorText || '' });
             });
 
             await page.goto(target.url, { waitUntil: 'domcontentloaded', timeout: 45_000 });
@@ -62,6 +76,8 @@ test.describe('live request-level ad audit', () => {
                     title: document.title,
                     url: location.href,
                     rxBooted: !!document.querySelector('#rx-settings-panel-css, style[data-rx], #rx-settings-btn'),
+                    securityVerification: !!document.querySelector('iframe[src*="challenges.cloudflare.com"], input[name="cf-turnstile-response"], #challenge-running, #challenge-stage')
+                        || /performing security verification|verify you are human/i.test(document.body?.textContent?.slice(0, 2500) || ''),
                     adNodes: nodes.map((node) => ({
                         tag: node.tagName,
                         id: node.id,
@@ -71,12 +87,24 @@ test.describe('live request-level ad audit', () => {
                     })),
                 };
             });
+            dom.url = sanitizeAuditUrl(dom.url);
+            for (const node of dom.adNodes) node.src = sanitizeAuditUrl(node.src);
             await page.screenshot({ path: path.join(outputDir, `${target.name}-${suffix}.png`), fullPage: false });
-            results.push({ target, dom, requests, completedAdRequests, failed });
+            results.push({
+                target: { name: target.name, url: sanitizeAuditUrl(target.url) },
+                dom,
+                requests,
+                completedAdRequests,
+                failed,
+            });
             await page.close();
         }
 
         fs.writeFileSync(path.join(outputDir, `network-${suffix}.json`), `${JSON.stringify(results, null, 2)}\n`);
+        test.skip(
+            results.some((result) => result.dom.securityVerification),
+            'Rumble served an interactive Cloudflare verification page; the ad audit cannot treat it as a product page',
+        );
         if (EXPECT_BLOCKING) {
             for (const result of results) {
                 expect(result.dom.rxBooted).toBeTruthy();

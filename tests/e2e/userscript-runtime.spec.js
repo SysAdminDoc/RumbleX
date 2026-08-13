@@ -73,6 +73,7 @@ test('generated userscript boots without extension APIs and keeps standalone dow
             persistentBackground: globalThis.RumbleXPlatform?.capabilities?.persistentBackground,
             mediabunny: globalThis.RumbleXPlatform?.capabilities?.mediabunny,
             requestBlocking: globalThis.RumbleXPlatform?.capabilities?.requestBlocking,
+            requestBlockingMode: globalThis.RumbleXPlatform?.capabilities?.requestBlockingMode,
             chromeRuntimeType: typeof globalThis.chrome?.runtime,
         }));
         expect(platform).toEqual({
@@ -81,6 +82,7 @@ test('generated userscript boots without extension APIs and keeps standalone dow
             persistentBackground: false,
             mediabunny: true,
             requestBlocking: false,
+            requestBlockingMode: 'userscript-manager-dependent',
             chromeRuntimeType: 'undefined',
         });
         expect(pageErrors).toEqual([]);

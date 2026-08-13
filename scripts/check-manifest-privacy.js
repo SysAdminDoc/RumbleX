@@ -137,6 +137,10 @@ const requiredReportSnippets = [
     'permissionDisclosures,',
     'hostPermissionDisclosures,',
     'webAccessibleResourceDisclosures,',
+    'const requestShield = {',
+    'const selectorHealth = Selectors.healthCheck();',
+    'requestShield,',
+    'selectorHealth,',
     'externalNetworkSurfaces: hostPermissionDisclosures.map',
 ];
 

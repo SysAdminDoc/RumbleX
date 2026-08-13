@@ -17,6 +17,7 @@ node_modules/
 playwright-report/
 test-results/
 .playwright/
+work/
 extension/_metadata/
 __pycache__/
 *.py[cod]

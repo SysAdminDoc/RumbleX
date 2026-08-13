@@ -1,10 +1,14 @@
 # RumbleX
 
-![Version](https://img.shields.io/badge/version-v3.36.0-blue) ![License](https://img.shields.io/badge/license-MIT-green) ![Platform](https://img.shields.io/badge/platform-Extension%20%2B%20Userscript-lightgrey) ![Firefox](https://img.shields.io/badge/firefox-109%2B-orange)
+![Version](https://img.shields.io/badge/version-v3.37.0-blue) ![License](https://img.shields.io/badge/license-MIT-green) ![Platform](https://img.shields.io/badge/platform-Extension%20%2B%20Userscript-lightgrey) ![Firefox](https://img.shields.io/badge/firefox-109%2B-orange)
 
 **The ultimate Rumble enhancement suite.** 130+ feature modules across 14 categories — ad blocking, theater mode, video downloads with CDN deep-scan probing and an opt-in Mediabunny muxer path, five-theme engine (now including OLED Green), playback controls, chat enhancements with deterministic username colors and tier-filtered rants, chapters, SponsorBlock, clips, live DVR, transcripts, auto-hide chrome, 50+ granular hide-X toggles for every Rumble row/button/player control, thumbnail hider, dense mode, reduced-motion path, tracking-param stripping, external player handoff (MPV/PotPlayer), and full-round-trip backup/restore with snapshot history. Chrome MV3 + Firefox MV2 + userscript.
 
-### What's new in v3.36
+### What's new in v3.37
+
+- **Large HLS without tab-sized buffering** — supported Chromium desktops can stream a selected HLS quality directly into a user-chosen `.ts` file, one response chunk at a time. Cancellation aborts the network reader and staged file write; MP4 remuxing remains safely capped at 512 MiB.
+- **Visible drift detection** — the local Privacy Report now identifies critical route selectors as healthy, fallback, or broken, and a missing high-value anchor produces a one-time in-page warning instead of silently disabling features.
+- **Proven Firefox MV2 runtime** — a repeatable Firefox temporary-addon smoke covers content injection, storage, deletion, response messaging, and bundled media assets. Shield UI now distinguishes Chromium DNR, Firefox `webRequest`, and manager-dependent userscripts.
 
 - **One shared feature core** — Chrome MV3, Firefox MV2, Tampermonkey, and Violentmonkey now execute the same canonical page-feature code. A build-time guard rejects stale userscripts, version drift, missing settings/modules, direct `chrome.*` use, and remote code loading.
 - **Current Rumble support** — modern `<rum-video-thumbnail>` cards, SPA watch-route changes, visible action anchors, and every current embed HLS response shape are covered by committed fixtures and loaded-extension tests.
@@ -68,7 +72,7 @@
 - **Title Font** — Unbold + normalize title typography
 
 ### Downloads & Capture
-- **Video Download** — Download as direct MP4 or HLS-to-MP4/TS via Web Worker transmuxing. Default engine is the pinned mux.js path; advanced settings include an experimental Mediabunny + WebCodecs engine with golden-sample output parity and bounded fallback to mux.js when WebCodecs, module startup, or conversion is unavailable. RumbleX-owned browser transfers pause on offline events and queue safe ID-only resumes for the next online event, without persisting signed media URLs. Includes an automatic **Deep Scan (RUD)** that probes `hugh.cdn.rumble.cloud` for every quality variant the embed API didn't surface (1080p/720p/480p/360p/240p × mp4/tar × live/vod), with live progress bar, per-row copy-link buttons, and support for TAR live-replay archives (with inline *extract with 7-Zip, drop the `.m3u8` into VLC* hint).
+- **Video Download** — Download direct MP4, bounded HLS-to-MP4, or raw HLS TS. On Chromium desktops with the File System Access picker, **TS to disk** writes each response chunk directly to a selected file and supports cancellation without retaining the complete stream in memory; Firefox and unsupported userscript environments keep the 512 MiB in-tab ceiling and direct/TAR fallbacks. Default MP4 engine is the pinned mux.js path; advanced settings include an experimental Mediabunny + WebCodecs engine with golden-sample output parity and bounded fallback to mux.js when WebCodecs, module startup, or conversion is unavailable. RumbleX-owned browser transfers pause on offline events and queue safe ID-only resumes for the next online event, without persisting signed media URLs. Includes an automatic **Deep Scan (RUD)** that probes `hugh.cdn.rumble.cloud` for every quality variant the embed API didn't surface (1080p/720p/480p/360p/240p × mp4/tar × live/vod), with live progress bar, per-row copy-link buttons, and support for TAR live-replay archives (with inline *extract with 7-Zip, drop the `.m3u8` into VLC* hint).
 - **Failure diagnostics** — Failed quality discovery, direct downloads, HLS fetches, clip exports, archive jobs, and muxing paths expose copy/export controls beside the error and in Options → Privacy & Data. The local-only 50-attempt ring includes failure stage, selected quality, muxer/fallback path, and worker/offscreen capabilities; URL credentials, query values, fragments, cookies, and token-like data are redacted before storage.
 - **Low-Bitrate MP4 (for listening)** — Download the smallest video variant for background audio (saved as `.mp4` — honest naming; Rumble doesn't expose a pure audio track).
 - **Video Clips** — Mark In/Out on the player and export a clip as MP4 (segment slicing + transmux)
@@ -170,7 +174,17 @@ Install [`RumbleX.user.js`](https://raw.githubusercontent.com/SysAdminDoc/Rumble
 
 The userscript supports settings, themes, page cleanup, selectors/routes, screenshots, direct/HLS/clip/audio/batch downloads, diagnostics, and local backup data. Browser-extension-only capabilities that require a persistent privileged background remain intentionally unavailable: the channel archive queue/recovery service, alarms, native notifications, context menus, side panel, and tab grouping.
 
-Its metadata also requests early ad cancellation through the userscript-manager `@webRequest` facility. Manager/browser support is not uniform: current Chromium MV3 Tampermonkey does not expose that request hook, so the userscript UI reports the shield as manager-dependent and does not claim extension-level network blocking there. Ad Nuker still performs document-start and reinsertion cleanup.
+Its metadata also requests early ad cancellation through the userscript-manager `@webRequest` facility. Manager/browser support is not uniform: current Chromium MV3 Tampermonkey does not expose that request hook, so the userscript UI and Privacy Report mark the shield as manager-dependent and do not claim extension-level network blocking there. Ad Nuker still performs document-start and reinsertion cleanup.
+
+### Request-shield support matrix
+
+| Runtime | Early request layer | Reported state |
+|---|---|---|
+| Chrome / Edge / Brave extension (MV3) | 7 scoped Declarative Net Request rules | `chromium-dnr`, runtime-enforced |
+| Firefox extension (MV2) | 7 scoped blocking `webRequest` checks | `firefox-webrequest`, runtime-enforced; Firefox 137 temporary-addon smoke covered |
+| Tampermonkey / Violentmonkey userscript | Static 6-rule `@webRequest` request, where the manager exposes it | `userscript-manager-dependent`; DOM cleanup guaranteed, early cancellation not claimed |
+
+RumbleX intentionally does not request Declarative Net Request feedback/debug permission for per-rule history. The settings and Privacy Report expose the enforcement mode and declared rule count without retaining request URLs or browsing history.
 
 ## Tech Stack
 - Vanilla JavaScript — no runtime framework; a deterministic build generates the single-file userscript
@@ -255,7 +269,7 @@ Add the module to `features`, put new DOM contracts in `Selectors._map`, and kee
 ## Build
 ```bash
 cd extension
-./build.sh       # produces RumbleX-chrome.zip, RumbleX-firefox.zip, and SHA256SUMS.txt in the parent dir
+./build.sh       # produces both ZIPs, the generated userscript, and SHA256SUMS.txt in the parent dir
 ```
 Requires `zip`; on Windows without `zip`, the script falls back to the Windows-bundled bsdtar so ZIP entries keep browser-safe forward-slash paths. See `CHANGELOG.md` for per-version details.
 

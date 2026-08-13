@@ -1,4 +1,4 @@
-// RumbleX v3.36.0 - Options Page
+// RumbleX v3.37.0 - Options Page
 // Standalone settings management via chrome.storage.local (rx_settings key).
 // Mirrors Astra Deck's settings page pattern: dirty-draft workflow with
 // search, group nav, stats overview, and export/import/reset.
@@ -343,7 +343,7 @@
         theme: { group: 'theme-layout', label: 'Theme', desc: 'catppuccin | youtube | midnight | rumbleGreen' },
         splitRatio: { group: 'theme-layout', label: 'Split Ratio', desc: 'Theater split panel width % (40-90)' },
 
-        videoDownload: { group: 'downloads', label: 'Video Download', desc: 'Download as direct MP4 or HLS-to-MP4/TS' },
+        videoDownload: { group: 'downloads', label: 'Video Download', desc: 'Download direct MP4, bounded HLS-to-MP4, or stream TS directly to disk' },
         audioOnly: { group: 'downloads', label: 'Low-Bitrate MP4', desc: 'Download the smallest video variant for background listening (saved as .mp4).' },
         videoClips: { group: 'downloads', label: 'Video Clips', desc: 'Mark In/Out and export clip as MP4' },
         liveDVR: { group: 'downloads', label: 'Live DVR', desc: 'Save the last N seconds of a live stream' },
@@ -652,6 +652,7 @@
         downloadDiagnosticsClearBtn: document.getElementById('download-diagnostics-clear-btn'),
         privacyReportPre: document.getElementById('privacy-report-pre'),
         privacySummary: document.getElementById('privacy-summary'),
+        networkShieldVerified: document.querySelector('.network-shield-verified'),
         // v3.9.0 — Channel Notifier UI
         notifierSummary: document.getElementById('notifier-summary'),
         notifierUrlInput: document.getElementById('notifier-url-input'),
@@ -726,6 +727,11 @@
     };
 
     elements.version.textContent = 'v' + manifest.version;
+    const requestShieldModeLabel = manifest.manifest_version === 2 ? 'Firefox webRequest' : 'Chromium DNR';
+    if (elements.networkShieldVerified) {
+        elements.networkShieldVerified.textContent = i18n('networkShieldVerified', '7 verified request rules')
+            + ' · ' + requestShieldModeLabel;
+    }
 
     // ── Status helpers ──
     function showStatus(message, type) {
@@ -1176,7 +1182,7 @@
 
     async function createSettingsSnapshot(reason) {
         const cur = await chrome.storage.local.get([STORAGE_KEY, 'rx_settings_snapshots']);
-        const settings = sanitizeSettingsObject(cur[STORAGE_KEY] || {});
+        const settings = normaliseImported(cur[STORAGE_KEY] || {});
         if (settings.backupHistory === false) return { ok: false, reason: 'disabled' };
         const limit = Math.max(1, Number(settings.backupHistoryLimit ?? DEFAULTS.backupHistoryLimit) || 10);
         const snapshot = {
@@ -1205,7 +1211,7 @@
             : list.find((s) => s.at === indexOrAt);
         if (!snap) return { ok: false, reason: 'not-found' };
         await createSettingsSnapshot('pre-restore');
-        await chrome.storage.local.set({ [STORAGE_KEY]: sanitizeSettingsObject(snap.settings || {}) });
+        await chrome.storage.local.set({ [STORAGE_KEY]: normaliseImported(snap.settings || {}) });
         return { ok: true, restored: { at: snap.at, reason: snap.reason } };
     }
 
@@ -1409,6 +1415,7 @@
             banner.classList.add('is-shield');
             title = i18n('networkShieldActive', 'Network shield active');
             note = i18n('networkShieldVerified', '7 verified request rules') + ' · '
+                + requestShieldModeLabel + ' · '
                 + i18n('networkShieldDomNote', 'Ad Nuker controls the remaining DOM cleanup.');
         } else if (hasFilters) {
             banner.classList.add('is-filtered');
@@ -2068,7 +2075,13 @@
         }
         const report = resp.report || {};
         pre.textContent = JSON.stringify(report, null, 2);
-        if (summary) summary.textContent = 'Telemetry: ' + (report.telemetry || 'unknown');
+        if (summary) {
+            const shield = report.requestShield?.active
+                ? report.requestShield.enforcement
+                : report.requestShield?.assurance || 'unknown';
+            const selectors = report.selectorHealth?.status || 'unknown';
+            summary.textContent = `Shield: ${shield} · Selectors: ${selectors} · ${report.telemetry || 'telemetry unknown'}`;
+        }
     }
 
     function downloadJsonBlob(filename, data) {

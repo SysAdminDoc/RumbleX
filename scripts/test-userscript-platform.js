@@ -57,6 +57,7 @@ async function main() {
             nativeFetchCalls++;
             return new Response('same-origin', { status: 200 });
         },
+        showSaveFilePicker() {},
         GM_getValue: (key, fallback) => values.has(key) ? values.get(key) : fallback,
         GM_setValue: (key, value) => { values.set(key, value); },
         GM_deleteValue: (key) => { values.delete(key); },
@@ -79,6 +80,9 @@ async function main() {
     assert.match(mediabunnyUrl, /^blob:/);
     assert.equal(platform.assetUrl('lib/mediabunny.min.mjs'), mediabunnyUrl);
     assert.equal(platform.capabilities.mediabunny, true);
+    assert.equal(platform.capabilities.requestBlockingMode, 'userscript-manager-dependent');
+    assert.equal(platform.capabilities.requestBlockingRules, 6);
+    assert.equal(platform.capabilities.streamingFileSave, true);
     assert.equal(platform.t('hello'), 'Hello');
 
     await platform.storage.set({ alpha: 1, beta: { ok: true } });

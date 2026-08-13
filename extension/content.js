@@ -1,4 +1,4 @@
-// RumbleX v3.36.0 - Shared Content Core
+// RumbleX v3.37.0 - Shared Content Core
 // Rumble enhancement suite - Chrome/Firefox extension
 'use strict';
 
@@ -8,7 +8,7 @@
 // DOM feature ship from one canonical source.
 const RXPlatform = globalThis.RumbleXPlatform;
 if (!RXPlatform) throw new Error('RumbleX platform adapter is missing');
-const VERSION = RXPlatform.version || '3.36.0';
+const VERSION = RXPlatform.version || '3.37.0';
 const SCHEMA_VERSION = 2;
 
 // ── Settings Manager (chrome.storage.local) ──
@@ -750,6 +750,10 @@ const Selectors = {
         'profile.followingBtn':             { stable: 'button[data-js="button__following"]', fallback: 'button[class*="button__following"]' },
     },
     _telemetry: [],
+    _healthTimer: null,
+    _healthUnsubscribe: null,
+    _pendingHealthSignature: '',
+    _lastHealthSignature: '',
     find(key, root) {
         const entry = this._map[key];
         if (!entry) return null;
@@ -827,6 +831,104 @@ const Selectors = {
         if (!Settings._ready || !Settings.get('debugSelectorTelemetry')) return;
         this._telemetry.push({ key, kind, at: Date.now() });
         if (this._telemetry.length > 200) this._telemetry.shift();
+    },
+    healthCheck(root) {
+        const scope = root || document;
+        const page = Page.classify();
+        const required = [];
+        const add = (...keys) => {
+            for (const key of keys) if (!required.includes(key)) required.push(key);
+        };
+
+        if (['home', 'feed', 'search', 'channel', 'account', 'watch', 'live'].includes(page)) {
+            add('header.root');
+        }
+        if (['home', 'feed', 'search', 'channel', 'account'].includes(page)) {
+            add('search.input');
+        }
+        if (page === 'watch' || page === 'live') {
+            add('watch.media', 'watch.player', 'watch.title');
+            // Related cards are required only when the sidebar already shows
+            // video-link evidence; an empty/disabled related rail is valid.
+            try {
+                if (scope.querySelector('.media-page-related-media-desktop-sidebar a[href^="/v"], .media-page-related-media-desktop-sidebar a[href*="rumble.com/v"]')) {
+                    add('watch.relatedCard');
+                }
+            } catch {}
+        } else if (page === 'embed') {
+            add('watch.player');
+        } else if (page === 'shorts') {
+            add('shorts.feed');
+        } else if (['home', 'feed', 'search', 'channel'].includes(page)) {
+            // Do not flag a legitimate empty feed/search result. If video-link
+            // evidence exists, however, the card adapter must recognize it.
+            try {
+                if (scope.querySelector('a[href^="/v"], a[href*="rumble.com/v"]')) add('feed.card');
+            } catch {}
+        }
+
+        const checks = required.map((key) => {
+            const entry = this._map[key];
+            let state = 'missing';
+            try {
+                if (entry?.stable && scope.querySelector(entry.stable)) state = 'stable';
+                else if (entry?.fallback && scope.querySelector(entry.fallback)) state = 'fallback';
+            } catch {}
+            return { key, state };
+        });
+        const missing = checks.filter((check) => check.state === 'missing').map((check) => check.key);
+        const fallback = checks.filter((check) => check.state === 'fallback').map((check) => check.key);
+        return {
+            checkedAt: new Date().toISOString(),
+            page,
+            status: missing.length ? 'broken' : fallback.length ? 'degraded' : 'healthy',
+            checked: checks.length,
+            missing,
+            fallback,
+            checks,
+        };
+    },
+    startHealthMonitor() {
+        if (this._healthUnsubscribe) return;
+        const run = () => {
+            this._healthTimer = null;
+            const report = this.healthCheck();
+            if (report.status !== 'broken') {
+                this._pendingHealthSignature = '';
+                this._lastHealthSignature = '';
+                return;
+            }
+            const signature = `${report.page}:${report.missing.join(',')}`;
+            if (signature === this._lastHealthSignature) {
+                schedule(10000);
+                return;
+            }
+            // Rumble renders route shells before hydrating their custom video
+            // cards. A single sample during that skeleton phase can look like
+            // selector drift even though the stable nodes arrive seconds later.
+            // Require the same failure twice before surfacing it, while still
+            // keeping a persistent break visible in diagnostics and the UI.
+            if (signature !== this._pendingHealthSignature) {
+                this._pendingHealthSignature = signature;
+                schedule(4000);
+                return;
+            }
+            this._pendingHealthSignature = '';
+            this._lastHealthSignature = signature;
+            const message = `Critical selector check failed (${report.missing.join(', ')})`;
+            console.warn('[RumbleX] ' + message);
+            try { RxErrorLog.record('SelectorHealth', new Error(message), `route:${report.page}`); } catch {}
+            try { SettingsPanel._showToast?.(`${message}. Open Privacy Report for details.`); } catch {}
+            // Re-sample a reported failure so recovery clears the signature
+            // without requiring another route transition.
+            schedule(10000);
+        };
+        const schedule = (delay = 3000) => {
+            if (this._healthTimer) clearTimeout(this._healthTimer);
+            this._healthTimer = setTimeout(run, delay);
+        };
+        this._healthUnsubscribe = Router.onChange(() => schedule());
+        schedule(4000);
     },
     drainTelemetry() {
         const out = this._telemetry.slice();
@@ -3069,6 +3171,102 @@ const VideoDownloader = {
         return segments;
     },
 
+    _supportsStreamingFileSave() {
+        return !!RXPlatform.capabilities.streamingFileSave
+            && typeof globalThis.showSaveFilePicker === 'function';
+    },
+
+    async _resolveHlsSegments(quality, { signal, diagnosticUrls = [], onStage } = {}) {
+        const masterUrl = this._safeMediaUrl(this._hlsUrl);
+        if (!masterUrl) throw new Error('Rumble did not provide a valid HLS playlist.');
+
+        onStage?.('master-playlist', 0, 'Fetching stream playlist…');
+        diagnosticUrls.push({ role: 'master-playlist', url: masterUrl });
+        const masterResponse = await RXPlatform.fetch(masterUrl, { signal });
+        if (!masterResponse.ok) throw this._httpError(masterResponse, 'master-playlist', masterUrl);
+        const masterText = await masterResponse.text();
+        const variants = this._parseMasterPlaylist(masterText, masterUrl);
+
+        let variantUrl = masterUrl;
+        let variantText = masterText;
+        if (variants.length) {
+            onStage?.('quality-selection', 1, 'Selecting stream quality…');
+            let variant = variants.find((entry) => entry.height === quality?.height);
+            if (!variant) {
+                variant = variants.reduce((closest, entry) => (
+                    Math.abs(entry.height - Number(quality?.height || 0))
+                        < Math.abs(closest.height - Number(quality?.height || 0)) ? entry : closest
+                ), variants[0]);
+            }
+            if (!variant) throw new Error('No matching stream variant found');
+            variantUrl = variant.url;
+            diagnosticUrls.push({ role: 'segment-playlist', url: variantUrl });
+            onStage?.('segment-playlist', 2, 'Fetching segment list…');
+            const variantResponse = await RXPlatform.fetch(variantUrl, { signal });
+            if (!variantResponse.ok) throw this._httpError(variantResponse, 'segment-playlist', variantUrl);
+            variantText = await variantResponse.text();
+        }
+
+        const segmentUrls = this._parseSegmentPlaylist(variantText, variantUrl);
+        if (!segmentUrls.length) {
+            const error = new Error('No segments found in playlist');
+            error.rxStage = 'segment-playlist';
+            error.rxUrl = variantUrl;
+            throw error;
+        }
+        return { segmentUrls, variantUrl };
+    },
+
+    async _streamHlsToWritable(quality, writable, {
+        signal,
+        diagnosticUrls = [],
+        onProgress,
+        onStage,
+    } = {}) {
+        if (!writable || typeof writable.write !== 'function') {
+            throw new Error('The selected file is not writable.');
+        }
+        const { segmentUrls } = await this._resolveHlsSegments(quality, {
+            signal,
+            diagnosticUrls,
+            onStage,
+        });
+        let bytes = 0;
+        let completed = 0;
+
+        for (const url of segmentUrls) {
+            if (signal?.aborted) throw new DOMException('The download was cancelled.', 'AbortError');
+            const response = await RXPlatform.fetch(url, { signal });
+            if (!response.ok) throw this._httpError(response, 'segment-download', url);
+            const reader = response.body?.getReader?.();
+            if (reader) {
+                let readerDone = false;
+                try {
+                    while (true) {
+                        if (signal?.aborted) throw new DOMException('The download was cancelled.', 'AbortError');
+                        const { value, done } = await reader.read();
+                        if (done) { readerDone = true; break; }
+                        if (!value?.byteLength) continue;
+                        await writable.write(value);
+                        bytes += value.byteLength;
+                    }
+                } finally {
+                    if (!readerDone) {
+                        try { await reader.cancel(); } catch {}
+                    }
+                    try { reader.releaseLock(); } catch {}
+                }
+            } else {
+                const buffer = await response.arrayBuffer();
+                await writable.write(new Uint8Array(buffer));
+                bytes += buffer.byteLength;
+            }
+            completed++;
+            onProgress?.({ completed, total: segmentUrls.length, bytes });
+        }
+        return { bytes, segments: completed };
+    },
+
     async _downloadBuffers(urls, { signal, concurrency = 6, onProgress, stage = 'segment-download' } = {}) {
         const buffers = [];
         let bytes = 0;
@@ -3983,10 +4181,12 @@ const VideoDownloader = {
             return;
         }
 
-        if (Number(quality.size) > this._MAX_IN_MEMORY_BYTES) {
+        const exceedsMemoryLimit = Number(quality.size) > this._MAX_IN_MEMORY_BYTES;
+        const canStreamToDisk = this._supportsStreamingFileSave();
+        if (exceedsMemoryLimit && !canStreamToDisk) {
             this._setBodyText(
                 'rx-dl-error',
-                `This stream is about ${this._formatSize(quality.size)}. In-browser HLS conversion is limited to ${this._formatSize(this._MAX_IN_MEMORY_BYTES)} to protect this tab. Choose a direct MP4 or TAR row instead.`
+                `This stream is about ${this._formatSize(quality.size)}. In-browser HLS conversion is limited to ${this._formatSize(this._MAX_IN_MEMORY_BYTES)} to protect this tab, and this browser cannot stream directly to a selected file. Choose a direct MP4 or TAR row instead.`
             );
             return;
         }
@@ -3999,7 +4199,9 @@ const VideoDownloader = {
         body.textContent = '';
         const status = document.createElement('div');
         status.className = 'rx-dl-status';
-        status.textContent = 'Selected: ' + dimsLabel;
+        status.textContent = exceedsMemoryLimit
+            ? `Selected: ${dimsLabel} · large stream, disk mode required`
+            : 'Selected: ' + dimsLabel;
         body.appendChild(status);
         const row = document.createElement('div');
         row.className = 'rx-dl-format-row';
@@ -4018,8 +4220,20 @@ const VideoDownloader = {
             btn.addEventListener('click', onClick);
             return btn;
         };
-        row.appendChild(makeBtn('MP4', 'Converted in browser', () => this._startDownload(quality, title, 'mp4')));
-        row.appendChild(makeBtn('TS', 'Raw stream (fast)', () => this._startDownload(quality, title, 'ts')));
+        if (!exceedsMemoryLimit) {
+            row.appendChild(makeBtn('MP4', 'Converted in browser', () => this._startDownload(quality, title, 'mp4')));
+        }
+        if (canStreamToDisk) {
+            row.appendChild(makeBtn('TS to disk', 'Streams without buffering the full video', () => this._startStreamingTs(quality, title)));
+        } else if (!exceedsMemoryLimit) {
+            row.appendChild(makeBtn('TS', 'Raw stream (in memory)', () => this._startDownload(quality, title, 'ts')));
+        }
+        if (exceedsMemoryLimit) {
+            const note = document.createElement('div');
+            note.className = 'rx-dl-tar-note';
+            note.textContent = `MP4 conversion stays disabled above ${this._formatSize(this._MAX_IN_MEMORY_BYTES)}. TS-to-disk writes each network chunk directly to your selected file and discards partial output if cancelled.`;
+            body.appendChild(note);
+        }
     },
 
     _newOperationId(prefix) {
@@ -4143,6 +4357,132 @@ const VideoDownloader = {
         }
     },
 
+    async _startStreamingTs(quality, title) {
+        const operationId = this._newOperationId('hls-stream-to-disk');
+        const diagnosticUrls = [];
+        let stage = 'file-picker';
+        if (!this._supportsStreamingFileSave()) {
+            this._setBodyText('rx-dl-error', 'Direct-to-disk streaming is unavailable in this browser.');
+            return;
+        }
+
+        const filename = RxFsAccess.sanitizeFilename(
+            `${title} - ${quality?.label || 'stream'}.ts`,
+            'rumble-video.ts',
+        );
+        let fileHandle;
+        try {
+            // This must remain the first awaited operation in the click handler
+            // so Chromium still recognizes the required transient user action.
+            fileHandle = await globalThis.showSaveFilePicker({
+                suggestedName: filename,
+                types: [{
+                    description: 'MPEG transport stream',
+                    accept: { 'video/mp2t': ['.ts'] },
+                }],
+            });
+        } catch (error) {
+            if (error?.name === 'AbortError') return;
+            const errorBody = this._setBodyText('rx-dl-error', 'Could not select a destination: ' + (error?.message || error));
+            void this._reportFailure({
+                operation: 'hls-stream-to-disk', operationId, stage, error,
+                quality, format: 'ts-stream', urls: diagnosticUrls,
+            }, errorBody);
+            return;
+        }
+
+        this._downloadController?.abort();
+        const controller = new AbortController();
+        this._downloadController = controller;
+        const { signal } = controller;
+        const body = this._setBody('');
+        if (!body) {
+            controller.abort();
+            if (this._downloadController === controller) this._downloadController = null;
+            return;
+        }
+        const wrap = document.createElement('div');
+        wrap.className = 'rx-dl-progress-wrap';
+        const statusEl = document.createElement('div');
+        statusEl.className = 'rx-dl-status';
+        statusEl.setAttribute('role', 'status');
+        statusEl.textContent = 'Opening selected file…';
+        const barBg = document.createElement('div');
+        barBg.className = 'rx-dl-bar-bg';
+        const barEl = document.createElement('div');
+        barEl.className = 'rx-dl-bar-fill';
+        barEl.setAttribute('role', 'progressbar');
+        barEl.setAttribute('aria-label', 'Stream-to-disk progress');
+        barEl.setAttribute('aria-valuemin', '0');
+        barEl.setAttribute('aria-valuemax', '100');
+        barEl.setAttribute('aria-valuenow', '0');
+        barBg.appendChild(barEl);
+        const cancel = document.createElement('button');
+        cancel.type = 'button';
+        cancel.className = 'rx-dl-cancel';
+        cancel.textContent = 'Cancel';
+        cancel.addEventListener('click', () => controller.abort());
+        wrap.append(statusEl, barBg, cancel);
+        body.appendChild(wrap);
+        const setProgress = (pct, message) => {
+            const bounded = Math.max(0, Math.min(100, Number(pct) || 0));
+            barEl.style.width = bounded + '%';
+            barEl.setAttribute('aria-valuenow', String(Math.round(bounded)));
+            if (message) statusEl.textContent = message;
+        };
+
+        let writable = null;
+        let streamed = null;
+        try {
+            stage = 'file-open';
+            writable = await fileHandle.createWritable();
+            streamed = await this._streamHlsToWritable(quality, writable, {
+                signal,
+                diagnosticUrls,
+                onStage: (nextStage, pct, message) => {
+                    stage = nextStage;
+                    setProgress(pct, message);
+                },
+                onProgress: ({ completed, total, bytes }) => {
+                    stage = 'segment-download';
+                    const pct = 5 + (completed / total) * 94;
+                    setProgress(pct, `Writing ${completed}/${total} segments · ${this._formatSize(bytes)}`);
+                },
+            });
+            if (signal.aborted) throw new DOMException('The download was cancelled.', 'AbortError');
+            stage = 'file-close';
+            setProgress(99, 'Finalizing file…');
+            await writable.close();
+            writable = null;
+            setProgress(100, `Saved ${this._formatSize(streamed.bytes)} to disk.`);
+            cancel.remove();
+            const done = document.createElement('div');
+            done.className = 'rx-dl-done';
+            done.textContent = 'TS stream saved directly to your selected file.';
+            body.appendChild(done);
+        } catch (error) {
+            if (writable) {
+                try { await writable.abort(); } catch {}
+                writable = null;
+            }
+            if (error?.name === 'AbortError') {
+                this._setBodyText('rx-dl-status', 'Download cancelled. Partial file changes were discarded.');
+                return;
+            }
+            const errorEl = document.createElement('div');
+            errorEl.className = 'rx-dl-error';
+            errorEl.textContent = 'Error: ' + (error?.message || error);
+            body.appendChild(errorEl);
+            void this._reportFailure({
+                operation: 'hls-stream-to-disk', operationId, stage, error,
+                quality, format: 'ts-stream', urls: diagnosticUrls,
+                extra: streamed ? { streamedBytes: streamed.bytes, segmentCount: streamed.segments } : null,
+            }, body);
+        } finally {
+            if (this._downloadController === controller) this._downloadController = null;
+        }
+    },
+
     async _startDownload(quality, title, format) {
         const operationId = this._newOperationId('hls-download');
         let stage = 'master-playlist';
@@ -4191,30 +4531,14 @@ const VideoDownloader = {
         };
 
         try {
-            // Fetch master playlist
-            diagnosticUrls.push({ role: 'master-playlist', url: this._hlsUrl });
-            const masterResp = await RXPlatform.fetch(this._hlsUrl, { signal });
-            if (!masterResp.ok) throw this._httpError(masterResp, stage, this._hlsUrl);
-            const masterText = await masterResp.text();
-            const variants = this._parseMasterPlaylist(masterText, this._hlsUrl);
-
-            // Find matching quality variant
-            stage = 'quality-selection';
-            let variant = variants.find(v => v.height === quality.height);
-            if (!variant) variant = variants.reduce((a, b) =>
-                Math.abs(b.height - quality.height) < Math.abs(a.height - quality.height) ? b : a, variants[0]);
-            if (!variant) throw new Error('No matching stream variant found');
-
-            stage = 'segment-playlist';
-            diagnosticUrls.push({ role: 'segment-playlist', url: variant.url });
-            setProgress(2, 'Fetching segment list...');
-
-            const variantResp = await RXPlatform.fetch(variant.url, { signal });
-            if (!variantResp.ok) throw this._httpError(variantResp, stage, variant.url);
-            const variantText = await variantResp.text();
-            const segmentUrls = this._parseSegmentPlaylist(variantText, variant.url);
-
-            if (!segmentUrls.length) throw new Error('No segments found in playlist');
+            const { segmentUrls } = await this._resolveHlsSegments(quality, {
+                signal,
+                diagnosticUrls,
+                onStage: (nextStage, pct, message) => {
+                    stage = nextStage;
+                    setProgress(pct, message);
+                },
+            });
 
             const total = segmentUrls.length;
             const CONCURRENT = 6;
@@ -8695,7 +9019,7 @@ const RX_CATEGORIES = [
         id: 'downloads', label: 'Downloads & Capture', color: '#f9e2af',
         icon: '<path d="M12 3a1 1 0 011 1v9.59l3.3-3.3a1 1 0 011.4 1.42l-5 5a1 1 0 01-1.4 0l-5-5a1 1 0 011.4-1.42L11 13.59V4a1 1 0 011-1zM5 19a1 1 0 100 2h14a1 1 0 100-2H5z"/>',
         features: [
-            { id: 'videoDownload', label: 'Video Download', desc: 'Download as direct MP4 or HLS-to-MP4/TS' },
+            { id: 'videoDownload', label: 'Video Download', desc: 'Download direct MP4, bounded HLS-to-MP4, or stream TS directly to disk' },
             { id: 'audioOnly', label: 'Low-Bitrate MP4', desc: 'Download smallest video variant for listening (saved as .mp4)' },
             { id: 'videoClips', label: 'Video Clips', desc: 'Mark In/Out and export clip as MP4' },
             { id: 'liveDVR', label: 'Live DVR', desc: 'Save the last N seconds of a live stream' },
@@ -9264,6 +9588,7 @@ const SettingsPanel = {
         if (cat.id === 'ad-blocking') {
             const shield = document.createElement('div');
             const requestBlocking = !!RXPlatform.capabilities.requestBlocking;
+            const requestMode = RXPlatform.capabilities.requestBlockingMode;
             shield.className = 'rx-m-shield-status' + (requestBlocking ? '' : ' is-limited');
             shield.setAttribute('role', 'status');
             const shieldTitle = document.createElement('strong');
@@ -9274,7 +9599,7 @@ const SettingsPanel = {
             const shieldNote = document.createElement('span');
             shieldNote.className = 'rx-m-shield-note';
             shieldNote.textContent = requestBlocking
-                ? (RXPlatform.t('networkShieldVerified') || '7 verified request rules')
+                ? `${RXPlatform.t('networkShieldVerified') || '7 verified request rules'} · ${requestMode === 'firefox-webrequest' ? 'Firefox webRequest' : 'Chromium DNR'}`
                 : (RXPlatform.t('networkShieldManagerNote') || 'DOM cleanup stays active; Chromium MV3 managers cannot expose early request blocking.');
             shield.append(shieldTitle, shieldNote);
             pane.appendChild(shield);
@@ -11480,15 +11805,27 @@ const SponsorBlockRX = {
             const input = document.createElement('input'); input.type = 'file'; input.accept = '.json';
             input.addEventListener('change', () => {
                 const f = input.files[0]; if (!f) return;
+                if (f.size > 1024 * 1024) {
+                    this._notice('Sponsor JSON exceeds the 1 MB limit');
+                    return;
+                }
                 const r = new FileReader();
                 r.onload = () => {
                     try {
                         const data = JSON.parse(r.result);
-                        if (Array.isArray(data)) { this._segments = data; this._saveSegments(); this._refreshPanel();
-                            const v = qs('video'); if (v?.duration) this._renderMarkers(v.duration);
-                        }
+                        if (!Array.isArray(data)) throw new Error('Expected a segment array');
+                        const key = this._videoKey();
+                        if (!key) throw new Error('No video id is available');
+                        const safe = Settings._sanitize({ sponsorSegments: { [key]: data } })
+                            .sponsorSegments?.[key] || [];
+                        if (data.length && !safe.length) throw new Error('No valid sponsor segments found');
+                        this._segments = safe;
+                        this._saveSegments();
+                        this._refreshPanel();
+                        const v = qs('video'); if (v?.duration) this._renderMarkers(v.duration);
                     } catch (e) { this._notice('Invalid JSON'); }
                 };
+                r.onerror = () => this._notice('Could not read sponsor JSON');
                 r.readAsText(f);
             });
             input.click();
@@ -11961,8 +12298,17 @@ const SubtitleSidecar = {
             input.type = 'file'; input.accept = '.vtt,.srt,.txt';
             input.addEventListener('change', () => {
                 const f = input.files[0]; if (!f) return;
+                if (f.size > 5 * 1024 * 1024) {
+                    const status = panel.querySelector('.rx-sub-status');
+                    if (status) status.textContent = 'Subtitle file exceeds the 5 MB limit';
+                    return;
+                }
                 const r = new FileReader();
-                r.onload = () => this._load(r.result);
+                r.onload = () => this._load(String(r.result || ''));
+                r.onerror = () => {
+                    const status = panel.querySelector('.rx-sub-status');
+                    if (status) status.textContent = 'Could not read subtitle file';
+                };
                 r.readAsText(f);
             });
             input.click();
@@ -14225,6 +14571,12 @@ async function boot() {
             console.error('[RumbleX] Settings panel init failed:', e);
             RxErrorLog.record('SettingsPanel', e, 'init');
         }
+        try {
+            Selectors.startHealthMonitor();
+        } catch (e) {
+            console.warn('[RumbleX] Selector health monitor failed:', e);
+            RxErrorLog.record('SelectorHealth', e, 'init');
+        }
 
         // Surface cross-tab / options-page saves. We don't silently hot-reload
         // features here because most of them stash state in their init path;
@@ -14460,6 +14812,15 @@ function rxBuildPrivacyReport() {
     const permissionDisclosures = rxDisclosureRows(permissions, RX_PRIVACY_PERMISSION_DISCLOSURES);
     const hostPermissionDisclosures = rxDisclosureRows(hostPermissions, RX_PRIVACY_HOST_DISCLOSURES);
     const webAccessibleResourceDisclosures = rxDisclosureRows(webAccessibleResources, RX_PRIVACY_WEB_RESOURCE_DISCLOSURES);
+    const requestShield = {
+        active: !!RXPlatform.capabilities.requestBlocking,
+        enforcement: RXPlatform.capabilities.requestBlockingMode || 'unknown',
+        declaredRules: Number(RXPlatform.capabilities.requestBlockingRules) || 0,
+        assurance: RXPlatform.capabilities.requestBlocking
+            ? 'runtime-enforced'
+            : 'userscript-manager-dependent',
+    };
+    const selectorHealth = Selectors.healthCheck();
     return {
         version: VERSION,
         manifestVersion: manifest.manifest_version || null,
@@ -14472,6 +14833,8 @@ function rxBuildPrivacyReport() {
         permissionDisclosures,
         hostPermissionDisclosures,
         webAccessibleResourceDisclosures,
+        requestShield,
+        selectorHealth,
         externalNetworkSurfaces: hostPermissionDisclosures.map((entry) => `${entry.value} (${entry.disclosure})`),
         telemetry: 'none — no analytics, no remote logging, no usage beacons',
         localStorage: {
