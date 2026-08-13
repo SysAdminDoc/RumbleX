@@ -29,7 +29,7 @@
     }
   },
   "background": {
-    "scripts": ["archive-fs.js", "background.js"]
+    "scripts": ["browser-polyfill.js", "archive-fs.js", "background.js"]
   },
   "content_security_policy": "script-src 'self'; object-src 'self'; base-uri 'self'",
   "browser_action": {
@@ -45,8 +45,8 @@
     "open_in_tab": true
   },
   "content_scripts": [{
-    "matches": ["*://*.rumble.com/*"],
-    "js": ["content.js"],
+    "matches": ["https://rumble.com/*", "https://*.rumble.com/*"],
+    "js": ["browser-polyfill.js", "platform.js", "content.js"],
     "run_at": "document_start",
     "all_frames": false
   }],

@@ -650,6 +650,7 @@ async function init() {
         { id: 'youtube', label: 'YouTubify', color: '#3ea6ff' },
         { id: 'midnight', label: 'Midnight AMOLED', color: '#818cf8' },
         { id: 'rumbleGreen', label: 'Rumble Green', color: '#85c742' },
+        { id: 'oledGreen', label: 'OLED Green', color: '#85c742' },
     ];
     for (const t of themes) {
         const chip = document.createElement('button');

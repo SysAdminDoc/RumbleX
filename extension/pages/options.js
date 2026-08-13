@@ -1048,10 +1048,44 @@
     const NUMERIC_BOUNDS = {
         splitRatio: { min: 20, max: 95 },
         playbackSpeed: { min: 0.1, max: 4 },
+        downloadConcurrency: { min: 1, max: 8 },
+        downloadProbeCacheTtlHours: { min: 0, max: 168 },
+        channelArchiveMaxItems: { min: 1, max: 500 },
+        rantTierFilter: { min: 0, max: 1000000 },
+        backupHistoryLimit: { min: 1, max: 50 },
+        channelNotifierIntervalMin: { min: 1, max: 1440 },
     };
-    const VALID_THEMES = new Set(['catppuccin', 'youtube', 'midnight', 'rumbleGreen']);
-    const VALID_SITE_THEMES = new Set(['system', 'dark', 'light']);
-    const VALID_DOWNLOAD_MUXER_ENGINES = new Set(['muxjs', 'mediabunnyWebCodecs']);
+    const ENUM_FIELDS = Object.freeze({
+        theme: new Set(['catppuccin', 'youtube', 'midnight', 'rumbleGreen', 'oledGreen']),
+        siteTheme: new Set(['system', 'dark', 'light']),
+        glassIntensity: new Set(['low', 'medium', 'high']),
+        homeCleanupPreset: new Set(['none', 'focused', 'minimal', 'custom']),
+        pageDensity: new Set(['dense', 'normal']),
+        qualityMode: new Set(['best', 'lowest', 'manual', 'bandwidthSaver']),
+        autoplayBlockMode: new Set(['off', 'relatedEndpointAndPlayer', 'playerOnly']),
+        clipExportFormat: new Set(['mp4', 'webm', 'manifestOnly']),
+        segmentSkipMode: new Set(['localOnly', 'community']),
+        downloadQualityPreference: new Set(['best', '1080p', '720p', '480p', 'lowest', 'askInline']),
+        downloadMuxerEngine: new Set(['muxjs', 'mediabunnyWebCodecs']),
+        audioExtractionMode: new Set(['off', 'browserIfSupported', 'companion', 'external']),
+        channelArchiveMaxHeight: new Set(['best', '2160', '1440', '1080', '720', '480', '360']),
+        shortsFilterScope: new Set(['everywhere', 'feedOnly', 'searchOnly', 'off']),
+        blockedKeywordsMode: new Set(['literal', 'regex', 'wildcard']),
+        politicsFilterPreset: new Set(['off', 'reduce', 'hide']),
+        remoteCosmeticRulesChannel: new Set(['stable', 'preview']),
+        chatUsernameColors: new Set(['off', 'deterministic', 'tiered']),
+        rantExportFormat: new Set(['csvJson', 'csv', 'json']),
+    });
+
+    function safeRumbleUrl(value) {
+        if (typeof value !== 'string') return null;
+        try {
+            const parsed = new URL(value);
+            return parsed.protocol === 'https:' && /(^|\.)rumble\.com$/i.test(parsed.hostname)
+                ? parsed.href
+                : null;
+        } catch { return null; }
+    }
 
     function filterToKnownKeys(obj) {
         // Drop any top-level key not present in DEFAULTS. This prevents junk
@@ -1071,8 +1105,34 @@
         if (Array.isArray(sanitized.blockedChannels)) sanitized.blockedChannels = sanitizeStringArray(sanitized.blockedChannels, IMPORT_LIMITS.blockedChannels);
         if (Array.isArray(sanitized.blockedKeywords)) sanitized.blockedKeywords = sanitizeStringArray(sanitized.blockedKeywords, IMPORT_LIMITS.blockedKeywords);
         if (Array.isArray(sanitized.blockedChatters)) sanitized.blockedChatters = sanitizeStringArray(sanitized.blockedChatters, IMPORT_LIMITS.blockedChatters);
-        if (!Array.isArray(sanitized.autoplayQueue)) delete sanitized.autoplayQueue;
-        if (!Array.isArray(sanitized.hiddenCategories)) delete sanitized.hiddenCategories;
+        if (Array.isArray(sanitized.autoplayQueue)) {
+            sanitized.autoplayQueue = [...new Set(sanitized.autoplayQueue.map(safeRumbleUrl).filter(Boolean))].slice(0, 500);
+        } else delete sanitized.autoplayQueue;
+        if (Array.isArray(sanitized.hiddenCategories)) {
+            sanitized.hiddenCategories = [...new Set(sanitized.hiddenCategories.filter((value) =>
+                typeof value === 'string' && /^[a-z0-9][a-z0-9-]{0,48}$/i.test(value)
+            ))].slice(0, 100);
+        } else delete sanitized.hiddenCategories;
+        if (Array.isArray(sanitized.watchedChannels)) {
+            sanitized.watchedChannels = sanitized.watchedChannels.slice(0, 500).flatMap((item) => {
+                if (!isPlainObject(item)) return [];
+                const url = safeRumbleUrl(item.url);
+                if (!url) return [];
+                const name = typeof item.name === 'string' ? item.name.replace(/[\u0000-\u001f\u007f]/g, '').slice(0, 300) : url;
+                return [{
+                    url,
+                    name: name || url,
+                    lastSeenVideoId: typeof item.lastSeenVideoId === 'string' ? item.lastSeenVideoId.slice(0, 120) : null,
+                    isLive: !!item.isLive,
+                    lastChecked: Number.isFinite(item.lastChecked) && item.lastChecked >= 0 ? Math.round(item.lastChecked) : null,
+                }];
+            });
+        } else if ('watchedChannels' in sanitized) delete sanitized.watchedChannels;
+        for (const key of ['chatMuteDurations', 'commentMuteDurations']) {
+            if (!Array.isArray(sanitized[key])) { if (key in sanitized) delete sanitized[key]; continue; }
+            sanitized[key] = [...new Set(sanitized[key].filter(Number.isFinite).map(Math.round)
+                .filter((value) => value >= 1 && value <= 525600))].slice(0, 50);
+        }
 
         // Numeric bounds
         for (const [key, { min, max }] of Object.entries(NUMERIC_BOUNDS)) {
@@ -1083,19 +1143,25 @@
             }
         }
 
-        // Theme — reject unknown strings rather than applying a typo
-        if (typeof sanitized.theme === 'string' && !VALID_THEMES.has(sanitized.theme)) {
-            delete sanitized.theme;
-        }
-        if (typeof sanitized.siteTheme === 'string' && !VALID_SITE_THEMES.has(sanitized.siteTheme)) {
-            delete sanitized.siteTheme;
-        }
-        if (typeof sanitized.downloadMuxerEngine === 'string' && !VALID_DOWNLOAD_MUXER_ENGINES.has(sanitized.downloadMuxerEngine)) {
-            delete sanitized.downloadMuxerEngine;
+        for (const [key, allowed] of Object.entries(ENUM_FIELDS)) {
+            if (key in sanitized && !allowed.has(sanitized[key])) delete sanitized[key];
         }
 
-        // sponsorSegments must be a plain object keyed by videoId; drop if not
-        if (sanitized.sponsorSegments && !isPlainObject(sanitized.sponsorSegments)) {
+        if (isPlainObject(sanitized.sponsorSegments)) {
+            const clean = {};
+            for (const [videoId, list] of Object.entries(sanitized.sponsorSegments).slice(0, 1000)) {
+                if (!/^v[a-z0-9]+$/i.test(videoId) || !Array.isArray(list)) continue;
+                const segments = list.slice(0, 200).flatMap((segment) => {
+                    if (!isPlainObject(segment)) return [];
+                    const start = Number(segment.start), end = Number(segment.end);
+                    if (!Number.isFinite(start) || !Number.isFinite(end) || start < 0 || end <= start || end > 604800) return [];
+                    const category = ['sponsor', 'intro', 'outro', 'selfpromo'].includes(segment.category) ? segment.category : 'sponsor';
+                    return [{ start, end, category }];
+                });
+                if (segments.length) clean[videoId] = segments;
+            }
+            sanitized.sponsorSegments = clean;
+        } else if ('sponsorSegments' in sanitized) {
             delete sanitized.sponsorSegments;
         }
         return sanitized;
@@ -1136,6 +1202,29 @@
         return { ok: true, restored: { at: snap.at, reason: snap.reason } };
     }
 
+    async function readUtf8StreamLimited(stream, maxBytes) {
+        const reader = stream.getReader();
+        const decoder = new TextDecoder('utf-8', { fatal: false });
+        const chunks = [];
+        let bytes = 0;
+        try {
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+                bytes += value?.byteLength || 0;
+                if (bytes > maxBytes) {
+                    await reader.cancel('decompressed-size-limit');
+                    throw new Error('Decompressed import exceeds the 4.5 MB limit');
+                }
+                chunks.push(decoder.decode(value, { stream: true }));
+            }
+            chunks.push(decoder.decode());
+            return chunks.join('');
+        } finally {
+            reader.releaseLock();
+        }
+    }
+
     async function importSettings(file) {
         if (!file) return;
         try {
@@ -1152,11 +1241,14 @@
             if (isGzip && typeof DecompressionStream !== 'undefined') {
                 try {
                     const stream = new Blob([buf]).stream().pipeThrough(new DecompressionStream('gzip'));
-                    text = await new Response(stream).text();
+                    text = await readUtf8StreamLimited(stream, IMPORT_LIMITS.totalBytes);
                 } catch (dzErr) {
                     throw new Error('Gzip decompression failed: ' + dzErr.message);
                 }
             } else {
+                if (buf.byteLength > IMPORT_LIMITS.totalBytes) {
+                    throw new Error('Import JSON exceeds the 4.5 MB limit');
+                }
                 text = new TextDecoder('utf-8', { fatal: false }).decode(buf);
             }
             const data = JSON.parse(text);
@@ -1419,6 +1511,7 @@
             { value: 'youtube', label: 'YouTubify' },
             { value: 'midnight', label: 'Midnight AMOLED' },
             { value: 'rumbleGreen', label: 'Rumble Green' },
+            { value: 'oledGreen', label: 'OLED Green' },
         ],
         siteTheme: [
             { value: 'system', label: 'System' },

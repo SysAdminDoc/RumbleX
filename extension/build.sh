@@ -25,6 +25,7 @@ MEDIABUNNY_JS_SHA256="e7514bbc13b132f954e31a3fad423ddaa6926a6ae95749190d7c1caa31
 MEDIABUNNY_LICENSE_SHA256="3f3d9e0024b1921b067d6f7f88deb4a60cbe7a78e76c64e3f1d7fc3b779b9d04"
 CHROME_ZIP="../RumbleX-chrome.zip"
 FIREFOX_ZIP="../RumbleX-firefox.zip"
+USERSCRIPT="../RumbleX.user.js"
 CHECKSUMS_FILE="../SHA256SUMS.txt"
 
 file_sha256() {
@@ -98,16 +99,16 @@ pack_extension() {
     local dest="$1"
     if command -v zip >/dev/null 2>&1; then
         zip -r "$dest" \
-            manifest.json archive-fs.js background.js content.js worker.js mediabunny-worker.js offscreen.html offscreen.js \
+            manifest.json browser-polyfill.js archive-fs.js background.js platform.js content.js worker.js mediabunny-worker.js offscreen.html offscreen.js \
             lib/ icons/ pages/ _locales/ \
             -x "manifest-firefox.json" -x "manifest-chrome-backup.json" -x "build.sh" -x "*.DS_Store"
     elif [ -x "/c/Windows/System32/tar.exe" ]; then
         "/c/Windows/System32/tar.exe" -a -c -f "$dest" \
-            manifest.json archive-fs.js background.js content.js worker.js mediabunny-worker.js offscreen.html offscreen.js \
+            manifest.json browser-polyfill.js archive-fs.js background.js platform.js content.js worker.js mediabunny-worker.js offscreen.html offscreen.js \
             lib icons pages _locales
     elif command -v bsdtar >/dev/null 2>&1; then
         bsdtar -a -c -f "$dest" \
-            manifest.json archive-fs.js background.js content.js worker.js mediabunny-worker.js offscreen.html offscreen.js \
+            manifest.json browser-polyfill.js archive-fs.js background.js platform.js content.js worker.js mediabunny-worker.js offscreen.html offscreen.js \
             lib icons pages _locales
     else
         echo "[!] Need zip, Windows bsdtar, or bsdtar to build packages."
@@ -118,7 +119,7 @@ pack_extension() {
 write_release_checksums() {
     local pkg
     rm -f "$CHECKSUMS_FILE"
-    for pkg in "$CHROME_ZIP" "$FIREFOX_ZIP"; do
+    for pkg in "$CHROME_ZIP" "$FIREFOX_ZIP" "$USERSCRIPT"; do
         if [ ! -f "$pkg" ]; then
             echo "[!] Missing package for checksum: $pkg"
             return 1
@@ -158,6 +159,9 @@ if [ ! -f "icons/icon-128x128.png" ]; then
 fi
 
 # Build Chrome ZIP
+echo "[*] Generating userscript from the shared content core..."
+node ../scripts/build-userscript.js
+
 echo "[*] Building Chrome package..."
 rm -f "$CHROME_ZIP"
 pack_extension "$CHROME_ZIP"
@@ -181,3 +185,4 @@ echo ""
 echo "=== Build Complete ==="
 echo "Chrome: RumbleX-chrome.zip (load unpacked from extension/ or install zip)"
 echo "Firefox: RumbleX-firefox.zip (load as temporary add-on)"
+echo "Userscript: RumbleX.user.js (Tampermonkey / Violentmonkey)"

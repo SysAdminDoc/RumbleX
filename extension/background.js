@@ -523,6 +523,16 @@ async function rxFireNotification({ title, message, url }) {
 
 const rxNotificationUrlMap = new Map();
 
+function rxSafeRumbleUrl(value) {
+    if (typeof value !== 'string') return null;
+    try {
+        const parsed = new URL(value);
+        return parsed.protocol === 'https:' && /(^|\.)rumble\.com$/i.test(parsed.hostname)
+            ? parsed.href
+            : null;
+    } catch { return null; }
+}
+
 if (chrome.notifications?.onClicked) {
     chrome.notifications.onClicked.addListener((id) => {
         const url = rxNotificationUrlMap.get(id);
@@ -542,52 +552,60 @@ async function rxRunNotifierPass() {
     let dirty = false;
     const updated = [];
     for (const ch of channels) {
-        if (!ch?.url) { updated.push(ch); continue; }
+        const channelUrl = rxSafeRumbleUrl(ch?.url);
+        if (!channelUrl) { dirty = true; continue; }
+        const safeChannel = {
+            url: channelUrl,
+            name: typeof ch.name === 'string' ? ch.name.slice(0, 300) : channelUrl,
+            lastSeenVideoId: typeof ch.lastSeenVideoId === 'string' ? ch.lastSeenVideoId.slice(0, 120) : null,
+            isLive: !!ch.isLive,
+            lastChecked: Number.isFinite(ch.lastChecked) ? ch.lastChecked : null,
+        };
         try {
-            const resp = await fetch(ch.url, { method: 'GET', credentials: 'omit' });
+            const resp = await fetch(channelUrl, { method: 'GET', credentials: 'omit' });
             if (!resp.ok) {
-                updated.push({ ...ch, lastChecked: Date.now(), lastError: 'http-' + resp.status });
+                updated.push({ ...safeChannel, lastChecked: Date.now(), lastError: 'http-' + resp.status });
                 dirty = true;
                 continue;
             }
             const text = await resp.text();
             const { latestVideoId, isLive } = rxParseChannelHtml(text);
-            const newVideo = latestVideoId && ch.lastSeenVideoId && latestVideoId !== ch.lastSeenVideoId;
-            const liveStarted = isLive && !ch.isLive;
+            const newVideo = latestVideoId && safeChannel.lastSeenVideoId && latestVideoId !== safeChannel.lastSeenVideoId;
+            const liveStarted = isLive && !safeChannel.isLive;
             if (newVideo) {
                 await rxFireNotification({
-                    title: 'New video — ' + (ch.name || ch.url),
+                    title: 'New video — ' + safeChannel.name,
                     message: 'A new video is up on this channel.',
-                    url: ch.url,
+                    url: channelUrl,
                 });
                 if (s.discordWebhookUrl) {
                     void rxPostDiscordWebhook(s.discordWebhookUrl, {
-                        content: 'New RumbleX video on ' + (ch.name || ch.url) + ': ' + ch.url,
+                        content: 'New RumbleX video on ' + safeChannel.name + ': ' + channelUrl,
                     });
                 }
             }
             if (liveStarted) {
                 await rxFireNotification({
-                    title: 'LIVE — ' + (ch.name || ch.url),
+                    title: 'LIVE — ' + safeChannel.name,
                     message: 'This channel just went live.',
-                    url: ch.url,
+                    url: channelUrl,
                 });
                 if (s.discordWebhookUrl) {
                     void rxPostDiscordWebhook(s.discordWebhookUrl, {
-                        content: 'LIVE on ' + (ch.name || ch.url) + ' → ' + ch.url,
+                        content: 'LIVE on ' + safeChannel.name + ' → ' + channelUrl,
                     });
                 }
             }
             updated.push({
-                ...ch,
-                lastSeenVideoId: latestVideoId || ch.lastSeenVideoId,
+                ...safeChannel,
+                lastSeenVideoId: latestVideoId || safeChannel.lastSeenVideoId,
                 isLive,
                 lastChecked: Date.now(),
                 lastError: null,
             });
             dirty = true;
         } catch (e) {
-            updated.push({ ...ch, lastChecked: Date.now(), lastError: String(e?.message || e) });
+            updated.push({ ...safeChannel, lastChecked: Date.now(), lastError: String(e?.message || e).slice(0, 500) });
             dirty = true;
         }
     }
@@ -2090,15 +2108,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         (async () => {
             const url = String(message.url || '').trim();
             const name = String(message.name || '').trim();
-            if (!url || !/^https?:\/\//.test(url)) { sendResponse({ ok: false, reason: 'bad-url' }); return; }
-            try {
-                const u = new URL(url);
-                if (!/(^|\.)rumble\.com$/i.test(u.hostname)) { sendResponse({ ok: false, reason: 'not-rumble' }); return; }
-            } catch { sendResponse({ ok: false, reason: 'parse-failed' }); return; }
+            const safeUrl = rxSafeRumbleUrl(url);
+            if (!safeUrl) { sendResponse({ ok: false, reason: 'bad-rumble-url' }); return; }
             const s = await rxGetSettings();
             const list = Array.isArray(s.watchedChannels) ? s.watchedChannels.slice() : [];
-            if (list.some((c) => c.url === url)) { sendResponse({ ok: false, reason: 'duplicate' }); return; }
-            list.push({ url, name: name || url, lastSeenVideoId: null, isLive: false, lastChecked: null });
+            if (list.some((c) => rxSafeRumbleUrl(c?.url) === safeUrl)) { sendResponse({ ok: false, reason: 'duplicate' }); return; }
+            list.push({ url: safeUrl, name: name.slice(0, 300) || safeUrl, lastSeenVideoId: null, isLive: false, lastChecked: null });
             await rxSetSettings({ watchedChannels: list });
             await rxSyncChannelNotifier();
             sendResponse({ ok: true, count: list.length });

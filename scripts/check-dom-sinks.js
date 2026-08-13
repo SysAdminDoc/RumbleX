@@ -6,6 +6,7 @@ const path = require('path');
 
 const ROOT = path.resolve(__dirname, '..');
 const EXTENSION_ROOT = path.join(ROOT, 'extension');
+const USERSCRIPT_ROOT = path.join(ROOT, 'userscript');
 
 const DIRECT_SINKS = [
     { kind: 'innerHTML assignment', re: /\.innerHTML\s*(?:\+=|=)/ },
@@ -226,7 +227,7 @@ function findSinksInFile(file) {
 const findings = [];
 const approvals = [];
 
-for (const file of walk(EXTENSION_ROOT)) {
+for (const file of [...walk(EXTENSION_ROOT), ...walk(USERSCRIPT_ROOT)]) {
     for (const item of findSinksInFile(file)) {
         const reason = classify(item.file, item.sink, item.statement, item.context);
         if (reason) {

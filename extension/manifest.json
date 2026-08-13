@@ -56,9 +56,11 @@
   "content_scripts": [
     {
       "matches": [
-        "*://*.rumble.com/*"
+        "https://rumble.com/*",
+        "https://*.rumble.com/*"
       ],
       "js": [
+        "platform.js",
         "content.js"
       ],
       "run_at": "document_start",
