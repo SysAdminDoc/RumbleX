@@ -43,6 +43,16 @@ async function openLivePage(page) {
         ].join(',')) || /performing security verification|verify you are human/i.test(challengeText);
     });
     test.skip(securityVerification, 'Rumble served an interactive Cloudflare verification page; automation must not bypass it');
+
+    // A URL that is visible in the user's signed-in browser may be private or
+    // account-restricted in Playwright's deliberately isolated profile. That
+    // page is a valid Rumble shell, but it has no watch/player/title surfaces
+    // to audit, so do not misreport access control as selector drift.
+    const accessRestricted = await page.evaluate(() => {
+        const text = document.body?.textContent?.slice(0, 5000) || '';
+        return /this video is (?:restricted|private)|sign in to access it/i.test(text);
+    });
+    test.skip(accessRestricted, 'The isolated live-smoke profile cannot access this private/restricted video');
 }
 
 test.describe('live rumble.com smoke', () => {

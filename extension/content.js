@@ -1,4 +1,4 @@
-// RumbleX v3.38.0 - Shared Content Core
+// RumbleX v3.39.0 - Shared Content Core
 // Rumble enhancement suite - Chrome/Firefox extension
 'use strict';
 
@@ -8,7 +8,7 @@
 // DOM feature ship from one canonical source.
 const RXPlatform = globalThis.RumbleXPlatform;
 if (!RXPlatform) throw new Error('RumbleX platform adapter is missing');
-const VERSION = RXPlatform.version || '3.38.0';
+const VERSION = RXPlatform.version || '3.39.0';
 const RXSettingsSchema = globalThis.RumbleXSettingsSchema;
 if (!RXSettingsSchema) throw new Error('RumbleX settings schema is missing');
 const SCHEMA_VERSION = RXSettingsSchema.SCHEMA_VERSION;
@@ -184,7 +184,7 @@ const Page = {
     isSearch: () => location.pathname === '/search/video' || location.pathname.startsWith('/search/'),
     isChannel: () => location.pathname.startsWith('/c/') || location.pathname.startsWith('/user/'),
     isLive: () => !!document.querySelector('.media-description-info-stream-time') || !!document.querySelector('#chat-history-list'),
-    isAccount: () => location.pathname.startsWith('/account/'),
+    isAccount: () => location.pathname.startsWith('/account/') || location.pathname === '/followed-channels',
     isStudio: () => location.hostname === 'studio.rumble.com',
     // v3.1.0 — Rumble Shorts launched on web 2026-02-04 at rumble.com/shorts.
     // Vertical swipeable feed, dedicated player, ≤90s, 1:1-or-taller aspect ratio.
@@ -218,9 +218,9 @@ const Selectors = {
         'search.form':        { stable: 'form[data-js="search_form"]', fallback: '.header-search' },
         'search.input':       { stable: '[data-js="search_input"]', fallback: '.header-search-field' },
         'search.autocomplete':{ stable: '[data-js="autocomplete_results_container"]', fallback: '[hx-post="/search/htmx/get-autocomplete-results"]' },
-        'feed.card':          { stable: 'rum-video-thumbnail[role="listitem"], [role="listitem"][data-video-id]', fallback: '.videostream.thumbnail__grid--item' },
-        'feed.cardTitle':     { stable: '[video-title], rum-text[role="heading"], .thumbnail__title', fallback: '.thumbnail__title.line-clamp-2' },
-        'feed.author':        { stable: 'a[rel="author"].channel__link', fallback: '.channel__link' },
+        'feed.card':          { stable: 'rum-video-thumbnail[role="listitem"], [role="listitem"][data-video-id], article.video-item', fallback: '.videostream.thumbnail__grid--item' },
+        'feed.cardTitle':     { stable: '[video-title], rum-text[role="heading"], .thumbnail__title, .video-item--title', fallback: '.thumbnail__title.line-clamp-2' },
+        'feed.author':        { stable: 'a[rel="author"].channel__link, article.video-item a[rel="author"]', fallback: '.channel__link' },
         'watch.media':        { stable: '[data-js="media_container"]', fallback: '.media-page' },
         'watch.player':       { stable: '#videoPlayer, video', fallback: '.videoPlayer-Rumble-cls' },
         'watch.title':        { stable: '.video-header-container__title', fallback: '[class*="video-header"] [class*="title"]' },
@@ -254,7 +254,7 @@ const Selectors = {
         // v3.1.0 — Rumble Wallet tip button surface (launched 2026-01-07).
         // Appears only for creators who enabled their tip jar — opt-in toggle
         // hides it without breaking creators who want to keep it visible.
-        'wallet.tipButton':   { stable: '[data-js="wallet_tip_button"], [data-js="tip_button"]', fallback: 'button[hx-get*="wallet"], [class*="tip-button"], [class*="TipButton"]' },
+        'wallet.tipButton':   { stable: 'button[hx-get*="wallet/payment/qr-modal"], [data-js="wallet_tip_button"], [data-js="tip_button"]', fallback: 'button[hx-get*="wallet"], [class*="tip-button"], [class*="TipButton"]' },
         // v3.35.0 — Premium / Perplexity Pro promotion surface. Keep the
         // endpoint hook first: it is also the contract used by AdNuker and
         // the dedicated hide-Premium/Join CSS toggle.
@@ -271,13 +271,15 @@ const Selectors = {
         // recurringSubsCancelBtn = per-row Cancel button on /account/subscriptions
         // (the Recurring Subs page). Stable via data-js attribute.
         // followedChannelsUnsubBtn = per-channel Unsubscribe button on
-        // /account/following. Identified via data-action="unsubscribe" so it
+        // /followed-channels (formerly /account/following). Identified via
+        // data-action="unsubscribe" so it
         // doesn't match the inverse Subscribe button on the same page.
         'account.recurringSubsCancelBtn': { stable: 'button[data-js="cancel_recurring_subscriptions"]', fallback: 'button[class*="cancel-recurring"]' },
         'account.recurringSubsRow':       { stable: 'table tr:has(button[data-js="cancel_recurring_subscriptions"])', fallback: 'tr[class*="subscription"]' },
         'account.followedChannelsSection':{ stable: '[data-js="followed-channels__section"]', fallback: 'section[class*="followed"]' },
         'account.followedChannelsUnsubBtn':{ stable: 'button[data-action="unsubscribe"][hx-post*="legacy-video-collection"]', fallback: 'button.js-media-subscribe[data-action="unsubscribe"]' },
-        // v3.13.0 — Per-channel row on /account/following (Followed Channels.mhtml).
+        // v3.13.0 — Per-channel row on /followed-channels (formerly
+        // /account/following; Followed Channels.mhtml).
         // Row: <li class="followed-channel" data-id data-type="channel">
         //   Channel URL: <a href="rumble.com/c/..."> with <span class="line-clamp-2">Name</span>
         //   Live tag:    <span class="live__tag">LIVE</span> (when channel is live now)
@@ -659,6 +661,86 @@ function waitFor(selector, timeout = 8000) {
     });
 }
 
+// Feature DOM often arrives after an htmx swap. Pair those waits with the
+// feature's lifecycle generation so disabling a toggle while a wait is
+// pending cannot resurrect controls, observers, timers, or listeners later.
+function waitForFeature(owner, selector, timeout = 8000) {
+    const generation = owner?._rxLifecycleGeneration;
+    return new Promise((resolve, reject) => {
+        const found = document.querySelector(selector);
+        if (found && owner && generation === owner._rxLifecycleGeneration) {
+            queueMicrotask(() => {
+                if (generation === owner._rxLifecycleGeneration) resolve(found);
+                else reject(new DOMException('Feature lifecycle ended', 'AbortError'));
+            });
+            return;
+        }
+        const pending = owner._rxPendingWaitCancels || (owner._rxPendingWaitCancels = new Set());
+        let settled = false;
+        let timer = null;
+        const cleanup = () => {
+            observer.disconnect();
+            if (timer) clearTimeout(timer);
+            pending.delete(cancel);
+        };
+        const cancel = () => {
+            if (settled) return;
+            settled = true;
+            cleanup();
+            reject(new DOMException('Feature lifecycle ended', 'AbortError'));
+        };
+        const observer = new MutationObserver(() => {
+            const element = document.querySelector(selector);
+            if (!element) return;
+            if (!owner || generation !== owner._rxLifecycleGeneration) {
+                cancel();
+                return;
+            }
+            settled = true;
+            cleanup();
+            resolve(element);
+        });
+        pending.add(cancel);
+        observer.observe(document.documentElement, { childList: true, subtree: true });
+        timer = setTimeout(() => {
+            if (settled) return;
+            settled = true;
+            cleanup();
+            reject(new Error('Timeout: ' + selector));
+        }, timeout);
+    });
+}
+
+function waitForSelectorFeature(owner, key, options = {}) {
+    const entry = Selectors._map[key];
+    if (!entry) return Promise.reject(new Error('Unknown selector contract: ' + key));
+    const selector = [entry.stable, entry.fallback].filter(Boolean).join(', ');
+    return waitForFeature(owner, selector, Number(options?.timeout) || 8000);
+}
+
+function cancelFeatureWaits(owner) {
+    if (!owner?._rxPendingWaitCancels) return;
+    for (const cancel of [...owner._rxPendingWaitCancels]) cancel();
+    owner._rxPendingWaitCancels.clear();
+}
+
+function setFeatureTimeout(owner, callback, delay) {
+    const generation = owner?._rxLifecycleGeneration;
+    const pending = owner._rxPendingTimeouts || (owner._rxPendingTimeouts = new Set());
+    const timer = setTimeout(() => {
+        pending.delete(timer);
+        if (generation === owner._rxLifecycleGeneration) callback();
+    }, delay);
+    pending.add(timer);
+    return timer;
+}
+
+function cancelFeatureTimeouts(owner) {
+    if (!owner?._rxPendingTimeouts) return;
+    for (const timer of owner._rxPendingTimeouts) clearTimeout(timer);
+    owner._rxPendingTimeouts.clear();
+}
+
 // ═══════════════════════════════════════════
 //  FEATURE: Ad Nuker
 // ═══════════════════════════════════════════
@@ -750,8 +832,6 @@ const VideoCards = {
         'rum-video-thumbnail[role="listitem"]',
         '[role="listitem"][data-video-id]',
         '.videostream',
-        '.video-listing-entry',
-        '.video-item',
         'article.video-item',
         '.mediaList-item',
         '.thumbnail__grid-item',
@@ -766,7 +846,7 @@ const VideoCards = {
     },
     title(card) {
         return (card.getAttribute('video-title')
-            || card.querySelector('rum-text[role="heading"], .thumbnail__title, .videostream__title, .mediaList-heading, .media-item__title')?.textContent
+            || card.querySelector('rum-text[role="heading"], .thumbnail__title, .videostream__title, .mediaList-heading, .media-item__title, .video-item--title')?.textContent
             || '').trim();
     },
     channel(card) {
@@ -787,7 +867,7 @@ const VideoCards = {
         return this.url(card).match(/\/(v[a-z0-9]+)-/i)?.[1] || null;
     },
     thumbnail(card) {
-        return card.querySelector('.rum-video-thumbnail__image, .videostream__image, .thumbnail__image, .videostream__thumbnail, [class*="thumbnail"]');
+        return card.querySelector('.rum-video-thumbnail__image, .videostream__image, .thumbnail__image, .videostream__thumbnail, .video-item--img-wrapper, [class*="thumbnail"]');
     },
 };
 
@@ -2323,7 +2403,7 @@ const TheaterSplit = {
             return;
         }
         if (this._isActive) this._unmount();
-        waitFor('#videoPlayer').then(() => {
+        waitForFeature(this, '#videoPlayer').then(() => {
             if (token === this._mountToken && Page.isWatch()) this._mountOverlay();
         }).catch(() => {});
     },
@@ -4215,35 +4295,48 @@ const LogoToFeed = {
     id: 'logoToFeed',
     name: 'Logo to Feed',
     _obs: null,
+    _links: null,
+    _svgBindings: null,
+
+    _rewriteLink(link) {
+        if (!link || link.getAttribute('href') === '/subscriptions') return;
+        if (!this._links.has(link)) this._links.set(link, link.getAttribute('href'));
+        link.setAttribute('href', '/subscriptions');
+    },
 
     _redirectLogos() {
         // Primary target: the flex logo link with Rumble SVGs
         for (const a of qsa('a[href="/"].flex')) {
             if (a.querySelector('use[href*="rumble-logo"]')) {
-                a.href = '/subscriptions';
+                this._rewriteLink(a);
             }
         }
         // Video player logo: svg.RumbleElm with logo viewBox (not play/pause/other controls)
         for (const svg of qsa('svg.RumbleElm[viewBox="0 0 140 35"], svg.RumbleElm[viewBox="0 0 35 35"]')) {
             if (svg.dataset.rxFeedBound) continue;
             svg.dataset.rxFeedBound = '1';
-            svg.addEventListener('click', (e) => {
+            const originalCursor = svg.style.cursor;
+            const handler = (e) => {
                 e.preventDefault();
                 e.stopImmediatePropagation();
                 location.href = 'https://rumble.com/subscriptions';
-            }, true);
+            };
+            svg.addEventListener('click', handler, true);
+            this._svgBindings.set(svg, { handler, originalCursor });
             svg.style.cursor = 'pointer';
         }
         // Secondary: any header/nav link to "/" containing SVG/img (logo variants)
         for (const a of qsa('a[href="/"]')) {
             if (a.href.endsWith('/') && a.closest('.header, nav, .sidenav') && (a.querySelector('svg, img') || a.classList.toString().toLowerCase().includes('logo'))) {
-                a.href = '/subscriptions';
+                this._rewriteLink(a);
             }
         }
     },
 
     init() {
         if (!Settings.get(this.id) || !Page.isWatch()) return;
+        this._links = new Map();
+        this._svgBindings = new Map();
         this._redirectLogos();
         this._obs = new MutationObserver(() => this._redirectLogos());
         this._obs.observe(document.body, { childList: true, subtree: true });
@@ -4251,6 +4344,18 @@ const LogoToFeed = {
 
     destroy() {
         this._obs?.disconnect();
+        this._obs = null;
+        for (const [link, originalHref] of this._links || []) {
+            if (originalHref === null) link.removeAttribute('href');
+            else link.setAttribute('href', originalHref);
+        }
+        for (const [svg, { handler, originalCursor }] of this._svgBindings || []) {
+            svg.removeEventListener('click', handler, true);
+            delete svg.dataset.rxFeedBound;
+            svg.style.cursor = originalCursor;
+        }
+        this._links?.clear();
+        this._svgBindings?.clear();
     }
 };
 
@@ -4264,6 +4369,7 @@ const SpeedController = {
     _obs: null,
     _overlayEl: null,
     _overlayTimer: null,
+    _videoBindings: null,
 
     _css: `
         #rx-speed-overlay {
@@ -4335,18 +4441,23 @@ const SpeedController = {
         if (video.dataset.rxSpeedBound) return;
         video.dataset.rxSpeedBound = '1';
         this._applySpeed(video);
-        video.addEventListener('play', () => this._applySpeed(video));
-        video.addEventListener('ratechange', () => {
+        const play = () => this._applySpeed(video);
+        const ratechange = () => {
             const target = Settings.get('playbackSpeed') || 1.0;
             if (!this._isLive() && Math.abs(video.playbackRate - target) > 0.01) {
                 video.playbackRate = target;
             }
-        });
+        };
+        video.addEventListener('play', play);
+        video.addEventListener('ratechange', ratechange);
+        this._videoBindings = this._videoBindings || new Map();
+        this._videoBindings.set(video, { play, ratechange });
     },
 
     init() {
         if (!Settings.get(this.id)) return;
         if (!Page.isWatch()) return;
+        this._videoBindings = new Map();
         this._styleEl = injectStyle(this._css, 'rx-speed-css');
         for (const v of qsa('video')) this._bindVideo(v);
         this._obs = new MutationObserver(() => {
@@ -4358,7 +4469,17 @@ const SpeedController = {
     destroy() {
         this._styleEl?.remove();
         this._obs?.disconnect();
+        this._obs = null;
+        for (const [video, handlers] of this._videoBindings || []) {
+            video.removeEventListener('play', handlers.play);
+            video.removeEventListener('ratechange', handlers.ratechange);
+            delete video.dataset.rxSpeedBound;
+        }
+        this._videoBindings?.clear();
         this._overlayEl?.remove();
+        this._overlayEl = null;
+        clearTimeout(this._overlayTimer);
+        this._overlayTimer = null;
     }
 };
 
@@ -4372,6 +4493,8 @@ const ScrollVolume = {
     _obs: null,
     _overlayEl: null,
     _overlayTimer: null,
+    _videoBindings: null,
+    _popupHandlers: null,
 
     _css: `
         #rx-volume-overlay {
@@ -4489,8 +4612,12 @@ const ScrollVolume = {
         if (video.dataset.rxVolBound) return;
         video.dataset.rxVolBound = '1';
         this._restoreVolume(video);
-        video.addEventListener('loadedmetadata', () => this._restoreVolume(video));
-        video.addEventListener('play', () => this._restoreVolume(video), { once: true });
+        const loadedmetadata = () => this._restoreVolume(video);
+        const play = () => this._restoreVolume(video);
+        video.addEventListener('loadedmetadata', loadedmetadata);
+        video.addEventListener('play', play, { once: true });
+        this._videoBindings = this._videoBindings || new Map();
+        this._videoBindings.set(video, { loadedmetadata, play });
     },
 
     _volPinned: false,
@@ -4514,15 +4641,18 @@ const ScrollVolume = {
         this._volPopup = popup;
 
         // Direct hover on popup: pin indefinitely until mouseleave
-        popup.addEventListener('mouseenter', () => {
+        const mouseenter = () => {
             clearTimeout(this._volPinTimer);
             this._volPinned = true;
-        });
-        popup.addEventListener('mouseleave', () => {
+        };
+        const mouseleave = () => {
             this._volPinTimer = setTimeout(() => {
                 this._volPinned = false;
             }, 300);
-        });
+        };
+        popup.addEventListener('mouseenter', mouseenter);
+        popup.addEventListener('mouseleave', mouseleave);
+        this._popupHandlers = { popup, mouseenter, mouseleave };
 
         // Watch for Rumble showing/hiding the popup via inline style changes
         this._volPopupObs = new MutationObserver(() => {
@@ -4565,6 +4695,7 @@ const ScrollVolume = {
     init() {
         if (!Settings.get(this.id)) return;
         if (!Page.isWatch()) return;
+        this._videoBindings = new Map();
         this._styleEl = injectStyle(this._css, 'rx-scrollvol-css');
 
         this._wheelFn = (e) => this._onWheel(e);
@@ -4581,20 +4712,41 @@ const ScrollVolume = {
         this._obs.observe(document.documentElement, { childList: true, subtree: true });
 
         // Also scan after a delay since the player renders async
-        setTimeout(() => this._scanForVolPopup(), 2000);
-        setTimeout(() => this._scanForVolPopup(), 5000);
+        setFeatureTimeout(this, () => this._scanForVolPopup(), 2000);
+        setFeatureTimeout(this, () => this._scanForVolPopup(), 5000);
     },
 
     destroy() {
         this._styleEl?.remove();
         this._obs?.disconnect();
+        this._obs = null;
         this._volPopupObs?.disconnect();
+        this._volPopupObs = null;
         this._overlayEl?.remove();
+        this._overlayEl = null;
+        clearTimeout(this._overlayTimer);
+        this._overlayTimer = null;
         clearTimeout(this._volPinTimer);
+        this._volPinTimer = null;
         this._volPinned = false;
+        if (this._popupHandlers) {
+            const { popup, mouseenter, mouseleave } = this._popupHandlers;
+            popup.removeEventListener('mouseenter', mouseenter);
+            popup.removeEventListener('mouseleave', mouseleave);
+            delete popup._rxVolBound;
+        }
+        this._popupHandlers = null;
         this._volPopup = null;
+        for (const [video, handlers] of this._videoBindings || []) {
+            video.removeEventListener('loadedmetadata', handlers.loadedmetadata);
+            video.removeEventListener('play', handlers.play);
+            delete video.dataset.rxVolBound;
+        }
+        this._videoBindings?.clear();
         if (this._wheelFn) document.removeEventListener('wheel', this._wheelFn, { capture: true });
         if (this._midclickFn) document.removeEventListener('mousedown', this._midclickFn, { capture: true });
+        this._wheelFn = null;
+        this._midclickFn = null;
     }
 };
 
@@ -4783,7 +4935,7 @@ const AutoMaxQuality = {
             if (this._tryHlsDirect()) return;
             this._selectBest();
         });
-        waitFor('#videoPlayer, .videoPlayer-Rumble-cls').then(el => {
+        waitForFeature(this, '#videoPlayer, .videoPlayer-Rumble-cls').then(el => {
             this._obs.observe(el, { childList: true, subtree: true });
         }).catch(() => {});
     },
@@ -5000,7 +5152,7 @@ const WatchProgress = {
 
         if (Page.isWatch()) {
             const generation = ++this._mountGen;
-            waitFor('video').then(() => {
+            waitForFeature(this, 'video').then(() => {
                 if (generation !== this._mountGen || !Settings.get(this.id)) return;
                 const video = getActiveMedia();
                 if (!video) return;
@@ -5014,7 +5166,7 @@ const WatchProgress = {
             }).catch(() => {});
         }
 
-        if (Page.isFeed() || Page.isHome()) {
+        if (Page.isFeed() || Page.isHome() || Page.isSearch() || Page.isChannel()) {
             // Add progress bars after page loads
             this._feedTimer = setTimeout(() => this._addProgressBars(), 1000);
             this._obs = new MutationObserver(() => this._addProgressBars());
@@ -5275,7 +5427,7 @@ const ChannelArchiveButton = {
         if (!Page.isChannel()) return;
         this._styleEl = injectStyle(this._css, 'rx-archive-channel-css');
         // Channel pages render the Follow button client-side; observe until it appears.
-        Selectors.wait('profile.followingBtn', 5000).then(() => this._attach()).catch(() => {});
+        waitForSelectorFeature(this, 'profile.followingBtn', { timeout: 5000 }).then(() => this._attach()).catch(() => {});
         this._obs = new MutationObserver(() => this._attach());
         this._obs.observe(document.body, { childList: true, subtree: true });
     },
@@ -5452,12 +5604,19 @@ const KeyboardNav = {
 const AutoTheater = {
     id: 'autoTheater',
     name: 'Auto Theater',
+    _timers: null,
+
+    _clearTimers() {
+        for (const timer of this._timers || []) clearTimeout(timer);
+        this._timers = [];
+    },
 
     init() {
         if (!Settings.get(this.id)) return;
         if (!Page.isWatch()) return;
         // Don't fight with TheaterSplit - if that's enabled, it handles theater
         if (Settings.get('theaterSplit')) return;
+        this._clearTimers();
 
         // Click Rumble's native theater button
         const tryClick = () => {
@@ -5481,11 +5640,13 @@ const AutoTheater = {
         // Retry since player loads async
         const attempts = [1500, 3000, 5000, 8000];
         for (const delay of attempts) {
-            setTimeout(() => tryClick(), delay);
+            this._timers.push(setTimeout(() => tryClick(), delay));
         }
     },
 
-    destroy() {}
+    destroy() {
+        this._clearTimers();
+    }
 };
 
 // ═══════════════════════════════════════════
@@ -5656,8 +5817,8 @@ const LiveChatEnhance = {
             }
         };
 
-        waitFor('#chat-history-list, .chat--height').then(() => {
-            setTimeout(startObs, 500);
+        waitForFeature(this, '#chat-history-list, .chat--height').then(() => {
+            setFeatureTimeout(this, startObs, 500);
         }).catch(() => {
             // Not a live stream, that's fine
         });
@@ -5677,6 +5838,7 @@ const VideoTimestamps = {
     name: 'Timestamps',
     _styleEl: null,
     _obs: null,
+    _timer: null,
 
     _css: `
         .rx-timestamp-link {
@@ -5786,9 +5948,13 @@ const VideoTimestamps = {
         if (!Page.isWatch()) return;
         this._styleEl = injectStyle(this._css, 'rx-timestamps-css');
 
-        setTimeout(() => this._processAll(), 2000);
+        clearTimeout(this._timer);
+        this._timer = setTimeout(() => {
+            this._timer = null;
+            this._processAll();
+        }, 2000);
         this._obs = new MutationObserver(() => this._processAll());
-        waitFor('.media-page-comments-container, #video-comments').then(el => {
+        waitForFeature(this, '.media-page-comments-container, #video-comments').then(el => {
             this._obs.observe(el, { childList: true, subtree: true });
         }).catch(() => {});
     },
@@ -5796,6 +5962,14 @@ const VideoTimestamps = {
     destroy() {
         this._styleEl?.remove();
         this._obs?.disconnect();
+        this._obs = null;
+        clearTimeout(this._timer);
+        this._timer = null;
+        for (const link of qsa('.rx-timestamp-link')) link.replaceWith(document.createTextNode(link.textContent || ''));
+        for (const element of qsa('[data-rx-timestamp-done]')) {
+            element.removeAttribute('data-rx-timestamp-done');
+            element.normalize();
+        }
     }
 };
 
@@ -5870,7 +6044,7 @@ const ScreenshotBtn = {
         if (!Page.isWatch() && !Page.isEmbed()) return;
         this._styleEl = injectStyle(this._css, 'rx-screenshot-css');
 
-        waitFor('#videoPlayer, .videoPlayer-Rumble-cls').then(container => {
+        waitForFeature(this, '#videoPlayer, .videoPlayer-Rumble-cls').then(container => {
             const btn = document.createElement('button');
             btn.className = 'rx-screenshot-btn';
             btn.title = 'Screenshot frame';
@@ -5896,6 +6070,8 @@ const WatchHistoryFeature = {
     name: 'Watch History',
     _MAX: 500,
     _KEY: 'rx_watch_history',
+    _recordTimer: null,
+    _buttonWrapper: null,
 
     _getHistory() {
         try { return JSON.parse(localStorage.getItem(this._KEY) || '[]'); }
@@ -5936,11 +6112,12 @@ const WatchHistoryFeature = {
         btn.addEventListener('click', () => this._showOverlay());
 
         // Add to nav or toolbar area
-        waitFor('.main-and-sidebar, .constrained-container, .subscriptions-header, .homepage-container').then(container => {
+        waitForFeature(this, '.main-and-sidebar, .constrained-container, .subscriptions-header, .homepage-container').then(container => {
             const wrapper = document.createElement('div');
             wrapper.style.cssText = 'padding:8px 16px;';
             wrapper.appendChild(btn);
             container.parentNode?.insertBefore(wrapper, container);
+            this._buttonWrapper = wrapper;
         }).catch(() => {});
     },
 
@@ -6112,7 +6289,11 @@ const WatchHistoryFeature = {
         this._styleEl = injectStyle(this._css, 'rx-watch-history-css');
         // Record current video after page loads
         if (Page.isWatch()) {
-            setTimeout(() => this._recordCurrent(), 3000);
+            clearTimeout(this._recordTimer);
+            this._recordTimer = setTimeout(() => {
+                this._recordTimer = null;
+                this._recordCurrent();
+            }, 3000);
         }
         // Show history button on feed pages
         if (Page.isFeed()) {
@@ -6122,6 +6303,10 @@ const WatchHistoryFeature = {
 
     destroy() {
         this._styleEl?.remove();
+        clearTimeout(this._recordTimer);
+        this._recordTimer = null;
+        this._buttonWrapper?.remove();
+        this._buttonWrapper = null;
         qs('.rx-history-overlay')?.remove();
     }
 };
@@ -6193,7 +6378,7 @@ const AutoplayBlock = {
 
         // Observe for dynamically inserted autoplay elements
         this._obs = new MutationObserver(() => this._blockAutoplay());
-        waitFor('#videoPlayer, .videoPlayer-Rumble-cls').then(el => {
+        waitForFeature(this, '#videoPlayer, .videoPlayer-Rumble-cls').then(el => {
             this._obs.observe(el, { childList: true, subtree: true });
         }).catch(() => {});
 
@@ -6271,9 +6456,9 @@ const ShortsRedirect = {
 // ═══════════════════════════════════════════
 // Closes the v2.5 deferred item. Two account pages were unblocked by the
 // 2026-05-19 MHTML capture batch:
-//   /account/subscriptions/recurring  → per-row <button data-js=
+//   /account/recurring-subs           → per-row <button data-js=
 //       "cancel_recurring_subscriptions">Cancel</button>  (paid Locals subs)
-//   /account/following                → per-row <button data-action=
+//   /followed-channels                → per-row <button data-action=
 //       "unsubscribe" hx-post="/-htmx/account/legacy-video-collection">
 //       (free channel follows)
 //
@@ -6341,10 +6526,12 @@ const BulkUnsubscribe = {
     `,
 
     _onAccountFollowing() {
-        return location.pathname.startsWith('/account/following');
+        return location.pathname === '/followed-channels'
+            || location.pathname.startsWith('/account/following');
     },
     _onAccountRecurring() {
-        return location.pathname.startsWith('/account/subscriptions');
+        return location.pathname === '/account/recurring-subs'
+            || location.pathname.startsWith('/account/subscriptions');
     },
     _shouldMount() {
         return this._onAccountFollowing() || this._onAccountRecurring();
@@ -6549,6 +6736,8 @@ const SearchHistory = {
     _MAX: 100,
     _dropdown: null,
     _input: null,
+    _focusHandler: null,
+    _inputHandler: null,
 
     _css: `
         .rx-search-dropdown {
@@ -6684,7 +6873,7 @@ const SearchHistory = {
         }
 
         // Attach to search input
-        waitFor('input[name="q"], input[type="search"], .search-input input, #search-input').then(input => {
+        waitForFeature(this, 'input[name="q"], input[type="search"], .search-input input, #search-input').then(input => {
             this._input = input;
             const wrapper = input.closest('form') || input.parentElement;
             if (!wrapper) return;
@@ -6694,8 +6883,10 @@ const SearchHistory = {
             this._dropdown.className = 'rx-search-dropdown';
             wrapper.appendChild(this._dropdown);
 
-            input.addEventListener('focus', () => this._showDropdown(input.value));
-            input.addEventListener('input', () => this._showDropdown(input.value));
+            this._focusHandler = () => this._showDropdown(input.value);
+            this._inputHandler = () => this._showDropdown(input.value);
+            input.addEventListener('focus', this._focusHandler);
+            input.addEventListener('input', this._inputHandler);
             // Store the bound handler so destroy() can actually remove it.
             // Previously this was anonymous and leaked forever after the
             // feature was disabled, holding references to `wrapper` + `_dropdown`.
@@ -6717,6 +6908,10 @@ const SearchHistory = {
     },
 
     destroy() {
+        if (this._input && this._focusHandler) this._input.removeEventListener('focus', this._focusHandler);
+        if (this._input && this._inputHandler) this._input.removeEventListener('input', this._inputHandler);
+        this._focusHandler = null;
+        this._inputHandler = null;
         if (this._outsideClickHandler) {
             document.removeEventListener('click', this._outsideClickHandler);
             this._outsideClickHandler = null;
@@ -6729,6 +6924,7 @@ const SearchHistory = {
         this._styleEl?.remove();
         this._dropdown?.remove();
         this._dropdown = null;
+        this._input = null;
     }
 };
 
@@ -6884,7 +7080,7 @@ const MiniPlayer = {
         this._initDrag();
 
         // Watch for video scrolling out of viewport
-        waitFor('#videoPlayer, .videoPlayer-Rumble-cls, video').then(playerEl => {
+        waitForFeature(this, '#videoPlayer, .videoPlayer-Rumble-cls, video').then(playerEl => {
             // Don't observe if TheaterSplit is active — player is always fullscreen
             if (TheaterSplit._isActive) return;
             this._obs = new IntersectionObserver((entries) => {
@@ -6906,6 +7102,7 @@ const MiniPlayer = {
 
     destroy() {
         this._hide();
+        if (this._mini && this._dragMousedown) this._mini.removeEventListener('mousedown', this._dragMousedown);
         if (this._dragMousemove) document.removeEventListener('mousemove', this._dragMousemove);
         if (this._dragMouseup) document.removeEventListener('mouseup', this._dragMouseup);
         this._dragMousemove = this._dragMouseup = this._dragMousedown = null;
@@ -7043,7 +7240,7 @@ const VideoStats = {
         if (!Page.isWatch() && !Page.isEmbed()) return;
         this._styleEl = injectStyle(this._css, 'rx-stats-css');
 
-        waitFor('#videoPlayer, .videoPlayer-Rumble-cls').then(container => {
+        waitForFeature(this, '#videoPlayer, .videoPlayer-Rumble-cls').then(container => {
             container.style.position = container.style.position || 'relative';
 
             const btn = document.createElement('button');
@@ -7234,7 +7431,7 @@ const LoopControl = {
         if (!Page.isWatch() && !Page.isEmbed()) return;
         this._styleEl = injectStyle(this._css, 'rx-loop-css');
 
-        waitFor('#videoPlayer, .videoPlayer-Rumble-cls').then(container => {
+        waitForFeature(this, '#videoPlayer, .videoPlayer-Rumble-cls').then(container => {
             container.style.position = container.style.position || 'relative';
 
             // Main loop button
@@ -7298,6 +7495,7 @@ const QuickBookmark = {
     _KEY: 'rx_bookmarks',
     _MAX: 200,
     _btn: null,
+    _viewWrapper: null,
 
     _css: `
         .rx-bookmark-btn {
@@ -7502,7 +7700,7 @@ const QuickBookmark = {
 
         // Add bookmark button on watch pages
         if (Page.isWatch()) {
-            waitFor('.video-header-container, .media-description, .media-heading').then(container => {
+            waitForFeature(this, '.video-header-container, .media-description, .media-heading').then(container => {
                 const btn = document.createElement('button');
                 btn.className = 'rx-bookmark-btn';
                 if (this._isBookmarked(location.href)) btn.classList.add('saved');
@@ -7515,7 +7713,7 @@ const QuickBookmark = {
 
         // Add "View Bookmarks" button on feed pages
         if (Page.isFeed()) {
-            waitFor('.main-and-sidebar, .constrained-container, .subscriptions-header, .homepage-container').then(container => {
+            waitForFeature(this, '.main-and-sidebar, .constrained-container, .subscriptions-header, .homepage-container').then(container => {
                 const btn = document.createElement('button');
                 btn.className = 'rx-bookmarks-viewall';
                 btn.innerHTML = `<svg viewBox="0 0 24 24" style="width:12px;height:12px;fill:currentColor;vertical-align:-2px;margin-right:4px"><path d="M17 3H7c-1.1 0-2 .9-2 2v16l7-3 7 3V5c0-1.1-.9-2-2-2z"/></svg>Bookmarks`;
@@ -7524,6 +7722,7 @@ const QuickBookmark = {
                 wrapper.style.cssText = 'padding:8px 16px; display: inline-block;';
                 wrapper.appendChild(btn);
                 container.parentNode?.insertBefore(wrapper, container);
+                this._viewWrapper = wrapper;
             }).catch(() => {});
         }
     },
@@ -7531,6 +7730,9 @@ const QuickBookmark = {
     destroy() {
         this._styleEl?.remove();
         this._btn?.remove();
+        this._btn = null;
+        this._viewWrapper?.remove();
+        this._viewWrapper = null;
         qs('.rx-bookmarks-overlay')?.remove();
     }
 };
@@ -7617,7 +7819,7 @@ const CommentNav = {
         if (!Page.isWatch()) return;
         this._styleEl = injectStyle(this._css, 'rx-comment-nav-css');
 
-        waitFor('#video-comments, .media-page-comments-container').then(container => {
+        waitForFeature(this, '#video-comments, .media-page-comments-container').then(container => {
             const bar = document.createElement('div');
             bar.className = 'rx-comment-nav';
 
@@ -7654,7 +7856,7 @@ const CommentNav = {
 
             container.insertBefore(bar, container.firstChild);
             this._bar = bar;
-            setTimeout(() => this._refresh(), 2000);
+            setFeatureTimeout(this, () => this._refresh(), 2000);
         }).catch(() => {});
     },
 
@@ -7737,7 +7939,7 @@ const RantHighlight = {
         this._styleEl = injectStyle(this._css, 'rx-rant-highlight-css');
 
         // Use waitFor instead of Page.isLive() — chat loads async, isLive() may be false at init time
-        waitFor('#chat-history-list, .chat-history').then(chatEl => {
+        waitForFeature(this, '#chat-history-list, .chat-history').then(chatEl => {
             // Insert tracker above chat
             const tracker = document.createElement('div');
             tracker.className = 'rx-rant-tracker';
@@ -7818,7 +8020,7 @@ const RelatedFilter = {
         if (!Page.isWatch()) return;
         this._styleEl = injectStyle(this._css, 'rx-related-filter-css');
 
-        waitFor('.mediaList-list, .media-page-related-media-desktop-sidebar').then(sidebar => {
+        waitForFeature(this, '.mediaList-list, .media-page-related-media-desktop-sidebar').then(sidebar => {
             const bar = document.createElement('div');
             bar.className = 'rx-related-filter';
 
@@ -7934,7 +8136,7 @@ const ExactCounts = {
         this._styleEl = injectStyle(this._css, 'rx-exact-counts-css');
 
         // Process on load and watch for dynamic content
-        setTimeout(() => this._processCards(), 1500);
+        setFeatureTimeout(this, () => this._processCards(), 1500);
         this._obs = new MutationObserver(() => this._processCards());
         this._obs.observe(document.documentElement, { childList: true, subtree: true });
     },
@@ -8037,7 +8239,7 @@ const ShareTimestamp = {
         if (!Page.isWatch() && !Page.isEmbed()) return;
         this._styleEl = injectStyle(this._css, 'rx-share-ts-css');
 
-        waitFor('#videoPlayer, .videoPlayer-Rumble-cls').then(container => {
+        waitForFeature(this, '#videoPlayer, .videoPlayer-Rumble-cls').then(container => {
             container.style.position = container.style.position || 'relative';
             const btn = document.createElement('button');
             btn.className = 'rx-share-ts-btn';
@@ -8101,7 +8303,7 @@ const ShortsFilter = {
         if (!Page.isFeed() && !Page.isHome() && !Page.isChannel()) return;
         this._styleEl = injectStyle(this._css, 'rx-shorts-filter-css');
 
-        setTimeout(() => this._filterAll(), 1000);
+        setFeatureTimeout(this, () => this._filterAll(), 1000);
         this._obs = new MutationObserver(() => this._filterAll());
         this._obs.observe(document.documentElement, { childList: true, subtree: true });
     },
@@ -8181,7 +8383,7 @@ const ChatAutoScroll = {
         if (!Page.isWatch()) return;
         this._styleEl = injectStyle(this._css, 'rx-chat-autoscroll-css');
 
-        waitFor('#chat-history-list, .chat-history').then(chatEl => {
+        waitForFeature(this, '#chat-history-list, .chat-history').then(chatEl => {
             this._chatEl = chatEl;
 
             // Scroll listener to detect user scroll-up
@@ -8259,7 +8461,7 @@ const AutoExpand = {
         // destroy() can cancel — otherwise disabling the feature within the
         // 1500 ms window still fires the click against a page where the user
         // has explicitly turned AutoExpand off.
-        waitFor('.media-description-section').then(() => {
+        waitForFeature(this, '.media-description-section').then(() => {
             this._timer = setTimeout(() => {
                 this._timer = null;
                 const showMore = qs('[data-js="media_description_show_more"]') ||
@@ -8373,6 +8575,7 @@ const PlaylistQuickSave = {
     id: 'quickSave',
     name: 'Quick Save',
     _obs: null,
+    _timer: null,
 
     _css: `
         .rx-quick-save {
@@ -8391,7 +8594,9 @@ const PlaylistQuickSave = {
             pointer-events: auto;
         }
         .thumbnail__thumb:hover .rx-quick-save,
-        .videostream:hover .rx-quick-save { opacity: 1; }
+        .videostream:hover .rx-quick-save,
+        .rum-video-thumbnail__image:hover .rx-quick-save,
+        .video-item--img-wrapper:hover .rx-quick-save { opacity: 1; }
         .rx-quick-save:hover { background: rgba(17,17,27,0.95); border-color: #89b4fa; }
         .rx-quick-save.saved { border-color: #a6e3a1; color: #a6e3a1; }
         .rx-quick-save svg { width: 16px; height: 16px; fill: currentColor; pointer-events: none; }
@@ -8450,10 +8655,10 @@ const PlaylistQuickSave = {
     },
 
     _addButtons() {
-        for (const thumb of qsa('.thumbnail__thumb')) {
+        for (const card of VideoCards.all()) {
+            const thumb = VideoCards.thumbnail(card);
+            if (!thumb) continue;
             if (thumb.querySelector('.rx-quick-save')) continue;
-            const card = thumb.closest('.videostream, .thumbnail__grid--item');
-            if (!card) continue;
 
             // Need relative positioning on thumb
             thumb.style.position = thumb.style.position || 'relative';
@@ -8469,16 +8674,16 @@ const PlaylistQuickSave = {
                     btn.classList.add('saved');
                 } else {
                     // Fallback: save to our local bookmarks
-                    const link = card.querySelector('.videostream__link, .title__link, a[href*="/v"]');
-                    const title = card.querySelector('.thumbnail__title')?.textContent?.trim() || '';
-                    if (link?.href && title) {
+                    const url = VideoCards.url(card);
+                    const title = VideoCards.title(card);
+                    if (url && title) {
                         const key = 'rx_bookmarks';
                         try {
                             const bm = JSON.parse(localStorage.getItem(key) || '[]');
-                            if (!bm.some(b => b.url === link.href)) {
-                                const channel = card.querySelector('.channel__name')?.textContent?.trim() || '';
-                                const img = card.querySelector('.thumbnail__image');
-                                bm.unshift({ url: link.href, title, channel, thumb: img?.src || '', time: Date.now() });
+                            if (!bm.some(b => b.url === url)) {
+                                const channel = VideoCards.channel(card);
+                                const img = thumb.matches('img') ? thumb : thumb.querySelector('img');
+                                bm.unshift({ url, title, channel, thumb: img?.src || '', time: Date.now() });
                                 localStorage.setItem(key, JSON.stringify(bm.slice(0, 200)));
                                 btn.classList.add('saved');
                                 this._showToast('Bookmarked locally');
@@ -8499,7 +8704,11 @@ const PlaylistQuickSave = {
         if (!Page.isFeed() && !Page.isHome() && !Page.isChannel() && !Page.isSearch()) return;
         this._styleEl = injectStyle(this._css, 'rx-quick-save-css');
 
-        setTimeout(() => this._addButtons(), 1500);
+        clearTimeout(this._timer);
+        this._timer = setTimeout(() => {
+            this._timer = null;
+            this._addButtons();
+        }, 1500);
         this._obs = new MutationObserver(() => this._addButtons());
         this._obs.observe(document.documentElement, { childList: true, subtree: true });
     },
@@ -8507,7 +8716,10 @@ const PlaylistQuickSave = {
     destroy() {
         this._styleEl?.remove();
         this._obs?.disconnect();
+        clearTimeout(this._timer);
+        this._timer = null;
         this._toast?.remove();
+        this._toast = null;
         for (const el of qsa('.rx-quick-save')) el.remove();
     }
 };
@@ -9750,6 +9962,7 @@ const FullTitles = {
         html.rumblex-active .videostream__title,
         html.rumblex-active .mediaList-heading,
         html.rumblex-active .media-item__title,
+        html.rumblex-active .video-item--title,
         html.rumblex-active rum-video-thumbnail rum-text[role="heading"],
         html.rumblex-active h3.thumbnail__title {
             -webkit-line-clamp: unset !important;
@@ -9779,6 +9992,7 @@ const TitleFont = {
         html.rumblex-active .thumbnail__title,
         html.rumblex-active .videostream__title,
         html.rumblex-active .mediaList-heading,
+        html.rumblex-active .video-item--title,
         html.rumblex-active rum-video-thumbnail rum-text[role="heading"],
         html.rumblex-active .video-header-container__title,
         html.rumblex-active h1.video-header-container__title {
@@ -9850,7 +10064,7 @@ const UniqueChatters = {
     init() {
         if (!Settings.get(this.id) || !Page.isWatch()) return;
         this._styleEl = injectStyle(this._css, 'rx-chatters-css');
-        waitFor('#chat-history-list').then((chatEl) => {
+        waitForFeature(this, '#chat-history-list').then((chatEl) => {
             this._mount(chatEl);
             this._rescan();
             // Debounce — a full re-scan on every message mutation is O(n) and
@@ -9951,7 +10165,7 @@ const ChatUserBlock = {
     init() {
         if (!Settings.get(this.id) || !Page.isWatch()) return;
         this._styleEl = injectStyle(this._css, 'rx-chatuserblock-css');
-        waitFor('#chat-history-list').then((chatEl) => {
+        waitForFeature(this, '#chat-history-list').then((chatEl) => {
             this._process();
             this._obs = new MutationObserver(() => this._process());
             this._obs.observe(chatEl, { childList: true, subtree: true });
@@ -9998,7 +10212,7 @@ const ChatSpamDedup = {
     init() {
         if (!Settings.get(this.id) || !Page.isWatch()) return;
         this._styleEl = injectStyle(this._css, 'rx-spamdedup-css');
-        waitFor('#chat-history-list').then(chatEl => {
+        waitForFeature(this, '#chat-history-list').then(chatEl => {
             this._process();
             this._obs = new MutationObserver(() => this._process());
             this._obs.observe(chatEl, { childList: true, subtree: true });
@@ -10092,7 +10306,7 @@ const ChatExport = {
     init() {
         if (!Settings.get(this.id) || !Page.isWatch()) return;
         this._styleEl = injectStyle(this._css, 'rx-chatexport-css');
-        waitFor('.chat--header').then(() => this._mount()).catch(() => {});
+        waitForFeature(this, '.chat--header').then(() => this._mount()).catch(() => {});
     },
 
     destroy() {
@@ -10164,7 +10378,7 @@ const RantPersist = {
     // storage during high-volume rant streams.
     _scheduleMirrorWrite() {
         if (this._mirrorWriteTimer) return;
-        this._mirrorWriteTimer = setTimeout(() => {
+        this._mirrorWriteTimer = setFeatureTimeout(this, () => {
             this._mirrorWriteTimer = null;
             void this._flushMirror();
         }, 1500);
@@ -10304,7 +10518,7 @@ const RantPersist = {
                 if (raw) this._cached = JSON.parse(raw) || [];
             } catch {}
         }
-        waitFor('#chat-history-list, .chat-history').then(chatEl => {
+        waitForFeature(this, '#chat-history-list, .chat-history').then(chatEl => {
             this._persist();
             this._obs = new MutationObserver(() => this._persist());
             // childList+subtree is enough — we override fade-out via !important CSS,
@@ -10325,6 +10539,14 @@ const RantPersist = {
     destroy() {
         this._styleEl?.remove();
         this._obs?.disconnect();
+        this._obs = null;
+        clearTimeout(this._mirrorWriteTimer);
+        this._mirrorWriteTimer = null;
+        for (const rant of qsa('.rx-rant-persist, [data-rx-persisted]')) {
+            rant.classList.remove('rx-rant-persist');
+            rant.removeAttribute('data-rx-persisted');
+        }
+        for (const badge of qsa('.rx-rant-persist-badge, .rx-rant-export-btn')) badge.remove();
     }
 };
 
@@ -10425,8 +10647,8 @@ const CommentSort = {
     init() {
         if (!Settings.get(this.id) || !Page.isWatch()) return;
         this._styleEl = injectStyle(this._css, 'rx-commentsort-css');
-        waitFor('#video-comments, .media-page-comments-container').then(() => {
-            setTimeout(() => this._mount(), 1200);
+        waitForFeature(this, '#video-comments, .media-page-comments-container').then(() => {
+            setFeatureTimeout(this, () => this._mount(), 1200);
         }).catch(() => {});
     },
 
@@ -10584,14 +10806,14 @@ const CommentExport = {
         if (!Settings.get(this.id)) return;
         if (!Page.isWatch()) return;
         this._styleEl = injectStyle(this._css, 'rx-comment-export-css');
-        Selectors.wait('comments.root', { timeout: 15000 })
+        waitForSelectorFeature(this, 'comments.root', { timeout: 15000 })
             .then(() => this._tryMount())
-            .catch(() => this._tryMount());
+            .catch(() => {});
         this._routerUnsub = Router.onChange((d) => {
             if (d.changed && Page.isWatch()) {
                 this._btn?.remove();
                 this._btn = null;
-                Selectors.wait('comments.root', { timeout: 10000 }).then(() => this._tryMount()).catch(() => {});
+                waitForSelectorFeature(this, 'comments.root', { timeout: 10000 }).then(() => this._tryMount()).catch(() => {});
             }
         });
     },
@@ -10660,7 +10882,7 @@ const PopoutChat = {
     init() {
         if (!Settings.get(this.id) || !Page.isWatch()) return;
         this._styleEl = injectStyle(this._css, 'rx-popoutchat-css');
-        waitFor('.chat--header').then(() => this._mount()).catch(() => {});
+        waitForFeature(this, '.chat--header').then(() => this._mount()).catch(() => {});
     },
 
     destroy() {
@@ -10764,6 +10986,7 @@ const AutoplayScheduler = {
     name: 'Autoplay Scheduler',
     _styleEl: null,
     _panel: null,
+    _fab: null,
     _endHandler: null,
 
     _css: `
@@ -10886,6 +11109,7 @@ const AutoplayScheduler = {
         fab.title = 'Autoplay Queue';
         fab.innerHTML = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="14" y2="18"/><polygon points="18 15 24 18 18 21" fill="currentColor"/></svg>';
         document.body.appendChild(fab);
+        this._fab = fab;
 
         const panel = document.createElement('div');
         panel.className = 'rx-queue-panel';
@@ -10932,18 +11156,28 @@ const AutoplayScheduler = {
     init() {
         if (!Settings.get(this.id)) return;
         this._styleEl = injectStyle(this._css, 'rx-autoplayscheduler-css');
-        onReady(() => this._build());
+        const generation = this._rxLifecycleGeneration;
+        onReady(() => {
+            if (generation === this._rxLifecycleGeneration) this._build();
+        });
         if (Page.isWatch()) {
-            waitFor('video', 12000).then(() => this._hookVideoEnd()).catch(() => {});
+            waitForFeature(this, 'video', 12000).then(() => this._hookVideoEnd()).catch(() => {});
         }
     },
 
     destroy() {
         this._styleEl?.remove();
         this._panel?.remove();
+        this._panel = null;
+        this._fab?.remove();
+        this._fab = null;
         qs('.rx-queue-fab')?.remove();
         const v = qs('video');
-        if (v && this._endHandler) v.removeEventListener('ended', this._endHandler);
+        if (v) {
+            if (this._endHandler) v.removeEventListener('ended', this._endHandler);
+            delete v.dataset.rxQueueBound;
+        }
+        this._endHandler = null;
     }
 };
 
@@ -11103,7 +11337,7 @@ const Chapters = {
         if (!chapters.length) return;
         this._chapters = chapters;
         try {
-            const v = await waitFor('video', 10000);
+            const v = await waitForFeature(this, 'video', 10000);
             const drawOnce = () => {
                 if (!v.duration || isNaN(v.duration)) return;
                 this._renderMarkers(v.duration);
@@ -11117,8 +11351,8 @@ const Chapters = {
     init() {
         if (!Settings.get(this.id) || !Page.isWatch()) return;
         this._styleEl = injectStyle(this._css, 'rx-chapters-css');
-        waitFor('.media-description, .media-description-section', 10000).then(() => {
-            setTimeout(() => this._run(), 800);
+        waitForFeature(this, '.media-description, .media-description-section', 10000).then(() => {
+            setFeatureTimeout(this, () => this._run(), 800);
         }).catch(() => {});
     },
 
@@ -11140,6 +11374,7 @@ const SponsorBlockRX = {
     _panel: null,
     _segments: [],
     _skipHandler: null,
+    _metadataHandler: null,
     _markerEl: null,
 
     _css: `
@@ -11270,7 +11505,8 @@ const SponsorBlockRX = {
             }
         };
         v.addEventListener('timeupdate', this._skipHandler);
-        v.addEventListener('loadedmetadata', () => this._renderMarkers(v.duration), { once: true });
+        this._metadataHandler = () => this._renderMarkers(v.duration);
+        v.addEventListener('loadedmetadata', this._metadataHandler, { once: true });
         if (v.duration) this._renderMarkers(v.duration);
     },
 
@@ -11389,18 +11625,29 @@ const SponsorBlockRX = {
         if (!Settings.get(this.id) || !Page.isWatch()) return;
         this._styleEl = injectStyle(this._css, 'rx-sponsorblock-css');
         this._loadSegments();
-        waitFor('video', 12000).then(() => this._attachSkip()).catch(() => {});
-        waitFor('.media-description, .media-description-section', 12000).then(() => {
-            setTimeout(() => this._renderPanel(), 800);
+        waitForFeature(this, 'video', 12000).then(() => this._attachSkip()).catch(() => {});
+        waitForFeature(this, '.media-description, .media-description-section', 12000).then(() => {
+            setFeatureTimeout(this, () => this._renderPanel(), 800);
         }).catch(() => {});
     },
 
     destroy() {
         this._styleEl?.remove();
         this._panel?.remove();
+        this._panel = null;
         this._markerEl?.remove();
+        this._markerEl = null;
+        clearTimeout(this._noticeT);
+        this._noticeT = null;
+        qs('.rx-sb-notice')?.remove();
         const v = qs('video');
-        if (v && this._skipHandler) v.removeEventListener('timeupdate', this._skipHandler);
+        if (v) {
+            if (this._skipHandler) v.removeEventListener('timeupdate', this._skipHandler);
+            if (this._metadataHandler) v.removeEventListener('loadedmetadata', this._metadataHandler);
+            delete v.dataset.rxSbBound;
+        }
+        this._skipHandler = null;
+        this._metadataHandler = null;
     }
 };
 
@@ -11597,8 +11844,8 @@ const VideoClips = {
     init() {
         if (!Settings.get(this.id) || !Page.isWatch()) return;
         this._styleEl = injectStyle(this._css, 'rx-clips-css');
-        waitFor('.media-description, .media-description-section', 12000).then(() => {
-            setTimeout(() => this._mount(), 900);
+        waitForFeature(this, '.media-description, .media-description-section', 12000).then(() => {
+            setFeatureTimeout(this, () => this._mount(), 900);
         }).catch(() => {});
     },
 
@@ -11723,8 +11970,8 @@ const LiveDVR = {
     init() {
         if (!Settings.get(this.id) || !Page.isWatch()) return;
         this._styleEl = injectStyle(this._css, 'rx-livedvr-css');
-        waitFor('.media-description, .media-description-section', 12000).then(() => {
-            setTimeout(() => this._mount(), 1000);
+        waitForFeature(this, '.media-description, .media-description-section', 12000).then(() => {
+            setFeatureTimeout(this, () => this._mount(), 1000);
         }).catch(() => {});
     },
 
@@ -11876,8 +12123,8 @@ const SubtitleSidecar = {
     init() {
         if (!Settings.get(this.id) || !Page.isWatch()) return;
         this._styleEl = injectStyle(this._css, 'rx-subsidecar-css');
-        waitFor('.media-description, .media-description-section', 12000).then(() => {
-            setTimeout(() => this._mount(), 900);
+        waitForFeature(this, '.media-description, .media-description-section', 12000).then(() => {
+            setFeatureTimeout(this, () => this._mount(), 900);
         }).catch(() => {});
     },
 
@@ -11985,8 +12232,8 @@ const Transcripts = {
     init() {
         if (!Settings.get(this.id) || !Page.isWatch()) return;
         this._styleEl = injectStyle(this._css, 'rx-transcripts-css');
-        waitFor('.media-description, .media-description-section', 12000).then(() => {
-            setTimeout(() => this._mount(), 950);
+        waitForFeature(this, '.media-description, .media-description-section', 12000).then(() => {
+            setFeatureTimeout(this, () => this._mount(), 950);
         }).catch(() => {});
     },
 
@@ -12310,6 +12557,7 @@ const BatchDownload = {
     _obs: null,
     _queue: null,
     _selected: null,
+    _cards: null,
     _busy: false,
     // v3.26.0 — Optional File System Access folder. When set, downloads stream
     // directly to the chosen folder via writeStream(); otherwise we fall back
@@ -12326,6 +12574,8 @@ const BatchDownload = {
             opacity: 0; transition: opacity .15s;
         }
         .videostream:hover .rx-batch-chk,
+        article.video-item:hover .rx-batch-chk,
+        rum-video-thumbnail[role="listitem"]:hover .rx-batch-chk,
         .rx-batch-mode .rx-batch-chk { opacity: 1; }
         .rx-batch-chk.checked {
             background: var(--rx-accent, #89b4fa); border-color: var(--rx-accent, #89b4fa);
@@ -12354,14 +12604,14 @@ const BatchDownload = {
     _attachToCard(card) {
         if (card.dataset.rxBatch) return;
         card.dataset.rxBatch = '1';
+        this._cards?.set(card, card.style.position);
         card.style.position = card.style.position || 'relative';
         const chk = document.createElement('div');
         chk.className = 'rx-batch-chk';
         chk.addEventListener('click', (e) => {
             e.preventDefault(); e.stopPropagation();
             chk.classList.toggle('checked');
-            const a = card.querySelector('a[href*="/v"]');
-            const url = a ? a.href : '';
+            const url = VideoCards.url(card);
             if (!url) return;
             if (chk.classList.contains('checked')) this._selected.add(url);
             else this._selected.delete(url);
@@ -12371,7 +12621,7 @@ const BatchDownload = {
     },
 
     _scan() {
-        for (const c of qsa('.videostream, article.video-item')) this._attachToCard(c);
+        for (const card of VideoCards.all()) this._attachToCard(card);
     },
 
     _updateBar() {
@@ -12629,6 +12879,7 @@ const BatchDownload = {
         if (!Page.isFeed() && !Page.isChannel() && !Page.isSearch() && !Page.isHome()) return;
         this._styleEl = injectStyle(this._css, 'rx-batch-css');
         this._selected = new Set();
+        this._cards = new Map();
         this._mountBar();
         this._scan();
         this._obs = new MutationObserver(() => {
@@ -12648,8 +12899,19 @@ const BatchDownload = {
         this._obs?.disconnect();
         this._queue?.remove();
         for (const c of qsa('.rx-batch-chk')) c.remove();
+        for (const [card, originalPosition] of this._cards || []) {
+            delete card.dataset.rxBatch;
+            card.style.position = originalPosition;
+        }
+        this._cards?.clear();
+        this._cards = null;
         clearTimeout(this._t);
         this._folderHandle = null;
+        this._styleEl = null;
+        this._obs = null;
+        this._queue = null;
+        this._selected = null;
+        this._busy = false;
     }
 };
 
@@ -12772,7 +13034,7 @@ const RX_CSS_TOGGLES = [
     // Selector intentionally broad — covers both `data-js` variants and the
     // fallback `hx-get*="wallet"`/class-name patterns documented in Selectors.
     { id: 'hideWalletTipButton', label: 'Hide Wallet Tip Button', desc: 'Hide the per-creator Rumble Wallet tip-jar button (launched January 2026). Off by default — leave on if you want to tip with crypto.',
-        css: `[data-js="wallet_tip_button"], [data-js="tip_button"], button[hx-get*="wallet"], [class*="tip-button"], [class*="TipButton"] { display: none !important; }`, page: 'watch' },
+        css: `button[hx-get*="wallet/payment/qr-modal"], [data-js="wallet_tip_button"], [data-js="tip_button"], [class*="tip-button"], [class*="TipButton"] { display: none !important; }`, page: 'watch' },
 
     // ── Comments ─────────────────────────────────────────────
     { id: 'moveReplyButton', label: 'Move Reply Button', desc: 'Move the reply button next to the like/dislike buttons.',
@@ -12926,7 +13188,7 @@ const AutoLike = {
         if (!Settings.get(this.id) || !Page.isWatch()) return;
         this._clicked = false;
         const myGen = ++this._gen;
-        waitFor('button.rumbles-vote-pill-up', 15000).then((btn) => {
+        waitForFeature(this, 'button.rumbles-vote-pill-up', 15000).then((btn) => {
             if (myGen !== this._gen || this._clicked) return;
             if (!btn.classList.contains('active')) {
                 btn.click();
@@ -12977,6 +13239,7 @@ const FullWidthPlayer = {
     _liveObs: null,
     _resizeHandler: null,
     _chatToggleHandler: null,
+    _timer: null,
 
     _standardCss: `
         body.rx-full-width-player nav.navs,
@@ -13054,7 +13317,7 @@ const FullWidthPlayer = {
         setChatWidthVar();
         this._resizeHandler = setChatWidthVar;
         window.addEventListener('resize', this._resizeHandler);
-        waitFor('aside.media-page-chat-aside-chat', 15000).then((chat) => {
+        waitForFeature(this, 'aside.media-page-chat-aside-chat', 15000).then((chat) => {
             this._liveObs = new MutationObserver(setChatWidthVar);
             this._liveObs.observe(chat, { attributes: true, attributeFilter: ['style', 'class'] });
         }).catch(() => {});
@@ -13073,7 +13336,9 @@ const FullWidthPlayer = {
     init() {
         if (!Settings.get(this.id) || !Page.isWatch()) return;
         // Defer so the page's live badge renders first.
-        setTimeout(() => {
+        clearTimeout(this._timer);
+        this._timer = setTimeout(() => {
+            this._timer = null;
             const isLive = !!qs('.video-header-live-info, .media-header-live-badge, .video-badge--live') || Page.isLive();
             if (isLive) {
                 this._styleEl = injectStyle(this._liveCss, 'rx-fullwidth-css');
@@ -13085,6 +13350,8 @@ const FullWidthPlayer = {
         }, 250);
     },
     destroy() {
+        clearTimeout(this._timer);
+        this._timer = null;
         this._liveObs?.disconnect();
         this._liveObs = null;
         if (this._resizeHandler) window.removeEventListener('resize', this._resizeHandler);
@@ -13118,7 +13385,7 @@ const AdaptiveLiveLayout = {
     init() {
         if (!Settings.get(this.id) || !Page.isWatch()) return;
         if (!qs('.video-header-live-info')) return;
-        waitFor('aside.media-page-chat-aside-chat', 15000).then((chat) => {
+        waitForFeature(this, 'aside.media-page-chat-aside-chat', 15000).then((chat) => {
             this._obs = new MutationObserver((mutations) => {
                 for (const m of mutations) {
                     if (m.attributeName === 'style') {
@@ -13195,7 +13462,7 @@ const CommentBlocking = {
     init() {
         if (!Settings.get(this.id) || !Page.isWatch()) return;
         this._styleEl = injectStyle(this._css, 'rx-commentblock-css');
-        waitFor('#video-comments, .media-page-comments-container', 15000).then((root) => {
+        waitForFeature(this, '#video-comments, .media-page-comments-container', 15000).then((root) => {
             this._apply();
             this._obs = new MutationObserver(() => this._apply());
             this._obs.observe(root, { childList: true, subtree: true });
@@ -13217,6 +13484,7 @@ const SiteTheme = {
     id: 'siteTheme',
     name: 'Site Theme Sync',
     _obs: null,
+    _gen: 0,
 
     // Settings.get('siteTheme') is a string: 'system' | 'dark' | 'light'
     _apply(themeValue) {
@@ -13236,13 +13504,16 @@ const SiteTheme = {
 
     init() {
         if (!Settings.get('siteThemeSync')) return;
+        const generation = ++this._gen;
         this._apply(Settings.get('siteTheme') || 'system');
-        waitFor('.theme-option-group', 15000).then((el) => {
+        waitForFeature(this, '.theme-option-group', 15000).then((el) => {
+            if (generation !== this._gen) return;
             this._obs = new MutationObserver(() => this._sync());
             this._obs.observe(el, { attributes: true, subtree: true, attributeFilter: ['class'] });
         }).catch(() => {});
     },
     destroy() {
+        this._gen++;
         this._obs?.disconnect();
         this._obs = null;
     },
@@ -13278,6 +13549,8 @@ const ThumbnailHider = {
                 html.rumblex-active .thumbnail__thumb picture,
                 html.rumblex-active .videostream__thumbnail img,
                 html.rumblex-active .mediaList-item img,
+                html.rumblex-active .video-item--img-wrapper img,
+                html.rumblex-active img.video-item--img,
                 html.rumblex-active rum-video-thumbnail .rum-video-thumbnail__image,
                 html.rumblex-active rum-video-thumbnail img,
                 html.rumblex-active .media-item__thumb img,
@@ -13298,7 +13571,9 @@ const ThumbnailHider = {
                     html.rumblex-active .thumbnail__grid .thumbnail__thumb img,
                     html.rumblex-active .streams__container .thumbnail__thumb img,
                     html.rumblex-active .videostream__thumbnail img,
-                    html.rumblex-active .homepage-content--inner rum-video-thumbnail img {
+                    html.rumblex-active .homepage-content--inner rum-video-thumbnail img,
+                    html.rumblex-active .video-item--img-wrapper img,
+                    html.rumblex-active img.video-item--img {
                         visibility: hidden !important;
                         opacity: 0 !important;
                     }
@@ -13352,6 +13627,8 @@ const DenseMode = {
         html.rumblex-active body.rx-dense .media-page-comments-container { gap: 8px !important; }
         html.rumblex-active body.rx-dense .comment-item { padding: 6px 0 !important; }
         html.rumblex-active body.rx-dense .mediaList-item { margin-bottom: 6px !important; }
+        html.rumblex-active body.rx-dense .video-listing-entry { margin-bottom: 6px !important; }
+        html.rumblex-active body.rx-dense .video-item--title { line-height: 1.25 !important; margin-top: 4px !important; }
         html.rumblex-active body.rx-dense rum-video-thumbnail[role="listitem"] { margin-bottom: 6px !important; }
         html.rumblex-active body.rx-dense rum-video-thumbnail rum-text[role="heading"] { line-height: 1.25 !important; }
         html.rumblex-active body.rx-dense h1.video-header-container__title { margin: 4px 0 !important; }
@@ -13671,13 +13948,13 @@ const ExternalPlayer = {
         // The watch-page buttons render after the initial HTML parse; poll
         // through Selectors.wait so we don't race htmx swaps. Re-mount on
         // route changes (htmx navigates between watch pages without reload).
-        Selectors.wait('watch.share', { timeout: 15000 }).then(() => this._tryMount()).catch(() => this._tryMount());
+        waitForSelectorFeature(this, 'watch.share', { timeout: 15000 }).then(() => this._tryMount()).catch(() => {});
         this._routerUnsub = Router.onChange((d) => {
             if (d.changed && Page.isWatch()) {
                 // Detach old button so we re-anchor next to the new share button.
                 this._btn?.remove();
                 this._btn = null;
-                Selectors.wait('watch.share', { timeout: 10000 }).then(() => this._tryMount()).catch(() => {});
+                waitForSelectorFeature(this, 'watch.share', { timeout: 10000 }).then(() => this._tryMount()).catch(() => {});
             }
         });
     },
@@ -14084,6 +14361,25 @@ const features = [
     ChannelArchiveButton,
     ...RX_CSS_FEATURES,
 ];
+
+for (const feature of features) {
+    if (!feature || feature._rxLifecycleWrapped) continue;
+    const init = feature.init;
+    const destroy = feature.destroy;
+    feature.init = function (...args) {
+        cancelFeatureWaits(this);
+        cancelFeatureTimeouts(this);
+        this._rxLifecycleGeneration = (this._rxLifecycleGeneration || 0) + 1;
+        return init.apply(this, args);
+    };
+    feature.destroy = function (...args) {
+        this._rxLifecycleGeneration = (this._rxLifecycleGeneration || 0) + 1;
+        cancelFeatureWaits(this);
+        cancelFeatureTimeouts(this);
+        return destroy.apply(this, args);
+    };
+    Object.defineProperty(feature, '_rxLifecycleWrapped', { value: true });
+}
 
 async function boot() {
     try {

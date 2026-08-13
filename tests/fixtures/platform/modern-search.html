@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Modern search parity fixture</title>
+  <style>
+    body { margin: 0; background: #111; color: #eee; font-family: sans-serif; }
+    .video-listing-entry { display: block; margin: 12px; }
+    .video-item { display: grid; grid-template-columns: 240px 1fr; gap: 12px; }
+    .video-item--img-wrapper { display: block; position: relative; width: 240px; height: 135px; background: #333; }
+    .video-item--img { width: 100%; height: 100%; object-fit: cover; }
+    .video-item--title { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+  </style>
+</head>
+<body>
+  <header data-js="app_header">
+    <form data-js="search_form"><input data-js="search_input" value="fixture"></form>
+  </header>
+  <nav id="main-menu"></nav>
+  <main>
+    <ol id="search-results">
+      <li class="video-listing-entry">
+        <article class="video-item">
+          <a class="video-item--a" href="/vsearch101-alpha-report.html?e9s=fixture">
+            <div class="video-item--img-wrapper"><img class="video-item--img" alt="Alpha Report" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw=="></div>
+          </a>
+          <div class="video-item--info">
+            <h3 class="video-item--title">Alpha Report</h3>
+            <address><a rel="author" class="video-item--by-a" href="/c/creator-alpha">Creator Alpha</a></address>
+          </div>
+        </article>
+      </li>
+      <li class="video-listing-entry">
+        <article class="video-item">
+          <a class="video-item--a" href="/vsearch202-blocked-topic.html">
+            <div class="video-item--img-wrapper"><img class="video-item--img" alt="Blocked Topic" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw=="></div>
+          </a>
+          <div class="video-item--info">
+            <h3 class="video-item--title">Blocked Topic</h3>
+            <address><a rel="author" class="video-item--by-a" href="/user/creator-beta">Creator Beta</a></address>
+          </div>
+        </article>
+      </li>
+    </ol>
+  </main>
+  <div id="portal" data-js="portal"></div>
+</body>
+</html>
