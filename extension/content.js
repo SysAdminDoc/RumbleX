@@ -1,4 +1,4 @@
-// RumbleX v3.39.0 - Shared Content Core
+// RumbleX v3.40.0 - Shared Content Core
 // Rumble enhancement suite - Chrome/Firefox extension
 'use strict';
 
@@ -8,7 +8,7 @@
 // DOM feature ship from one canonical source.
 const RXPlatform = globalThis.RumbleXPlatform;
 if (!RXPlatform) throw new Error('RumbleX platform adapter is missing');
-const VERSION = RXPlatform.version || '3.39.0';
+const VERSION = RXPlatform.version || '3.40.0';
 const RXSettingsSchema = globalThis.RumbleXSettingsSchema;
 if (!RXSettingsSchema) throw new Error('RumbleX settings schema is missing');
 const SCHEMA_VERSION = RXSettingsSchema.SCHEMA_VERSION;
@@ -739,6 +739,30 @@ function cancelFeatureTimeouts(owner) {
     if (!owner?._rxPendingTimeouts) return;
     for (const timer of owner._rxPendingTimeouts) clearTimeout(timer);
     owner._rxPendingTimeouts.clear();
+}
+
+// Infinite feeds and live chat can deliver dozens of MutationObserver
+// callbacks between paints. Features that rescan a whole surface should run
+// at most once per animation frame, and any queued work must disappear when
+// the feature is disabled or its route lifecycle ends.
+function scheduleFeatureFrame(owner, key, callback) {
+    if (!owner || typeof callback !== 'function') return null;
+    const generation = owner._rxLifecycleGeneration;
+    const pending = owner._rxPendingFrames || (owner._rxPendingFrames = new Map());
+    if (pending.has(key)) return pending.get(key);
+    const frame = requestAnimationFrame(() => {
+        if (pending.get(key) !== frame) return;
+        pending.delete(key);
+        if (generation === owner._rxLifecycleGeneration) callback();
+    });
+    pending.set(key, frame);
+    return frame;
+}
+
+function cancelFeatureFrames(owner) {
+    if (!owner?._rxPendingFrames) return;
+    for (const frame of owner._rxPendingFrames.values()) cancelAnimationFrame(frame);
+    owner._rxPendingFrames.clear();
 }
 
 // ═══════════════════════════════════════════
@@ -4338,7 +4362,9 @@ const LogoToFeed = {
         this._links = new Map();
         this._svgBindings = new Map();
         this._redirectLogos();
-        this._obs = new MutationObserver(() => this._redirectLogos());
+        this._obs = new MutationObserver(() => {
+            scheduleFeatureFrame(this, 'logo-scan', () => this._redirectLogos());
+        });
         this._obs.observe(document.body, { childList: true, subtree: true });
     },
 
@@ -4454,14 +4480,30 @@ const SpeedController = {
         this._videoBindings.set(video, { play, ratechange });
     },
 
+    _unbindVideo(video) {
+        const handlers = this._videoBindings?.get(video);
+        if (!handlers) return;
+        video.removeEventListener('play', handlers.play);
+        video.removeEventListener('ratechange', handlers.ratechange);
+        delete video.dataset.rxSpeedBound;
+        this._videoBindings.delete(video);
+    },
+
+    _scanVideos() {
+        for (const video of [...(this._videoBindings?.keys() || [])]) {
+            if (!video.isConnected) this._unbindVideo(video);
+        }
+        for (const video of qsa('video')) this._bindVideo(video);
+    },
+
     init() {
         if (!Settings.get(this.id)) return;
         if (!Page.isWatch()) return;
         this._videoBindings = new Map();
         this._styleEl = injectStyle(this._css, 'rx-speed-css');
-        for (const v of qsa('video')) this._bindVideo(v);
+        this._scanVideos();
         this._obs = new MutationObserver(() => {
-            for (const v of qsa('video')) this._bindVideo(v);
+            scheduleFeatureFrame(this, 'video-scan', () => this._scanVideos());
         });
         this._obs.observe(document.documentElement, { childList: true, subtree: true });
     },
@@ -4470,11 +4512,7 @@ const SpeedController = {
         this._styleEl?.remove();
         this._obs?.disconnect();
         this._obs = null;
-        for (const [video, handlers] of this._videoBindings || []) {
-            video.removeEventListener('play', handlers.play);
-            video.removeEventListener('ratechange', handlers.ratechange);
-            delete video.dataset.rxSpeedBound;
-        }
+        for (const video of [...(this._videoBindings?.keys() || [])]) this._unbindVideo(video);
         this._videoBindings?.clear();
         this._overlayEl?.remove();
         this._overlayEl = null;
@@ -4620,6 +4658,22 @@ const ScrollVolume = {
         this._videoBindings.set(video, { loadedmetadata, play });
     },
 
+    _unbindVideo(video) {
+        const handlers = this._videoBindings?.get(video);
+        if (!handlers) return;
+        video.removeEventListener('loadedmetadata', handlers.loadedmetadata);
+        video.removeEventListener('play', handlers.play);
+        delete video.dataset.rxVolBound;
+        this._videoBindings.delete(video);
+    },
+
+    _scanVideos() {
+        for (const video of [...(this._videoBindings?.keys() || [])]) {
+            if (!video.isConnected) this._unbindVideo(video);
+        }
+        for (const video of qsa('video')) this._bindVideo(video);
+    },
+
     _volPinned: false,
     _volPinTimer: null,
     _volPopup: null,
@@ -4680,8 +4734,25 @@ const ScrollVolume = {
         this._volPopupObs.observe(popup, { attributes: true, attributeFilter: ['style'] });
     },
 
+    _detachVolPopup() {
+        this._volPopupObs?.disconnect();
+        this._volPopupObs = null;
+        clearTimeout(this._volPinTimer);
+        this._volPinTimer = null;
+        this._volPinned = false;
+        if (this._popupHandlers) {
+            const { popup, mouseenter, mouseleave } = this._popupHandlers;
+            popup.removeEventListener('mouseenter', mouseenter);
+            popup.removeEventListener('mouseleave', mouseleave);
+            delete popup._rxVolBound;
+        }
+        this._popupHandlers = null;
+        this._volPopup = null;
+    },
+
     _scanForVolPopup() {
-        if (this._volPopup) return;
+        if (this._volPopup?.isConnected) return;
+        if (this._volPopup) this._detachVolPopup();
         const player = qs('#videoPlayer, .videoPlayer-Rumble-cls');
         if (!player) return;
         for (const el of player.querySelectorAll('div[style*="backdrop-filter"]')) {
@@ -4703,11 +4774,13 @@ const ScrollVolume = {
         document.addEventListener('wheel', this._wheelFn, { passive: false, capture: true });
         document.addEventListener('mousedown', this._midclickFn, { capture: true });
 
-        for (const v of qsa('video')) this._bindVideo(v);
+        this._scanVideos();
 
         this._obs = new MutationObserver(() => {
-            for (const v of qsa('video')) this._bindVideo(v);
-            if (!this._volPopup) this._scanForVolPopup();
+            scheduleFeatureFrame(this, 'player-scan', () => {
+                this._scanVideos();
+                this._scanForVolPopup();
+            });
         });
         this._obs.observe(document.documentElement, { childList: true, subtree: true });
 
@@ -4720,28 +4793,12 @@ const ScrollVolume = {
         this._styleEl?.remove();
         this._obs?.disconnect();
         this._obs = null;
-        this._volPopupObs?.disconnect();
-        this._volPopupObs = null;
+        this._detachVolPopup();
         this._overlayEl?.remove();
         this._overlayEl = null;
         clearTimeout(this._overlayTimer);
         this._overlayTimer = null;
-        clearTimeout(this._volPinTimer);
-        this._volPinTimer = null;
-        this._volPinned = false;
-        if (this._popupHandlers) {
-            const { popup, mouseenter, mouseleave } = this._popupHandlers;
-            popup.removeEventListener('mouseenter', mouseenter);
-            popup.removeEventListener('mouseleave', mouseleave);
-            delete popup._rxVolBound;
-        }
-        this._popupHandlers = null;
-        this._volPopup = null;
-        for (const [video, handlers] of this._videoBindings || []) {
-            video.removeEventListener('loadedmetadata', handlers.loadedmetadata);
-            video.removeEventListener('play', handlers.play);
-            delete video.dataset.rxVolBound;
-        }
+        for (const video of [...(this._videoBindings?.keys() || [])]) this._unbindVideo(video);
         this._videoBindings?.clear();
         if (this._wheelFn) document.removeEventListener('wheel', this._wheelFn, { capture: true });
         if (this._midclickFn) document.removeEventListener('mousedown', this._midclickFn, { capture: true });
@@ -5169,7 +5226,9 @@ const WatchProgress = {
         if (Page.isFeed() || Page.isHome() || Page.isSearch() || Page.isChannel()) {
             // Add progress bars after page loads
             this._feedTimer = setTimeout(() => this._addProgressBars(), 1000);
-            this._obs = new MutationObserver(() => this._addProgressBars());
+            this._obs = new MutationObserver(() => {
+                scheduleFeatureFrame(this, 'progress-scan', () => this._addProgressBars());
+            });
             this._obs.observe(document.body, { childList: true, subtree: true });
         }
     },
@@ -5319,8 +5378,10 @@ const ChannelBlocker = {
             this._filterFeed();
         }, 1000);
         this._obs = new MutationObserver(() => {
-            this._addBlockButtons();
-            this._filterFeed();
+            scheduleFeatureFrame(this, 'channel-scan', () => {
+                this._addBlockButtons();
+                this._filterFeed();
+            });
         });
         this._obs.observe(document.body, { childList: true, subtree: true });
     },
@@ -5808,8 +5869,10 @@ const LiveChatEnhance = {
             this._addFilterBar();
             this._processMessages();
             this._obs = new MutationObserver(() => {
-                this._processMessages();
-                if (!qs('#rx-chat-filter')) this._addFilterBar();
+                scheduleFeatureFrame(this, 'message-scan', () => {
+                    this._processMessages();
+                    if (!qs('#rx-chat-filter')) this._addFilterBar();
+                });
             });
             const chatList = qs('#chat-history-list') || qs('.chat--height');
             if (chatList) {
@@ -5953,7 +6016,9 @@ const VideoTimestamps = {
             this._timer = null;
             this._processAll();
         }, 2000);
-        this._obs = new MutationObserver(() => this._processAll());
+        this._obs = new MutationObserver(() => {
+            scheduleFeatureFrame(this, 'timestamp-scan', () => this._processAll());
+        });
         waitForFeature(this, '.media-page-comments-container, #video-comments').then(el => {
             this._obs.observe(el, { childList: true, subtree: true });
         }).catch(() => {});
@@ -6377,13 +6442,17 @@ const AutoplayBlock = {
         this._styleEl = injectStyle(this._css, 'rx-autoplay-block-css');
 
         // Observe for dynamically inserted autoplay elements
-        this._obs = new MutationObserver(() => this._blockAutoplay());
+        this._obs = new MutationObserver(() => {
+            scheduleFeatureFrame(this, 'autoplay-scan', () => this._blockAutoplay());
+        });
         waitForFeature(this, '#videoPlayer, .videoPlayer-Rumble-cls').then(el => {
             this._obs.observe(el, { childList: true, subtree: true });
         }).catch(() => {});
 
         // Also observe document for any autoplay popups
-        this._docObs = new MutationObserver(() => this._blockAutoplay());
+        this._docObs = new MutationObserver(() => {
+            scheduleFeatureFrame(this, 'autoplay-scan', () => this._blockAutoplay());
+        });
         this._docObs.observe(document.documentElement, { childList: true, subtree: true });
 
         // Initial pass
@@ -7948,7 +8017,9 @@ const RantHighlight = {
             this._tracker = tracker;
 
             // Observe for new rants
-            this._obs = new MutationObserver(() => this._scan());
+            this._obs = new MutationObserver(() => {
+                scheduleFeatureFrame(this, 'rant-scan', () => this._scan());
+            });
             this._obs.observe(chatEl, { childList: true, subtree: true });
             this._scan();
         }).catch(() => {});
@@ -7958,6 +8029,8 @@ const RantHighlight = {
         this._styleEl?.remove();
         this._tracker?.remove();
         this._obs?.disconnect();
+        this._tracker = null;
+        this._obs = null;
     }
 };
 
@@ -8068,6 +8141,7 @@ const ExactCounts = {
     id: 'exactCounts',
     name: 'Exact Counts',
     _obs: null,
+    _originals: null,
 
     _css: `
         .rx-exact-count { font-variant-numeric: tabular-nums; }
@@ -8077,7 +8151,26 @@ const ExactCounts = {
         return n.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',');
     },
 
+    _setExactText(target, text, marker = target, addClass = true) {
+        if (!target || !marker) return;
+        this._originals = this._originals || new Map();
+        if (!this._originals.has(target)) {
+            this._originals.set(target, {
+                text: target.textContent,
+                marker,
+                markerValue: marker.dataset.rxExact,
+                hadClass: target.classList.contains('rx-exact-count'),
+            });
+        }
+        target.textContent = text;
+        if (addClass) target.classList.add('rx-exact-count');
+        marker.dataset.rxExact = '1';
+    },
+
     _processCards() {
+        for (const target of [...(this._originals?.keys() || [])]) {
+            if (!target.isConnected) this._originals.delete(target);
+        }
         // Feed cards: use data-views attribute for exact count
         for (const viewEl of qsa('.videostream__views[data-views]')) {
             if (viewEl.dataset.rxExact) continue;
@@ -8085,9 +8178,7 @@ const ExactCounts = {
             if (!isNaN(exact)) {
                 const countSpan = viewEl.querySelector('.videostream__views--count');
                 if (countSpan) {
-                    countSpan.textContent = '\u00a0' + this._formatNumber(exact) + '\u00a0';
-                    countSpan.classList.add('rx-exact-count');
-                    viewEl.dataset.rxExact = '1';
+                    this._setExactText(countSpan, '\u00a0' + this._formatNumber(exact) + '\u00a0', viewEl);
                 }
             }
         }
@@ -8100,9 +8191,7 @@ const ExactCounts = {
             if (m) {
                 const countSpan = viewEl.querySelector('.videostream__views--count');
                 if (countSpan) {
-                    countSpan.textContent = '\u00a0' + m[1] + '\u00a0';
-                    countSpan.classList.add('rx-exact-count');
-                    viewEl.dataset.rxExact = '1';
+                    this._setExactText(countSpan, '\u00a0' + m[1] + '\u00a0', viewEl);
                 }
             }
         }
@@ -8112,9 +8201,7 @@ const ExactCounts = {
             if (item.dataset.rxExact) continue;
             const title = item.getAttribute('title');
             if (title && /\d/.test(title)) {
-                item.textContent = title;
-                item.classList.add('rx-exact-count');
-                item.dataset.rxExact = '1';
+                this._setExactText(item, title);
             }
         }
 
@@ -8122,28 +8209,37 @@ const ExactCounts = {
         const upVotes = qs('[data-js="rumbles_up_votes"]');
         const downVotes = qs('[data-js="rumbles_down_votes"]');
         if (upVotes?.title && !upVotes.dataset.rxExact) {
-            upVotes.textContent = upVotes.title;
-            upVotes.dataset.rxExact = '1';
+            this._setExactText(upVotes, upVotes.title, upVotes, false);
         }
         if (downVotes?.title && !downVotes.dataset.rxExact) {
-            downVotes.textContent = downVotes.title;
-            downVotes.dataset.rxExact = '1';
+            this._setExactText(downVotes, downVotes.title, downVotes, false);
         }
     },
 
     init() {
         if (!Settings.get(this.id)) return;
+        this._originals = new Map();
         this._styleEl = injectStyle(this._css, 'rx-exact-counts-css');
 
         // Process on load and watch for dynamic content
         setFeatureTimeout(this, () => this._processCards(), 1500);
-        this._obs = new MutationObserver(() => this._processCards());
+        this._obs = new MutationObserver(() => {
+            scheduleFeatureFrame(this, 'count-scan', () => this._processCards());
+        });
         this._obs.observe(document.documentElement, { childList: true, subtree: true });
     },
 
     destroy() {
         this._styleEl?.remove();
         this._obs?.disconnect();
+        this._obs = null;
+        for (const [target, original] of this._originals || []) {
+            target.textContent = original.text;
+            if (!original.hadClass) target.classList.remove('rx-exact-count');
+            if (original.markerValue === undefined) delete original.marker.dataset.rxExact;
+            else original.marker.dataset.rxExact = original.markerValue;
+        }
+        this._originals?.clear();
     }
 };
 
@@ -8304,7 +8400,9 @@ const ShortsFilter = {
         this._styleEl = injectStyle(this._css, 'rx-shorts-filter-css');
 
         setFeatureTimeout(this, () => this._filterAll(), 1000);
-        this._obs = new MutationObserver(() => this._filterAll());
+        this._obs = new MutationObserver(() => {
+            scheduleFeatureFrame(this, 'shorts-scan', () => this._filterAll());
+        });
         this._obs.observe(document.documentElement, { childList: true, subtree: true });
     },
 
@@ -8709,7 +8807,9 @@ const PlaylistQuickSave = {
             this._timer = null;
             this._addButtons();
         }, 1500);
-        this._obs = new MutationObserver(() => this._addButtons());
+        this._obs = new MutationObserver(() => {
+            scheduleFeatureFrame(this, 'save-button-scan', () => this._addButtons());
+        });
         this._obs.observe(document.documentElement, { childList: true, subtree: true });
     },
 
@@ -14369,6 +14469,7 @@ for (const feature of features) {
     feature.init = function (...args) {
         cancelFeatureWaits(this);
         cancelFeatureTimeouts(this);
+        cancelFeatureFrames(this);
         this._rxLifecycleGeneration = (this._rxLifecycleGeneration || 0) + 1;
         return init.apply(this, args);
     };
@@ -14376,6 +14477,7 @@ for (const feature of features) {
         this._rxLifecycleGeneration = (this._rxLifecycleGeneration || 0) + 1;
         cancelFeatureWaits(this);
         cancelFeatureTimeouts(this);
+        cancelFeatureFrames(this);
         return destroy.apply(this, args);
     };
     Object.defineProperty(feature, '_rxLifecycleWrapped', { value: true });

@@ -1,10 +1,16 @@
 # RumbleX
 
-![Version](https://img.shields.io/badge/version-v3.39.0-blue) ![License](https://img.shields.io/badge/license-MIT-green) ![Platform](https://img.shields.io/badge/platform-Extension%20%2B%20Userscript-lightgrey) ![Firefox](https://img.shields.io/badge/firefox-109%2B-orange)
+![Version](https://img.shields.io/badge/version-v3.40.0-blue) ![License](https://img.shields.io/badge/license-MIT-green) ![Platform](https://img.shields.io/badge/platform-Extension%20%2B%20Userscript-lightgrey) ![Firefox](https://img.shields.io/badge/firefox-109%2B-orange)
 
 **The ultimate Rumble enhancement suite.** 130+ feature modules across 14 categories — ad blocking, theater mode, video downloads with CDN deep-scan probing and an opt-in Mediabunny muxer path, five-theme engine (now including OLED Green), playback controls, chat enhancements with deterministic username colors and tier-filtered rants, chapters, SponsorBlock, clips, live DVR, transcripts, auto-hide chrome, 50+ granular hide-X toggles for every Rumble row/button/player control, thumbnail hider, dense mode, reduced-motion path, tracking-param stripping, external player handoff (MPV/PotPlayer), and full-round-trip backup/restore with snapshot history. Chrome MV3 + Firefox MV2 + userscript.
 
-### What's new in v3.39
+### What's new in v3.40
+
+- **Calmer infinite feeds and live pages** — twelve default-on DOM features now coalesce bursty Rumble/htmx mutations into at most one full-surface pass per animation frame, and disabling a feature cancels queued frame work.
+- **Clean player replacement** — Speed Control and Scroll Volume release listeners and state from detached videos when Rumble swaps the player, then bind the replacement video and volume popup without retaining stale nodes.
+- **Reversible exact counts** — disabling Exact Counts restores Rumble's original abbreviated text, classes, and markers instead of leaving host content permanently rewritten.
+
+### v3.39 highlights
 
 - **Catalog-wide feature verification** — all 75 handwritten modules and all 51 CSS toggles now have registry, initialization, teardown, and route-aware regression coverage; the browser suite also exercises current search cards and destructive account tools in dry-run mode.
 - **Reliable hot toggles** — cancellable feature waits and timers prevent disabled modules from reviving controls, observers, or listeners after Rumble finishes an htmx render. Speed, volume, timestamps, history, chat, comments, SponsorBlock, queue, export, and media-sidecar cleanup paths were hardened.

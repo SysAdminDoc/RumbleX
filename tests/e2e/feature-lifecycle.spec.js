@@ -518,6 +518,236 @@ test('delayed feature work is cancelled when a hot toggle disables it', async ()
     }
 });
 
+test('full-surface observers coalesce SPA mutation bursts and cancel queued frames', async () => {
+    const browser = await chromium.launch({ headless: true });
+    try {
+        const { context, page } = await createHarnessPage(browser);
+        const results = await page.evaluate(async ({ body, cases }) => {
+            const harness = globalThis.__RumbleXFeatureHarness;
+            const nextPaint = () => new Promise((resolve) => requestAnimationFrame(() => resolve()));
+            const output = [];
+
+            for (const entry of cases) {
+                document.body.innerHTML = body;
+                history.replaceState({}, '', entry.route);
+                harness.enable(entry.id);
+                const feature = harness.features.find((candidate) => candidate.id === entry.id);
+                feature.destroy();
+
+                const original = feature[entry.method];
+                let calls = 0;
+                feature[entry.method] = () => { calls++; };
+                feature.init();
+                if (entry.settleMs) await new Promise((resolve) => setTimeout(resolve, entry.settleMs));
+                await nextPaint();
+                await nextPaint();
+                calls = 0;
+
+                const target = document.querySelector(entry.target || 'body');
+                for (let i = 0; i < 64; i++) {
+                    const node = document.createElement('span');
+                    node.textContent = String(i);
+                    target.appendChild(node);
+                    // Force a MutationObserver checkpoint without yielding a
+                    // paint. All callbacks should share one scheduled frame.
+                    await Promise.resolve();
+                }
+                await nextPaint();
+                await nextPaint();
+                const burstCalls = calls;
+
+                calls = 0;
+                target.appendChild(document.createElement('span'));
+                await Promise.resolve();
+                const queuedBeforeDestroy = feature._rxPendingFrames?.size || 0;
+                feature.destroy();
+                const queuedAfterDestroy = feature._rxPendingFrames?.size || 0;
+                await nextPaint();
+                await nextPaint();
+                output.push({
+                    id: entry.id,
+                    burstCalls,
+                    maxBurstCalls: entry.maxBurstCalls || 1,
+                    queuedBeforeDestroy,
+                    queuedAfterDestroy,
+                    callsAfterDestroy: calls,
+                });
+                feature[entry.method] = original;
+            }
+            return output;
+        }, {
+            body: BODY,
+            cases: [
+                { id: 'logoToFeed', method: '_redirectLogos', route: '/vfeature123-logo.html' },
+                { id: 'speedController', method: '_bindVideo', route: '/vfeature123-speed.html' },
+                { id: 'scrollVolume', method: '_bindVideo', route: '/vfeature123-volume.html' },
+                { id: 'watchProgress', method: '_addProgressBars', route: '/' },
+                // The first pass mounts block buttons, which deliberately
+                // produces one convergence pass in the following frame.
+                { id: 'channelBlocker', method: '_filterFeed', route: '/', maxBurstCalls: 2 },
+                { id: 'liveChatEnhance', method: '_processMessages', route: '/vfeature123-live-chat.html', target: '#chat-history-list', settleMs: 550 },
+                { id: 'videoTimestamps', method: '_processAll', route: '/vfeature123-time.html', target: '#video-comments' },
+                { id: 'autoplayBlock', method: '_blockAutoplay', route: '/vfeature123-autoplay.html' },
+                { id: 'rantHighlight', method: '_scan', route: '/vfeature123-rants.html', target: '#chat-history-list' },
+                { id: 'exactCounts', method: '_processCards', route: '/' },
+                { id: 'shortsFilter', method: '_filterAll', route: '/' },
+                { id: 'quickSave', method: '_addButtons', route: '/' },
+            ],
+        });
+
+        expect(results.map(({ id }) => id)).toHaveLength(12);
+        expect(results.filter(({ burstCalls, maxBurstCalls }) => burstCalls < 1 || burstCalls > maxBurstCalls)).toEqual([]);
+        expect(results.filter(({ queuedBeforeDestroy }) => queuedBeforeDestroy !== 1)).toEqual([]);
+        expect(results.filter(({ queuedAfterDestroy, callsAfterDestroy }) => queuedAfterDestroy !== 0 || callsAfterDestroy !== 0)).toEqual([]);
+        await context.close();
+    } finally {
+        await browser.close();
+    }
+});
+
+test('player replacements release detached speed and volume bindings', async () => {
+    const browser = await chromium.launch({ headless: true });
+    try {
+        const { context, page } = await createHarnessPage(browser);
+        const result = await page.evaluate(async ({ body }) => {
+            const harness = globalThis.__RumbleXFeatureHarness;
+            const nextPaint = () => new Promise((resolve) => requestAnimationFrame(() => resolve()));
+            document.body.innerHTML = body;
+            history.replaceState({}, '', '/vfeature123-player-swap.html');
+
+            harness.enable('speedController');
+            const speed = harness.features.find((feature) => feature.id === 'speedController');
+            speed.destroy();
+            speed.init();
+            const oldSpeedVideo = document.querySelector('video');
+            const newSpeedVideo = document.createElement('video');
+            oldSpeedVideo.replaceWith(newSpeedVideo);
+            await nextPaint();
+            await nextPaint();
+            const speedState = {
+                bindings: speed._videoBindings.size,
+                oldReleased: !oldSpeedVideo.dataset.rxSpeedBound,
+                newBound: newSpeedVideo.dataset.rxSpeedBound === '1',
+            };
+            speed.destroy();
+            speedState.cleaned = !newSpeedVideo.dataset.rxSpeedBound;
+
+            document.body.innerHTML = body;
+            harness.enable('scrollVolume');
+            const volume = harness.features.find((feature) => feature.id === 'scrollVolume');
+            volume.destroy();
+            volume.init();
+            const player = document.querySelector('#videoPlayer');
+            const oldVolumeVideo = player.querySelector('video');
+            const oldPopup = document.createElement('div');
+            oldPopup.style.cssText = 'position:absolute;backdrop-filter:blur(4px);width:12px;height:72px;bottom:4px';
+            player.appendChild(oldPopup);
+            await nextPaint();
+            await nextPaint();
+            const initialPopupBound = volume._volPopup === oldPopup && oldPopup._rxVolBound === true;
+
+            const newVolumeVideo = document.createElement('video');
+            const newPopup = document.createElement('div');
+            newPopup.style.cssText = oldPopup.style.cssText;
+            oldVolumeVideo.replaceWith(newVolumeVideo);
+            oldPopup.replaceWith(newPopup);
+            await nextPaint();
+            await nextPaint();
+            const volumeState = {
+                bindings: volume._videoBindings.size,
+                oldVideoReleased: !oldVolumeVideo.dataset.rxVolBound,
+                newVideoBound: newVolumeVideo.dataset.rxVolBound === '1',
+                initialPopupBound,
+                oldPopupReleased: oldPopup._rxVolBound !== true,
+                newPopupBound: volume._volPopup === newPopup && newPopup._rxVolBound === true,
+            };
+            volume.destroy();
+            volumeState.cleaned = !newVolumeVideo.dataset.rxVolBound && newPopup._rxVolBound !== true;
+            return { speedState, volumeState };
+        }, { body: BODY });
+
+        expect(result).toEqual({
+            speedState: { bindings: 1, oldReleased: true, newBound: true, cleaned: true },
+            volumeState: {
+                bindings: 1,
+                oldVideoReleased: true,
+                newVideoBound: true,
+                initialPopupBound: true,
+                oldPopupReleased: true,
+                newPopupBound: true,
+                cleaned: true,
+            },
+        });
+        await context.close();
+    } finally {
+        await browser.close();
+    }
+});
+
+test('Exact Counts restores host text and markers when disabled', async () => {
+    const browser = await chromium.launch({ headless: true });
+    try {
+        const { context, page } = await createHarnessPage(browser);
+        const result = await page.evaluate(({ body }) => {
+            const harness = globalThis.__RumbleXFeatureHarness;
+            document.body.innerHTML = body;
+            history.replaceState({}, '', '/');
+
+            const feed = document.createElement('span');
+            feed.className = 'videostream__views';
+            feed.dataset.views = '12345';
+            feed.innerHTML = '<span class="videostream__views--count">12.3K</span>';
+            const related = document.createElement('span');
+            related.className = 'mediaList-rumbles';
+            related.title = '9,876';
+            related.textContent = '9.8K';
+            const vote = document.createElement('button');
+            vote.dataset.js = 'rumbles_up_votes';
+            vote.title = '1,234';
+            vote.textContent = '1.2K';
+            document.body.append(feed, related, vote);
+
+            harness.enable('exactCounts');
+            const feature = harness.features.find((candidate) => candidate.id === 'exactCounts');
+            feature.destroy();
+            feature.init();
+            feature._processCards();
+            const expanded = {
+                feed: feed.textContent.trim(),
+                related: related.textContent,
+                vote: vote.textContent,
+                marked: [feed.dataset.rxExact, related.dataset.rxExact, vote.dataset.rxExact],
+            };
+            feature.destroy();
+            const restored = {
+                feed: feed.textContent,
+                related: related.textContent,
+                vote: vote.textContent,
+                markers: [feed.dataset.rxExact, related.dataset.rxExact, vote.dataset.rxExact],
+                styled: document.querySelectorAll('.rx-exact-count').length,
+            };
+            return { expanded, restored };
+        }, { body: BODY });
+
+        expect(result.expanded).toEqual({
+            feed: '12,345',
+            related: '9,876',
+            vote: '1,234',
+            marked: ['1', '1', '1'],
+        });
+        expect(result.restored).toEqual({
+            feed: '12.3K',
+            related: '9.8K',
+            vote: '1.2K',
+            markers: [undefined, undefined, undefined],
+            styled: 0,
+        });
+        await context.close();
+    } finally {
+        await browser.close();
+    }
+});
+
 test('features cannot attach delayed DOM work after being disabled', async () => {
     const browser = await chromium.launch({ headless: true });
     try {
@@ -535,11 +765,14 @@ test('features cannot attach delayed DOM work after being disabled', async () =>
             const nativeClearTimeout = globalThis.clearTimeout.bind(globalThis);
             const nativeSetInterval = globalThis.setInterval.bind(globalThis);
             const nativeClearInterval = globalThis.clearInterval.bind(globalThis);
+            const nativeRequestAnimationFrame = globalThis.requestAnimationFrame.bind(globalThis);
+            const nativeCancelAnimationFrame = globalThis.cancelAnimationFrame.bind(globalThis);
             const nativeAdd = EventTarget.prototype.addEventListener;
             const nativeRemove = EventTarget.prototype.removeEventListener;
             const activeObservers = new Set();
             const activeTimeouts = new Set();
             const activeIntervals = new Set();
+            const activeFrames = new Set();
             const activeListeners = [];
 
             const captureOf = (options) => typeof options === 'boolean' ? options : !!options?.capture;
@@ -579,6 +812,19 @@ test('features cannot attach delayed DOM work after being disabled', async () =>
                 activeIntervals.delete(id);
                 return nativeClearInterval(id);
             };
+            globalThis.requestAnimationFrame = (fn) => {
+                let id;
+                id = nativeRequestAnimationFrame((time) => {
+                    activeFrames.delete(id);
+                    fn(time);
+                });
+                activeFrames.add(id);
+                return id;
+            };
+            globalThis.cancelAnimationFrame = (id) => {
+                activeFrames.delete(id);
+                return nativeCancelAnimationFrame(id);
+            };
 
             const trackObserver = (Base) => class extends Base {
                 observe(...args) {
@@ -601,6 +847,7 @@ test('features cannot attach delayed DOM work after being disabled', async () =>
             const resetTracking = () => {
                 for (const id of activeTimeouts) nativeClearTimeout(id);
                 for (const id of activeIntervals) nativeClearInterval(id);
+                for (const id of activeFrames) nativeCancelAnimationFrame(id);
                 for (const observer of activeObservers) {
                     try { observer.disconnect(); } catch {}
                 }
@@ -609,6 +856,7 @@ test('features cannot attach delayed DOM work after being disabled', async () =>
                 }
                 activeTimeouts.clear();
                 activeIntervals.clear();
+                activeFrames.clear();
                 activeObservers.clear();
             };
 
@@ -634,13 +882,14 @@ test('features cannot attach delayed DOM work after being disabled', async () =>
                     observers: activeObservers.size,
                     timeouts: activeTimeouts.size,
                     intervals: activeIntervals.size,
+                    frames: activeFrames.size,
                     listeners: activeListeners.filter((entry) => entry.target === document
                         || entry.target === window
                         || !(entry.target instanceof Node)
                         || entry.target.isConnected).length,
                     artifacts,
                 };
-                if (state.observers || state.timeouts || state.intervals || state.listeners || state.artifacts.length) found.push(state);
+                if (state.observers || state.timeouts || state.intervals || state.frames || state.listeners || state.artifacts.length) found.push(state);
                 try { feature.destroy(); } catch {}
 
                 resetTracking();
@@ -661,13 +910,14 @@ test('features cannot attach delayed DOM work after being disabled', async () =>
                     observers: activeObservers.size,
                     timeouts: activeTimeouts.size,
                     intervals: activeIntervals.size,
+                    frames: activeFrames.size,
                     listeners: activeListeners.filter((entry) => entry.target === document
                         || entry.target === window
                         || !(entry.target instanceof Node)
                         || entry.target.isConnected).length,
                     artifacts: immediateArtifacts,
                 };
-                if (immediateState.observers || immediateState.timeouts || immediateState.intervals || immediateState.listeners || immediateState.artifacts.length) found.push(immediateState);
+                if (immediateState.observers || immediateState.timeouts || immediateState.intervals || immediateState.frames || immediateState.listeners || immediateState.artifacts.length) found.push(immediateState);
                 try { feature.destroy(); } catch {}
 
                 resetTracking();
@@ -689,13 +939,14 @@ test('features cannot attach delayed DOM work after being disabled', async () =>
                     observers: activeObservers.size,
                     timeouts: activeTimeouts.size,
                     intervals: activeIntervals.size,
+                    frames: activeFrames.size,
                     listeners: activeListeners.filter((entry) => entry.target === document
                         || entry.target === window
                         || !(entry.target instanceof Node)
                         || entry.target.isConnected).length,
                     artifacts: mountedArtifacts,
                 };
-                if (mountedState.observers || mountedState.timeouts || mountedState.intervals || mountedState.listeners || mountedState.artifacts.length) found.push(mountedState);
+                if (mountedState.observers || mountedState.timeouts || mountedState.intervals || mountedState.frames || mountedState.listeners || mountedState.artifacts.length) found.push(mountedState);
                 try { feature.destroy(); } catch {}
             }
 
@@ -706,6 +957,8 @@ test('features cannot attach delayed DOM work after being disabled', async () =>
             globalThis.clearTimeout = nativeClearTimeout;
             globalThis.setInterval = nativeSetInterval;
             globalThis.clearInterval = nativeClearInterval;
+            globalThis.requestAnimationFrame = nativeRequestAnimationFrame;
+            globalThis.cancelAnimationFrame = nativeCancelAnimationFrame;
             globalThis.MutationObserver = NativeMutationObserver;
             if (NativeIntersectionObserver) globalThis.IntersectionObserver = NativeIntersectionObserver;
             if (NativeResizeObserver) globalThis.ResizeObserver = NativeResizeObserver;
