@@ -714,9 +714,8 @@ async function init() {
         });
     }
 
-    // Shift-click tries the on-page Ctrl+Shift+X modal for quick toggles but
-    // only if the active tab is actually rumble.com; otherwise we gracefully
-    // fall through to the options page so the click isn't wasted.
+    // Shift-click asks the active Rumble tab to open its in-page settings. If
+    // the tab cannot handle the request, fall back to the full options page.
     document.getElementById('btn-settings').addEventListener('click', async (e) => {
         if (!e.shiftKey) { openOptions(); return; }
         try {

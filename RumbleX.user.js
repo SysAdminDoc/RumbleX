@@ -22,7 +22,7 @@
 // @updateURL    https://raw.githubusercontent.com/SysAdminDoc/RumbleX/main/RumbleX.user.js
 // ==/UserScript==
 
-// Generated from extension/content.js. Core SHA-256: 833e275a925113fa64ae8a1a526bd98f714ff028f9386cd60b6149014ab7b49a
+// Generated from extension/content.js. Core SHA-256: ce07c36e4e88bdc40bd304e842df565cc07b41847271ed827dd3bf0b4537950b
 // RumbleX platform adapter - generated userscript runtime
 'use strict';
 
@@ -751,9 +751,14 @@ const Settings = {
             const expected = this._defaults[key];
             if (key === 'hiddenCategories') {
                 if (!Array.isArray(value)) continue;
-                out[key] = [...new Set(value.filter((item) =>
-                    typeof item === 'string' && /^[a-z0-9][a-z0-9-]{0,48}$/i.test(item)
-                ))].slice(0, 100);
+                const allowed = new Set([
+                    'editor-picks', 'shorts', 'continue-watching', 'top-live',
+                    'premium-videos', 'personal-recommendations', 'reposts',
+                    'gaming', 'finance', 'live-videos', 'featured-playlists',
+                    'sports', 'viral', 'podcasts', 'leaderboard', 'vlogs',
+                    'news', 'science', 'music', 'entertainment', 'cooking',
+                ]);
+                out[key] = [...new Set(value.filter((item) => allowed.has(item)))];
                 continue;
             }
             if (stringArrays.has(key)) {
@@ -800,7 +805,7 @@ const Settings = {
                         const start = Number(segment.start);
                         const end = Number(segment.end);
                         if (!Number.isFinite(start) || !Number.isFinite(end) || start < 0 || end <= start || end > 604_800) return [];
-                        const category = ['sponsor', 'intro', 'outro', 'selfpromo'].includes(segment.category)
+                        const category = ['sponsor', 'intro', 'outro', 'selfpromo', 'interaction'].includes(segment.category)
                             ? segment.category
                             : 'sponsor';
                         return [{ start, end, category }];
@@ -1299,7 +1304,10 @@ function injectStyle(css, id) {
 
 // ── Utility ──
 function qs(sel, root) { return (root || document).querySelector(sel); }
-function qsa(sel, root) { return (root || document).querySelectorAll(sel); }
+// Return a real array. Several shared features intentionally use array
+// helpers (`filter`, `map`, `some`) and a raw NodeList does not provide them
+// consistently across Chromium, Firefox, or userscript managers.
+function qsa(sel, root) { return Array.from((root || document).querySelectorAll(sel)); }
 
 function waitFor(selector, timeout = 8000) {
     return new Promise((resolve, reject) => {
@@ -2334,7 +2342,7 @@ const TheaterSplit = {
             position: absolute;
             top: 12px;
             left: 12px;
-            z-index: 30;
+            z-index: 1000;
             width: 44px;
             height: 44px;
             border: 1px solid rgba(255,255,255,0.24);
@@ -2344,6 +2352,7 @@ const TheaterSplit = {
             cursor: pointer;
             font: 700 24px/1 system-ui, sans-serif;
         }
+        #rx-split-left .rx-screenshot-btn { top: 64px; }
         @media (max-width: 700px), (pointer: coarse) {
             #rx-split-wrapper { flex-direction: column; }
             #rx-split-divider {
@@ -5733,9 +5742,11 @@ const KeyboardNav = {
     },
 
     _isTyping(e) {
-        const tag = e.target.tagName;
-        return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || e.target.isContentEditable ||
-               e.target.closest('.chat--input, .comments-create, [contenteditable]');
+        const target = e.target instanceof Element ? e.target : null;
+        if (!target) return false;
+        const tag = target.tagName;
+        return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || target.isContentEditable ||
+               !!target.closest('.chat--input, .comments-create, [contenteditable]');
     },
 
     _showOverlay(text) {

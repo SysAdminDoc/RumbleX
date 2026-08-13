@@ -1109,9 +1109,16 @@
             sanitized.autoplayQueue = [...new Set(sanitized.autoplayQueue.map(safeRumbleUrl).filter(Boolean))].slice(0, 500);
         } else delete sanitized.autoplayQueue;
         if (Array.isArray(sanitized.hiddenCategories)) {
-            sanitized.hiddenCategories = [...new Set(sanitized.hiddenCategories.filter((value) =>
-                typeof value === 'string' && /^[a-z0-9][a-z0-9-]{0,48}$/i.test(value)
-            ))].slice(0, 100);
+            const allowedCategories = new Set([
+                'editor-picks', 'shorts', 'continue-watching', 'top-live',
+                'premium-videos', 'personal-recommendations', 'reposts',
+                'gaming', 'finance', 'live-videos', 'featured-playlists',
+                'sports', 'viral', 'podcasts', 'leaderboard', 'vlogs',
+                'news', 'science', 'music', 'entertainment', 'cooking',
+            ]);
+            sanitized.hiddenCategories = [...new Set(
+                sanitized.hiddenCategories.filter((value) => allowedCategories.has(value)),
+            )];
         } else delete sanitized.hiddenCategories;
         if (Array.isArray(sanitized.watchedChannels)) {
             sanitized.watchedChannels = sanitized.watchedChannels.slice(0, 500).flatMap((item) => {
@@ -1155,7 +1162,7 @@
                     if (!isPlainObject(segment)) return [];
                     const start = Number(segment.start), end = Number(segment.end);
                     if (!Number.isFinite(start) || !Number.isFinite(end) || start < 0 || end <= start || end > 604800) return [];
-                    const category = ['sponsor', 'intro', 'outro', 'selfpromo'].includes(segment.category) ? segment.category : 'sponsor';
+                    const category = ['sponsor', 'intro', 'outro', 'selfpromo', 'interaction'].includes(segment.category) ? segment.category : 'sponsor';
                     return [{ start, end, category }];
                 });
                 if (segments.length) clean[videoId] = segments;
