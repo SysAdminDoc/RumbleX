@@ -25,11 +25,15 @@ function build() {
     const adapterTemplate = read('userscript/platform.js');
     const worker = read('extension/worker.js');
     const mux = read('extension/lib/mux.min.js');
+    const mediabunnyWorker = read('extension/mediabunny-worker.js');
+    const mediabunny = read('extension/lib/mediabunny.min.mjs');
     const localeJson = JSON.parse(read('extension/_locales/en/messages.json'));
     const messages = Object.fromEntries(Object.entries(localeJson).map(([key, value]) => [key, value.message || '']));
     const assets = {
         'worker.js': worker,
         'lib/mux.min.js': mux,
+        'mediabunny-worker.js': mediabunnyWorker,
+        'lib/mediabunny.min.mjs': mediabunny,
     };
     const adapter = adapterTemplate
         .replace('__RUMBLEX_VERSION__', JSON.stringify(VERSION))

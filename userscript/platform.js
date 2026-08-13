@@ -9,6 +9,8 @@
     const ALLOWED_REQUEST_HOSTS = ['rumble.com', 'rumble.cloud', '1a-1791.com'];
     const DIAGNOSTICS_KEY = 'rx_download_diagnostics';
     const DIAGNOSTICS_MAX = 50;
+    const assetUrls = new Map();
+    const hasMediabunnyAssets = 'mediabunny-worker.js' in ASSETS && 'lib/mediabunny.min.mjs' in ASSETS;
 
     const isAllowedRemoteUrl = (url) => url.protocol === 'https:' && ALLOWED_REQUEST_HOSTS.some((host) =>
         url.hostname === host || url.hostname.endsWith('.' + host)
@@ -275,6 +277,21 @@
         web_accessible_resources: [],
     });
 
+    function assetUrl(path) {
+        if (!(path in ASSETS)) throw new Error(`Userscript asset is unavailable: ${path}`);
+        if (assetUrls.has(path)) return assetUrls.get(path);
+        if (typeof URL.createObjectURL !== 'function') throw new Error('Blob asset URLs are unavailable');
+        const type = /\.(?:m?js)$/i.test(path) ? 'text/javascript' : 'text/plain';
+        const url = URL.createObjectURL(new Blob([ASSETS[path]], { type }));
+        assetUrls.set(path, url);
+        return url;
+    }
+
+    globalThis.addEventListener?.('pagehide', () => {
+        for (const url of assetUrls.values()) URL.revokeObjectURL?.(url);
+        assetUrls.clear();
+    }, { once: true });
+
     globalThis.RumbleXPlatform = Object.freeze({
         kind: 'userscript',
         version: VERSION,
@@ -282,7 +299,7 @@
             persistentBackground: false,
             managedDownloads: typeof GM_download === 'function',
             packagedAssets: true,
-            mediabunny: false,
+            mediabunny: hasMediabunnyAssets && typeof URL.createObjectURL === 'function',
             externalMessages: false,
         }),
         storage,
@@ -291,7 +308,7 @@
             if (!(path in ASSETS)) throw new Error(`Userscript asset is unavailable: ${path}`);
             return ASSETS[path];
         },
-        assetUrl: () => { throw new Error('Module assets are unavailable in the userscript build'); },
+        assetUrl,
         sendMessage,
         onMessage: () => () => {},
         getManifest: () => manifest,

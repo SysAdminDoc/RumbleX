@@ -10,7 +10,11 @@ const ROOT = path.resolve(__dirname, '..');
 const template = fs.readFileSync(path.join(ROOT, 'userscript', 'platform.js'), 'utf8');
 const source = template
     .replace('__RUMBLEX_VERSION__', JSON.stringify('9.9.9-test'))
-    .replace('__RUMBLEX_ASSETS__', JSON.stringify({ 'worker.js': 'worker-source' }))
+    .replace('__RUMBLEX_ASSETS__', JSON.stringify({
+        'worker.js': 'worker-source',
+        'mediabunny-worker.js': 'mediabunny-worker-source',
+        'lib/mediabunny.min.mjs': 'mediabunny-module-source',
+    }))
     .replace('__RUMBLEX_MESSAGES__', JSON.stringify({ hello: 'Hello' }));
 
 async function main() {
@@ -71,6 +75,10 @@ async function main() {
     assert.equal(platform.kind, 'userscript');
     assert.equal(platform.version, '9.9.9-test');
     assert.equal(await platform.assetText('worker.js'), 'worker-source');
+    const mediabunnyUrl = platform.assetUrl('lib/mediabunny.min.mjs');
+    assert.match(mediabunnyUrl, /^blob:/);
+    assert.equal(platform.assetUrl('lib/mediabunny.min.mjs'), mediabunnyUrl);
+    assert.equal(platform.capabilities.mediabunny, true);
     assert.equal(platform.t('hello'), 'Hello');
 
     await platform.storage.set({ alpha: 1, beta: { ok: true } });
