@@ -1,12 +1,20 @@
 // RumbleX v3.2.0 - Background Service Worker
 'use strict';
 
-// MV3 service workers load the shared extension-origin folder helper here.
-// Firefox MV2 loads it before background.js through manifest-firefox.json.
+// MV3 service workers load shared extension-origin helpers here. Firefox MV2
+// loads them before background.js through manifest-firefox.json.
 if (typeof importScripts === 'function') {
+    if (!globalThis.RumbleXSettingsSchema) importScripts('settings-schema.js');
     try { importScripts('archive-fs.js'); } catch (error) {
         console.warn('[RumbleX] archive folder helper unavailable:', error);
     }
+}
+
+const RXSettingsSchema = globalThis.RumbleXSettingsSchema;
+if (!RXSettingsSchema) throw new Error('RumbleX settings schema is missing');
+
+function rxNormalizeSettings(value) {
+    return RXSettingsSchema.normalizeStored(value, RXSettingsSchema.DEFAULTS);
 }
 
 // Guard rails for download URLs accepted from the content script. We trust
@@ -436,14 +444,14 @@ const RX_NOTIFIER_ALARM = 'rx-channel-notifier';
 async function rxGetSettings() {
     try {
         const data = await chrome.storage.local.get('rx_settings');
-        return data.rx_settings || {};
+        return rxNormalizeSettings(data.rx_settings || {});
     } catch { return {}; }
 }
 
 async function rxSetSettings(patch) {
     try {
         const data = await chrome.storage.local.get('rx_settings');
-        const merged = { ...(data.rx_settings || {}), ...patch };
+        const merged = rxNormalizeSettings({ ...(data.rx_settings || {}), ...patch });
         await chrome.storage.local.set({ rx_settings: merged });
     } catch (e) { console.warn('[RumbleX] rxSetSettings failed:', e); }
 }
@@ -1884,13 +1892,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     // consumer (popup, options, userscript) still asks the worker for state.
     if (message.action === 'getSettings') {
         chrome.storage.local.get('rx_settings', (data) => {
-            sendResponse(data.rx_settings || {});
+            sendResponse(rxNormalizeSettings(data.rx_settings || {}));
         });
         return true;
     }
 
     if (message.action === 'saveSettings') {
-        chrome.storage.local.set({ rx_settings: message.data }, () => {
+        chrome.storage.local.set({ rx_settings: rxNormalizeSettings(message.data) }, () => {
             sendResponse({ success: true });
         });
         return true;
@@ -2195,7 +2203,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                 profiles.push({
                     id, name,
                     createdAt: Date.now(),
-                    settings: data.rx_settings || {},
+                    settings: rxNormalizeSettings(data.rx_settings || {}),
                 });
                 await chrome.storage.local.set({ rx_settings_profiles: profiles });
                 sendResponse({ ok: true, id, count: profiles.length });
@@ -2215,7 +2223,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                 // saves. Reuses the v3.0 backup system rather than introducing
                 // a parallel snapshot store.
                 try { await chrome.runtime.sendMessage({ action: 'backupSnapshot', reason: 'pre-profile-switch' }); } catch {}
-                const next = { ...target.settings, activeProfileId: target.id };
+                const next = rxNormalizeSettings({ ...target.settings, activeProfileId: target.id });
                 await chrome.storage.local.set({ rx_settings: next });
                 sendResponse({ ok: true, name: target.name });
             } catch (e) { sendResponse({ ok: false, reason: String(e?.message || e) }); }
@@ -2338,7 +2346,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                 const stored = await new Promise((resolve) => {
                     chrome.storage.local.get(['rx_settings'], resolve);
                 });
-                const settings = (stored && stored.rx_settings && typeof stored.rx_settings === 'object') ? stored.rx_settings : {};
+                const settings = rxNormalizeSettings(
+                    stored && stored.rx_settings && typeof stored.rx_settings === 'object'
+                        ? stored.rx_settings
+                        : {},
+                );
                 const token = (settings.encryptedGistSyncToken || '').trim();
                 const gistId = (settings.encryptedGistSyncId || '').trim();
                 const passphrase = (message.passphrase || '').trim();
@@ -2399,7 +2411,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                     const newId = data && data.id ? data.id : gistId;
                     // Persist the gist id if this was a CREATE.
                     if (!gistId && newId) {
-                        const next = { ...settings, encryptedGistSyncId: newId };
+                        const next = rxNormalizeSettings({ ...settings, encryptedGistSyncId: newId });
                         await new Promise((resolve) => chrome.storage.local.set({ rx_settings: next }, resolve));
                     }
                     sendResponse({ ok: true, gistId: newId, bytes: JSON.stringify(payload).length });
@@ -2440,6 +2452,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                 }
                 let pulled;
                 try { pulled = JSON.parse(dec.decode(plainBuf)); } catch { sendResponse({ ok: false, reason: 'bad-decoded-json' }); return; }
+                if (!pulled || typeof pulled !== 'object' || Array.isArray(pulled)) {
+                    sendResponse({ ok: false, reason: 'invalid-settings' });
+                    return;
+                }
                 // Take a backup snapshot before overwriting — same pattern as
                 // the v3.0 backup system uses for any settings overwrite.
                 try {
@@ -2451,10 +2467,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                 } catch {}
                 // Preserve the LOCAL token + gist id so the user doesn't get
                 // logged out of their own sync target after a pull.
-                pulled.encryptedGistSyncToken = token;
-                pulled.encryptedGistSyncId = gistId;
-                await new Promise((resolve) => chrome.storage.local.set({ rx_settings: pulled }, resolve));
-                sendResponse({ ok: true, encryptedAt: env.encryptedAt || null, keyCount: Object.keys(pulled).length });
+                const next = rxNormalizeSettings({
+                    ...pulled,
+                    encryptedGistSyncToken: token,
+                    encryptedGistSyncId: gistId,
+                });
+                await new Promise((resolve) => chrome.storage.local.set({ rx_settings: next }, resolve));
+                sendResponse({ ok: true, encryptedAt: env.encryptedAt || null, keyCount: Object.keys(next).length });
             } catch (e) {
                 sendResponse({ ok: false, reason: String(e?.message || e) });
             }

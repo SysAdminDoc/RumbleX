@@ -1,7 +1,7 @@
 {
   "manifest_version": 2,
   "name": "__MSG_extName__",
-  "version": "3.37.0",
+  "version": "3.38.0",
   "description": "__MSG_extDescription__",
   "default_locale": "en",
   "author": "SysAdminDoc",
@@ -37,7 +37,7 @@
     }
   },
   "background": {
-    "scripts": ["browser-polyfill.js", "ad-blocker.js", "archive-fs.js", "background.js"]
+    "scripts": ["browser-polyfill.js", "settings-schema.js", "ad-blocker.js", "archive-fs.js", "background.js"]
   },
   "content_security_policy": "script-src 'self'; object-src 'self'; base-uri 'self'",
   "browser_action": {
@@ -54,7 +54,7 @@
   },
   "content_scripts": [{
     "matches": ["https://rumble.com/*", "https://*.rumble.com/*"],
-    "js": ["browser-polyfill.js", "platform.js", "content.js"],
+    "js": ["browser-polyfill.js", "settings-schema.js", "platform.js", "content.js"],
     "run_at": "document_start",
     "all_frames": false
   }],

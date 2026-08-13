@@ -7,7 +7,7 @@ const path = require('path');
 const { spawnSync } = require('child_process');
 
 const ROOT = path.resolve(__dirname, '..');
-const read = (file) => fs.readFileSync(path.join(ROOT, file), 'utf8');
+const read = (file) => fs.readFileSync(path.join(ROOT, file), 'utf8').replace(/\r\n?/g, '\n');
 const json = (file) => JSON.parse(read(file));
 const fail = (message) => {
     console.error('Userscript parity guard failed: ' + message);
@@ -17,26 +17,38 @@ const fail = (message) => {
 const pkg = json('package.json');
 const chromeManifest = json('extension/manifest.json');
 const firefoxManifest = json('extension/manifest-firefox.json');
+const schema = read('extension/settings-schema.js');
 const core = read('extension/content.js');
+const background = read('extension/background.js');
+const options = read('extension/pages/options.js');
+const optionsHtml = read('extension/pages/options.html');
+const popup = read('extension/pages/popup.js');
+const popupHtml = read('extension/pages/popup.html');
+const buildScript = read('extension/build.sh');
 const adapter = read('userscript/platform.js');
 const generated = read('RumbleX.user.js');
-const hash = crypto.createHash('sha256').update(core).digest('hex');
+const sharedRuntime = schema + '\n\n' + core;
+const hash = crypto.createHash('sha256').update(sharedRuntime).digest('hex');
 
 if (pkg.version !== chromeManifest.version || pkg.version !== firefoxManifest.version) {
     fail(`version drift: package=${pkg.version}, Chrome=${chromeManifest.version}, Firefox=${firefoxManifest.version}`);
 }
 if (!generated.includes(`// @version      ${pkg.version}\n`)) fail('generated metadata version does not match package.json');
-if (!generated.includes(`Core SHA-256: ${hash}`)) fail('generated core hash is stale');
+if (!generated.includes(`Shared runtime SHA-256: ${hash}`)) fail('generated shared-runtime hash is stale');
 if (!generated.endsWith(core)) fail('generated userscript does not end with the byte-identical canonical content core');
+if (!generated.includes(schema + '\n\n// RumbleX platform adapter')) {
+    fail('generated userscript does not embed the byte-identical canonical settings schema before its platform adapter');
+}
 
 for (const [name, manifest] of [['Chrome', chromeManifest], ['Firefox', firefoxManifest]]) {
     const scripts = manifest.content_scripts?.[0]?.js || [];
-    if (scripts.at(-2) !== 'platform.js' || scripts.at(-1) !== 'content.js') {
-        fail(`${name} content scripts must load platform.js before content.js`);
+    if (scripts.at(-3) !== 'settings-schema.js' || scripts.at(-2) !== 'platform.js' || scripts.at(-1) !== 'content.js') {
+        fail(`${name} content scripts must load settings-schema.js and platform.js before content.js`);
     }
 }
 if (firefoxManifest.content_scripts?.[0]?.js?.[0] !== 'browser-polyfill.js'
-    || firefoxManifest.background?.scripts?.[0] !== 'browser-polyfill.js') {
+    || firefoxManifest.background?.scripts?.[0] !== 'browser-polyfill.js'
+    || !firefoxManifest.background?.scripts?.includes('settings-schema.js')) {
     fail('Firefox MV2 must load browser-polyfill.js before every Promise-based extension surface');
 }
 
@@ -71,8 +83,11 @@ function stripCommentsAndStrings(source) {
 }
 
 const executableCore = stripCommentsAndStrings(core);
+const executableSchema = stripCommentsAndStrings(schema);
 if (/\bchrome\s*\./.test(executableCore)) fail('canonical content core still executes chrome.* directly');
 if (/\b(?:unsafeWindow|eval)\b|new\s+Function\s*\(/.test(executableCore)) fail('canonical content core contains dynamic-code execution');
+if (/\b(?:chrome|browser)\s*\./.test(executableSchema)) fail('canonical settings schema must remain platform-independent');
+if (/\b(?:unsafeWindow|eval)\b|new\s+Function\s*\(/.test(executableSchema)) fail('canonical settings schema contains dynamic-code execution');
 if (!core.startsWith(`// RumbleX v${pkg.version} - Shared Content Core`)
     || !core.includes(`const VERSION = RXPlatform.version || '${pkg.version}';`)) {
     fail('canonical core header/fallback version does not match package.json');
@@ -80,12 +95,23 @@ if (!core.startsWith(`// RumbleX v${pkg.version} - Shared Content Core`)
 if (!core.includes('if (!RXPlatform.capabilities.persistentBackground) return;')) {
     fail('extension-only persistent-background feature is not capability-gated');
 }
+for (const [surface, source, snippet] of [
+    ['content', core, '_defaults: RXSettingsSchema.DEFAULTS'],
+    ['background', background, "importScripts('settings-schema.js')"],
+    ['options', options, 'const DEFAULTS = RXSettingsSchema.DEFAULTS;'],
+    ['options HTML', optionsHtml, '<script src="../settings-schema.js"></script>'],
+    ['popup', popup, 'const DEFAULTS = RXSettingsSchema.DEFAULTS;'],
+    ['popup HTML', popupHtml, '<script src="../settings-schema.js"></script>'],
+    ['release build', buildScript, 'settings-schema.js ad-blocker.js'],
+]) {
+    if (!source.includes(snippet)) fail(`${surface} no longer consumes/packages the canonical settings schema`);
+}
 
 for (const forbidden of ['unsafeWindow', 'cdn.jsdelivr.net', 'GM_loadScript', 'new Function(', 'eval(']) {
     if (generated.includes(forbidden)) fail(`generated userscript contains forbidden token: ${forbidden}`);
 }
 for (const required of [
-    '@noframes', 'GM_xmlhttpRequest', 'GM_download', 'RumbleXPlatform',
+    '@noframes', 'GM_xmlhttpRequest', 'GM_download', 'RumbleXPlatform', 'RumbleXSettingsSchema',
     "kind: 'userscript'", 'mediabunny-worker.js', 'lib/mediabunny.min.mjs',
     'mediabunny: hasMediabunnyAssets', 'streamingFileSave', 'requestBlockingMode', 'assetUrl',
 ]) {
@@ -121,8 +147,9 @@ const check = spawnSync(process.execPath, [path.join(ROOT, 'scripts', 'build-use
 if (check.status !== 0) fail((check.stderr || check.stdout || 'generator freshness check failed').trim());
 
 if (!process.exitCode) {
-    const settingsCount = (core.match(/^\s{8}[A-Za-z][A-Za-z0-9]*:\s/gm) || []).length;
+    const defaultsBody = schema.match(/const DEFAULTS = Object\.freeze\(\{([\s\S]*?)\n    \}\);/)?.[1] || '';
+    const settingsCount = (defaultsBody.match(/^\s{8}[A-Za-z][A-Za-z0-9]*:\s/gm) || []).length;
     const registry = core.match(/const features = \[([\s\S]*?)\n\];/)?.[1] || '';
     const registryCount = (registry.match(/\b[A-Z][A-Za-z0-9]+\b/g) || []).length;
-    console.log(`Userscript parity guard OK: v${pkg.version}, core ${hash.slice(0, 12)}, ${settingsCount}+ catalog entries, ${registryCount}+ shared registry tokens.`);
+    console.log(`Userscript parity guard OK: v${pkg.version}, shared ${hash.slice(0, 12)}, ${settingsCount} settings, ${registryCount}+ shared registry tokens.`);
 }

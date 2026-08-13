@@ -1,10 +1,16 @@
 # RumbleX
 
-![Version](https://img.shields.io/badge/version-v3.37.0-blue) ![License](https://img.shields.io/badge/license-MIT-green) ![Platform](https://img.shields.io/badge/platform-Extension%20%2B%20Userscript-lightgrey) ![Firefox](https://img.shields.io/badge/firefox-109%2B-orange)
+![Version](https://img.shields.io/badge/version-v3.38.0-blue) ![License](https://img.shields.io/badge/license-MIT-green) ![Platform](https://img.shields.io/badge/platform-Extension%20%2B%20Userscript-lightgrey) ![Firefox](https://img.shields.io/badge/firefox-109%2B-orange)
 
 **The ultimate Rumble enhancement suite.** 130+ feature modules across 14 categories — ad blocking, theater mode, video downloads with CDN deep-scan probing and an opt-in Mediabunny muxer path, five-theme engine (now including OLED Green), playback controls, chat enhancements with deterministic username colors and tier-filtered rants, chapters, SponsorBlock, clips, live DVR, transcripts, auto-hide chrome, 50+ granular hide-X toggles for every Rumble row/button/player control, thumbnail hider, dense mode, reduced-motion path, tracking-param stripping, external player handoff (MPV/PotPlayer), and full-round-trip backup/restore with snapshot history. Chrome MV3 + Firefox MV2 + userscript.
 
-### What's new in v3.37
+### What's new in v3.38
+
+- **One settings trust boundary** — content scripts, options, popup, Chrome and Firefox backgrounds, and the generated userscript now consume the same canonical defaults and schema normalizer.
+- **Safe profile and encrypted-Gist recovery** — legacy or crafted restores cannot inject unknown keys, invalid enums/types, off-site autoplay URLs, CSS-shaped categories, malformed notifier channels, or unsafe SponsorBlock data. Gist pulls keep the local token and Gist ID instead of trusting the remote copy.
+- **Smaller runtime surface** — removed more than 1,000 lines of duplicated defaults and validation logic while adding direct schema and hostile-restore regression tests.
+
+### v3.37 highlights
 
 - **Large HLS without tab-sized buffering** — supported Chromium desktops can stream a selected HLS quality directly into a user-chosen `.ts` file, one response chunk at a time. Cancellation aborts the network reader and staged file write; MP4 remuxing remains safely capped at 512 MiB.
 - **Visible drift detection** — the local Privacy Report now identifies critical route selectors as healthy, fallback, or broken, and a missing high-value anchor produces a one-time in-page warning instead of silently disabling features.
@@ -217,7 +223,7 @@ flowchart LR
     Userscript --> Embedded[Embedded pinned media workers]
 ```
 
-`content.js` is the canonical shared core and owns page classification, selector contracts, route lifecycle, and injected features. `extension/platform.js` and `userscript/platform.js` adapt storage, downloads, network requests, assets, localization, and capabilities. `background.js` is the extension-only privileged boundary for persistent downloads, context menus, notifications, tab operations, queue alarms, and offscreen work. Popup/options/side-panel pages edit the same settings catalog in `chrome.storage.local`; per-Rumble history and bookmark data remains on the Rumble origin.
+`settings-schema.js` owns the canonical defaults, migration, and validation contract for every runtime. `content.js` is the canonical shared page core and owns page classification, selector contracts, route lifecycle, and injected features. `extension/platform.js` and `userscript/platform.js` adapt storage, downloads, network requests, assets, localization, and capabilities. `background.js` is the extension-only privileged boundary for persistent downloads, context menus, notifications, tab operations, queue alarms, and offscreen work. Popup/options/side-panel pages edit the same validated settings catalog in `chrome.storage.local`; per-Rumble history and bookmark data remains on the Rumble origin.
 
 ### Feature-module template
 

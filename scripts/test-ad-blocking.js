@@ -64,6 +64,11 @@ assert.equal(Number.parseInt(enMessages.networkShieldVerified.message, 10), rule
 const firefoxManifest = JSON.parse(fs.readFileSync(path.join(ROOT, 'extension', 'manifest-firefox.json'), 'utf8'));
 assert.ok(firefoxManifest.permissions.includes('webRequest'));
 assert.ok(firefoxManifest.permissions.includes('webRequestBlocking'));
-assert.equal(firefoxManifest.background.scripts[1], 'ad-blocker.js');
+assert.ok(firefoxManifest.background.scripts.includes('ad-blocker.js'));
+assert.ok(
+    firefoxManifest.background.scripts.indexOf('ad-blocker.js')
+        < firefoxManifest.background.scripts.indexOf('background.js'),
+    'Firefox request blocker must load before the main background runtime',
+);
 
 console.log(`Ad-block contract OK: ${rules.length} Chromium rules and scoped Firefox blocking listener.`);

@@ -50,7 +50,7 @@ function stageExtension(baseUrl) {
     if (!manifest.permissions.includes(originPattern)) manifest.permissions.push(originPattern);
     manifest.content_scripts.push({
         matches: [originPattern],
-        js: ['browser-polyfill.js', 'platform.js', 'firefox-smoke-probe.js'],
+        js: ['browser-polyfill.js', 'settings-schema.js', 'platform.js', 'firefox-smoke-probe.js'],
         run_at: 'document_start',
         all_frames: false,
     });
@@ -67,6 +67,7 @@ function stageExtension(baseUrl) {
         result.version = platform?.version || null;
         result.requestBlocking = platform?.capabilities?.requestBlocking === true;
         result.requestBlockingMode = platform?.capabilities?.requestBlockingMode || null;
+        result.settingsSchema = Object.keys(globalThis.RumbleXSettingsSchema?.DEFAULTS || {}).length >= 210;
 
         const key = 'rx_firefox_smoke_value';
         const value = 'firefox-mv2-' + Date.now();
@@ -183,7 +184,7 @@ async function main() {
         clearTimeout(timer);
         const expectedVersion = JSON.parse(fs.readFileSync(path.join(EXTENSION, 'manifest-firefox.json'), 'utf8')).version;
         const failures = [];
-        for (const key of ['injected', 'storageRoundTrip', 'storageRemove', 'responseMessage', 'packagedAsset', 'requestBlocking']) {
+        for (const key of ['injected', 'storageRoundTrip', 'storageRemove', 'responseMessage', 'packagedAsset', 'requestBlocking', 'settingsSchema']) {
             if (result[key] !== 'true') failures.push(`${key}=${result[key] || 'missing'}`);
         }
         if (result.platform !== 'extension') failures.push(`platform=${result.platform || 'missing'}`);
@@ -191,7 +192,7 @@ async function main() {
         if (result.version !== expectedVersion) failures.push(`version=${result.version || 'missing'} (expected ${expectedVersion})`);
         if (result.error) failures.push(`runtime=${result.error}`);
         if (failures.length) throw new Error(`Firefox MV2 smoke failed: ${failures.join(', ')}\n${runnerLog}`);
-        console.log(`Firefox MV2 smoke passed (v${expectedVersion}): storage, removal, messaging, packaged asset, content injection.`);
+        console.log(`Firefox MV2 smoke passed (v${expectedVersion}): schema, storage, removal, messaging, packaged asset, content injection.`);
     } finally {
         clearTimeout(timer);
         stopProcessTree(child);
