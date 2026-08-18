@@ -179,6 +179,10 @@
     "message": "Check failed",
     "description": "UI string used by popup/options i18n pass."
   },
+  "checkRateLimited": {
+    "message": "GitHub rate limit reached — try again later",
+    "description": "Tooltip on the popup update button when GitHub's unauthenticated API quota is exhausted."
+  },
   "upToDate": {
     "message": "Up to date!",
     "description": "UI string used by popup/options i18n pass."

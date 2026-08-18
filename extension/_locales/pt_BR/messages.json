@@ -179,6 +179,10 @@
     "message": "Verificacao falhou",
     "description": "UI string used by popup/options i18n pass."
   },
+  "checkRateLimited": {
+    "message": "Limite de requisições do GitHub atingido — tente novamente mais tarde",
+    "description": "Tooltip on the popup update button when GitHub's unauthenticated API quota is exhausted."
+  },
   "upToDate": {
     "message": "Tudo atualizado",
     "description": "UI string used by popup/options i18n pass."

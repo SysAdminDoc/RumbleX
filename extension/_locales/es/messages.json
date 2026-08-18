@@ -179,6 +179,10 @@
     "message": "La comprobacion fallo",
     "description": "UI string used by popup/options i18n pass."
   },
+  "checkRateLimited": {
+    "message": "Límite de peticiones de GitHub alcanzado: inténtalo más tarde",
+    "description": "Tooltip on the popup update button when GitHub's unauthenticated API quota is exhausted."
+  },
   "upToDate": {
     "message": "Todo actualizado",
     "description": "UI string used by popup/options i18n pass."

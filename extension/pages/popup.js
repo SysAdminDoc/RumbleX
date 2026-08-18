@@ -538,7 +538,9 @@ async function init() {
             updateBtn.classList.remove('checking');
             if (res && res.error) {
                 updateBtn.classList.add('error');
-                updateBtn.dataset.tooltip = i18n('checkFailed', 'Check failed');
+                updateBtn.dataset.tooltip = res.rateLimited
+                    ? i18n('checkRateLimited', 'GitHub rate limit reached — try again later')
+                    : i18n('checkFailed', 'Check failed');
                 setTimeout(() => {
                     updateBtn.classList.remove('error');
                     updateBtn.dataset.tooltip = i18n('checkForUpdates', 'Check for updates');

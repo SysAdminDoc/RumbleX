@@ -491,6 +491,26 @@ function rxParseChannelHtml(html) {
     } catch { return { latestVideoId: null, isLive: false }; }
 }
 
+// Numeric dotted-version comparison. Returns >0 when `a` is newer than `b`,
+// <0 when older, 0 when equal. Missing or non-numeric segments count as 0, so
+// "3.40" and "3.40.0" compare equal and a malformed tag never reads as newer.
+function rxCompareVersions(a, b) {
+    const parse = (value) => String(value || '')
+        .trim()
+        .replace(/^v/i, '')
+        .split('.')
+        .map((part) => Number.parseInt(part, 10));
+    const left = parse(a);
+    const right = parse(b);
+    const length = Math.max(left.length, right.length);
+    for (let i = 0; i < length; i += 1) {
+        const l = Number.isFinite(left[i]) ? left[i] : 0;
+        const r = Number.isFinite(right[i]) ? right[i] : 0;
+        if (l !== r) return l - r;
+    }
+    return 0;
+}
+
 async function rxPostDiscordWebhook(url, payload) {
     // Defense in depth: settings-schema.js already rejects non-Discord webhook
     // destinations, but storage can outlive the code that wrote it, so never
@@ -1938,18 +1958,36 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         fetch('https://api.github.com/repos/SysAdminDoc/RumbleX/releases/latest', {
             headers: { 'Accept': 'application/vnd.github.v3+json' },
         })
-            .then((r) => (r.ok ? r.json() : Promise.reject(r.status)))
+            .then((r) => {
+                if (r.ok) return r.json();
+                // GitHub answers an exhausted unauthenticated quota with 403 (or
+                // 429) plus a zeroed remaining header. That is a "try later",
+                // not "no release" — the popup must not show it as a plain
+                // failure, and must never treat it as being up to date.
+                const remaining = r.headers?.get?.('X-RateLimit-Remaining');
+                const rateLimited = (r.status === 403 || r.status === 429) && remaining === '0';
+                return Promise.reject(rateLimited ? 'rate-limited' : 'http-' + r.status);
+            })
             .then((data) => {
                 const latest = (data.tag_name || '').replace(/^v/, '');
                 sendResponse({
                     current: currentVersion,
                     latest,
                     url: data.html_url || '',
-                    hasUpdate: !!latest && latest !== currentVersion,
+                    // Compare numerically. String inequality reported an update
+                    // whenever the tag differed at all, so a published release
+                    // older than the installed build — which is exactly the
+                    // state this repo was in — prompted a downgrade.
+                    hasUpdate: !!latest && rxCompareVersions(latest, currentVersion) > 0,
                 });
             })
             .catch((err) => {
-                sendResponse({ error: String(err), current: currentVersion });
+                const reason = String(err);
+                sendResponse({
+                    error: reason,
+                    rateLimited: reason === 'rate-limited',
+                    current: currentVersion,
+                });
             });
         return true;
     }
