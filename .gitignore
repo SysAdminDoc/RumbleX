@@ -23,9 +23,12 @@ __pycache__/
 *.py[cod]
 *.pyc
 
-# Markdown files local-only (except README)
+# Markdown files local-only (except the ones users are meant to read on GitHub).
+# The blanket *.md rule had been hiding the release history from every user of
+# the project: only README.md was ever published.
 *.md
 !README.md
+!CHANGELOG.md
 
 # AI config
 CODEX_CHANGELOG.md
