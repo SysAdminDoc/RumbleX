@@ -116,7 +116,6 @@
         searchHistory: { group: 'history', label: 'Search History', desc: 'Recent searches dropdown on search input' },
         quickBookmark: { group: 'history', label: 'Bookmarks', desc: 'Save videos locally for later (200 max)' },
         quickSave: { group: 'history', label: 'Quick Save', desc: 'Watch Later button on thumbnail hover' },
-        bookmarks: { group: 'history', label: 'Bookmarks (data)', desc: 'Bookmarks live in localStorage, not here' },
 
         liveChatEnhance: { group: 'comments-chat', label: 'Chat Enhance', desc: '@mention highlights, message filter bar' },
         chatAutoScroll: { group: 'comments-chat', label: 'Chat Scroll', desc: 'Smart auto-scroll with pause on scroll-up' },
@@ -293,7 +292,6 @@
         // Privacy, data & backup
         stripTrackingParams: { group: 'privacy', label: 'Strip Tracking Params', desc: 'Remove e9s, campaign, ref params where safe.' },
         privacyReport: { group: 'privacy', label: 'Privacy Report', desc: 'Show local-only storage/permission state in settings.' },
-        settingsProfiles: { group: 'privacy', label: 'Settings Profiles', desc: 'Multiple named profiles (work/casual/creator).' },
         activeProfileId: { group: 'privacy', label: 'Active Profile', desc: 'Currently applied profile id.' },
         backupHistory: { group: 'privacy', label: 'Backup Snapshot History', desc: 'Snapshot settings before import/reset.' },
         backupHistoryLimit: { group: 'privacy', label: 'Backup History Limit', desc: 'How many local snapshots to keep.' },

@@ -67,7 +67,7 @@ function stageExtension(baseUrl) {
         result.version = platform?.version || null;
         result.requestBlocking = platform?.capabilities?.requestBlocking === true;
         result.requestBlockingMode = platform?.capabilities?.requestBlockingMode || null;
-        result.settingsSchema = Object.keys(globalThis.RumbleXSettingsSchema?.DEFAULTS || {}).length >= 210;
+        result.settingsSchema = Object.keys(globalThis.RumbleXSettingsSchema?.DEFAULTS || {}).length >= 208;
 
         const key = 'rx_firefox_smoke_value';
         const value = 'firefox-mv2-' + Date.now();

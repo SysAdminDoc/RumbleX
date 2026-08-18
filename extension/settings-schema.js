@@ -6,7 +6,7 @@
 (() => {
     if (globalThis.RumbleXSettingsSchema) return;
 
-    const SCHEMA_VERSION = 2;
+    const SCHEMA_VERSION = 3;
     const DEFAULTS = Object.freeze({
         adNuker: true,
         theaterSplit: true,
@@ -49,7 +49,6 @@
         theme: 'catppuccin',
         playbackSpeed: 1.0,
         blockedChannels: [],
-        bookmarks: [],
         // v1.8.0 additions
         fullTitles: true,
         titleFont: false,
@@ -232,7 +231,6 @@
         // Privacy, data & backup
         stripTrackingParams: true,
         privacyReport: true,
-        settingsProfiles: [],
         activeProfileId: 'default',
         backupHistory: true,
         backupHistoryLimit: 10,
@@ -400,6 +398,13 @@
             out.legacyKeyboardNav = !!out.keyboardNav;
         }
         delete out.keyboardNav;
+        // v3 - `bookmarks` and `settingsProfiles` were schema keys that nothing
+        // ever read. The real collections live in their own storage buckets
+        // (`rx_bookmarks`, `rx_settings_profiles`), so these two only ever
+        // rendered decorative controls in Options. Drop them explicitly so an
+        // upgraded profile is cleaned deterministically.
+        delete out.bookmarks;
+        delete out.settingsProfiles;
         out.schemaVersion = SCHEMA_VERSION;
         return out;
     }

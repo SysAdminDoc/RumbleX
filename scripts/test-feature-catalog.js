@@ -92,7 +92,7 @@ const MODAL_EXCLUSIONS = {
     blockedCommenters: 'dedicated-control',
 
     // Stored user data, not settings: collections and per-video state.
-    bookmarks: 'stored-data', sponsorSegments: 'stored-data',
+    sponsorSegments: 'stored-data',
     autoplayQueue: 'stored-data', watchedChannels: 'stored-data',
     blockedChannelsMeta: 'stored-data',
 
@@ -125,7 +125,7 @@ const MODAL_EXCLUSIONS = {
     downloadLiveStreams: 'extension-only', downloadShorts: 'extension-only',
     bulkUnsubscribeEnabled: 'extension-only', bulkUnsubscribeDryRun: 'extension-only',
     backupHistory: 'extension-only', privacyReport: 'extension-only',
-    settingsProfiles: 'extension-only', encryptedGistSync: 'extension-only',
+    encryptedGistSync: 'extension-only',
     remoteCosmeticRules: 'extension-only',
 
     // Diagnostics, surfaced through the options page Privacy & Data section.

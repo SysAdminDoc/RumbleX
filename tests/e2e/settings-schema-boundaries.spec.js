@@ -23,7 +23,7 @@ const MALICIOUS_SETTINGS = {
 };
 
 function expectSanitized(settings, safeVideoUrl) {
-    expect(settings.schemaVersion).toBe(2);
+    expect(settings.schemaVersion).toBe(3);
     expect(settings.adNuker).toBeUndefined();
     expect(settings.theme).toBeUndefined();
     expect(settings.splitRatio).toBe(95);

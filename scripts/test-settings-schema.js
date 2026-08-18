@@ -16,17 +16,29 @@ const plain = (value) => JSON.parse(JSON.stringify(value));
 const schema = context.RumbleXSettingsSchema;
 
 assert.ok(schema, 'schema global was not installed');
-assert.equal(schema.SCHEMA_VERSION, 2);
-assert.ok(Object.keys(schema.DEFAULTS).length >= 210, 'canonical defaults catalog unexpectedly shrank');
+assert.equal(schema.SCHEMA_VERSION, 3);
+assert.ok(Object.keys(schema.DEFAULTS).length >= 208, 'canonical defaults catalog unexpectedly shrank');
 
 const migrated = plain(evaluate(`RumbleXSettingsSchema.normalizeStored({
     keyboardNav: true,
     theme: 'oledGreen',
 })`));
-assert.equal(migrated.schemaVersion, 2);
+assert.equal(migrated.schemaVersion, 3);
 assert.equal(migrated.legacyKeyboardNav, true);
 assert.equal(migrated.theme, 'oledGreen');
 assert.ok(!Object.hasOwn(migrated, 'keyboardNav'));
+
+// v3 dropped two keys that nothing ever read; the real collections live in
+// their own storage buckets. A stored v2 profile carrying them must come back
+// clean rather than preserving a control that does nothing.
+const droppedLegacy = plain(evaluate(`RumbleXSettingsSchema.normalizeStored({
+    schemaVersion: 2,
+    bookmarks: [{ id: 'b1', label: 'kept nowhere' }],
+    settingsProfiles: [{ id: 'p1', name: 'stale' }],
+})`));
+assert.equal(droppedLegacy.schemaVersion, 3);
+assert.ok(!Object.hasOwn(droppedLegacy, 'bookmarks'));
+assert.ok(!Object.hasOwn(droppedLegacy, 'settingsProfiles'));
 
 const sanitized = plain(evaluate(`RumbleXSettingsSchema.normalizeStored(JSON.parse(${JSON.stringify(JSON.stringify({
     schemaVersion: 99,
@@ -57,7 +69,7 @@ const sanitized = plain(evaluate(`RumbleXSettingsSchema.normalizeStored(JSON.par
     __proto__: { polluted: true },
 }))}))`));
 
-assert.equal(sanitized.schemaVersion, 2);
+assert.equal(sanitized.schemaVersion, 3);
 assert.equal(sanitized.splitRatio, 95);
 assert.ok(!Object.hasOwn(sanitized, 'adNuker'));
 assert.ok(!Object.hasOwn(sanitized, 'theme'));

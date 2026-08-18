@@ -23,7 +23,7 @@
 // @updateURL    https://raw.githubusercontent.com/SysAdminDoc/RumbleX/main/RumbleX.user.js
 // ==/UserScript==
 
-// Generated from extension/settings-schema.js + extension/content.js. Shared runtime SHA-256: 0ac96535bc91bf629f3969cc21d8b0e77a735a57ed96525e0ea076a825e9b94a
+// Generated from extension/settings-schema.js + extension/content.js. Shared runtime SHA-256: c05493734219afd104b43e2e1a7323e08fc1f8e356481ec4292913a9bac4879a
 // RumbleX shared settings schema. This file is the canonical source for
 // defaults and trust-boundary normalization across content, options, popup,
 // background profile/Gist restores, and the generated userscript.
@@ -32,7 +32,7 @@
 (() => {
     if (globalThis.RumbleXSettingsSchema) return;
 
-    const SCHEMA_VERSION = 2;
+    const SCHEMA_VERSION = 3;
     const DEFAULTS = Object.freeze({
         adNuker: true,
         theaterSplit: true,
@@ -75,7 +75,6 @@
         theme: 'catppuccin',
         playbackSpeed: 1.0,
         blockedChannels: [],
-        bookmarks: [],
         // v1.8.0 additions
         fullTitles: true,
         titleFont: false,
@@ -258,7 +257,6 @@
         // Privacy, data & backup
         stripTrackingParams: true,
         privacyReport: true,
-        settingsProfiles: [],
         activeProfileId: 'default',
         backupHistory: true,
         backupHistoryLimit: 10,
@@ -426,6 +424,13 @@
             out.legacyKeyboardNav = !!out.keyboardNav;
         }
         delete out.keyboardNav;
+        // v3 - `bookmarks` and `settingsProfiles` were schema keys that nothing
+        // ever read. The real collections live in their own storage buckets
+        // (`rx_bookmarks`, `rx_settings_profiles`), so these two only ever
+        // rendered decorative controls in Options. Drop them explicitly so an
+        // upgraded profile is cleaned deterministically.
+        delete out.bookmarks;
+        delete out.settingsProfiles;
         out.schemaVersion = SCHEMA_VERSION;
         return out;
     }
