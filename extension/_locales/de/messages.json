@@ -650,5 +650,1049 @@
   "toastWasReset": {
     "message": "RumbleX wurde zurückgesetzt — neu laden, um die Standardwerte zu sehen",
     "description": "In-page UI string (shared core)."
+  },
+  "cat_ad_blocking_label": {
+    "message": "Werbeblocker",
+    "description": "In-page UI string (shared core)."
+  },
+  "cat_video_player_label": {
+    "message": "Videoplayer",
+    "description": "In-page UI string (shared core)."
+  },
+  "cat_theme_layout_label": {
+    "message": "Design & Layout",
+    "description": "In-page UI string (shared core)."
+  },
+  "cat_downloads_label": {
+    "message": "Downloads & Aufnahme",
+    "description": "In-page UI string (shared core)."
+  },
+  "cat_history_label": {
+    "message": "Verlauf & Lesezeichen",
+    "description": "In-page UI string (shared core)."
+  },
+  "cat_comments_chat_label": {
+    "message": "Kommentare & Chat",
+    "description": "In-page UI string (shared core)."
+  },
+  "cat_feed_controls_label": {
+    "message": "Feed-Steuerung",
+    "description": "In-page UI string (shared core)."
+  },
+  "cat_nav_chrome_label": {
+    "message": "Navigation & Oberfläche",
+    "description": "In-page UI string (shared core)."
+  },
+  "cat_main_page_label": {
+    "message": "Zeilen der Startseite",
+    "description": "In-page UI string (shared core)."
+  },
+  "cat_video_page_label": {
+    "message": "Layout der Videoseite",
+    "description": "In-page UI string (shared core)."
+  },
+  "cat_player_controls_label": {
+    "message": "Player-Steuerung",
+    "description": "In-page UI string (shared core)."
+  },
+  "cat_video_buttons_label": {
+    "message": "Video-Schaltflächen",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_adNuker_label": {
+    "message": "Werbe-Vernichter",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_adNuker_desc": {
+    "message": "DOM-Bereinigung für Werbecontainer, Pause-Overlays und Premium-Hinweise, nachdem der Netzwerkschutz gelaufen ist",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_feedCleanup_label": {
+    "message": "Feed-Bereinigung",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_feedCleanup_desc": {
+    "message": "Premium-Werbung aus Feeds entfernen",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_hideReposts_label": {
+    "message": "Reposts ausblenden",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_hideReposts_desc": {
+    "message": "Erneut geteilte Videos aus Feeds ausblenden",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_hidePremium_label": {
+    "message": "Premium ausblenden",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_hidePremium_desc": {
+    "message": "Premium-/PPV-Videos aus Feeds ausblenden",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_shortsFilter_label": {
+    "message": "Shorts-Filter",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_shortsFilter_desc": {
+    "message": "Shorts in allen Feeds ausblenden",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_sponsorBlock_label": {
+    "message": "SponsorBlock",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_sponsorBlock_desc": {
+    "message": "Lokale Segmente pro Video mit automatischem Überspringen",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_theaterSplit_label": {
+    "message": "Kinomodus-Split",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_theaterSplit_desc": {
+    "message": "Vollbildvideo mit Seitenleiste, die beim Scrollen erscheint",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_autoTheater_label": {
+    "message": "Auto-Kinomodus",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_autoTheater_desc": {
+    "message": "Nativen Kinomodus beim Laden automatisch aktivieren",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_speedController_label": {
+    "message": "Geschwindigkeitsregler",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_speedController_desc": {
+    "message": "Dauerhafte Wiedergabegeschwindigkeit mit Live-Erkennung",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_scrollVolume_label": {
+    "message": "Scroll-Lautstärke",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_scrollVolume_desc": {
+    "message": "Lautstärke per Mausrad + Stummschalten per Mittelklick",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_defaultMaxVolume_label": {
+    "message": "Standard-Maximallautstärke",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_defaultMaxVolume_desc": {
+    "message": "Videos mit 100 % Lautstärke starten",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_autoMaxQuality_label": {
+    "message": "Automatische Höchstqualität",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_autoMaxQuality_desc": {
+    "message": "Höchste Auflösung beim Laden automatisch wählen",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_autoplayBlock_label": {
+    "message": "Autoplay blockieren",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_autoplayBlock_desc": {
+    "message": "Automatische Wiedergabe des nächsten Videos verhindern",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_loopControl_label": {
+    "message": "Schleifensteuerung",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_loopControl_desc": {
+    "message": "Ganzes Video in Schleife + A-B-Abschnittsschleife",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_miniPlayer_label": {
+    "message": "Mini-Player",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_miniPlayer_desc": {
+    "message": "Schwebendes, verschiebbares Video beim Wegscrollen",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_legacyKeyboardNav_label": {
+    "message": "Tastaturnavigation (veraltet)",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_legacyKeyboardNav_desc": {
+    "message": "Tastenkürzel im YouTube-Stil (J/K/L, F, M, 0-9) — in v2 standardmäßig aus",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_videoStats_label": {
+    "message": "Videostatistik",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_videoStats_desc": {
+    "message": "Overlay mit Auflösung, Codec, Puffer und Frames",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_chapters_label": {
+    "message": "Kapitel",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_chapters_desc": {
+    "message": "Zeitstempel aus der Beschreibung auswerten + Markierungen auf der Leiste",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_autoplayScheduler_label": {
+    "message": "Autoplay-Warteschlange",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_autoplayScheduler_desc": {
+    "message": "Rumble-URLs einreihen und am Ende automatisch weiterschalten",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_darkEnhance_label": {
+    "message": "Dunkles Design",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_darkEnhance_desc": {
+    "message": "Design-Engine mit eingefärbter Player-Leiste",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_wideLayout_label": {
+    "message": "Breites Layout",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_wideLayout_desc": {
+    "message": "Responsives Raster in voller Breite auf Start- und Abo-Seite",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_logoToFeed_label": {
+    "message": "Logo zum Feed",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_logoToFeed_desc": {
+    "message": "Das Rumble-Logo führt zu den Abonnements",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_autoExpand_label": {
+    "message": "Automatisch ausklappen",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_autoExpand_desc": {
+    "message": "Beschreibungen und Kommentare automatisch ausklappen",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_notifEnhance_label": {
+    "message": "Benachrichtigungen aufwerten",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_notifEnhance_desc": {
+    "message": "Gestaltetes Benachrichtigungsmenü + pulsierende Glocke",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_fullTitles_label": {
+    "message": "Vollständige Titel",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_fullTitles_desc": {
+    "message": "Titelkürzung auf Videokacheln entfernen",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_titleFont_label": {
+    "message": "Titelschrift",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_titleFont_desc": {
+    "message": "Titeltypografie entfetten und vereinheitlichen",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_denseMode_label": {
+    "message": "Kompaktmodus",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_denseMode_desc": {
+    "message": "Kompaktere Abstände in Rastern und auf der Videoseite",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_reducedMotion_label": {
+    "message": "Reduzierte Bewegung",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_reducedMotion_desc": {
+    "message": "Schimmer-, Staffel- und Federanimationen deaktivieren",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_hideThumbnails_label": {
+    "message": "Vorschaubilder ausblenden",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_hideThumbnails_desc": {
+    "message": "Alle Vorschaubilder ausblenden (Hauptschalter)",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_hideThumbnailsFeeds_label": {
+    "message": "Vorschaubilder (Feeds)",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_hideThumbnailsFeeds_desc": {
+    "message": "Vorschaubilder nur auf Start-/Abo-/Für-dich-Seiten ausblenden",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_hideThumbnailsRelated_label": {
+    "message": "Vorschaubilder (Ähnliche)",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_hideThumbnailsRelated_desc": {
+    "message": "Vorschaubilder nur in der Seitenleiste für ähnliche Videos ausblenden",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_compactAccountPagination_label": {
+    "message": "Kompakte Kontoseiten-Navigation",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_compactAccountPagination_desc": {
+    "message": "Die autoPg-Seitennavigation unter /account/content verkleinern",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_videoDownload_label": {
+    "message": "Video-Download",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_videoDownload_desc": {
+    "message": "Direkte MP4-Datei laden, begrenzte HLS-zu-MP4-Umwandlung oder TS direkt auf die Festplatte streamen",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_audioOnly_label": {
+    "message": "MP4 mit niedriger Bitrate",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_audioOnly_desc": {
+    "message": "Kleinste Videovariante zum Mithören laden (wird als .mp4 gespeichert)",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_videoClips_label": {
+    "message": "Videoclips",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_videoClips_desc": {
+    "message": "Ein- und Ausstieg markieren und Clip als MP4 exportieren",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_liveDVR_label": {
+    "message": "Live-DVR",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_liveDVR_desc": {
+    "message": "Die letzten N Sekunden eines Livestreams speichern",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_batchDownload_label": {
+    "message": "Stapel-Download",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_batchDownload_desc": {
+    "message": "Mehrere Vorschaubilder aus Feeds zum Herunterladen auswählen",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_screenshotBtn_label": {
+    "message": "Screenshot",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_screenshotBtn_desc": {
+    "message": "Aktuelles Videobild als PNG aufnehmen",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_shareTimestamp_label": {
+    "message": "Teilen@Zeit",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_shareTimestamp_desc": {
+    "message": "Video-URL mit der aktuellen Wiedergabezeit kopieren",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_subtitleSidecar_label": {
+    "message": "Untertitel-Beilage",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_subtitleSidecar_desc": {
+    "message": "Lokale SRT-/VTT-Dateien laden und Untertitel einblenden",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_transcripts_label": {
+    "message": "Transkripte",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_transcripts_desc": {
+    "message": "Anklickbares Transkript, synchron zum Player",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_externalPlayerEnabled_label": {
+    "message": "Externer Player",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_externalPlayerEnabled_desc": {
+    "message": "Videos in MPV / PotPlayer / eigener URI öffnen (Vorlage in den Optionen einstellbar)",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_watchProgress_label": {
+    "message": "Wiedergabefortschritt",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_watchProgress_desc": {
+    "message": "Position speichern und fortsetzen + rote Fortschrittsbalken",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_watchHistory_label": {
+    "message": "Wiedergabeverlauf",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_watchHistory_desc": {
+    "message": "Lokal durchsuchbarer Wiedergabeverlauf",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_searchHistory_label": {
+    "message": "Suchverlauf",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_searchHistory_desc": {
+    "message": "Menü mit letzten Suchanfragen im Suchfeld",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_quickBookmark_label": {
+    "message": "Lesezeichen",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_quickBookmark_desc": {
+    "message": "Videos lokal für später speichern (max. 200)",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_quickSave_label": {
+    "message": "Schnell speichern",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_quickSave_desc": {
+    "message": "„Später ansehen“-Schaltfläche beim Überfahren des Vorschaubilds",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_liveChatEnhance_label": {
+    "message": "Chat aufwerten",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_liveChatEnhance_desc": {
+    "message": "@Erwähnungen hervorheben, Filterleiste für Nachrichten",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_chatAutoScroll_label": {
+    "message": "Chat-Scrollen",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_chatAutoScroll_desc": {
+    "message": "Intelligentes Auto-Scrollen, hält beim Hochscrollen an",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_uniqueChatters_label": {
+    "message": "Eindeutige Chatter",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_uniqueChatters_desc": {
+    "message": "Live-Zähler für eindeutige Chatter und Nachrichten",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_chatUserBlock_label": {
+    "message": "Nutzer blockieren",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_chatUserBlock_desc": {
+    "message": "Chat pro Nutzer ausblenden (auf „block“ in der Nachricht klicken)",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_chatSpamDedup_label": {
+    "message": "Spam-Entdopplung",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_chatSpamDedup_desc": {
+    "message": "Kürzlich wiederholte identische Nachrichten ausblenden",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_chatExport_label": {
+    "message": "Chat-Export",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_chatExport_desc": {
+    "message": "Chat als TXT (Klick) oder JSON (Umschalt-Klick) exportieren",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_popoutChat_label": {
+    "message": "Chat ausklinken",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_popoutChat_desc": {
+    "message": "Chat in einem separaten, größenveränderbaren Fenster öffnen",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_videoTimestamps_label": {
+    "message": "Zeitstempel",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_videoTimestamps_desc": {
+    "message": "Anklickbare Zeitstempel in Kommentaren und Beschreibung",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_commentNav_label": {
+    "message": "Kommentar-Navigation",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_commentNav_desc": {
+    "message": "Navigieren, auf-/zuklappen, Filter nur für den Ersteller",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_commentSort_label": {
+    "message": "Kommentare sortieren",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_commentSort_desc": {
+    "message": "Kommentare sortieren: Top / Neu / Älteste / Umstritten",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_commentExport_label": {
+    "message": "Kommentar-Export",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_commentExport_desc": {
+    "message": "Sichtbare Kommentare als JSON (Klick) oder CSV (Umschalt-Klick) exportieren",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_rantHighlight_label": {
+    "message": "Rants hervorheben",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_rantHighlight_desc": {
+    "message": "Rants nach Stufe leuchten lassen + laufende $-Summe",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_rantPersist_label": {
+    "message": "Rants behalten",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_rantPersist_desc": {
+    "message": "Rants über den Ablauf hinaus sichtbar halten + als JSON exportieren",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_commentBlocking_label": {
+    "message": "Kommentare blockieren",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_commentBlocking_desc": {
+    "message": "Nutzer im Kommentarbereich blockieren",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_autoLoadComments_label": {
+    "message": "Kommentare automatisch laden",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_autoLoadComments_desc": {
+    "message": "„Weitere Kommentare anzeigen“ beim Scrollen automatisch anklicken",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_moveReplyButton_label": {
+    "message": "Antworten-Schaltfläche verschieben",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_moveReplyButton_desc": {
+    "message": "„Antworten“ neben Gefällt mir / Gefällt mir nicht setzen",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_hideCommentReportLink_label": {
+    "message": "Kommentar-Meldung ausblenden",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_hideCommentReportLink_desc": {
+    "message": "Den „Melden“-Link an Kommentaren ausblenden",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_cleanLiveChat_label": {
+    "message": "Aufgeräumter Live-Chat",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_cleanLiveChat_desc": {
+    "message": "Angeheftete Nachrichten, Chat-Kopfzeile und Rant-Oberfläche ausblenden",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_channelBlocker_label": {
+    "message": "Kanal-Blocker",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_channelBlocker_desc": {
+    "message": "Kanäle in allen Feeds blockieren bzw. ausblenden",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_keywordFilter_label": {
+    "message": "Stichwortfilter",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_keywordFilter_desc": {
+    "message": "Videos ausblenden, deren Titel blockierte Stichwörter enthalten (Modi für Text, Regex und Platzhalter in den Optionen)",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_relatedFilter_label": {
+    "message": "Filter für Ähnliche",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_relatedFilter_desc": {
+    "message": "Videos in der Seitenleiste für ähnliche Inhalte suchen und filtern",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_exactCounts_label": {
+    "message": "Genaue Zahlen",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_exactCounts_desc": {
+    "message": "Vollständige Zahlen statt 1,2 Tsd./3,5 Mio. anzeigen",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_stripTrackingParams_label": {
+    "message": "Tracking-Parameter entfernen",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_stripTrackingParams_desc": {
+    "message": "e9s, utm_*, ref, campaign, fbclid und gclid aus rumble.com-URLs entfernen (mit Positivliste; kanonische Parameter bleiben erhalten)",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_disableShortsFeed_label": {
+    "message": "Shorts-Feed deaktivieren",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_disableShortsFeed_desc": {
+    "message": "rumble.com/shorts auf /subscriptions umleiten (Shorts kam im Februar 2026 ins Web)",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_hideWalletTipButton_label": {
+    "message": "Wallet-Trinkgeld ausblenden",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_hideWalletTipButton_desc": {
+    "message": "Die Rumble-Wallet-Trinkgeldschaltfläche pro Creator ausblenden (seit Januar 2026)",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_autoHideHeader_label": {
+    "message": "Kopfzeile automatisch ausblenden",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_autoHideHeader_desc": {
+    "message": "Kopfzeile ausblenden; erscheint beim Überfahren des oberen Rands",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_autoHideNavSidebar_label": {
+    "message": "Navigationsleiste automatisch ausblenden",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_autoHideNavSidebar_desc": {
+    "message": "Seitenleiste ausblenden; erscheint beim Überfahren des linken Rands",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_widenSearchBar_label": {
+    "message": "Suchleiste verbreitern",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_widenSearchBar_desc": {
+    "message": "Die Suchleiste in der Kopfzeile vergrößern",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_hideUploadIcon_label": {
+    "message": "Upload-Symbol ausblenden",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_hideUploadIcon_desc": {
+    "message": "Das Upload-/Stream-Symbol in der Kopfzeile ausblenden",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_hideHeaderAd_label": {
+    "message": "„Werbefrei“ ausblenden",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_hideHeaderAd_desc": {
+    "message": "Die Schaltfläche „Werbefrei“ in der Kopfzeile ausblenden",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_hideProfileBacksplash_label": {
+    "message": "Profilbanner ausblenden",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_hideProfileBacksplash_desc": {
+    "message": "Das große Kopfbild des Kanals ausblenden",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_hideFooter_label": {
+    "message": "Fußzeile ausblenden",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_hideFooter_desc": {
+    "message": "Die Fußzeile der Website vollständig ausblenden",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_hideFeaturedBanner_label": {
+    "message": "Empfohlenes Banner",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_hideFeaturedBanner_desc": {
+    "message": "Oberes Banner der Startseite",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_hideEditorPicks_label": {
+    "message": "Redaktionstipps",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_hideEditorPicks_desc": {
+    "message": "Zeile mit Redaktionstipps",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_hideTopLiveCategories_label": {
+    "message": "Top-Live",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_hideTopLiveCategories_desc": {
+    "message": "Zeile mit den beliebtesten Live-Kategorien",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_hidePremiumRow_label": {
+    "message": "Premium-Zeile",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_hidePremiumRow_desc": {
+    "message": "Zeile für Rumble Premium",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_hideHomepageAd_label": {
+    "message": "Werbung auf der Startseite",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_hideHomepageAd_desc": {
+    "message": "Werbecontainer auf der Startseite",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_hideForYouRow_label": {
+    "message": "Für dich",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_hideForYouRow_desc": {
+    "message": "Zeile mit Für-dich-Empfehlungen",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_hideLiveRow_label": {
+    "message": "Live-Zeile",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_hideLiveRow_desc": {
+    "message": "Zeile mit Live-Videos",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_hideGamingRow_label": {
+    "message": "Gaming",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_hideGamingRow_desc": {
+    "message": "Gaming-Zeile",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_hideFinanceRow_label": {
+    "message": "Finanzen",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_hideFinanceRow_desc": {
+    "message": "Zeile für Finanzen und Krypto",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_hideFeaturedPlaylistsRow_label": {
+    "message": "Empfohlene Playlists",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_hideFeaturedPlaylistsRow_desc": {
+    "message": "Zeile mit empfohlenen Playlists",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_hideSportsRow_label": {
+    "message": "Sport",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_hideSportsRow_desc": {
+    "message": "Sport-Zeile",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_hideViralRow_label": {
+    "message": "Viral",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_hideViralRow_desc": {
+    "message": "Viral-Zeile",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_hidePodcastsRow_label": {
+    "message": "Podcasts",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_hidePodcastsRow_desc": {
+    "message": "Podcast-Zeile",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_hideLeaderboardRow_label": {
+    "message": "Bestenliste",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_hideLeaderboardRow_desc": {
+    "message": "Zeile mit der Bestenliste",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_hideVlogsRow_label": {
+    "message": "Vlogs",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_hideVlogsRow_desc": {
+    "message": "Vlog-Zeile",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_hideNewsRow_label": {
+    "message": "Nachrichten",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_hideNewsRow_desc": {
+    "message": "Nachrichten-Zeile",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_hideScienceRow_label": {
+    "message": "Wissenschaft",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_hideScienceRow_desc": {
+    "message": "Zeile für Gesundheit und Wissenschaft",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_hideMusicRow_label": {
+    "message": "Musik",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_hideMusicRow_desc": {
+    "message": "Musik-Zeile",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_hideEntertainmentRow_label": {
+    "message": "Unterhaltung",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_hideEntertainmentRow_desc": {
+    "message": "Unterhaltungs-Zeile",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_hideCookingRow_label": {
+    "message": "Kochen",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_hideCookingRow_desc": {
+    "message": "Koch-Zeile",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_fullWidthPlayer_label": {
+    "message": "Player in voller Breite",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_fullWidthPlayer_desc": {
+    "message": "Playerbreite maximieren; live wird der Chat daneben angezeigt",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_adaptiveLiveLayout_label": {
+    "message": "Adaptives Live-Layout",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_adaptiveLiveLayout_desc": {
+    "message": "Bei Livestreams den Hauptinhalt vergrößern, wenn der Chat sichtbar ist",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_hideRelatedSidebar_label": {
+    "message": "Seitenleiste „Ähnliche“ ausblenden",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_hideRelatedSidebar_desc": {
+    "message": "Die Seitenleiste mit ähnlichen Videos ausblenden",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_hideRelatedOnLive_label": {
+    "message": "Ähnliche bei Live ausblenden",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_hideRelatedOnLive_desc": {
+    "message": "Ähnliche Inhalte unter dem Player bei Livestreams ausblenden",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_widenContent_label": {
+    "message": "Inhalt verbreitern",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_widenContent_desc": {
+    "message": "Hauptinhalt vergrößern (passend zur ausgeblendeten Seitenleiste)",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_hideVideoDescription_label": {
+    "message": "Beschreibung ausblenden",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_hideVideoDescription_desc": {
+    "message": "Beschreibung, Tags und Aufrufe ausblenden",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_hidePausedVideoAds_label": {
+    "message": "Pausen-Werbung ausblenden",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_hidePausedVideoAds_desc": {
+    "message": "Werbe-Overlays bei pausiertem Video ausblenden",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_autoLike_label": {
+    "message": "Automatisch liken",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_autoLike_desc": {
+    "message": "Ein Video automatisch liken, sobald seine Seite geöffnet wird",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_hideRewindButton_label": {
+    "message": "Zurückspulen ausblenden",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_hideRewindButton_desc": {
+    "message": "Die Zurückspul-Schaltfläche ausblenden",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_hideFastForwardButton_label": {
+    "message": "Vorspulen ausblenden",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_hideFastForwardButton_desc": {
+    "message": "Die Vorspul-Schaltfläche ausblenden",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_hideCCButton_label": {
+    "message": "Untertitel-Schaltfläche ausblenden",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_hideCCButton_desc": {
+    "message": "Die Schaltfläche für Untertitel ausblenden",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_hideAutoplayButton_label": {
+    "message": "Autoplay-Schalter ausblenden",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_hideAutoplayButton_desc": {
+    "message": "Den Schalter für die automatische Wiedergabe ausblenden",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_hideTheaterButton_label": {
+    "message": "Kinomodus-Schaltfläche ausblenden",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_hideTheaterButton_desc": {
+    "message": "Die Schaltfläche für den Kinomodus ausblenden",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_hidePipButton_label": {
+    "message": "Bild-im-Bild ausblenden",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_hidePipButton_desc": {
+    "message": "Die Bild-im-Bild-Schaltfläche ausblenden",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_hideFullscreenButton_label": {
+    "message": "Vollbild-Schaltfläche ausblenden",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_hideFullscreenButton_desc": {
+    "message": "Die Vollbild-Schaltfläche ausblenden",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_hidePlayerRumbleLogo_label": {
+    "message": "Player-Logo ausblenden",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_hidePlayerRumbleLogo_desc": {
+    "message": "Das Rumble-Logo im Player ausblenden",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_hidePlayerGradient_label": {
+    "message": "Player-Verlauf ausblenden",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_hidePlayerGradient_desc": {
+    "message": "Den wolkigen Farbverlauf am unteren Rand entfernen",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_hideLikeDislikeButton_label": {
+    "message": "Gefällt mir / nicht ausblenden",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_hideLikeDislikeButton_desc": {
+    "message": "Die Schaltflächen für Gefällt mir und Gefällt mir nicht ausblenden",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_hideShareButton_label": {
+    "message": "Teilen ausblenden",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_hideShareButton_desc": {
+    "message": "Die Teilen-Schaltfläche ausblenden",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_hideRepostButton_label": {
+    "message": "Repost ausblenden",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_hideRepostButton_desc": {
+    "message": "Die Repost-Schaltfläche ausblenden",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_hideEmbedButton_label": {
+    "message": "Einbetten ausblenden",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_hideEmbedButton_desc": {
+    "message": "Die Einbetten-Schaltfläche ausblenden",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_hideSaveButton_label": {
+    "message": "Speichern ausblenden",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_hideSaveButton_desc": {
+    "message": "Die Schaltfläche zum Speichern in einer Playlist ausblenden",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_hideCommentButton_label": {
+    "message": "Kommentieren ausblenden",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_hideCommentButton_desc": {
+    "message": "Die Haupt-Schaltfläche zum Kommentieren ausblenden",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_hideReportButton_label": {
+    "message": "Drei-Punkte-Menü ausblenden",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_hideReportButton_desc": {
+    "message": "Das Drei-Punkte-Menü ausblenden (dort liegt der Melden-Link)",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_hidePremiumJoinButtons_label": {
+    "message": "Premium/Beitreten ausblenden",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_hidePremiumJoinButtons_desc": {
+    "message": "Die Schaltflächen für Rumble Premium und Beitreten ausblenden",
+    "description": "In-page UI string (shared core)."
+  },
+  "modalEnableAll": {
+    "message": "Alle {category} aktivieren",
+    "description": "In-page UI string (shared core)."
   }
 }

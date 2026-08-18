@@ -40,6 +40,20 @@ function rxT(key, fallback, vars) {
     return text;
 }
 
+/**
+ * Translated label/description for a settings-modal entry.
+ *
+ * The English strings live in RX_CATEGORIES, which stays the source of truth:
+ * `scripts/sync-content-locale.js` reads the array directly and emits these
+ * keys, so the catalog cannot drift from the data.
+ */
+const rxFeatLabel = (feat) => rxT('feat_' + feat.id + '_label', feat.label);
+const rxFeatDesc = (feat) => rxT('feat_' + feat.id + '_desc', feat.desc);
+// chrome.i18n only accepts [A-Za-z0-9_@] in a key, and category ids are
+// kebab-case, so the hyphens have to go or Chrome rejects the catalog and
+// refuses to load the extension at all.
+const rxCatLabel = (cat) => rxT('cat_' + cat.id.replace(/-/g, '_') + '_label', cat.label);
+
 const RXSettingsSchema = globalThis.RumbleXSettingsSchema;
 if (!RXSettingsSchema) throw new Error('RumbleX settings schema is missing');
 const SCHEMA_VERSION = RXSettingsSchema.SCHEMA_VERSION;
@@ -9578,17 +9592,21 @@ const SettingsPanel = {
         card.className = 'rx-m-card' + (isSub ? ' rx-m-sub' : '') + (Settings.get(feat.id) ? ' rx-m-enabled' : '');
         card.style.setProperty('--rx-cat-color', catColor);
         card.dataset.featureId = feat.id;
-        card.dataset.searchText = (feat.label + ' ' + feat.desc).toLowerCase();
+        // Search must match what the user can actually read, so it indexes the
+        // translated text rather than the English source.
+        const featLabel = rxFeatLabel(feat);
+        const featDesc = rxFeatDesc(feat);
+        card.dataset.searchText = (featLabel + ' ' + featDesc).toLowerCase();
         const info = document.createElement('div');
         info.className = 'rx-m-card-info';
         const nameDiv = document.createElement('div');
         nameDiv.className = 'rx-m-card-name';
-        nameDiv.textContent = feat.label;
+        nameDiv.textContent = featLabel;
         const descDiv = document.createElement('div');
         descDiv.className = 'rx-m-card-desc';
-        descDiv.textContent = feat.desc;
+        descDiv.textContent = featDesc;
         info.append(nameDiv, descDiv);
-        card.append(info, this._makeSwitch(feat.id, catColor, feat.name || feat.id));
+        card.append(info, this._makeSwitch(feat.id, catColor, featLabel));
         return card;
     },
 
@@ -9617,13 +9635,14 @@ const SettingsPanel = {
         header.className = 'rx-m-pane-header';
         const title = document.createElement('div');
         title.className = 'rx-m-pane-title';
-        title.textContent = cat.label;
+        title.textContent = rxCatLabel(cat);
         header.appendChild(title);
 
         const toggleAll = document.createElement('label');
         toggleAll.className = 'rx-m-toggle-all';
         toggleAll.innerHTML = '<span>Enable All</span>';
-        const allSwitch = this._makeSwitch('_all_' + cat.id, cat.color, `Enable all ${cat.label}`);
+        const allSwitch = this._makeSwitch('_all_' + cat.id, cat.color,
+            rxT('modalEnableAll', 'Enable all {category}', { category: rxCatLabel(cat) }));
         const mainFeats = cat.features.filter(f => !f.parent);
         const allOn = mainFeats.every(f => Settings.get(f.id));
         allSwitch.classList.toggle('active', allOn);
@@ -9892,7 +9911,7 @@ const SettingsPanel = {
             const chip = document.createElement('button');
             chip.type = 'button';
             chip.className = 'rx-m-chip' + (hiddenCats.includes(cat.id) ? ' rx-m-chip-hidden' : '');
-            chip.textContent = cat.label;
+            chip.textContent = rxCatLabel(cat);
             chip.setAttribute('aria-pressed', String(hiddenCats.includes(cat.id)));
             chip.addEventListener('click', () => {
                 const current = Settings.get('hiddenCategories') || [];
@@ -9994,7 +10013,7 @@ const SettingsPanel = {
             navIcon.className = 'rx-m-nav-icon';
             navIcon.innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor">${cat.icon}</svg>`;
             const navLabel = document.createElement('span');
-            navLabel.textContent = cat.label;
+            navLabel.textContent = rxCatLabel(cat);
             const mainFeats = cat.features.filter(f => !f.parent);
             const enabledCount = mainFeats.filter(f => Settings.get(f.id)).length;
             const navCount = document.createElement('span');

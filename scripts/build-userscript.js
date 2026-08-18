@@ -56,7 +56,10 @@ function build(variant) {
     const adapter = adapterTemplate
         .replace('__RUMBLEX_VERSION__', JSON.stringify(VERSION))
         .replace('__RUMBLEX_ASSETS__', JSON.stringify(assets))
-        .replace('__RUMBLEX_MESSAGES__', JSON.stringify(messages));
+        // Pretty-printed, not compact: the catalog is now 424 keys, and one
+        // 22k-character line reads as minified code — which the parity guard
+        // rejects and Greasy Fork's code rules forbid outright.
+        .replace('__RUMBLEX_MESSAGES__', JSON.stringify(messages, null, 2));
     const sharedRuntime = schema + '\n\n' + core;
     return metadata(sha256(sharedRuntime), variant) + schema + '\n\n' + adapter + '\n\n' + core;
 }

@@ -28,7 +28,11 @@ const CORE = path.join(ROOT, 'extension', 'content.js');
 const BASELINE = {
     assignments: 71, // .textContent / .placeholder / .title = 'literal'
     ariaLabels: 41,   // setAttribute('aria-label', 'literal')
-    categories: 261,  // RX_CATEGORIES label:/desc: entries
+    // RX_CATEGORIES is no longer counted: the modal renders it through
+    // rxFeatLabel/rxFeatDesc/rxCatLabel, and sync-content-locale.js derives the
+    // catalog keys straight from the array, so those literals ARE the English
+    // source. A new entry gets a key automatically and then fails check-i18n
+    // until the three translated catalogs carry it.
 };
 
 // Text that is not language: numbers, punctuation, symbols, CSS-ish values,
@@ -57,23 +61,12 @@ function ariaLiterals(source) {
     return found;
 }
 
-function categoryLiterals(source) {
-    const block = source.match(/const RX_CATEGORIES = \[([\s\S]*?)\n\];/);
-    if (!block) return [];
-    const found = [];
-    for (const match of block[1].matchAll(/\b(?:label|desc):\s*'((?:[^'\\]|\\.)*)'/g)) {
-        if (NOT_PROSE.test(match[1])) continue;
-        found.push(match[1]);
-    }
-    return found;
-}
-
 function main() {
     const source = fs.readFileSync(CORE, 'utf8');
     const counts = {
         assignments: assignmentLiterals(source).length,
         ariaLabels: ariaLiterals(source).length,
-        categories: categoryLiterals(source).length,
+
     };
 
     const regressions = [];

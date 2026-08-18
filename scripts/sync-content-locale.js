@@ -35,9 +35,34 @@ function unquote(literal) {
         .replace(/\\\\/g, '\\');
 }
 
+/**
+ * RX_CATEGORIES is the settings-modal data table: 137 feature labels and 124
+ * descriptions that the modal renders through rxFeatLabel/rxFeatDesc/rxCatLabel.
+ * The keys are derived from the entry ids, so the array itself stays the single
+ * English source and there is no parallel list to keep in step by hand.
+ */
+function extractCategories(source) {
+    const block = source.match(/const RX_CATEGORIES = \[([\s\S]*?)\n\];/);
+    if (!block) return new Map();
+    const out = new Map();
+    // Category headers: `{ id: 'ad-blocking', label: 'Ad Blocking', color: ... }`
+    const CATEGORY = /\{\s*id:\s*'([\w-]+)',\s*label:\s*'((?:[^'\\]|\\.)*)',\s*color:/g;
+    for (const m of block[1].matchAll(CATEGORY)) {
+        // chrome.i18n keys accept only [A-Za-z0-9_@]; category ids are kebab-case.
+        out.set('cat_' + m[1].replace(/-/g, '_') + '_label', unquote("'" + m[2] + "'"));
+    }
+    // Feature rows: `{ id: 'adNuker', label: '...', desc: '...' }`
+    const FEATURE = /\{\s*id:\s*'([\w-]+)',\s*label:\s*'((?:[^'\\]|\\.)*)',\s*desc:\s*'((?:[^'\\]|\\.)*)'/g;
+    for (const m of block[1].matchAll(FEATURE)) {
+        out.set('feat_' + m[1] + '_label', unquote("'" + m[2] + "'"));
+        out.set('feat_' + m[1] + '_desc', unquote("'" + m[3] + "'"));
+    }
+    return out;
+}
+
 function extract() {
     const source = fs.readFileSync(CORE, 'utf8');
-    const found = new Map();
+    const found = extractCategories(source);
     const conflicts = [];
     for (const match of source.matchAll(CALL)) {
         const [, key, literal] = match;

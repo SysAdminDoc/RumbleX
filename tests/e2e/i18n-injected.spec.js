@@ -32,6 +32,12 @@ const PROBES = [
     { key: 'toastReloadToApply', surface: 'toasts' },
     { key: 'modalSearchFeatures', surface: 'settings modal' },
     { key: 'dlCancel', surface: 'download panel' },
+    // The 137 feature labels and 124 descriptions are the bulk of the modal and
+    // are rendered from RX_CATEGORIES through rxFeatLabel/rxFeatDesc.
+    { key: 'cat_ad_blocking_label', surface: 'settings modal categories' },
+    { key: 'feat_adNuker_label', surface: 'settings modal features' },
+    { key: 'feat_adNuker_desc', surface: 'settings modal features' },
+    { key: 'feat_hideFooter_desc', surface: 'settings modal features' },
 ];
 
 for (const locale of ['de', 'es', 'pt_BR']) {
