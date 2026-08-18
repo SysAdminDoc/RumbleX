@@ -9,6 +9,37 @@
 const RXPlatform = globalThis.RumbleXPlatform;
 if (!RXPlatform) throw new Error('RumbleX platform adapter is missing');
 const VERSION = RXPlatform.version || '3.43.0';
+/**
+ * In-page translation lookup.
+ *
+ * Every user-facing string in the injected UI used to be a hardcoded English
+ * literal, which made the four shipped locales cover only the extension's own
+ * pages while the entire in-page experience stayed English. `RXPlatform.t`
+ * resolves through chrome.i18n in the extension and through the catalog the
+ * userscript build embeds, so one call works in both runtimes.
+ *
+ * The English text stays inline as the fallback deliberately: it keeps the
+ * source readable, and it means a missing or misspelled key degrades to
+ * correct English rather than to a blank control.
+ *
+ * @param {string} key   messages.json key
+ * @param {string} fallback English text, also the source of truth for the catalog
+ * @param {Record<string, string|number>} [vars] `{name}` placeholders to substitute
+ */
+function rxT(key, fallback, vars) {
+    let text = fallback;
+    try {
+        const translated = RXPlatform.t?.(key);
+        if (typeof translated === 'string' && translated) text = translated;
+    } catch { /* keep the English fallback */ }
+    if (vars) {
+        for (const [name, value] of Object.entries(vars)) {
+            text = text.split('{' + name + '}').join(String(value));
+        }
+    }
+    return text;
+}
+
 const RXSettingsSchema = globalThis.RumbleXSettingsSchema;
 if (!RXSettingsSchema) throw new Error('RumbleX settings schema is missing');
 const SCHEMA_VERSION = RXSettingsSchema.SCHEMA_VERSION;
@@ -484,7 +515,9 @@ const Selectors = {
             const message = `Critical selector check failed (${report.missing.join(', ')})`;
             console.warn('[RumbleX] ' + message);
             try { RxErrorLog.record('SelectorHealth', new Error(message), `route:${report.page}`); } catch {}
-            try { RxToast.show(`${message}. Open Privacy Report for details.`); } catch {}
+            try {
+                RxToast.show(rxT('toastSelectorHealth', '{message}. Open Privacy Report for details.', { message }));
+            } catch {}
             // Re-sample a reported failure so recovery clears the signature
             // without requiring another route transition.
             schedule(10000);
@@ -3355,7 +3388,7 @@ const VideoDownloader = {
         const header = document.createElement('div');
         header.className = 'rx-dl-card-header';
         const title = document.createElement('h2');
-        title.textContent = 'Download Video';
+        title.textContent = rxT('dlTitle', 'Download Video');
         const closeBtn = document.createElement('button');
         closeBtn.type = 'button';
         closeBtn.className = 'rx-dl-card-close';
@@ -3760,7 +3793,7 @@ const VideoDownloader = {
             const copyBtn = document.createElement('button');
             copyBtn.type = 'button';
             copyBtn.className = 'rx-dl-copy-btn';
-            copyBtn.title = 'Copy link';
+            copyBtn.title = rxT('dlCopyLink', 'Copy link');
             copyBtn.setAttribute('aria-label', `Copy ${q.label || 'quality'} download link`);
             copyBtn.innerHTML = this._copySVG;
             copyBtn.addEventListener('click', (e) => {
@@ -3854,7 +3887,7 @@ const VideoDownloader = {
             if (rowByKey.size === 0) {
                 emptyEl = document.createElement('div');
                 emptyEl.className = 'rx-dl-status';
-                emptyEl.textContent = 'No qualities from the embed API yet — scanning the CDN…';
+                emptyEl.textContent = rxT('dlScanningCdn', 'No qualities from the embed API yet — scanning the CDN…');
                 body.appendChild(emptyEl);
             }
             const dismissEmpty = () => {
@@ -3868,7 +3901,7 @@ const VideoDownloader = {
             scanBar.className = 'rx-dl-scan-bar';
             const scanLabel = document.createElement('span');
             scanLabel.className = 'rx-dl-scan-label';
-            scanLabel.textContent = 'Deep scan for more qualities';
+            scanLabel.textContent = rxT('dlDeepScan', 'Deep scan for more qualities');
             const scanCounter = document.createElement('span');
             scanCounter.className = 'rx-dl-scan-counter';
             scanCounter.textContent = '0 / 0';
@@ -3908,7 +3941,7 @@ const VideoDownloader = {
                 // If nothing showed up anywhere, replace the "scanning…" text
                 // with an honest dead-end message so the panel isn't empty.
                 if (rowByKey.size === 0 && emptyEl) {
-                    emptyEl.textContent = 'No downloads found. Try playing the video first, then reopen this panel.';
+                    emptyEl.textContent = rxT('dlNoDownloads', 'No downloads found. Try playing the video first, then reopen this panel.');
                 }
 
                 // Any TAR rows present? Append a "how to play" note at the bottom.
@@ -3931,7 +3964,7 @@ const VideoDownloader = {
                 }
             }).catch((e) => {
                 if (seq !== this._scanSeq) return;
-                scanLabel.textContent = 'Deep scan failed — using embed-API results only';
+                scanLabel.textContent = rxT('dlDeepScanFailed', 'Deep scan failed — using embed-API results only');
                 console.warn('[RumbleX] deep scan failed:', e);
             });
         } catch (e) {
@@ -4082,7 +4115,7 @@ const VideoDownloader = {
         wrap.className = 'rx-dl-progress-wrap';
         const status = document.createElement('div');
         status.className = 'rx-dl-status';
-        status.textContent = 'Starting download via browser…';
+        status.textContent = rxT('dlStartingBrowser', 'Starting download via browser…');
         wrap.appendChild(status);
         body.appendChild(wrap);
 
@@ -4184,7 +4217,7 @@ const VideoDownloader = {
         const statusEl = document.createElement('div');
         statusEl.className = 'rx-dl-status';
         statusEl.setAttribute('role', 'status');
-        statusEl.textContent = 'Opening selected file…';
+        statusEl.textContent = rxT('dlOpeningFile', 'Opening selected file…');
         const barBg = document.createElement('div');
         barBg.className = 'rx-dl-bar-bg';
         const barEl = document.createElement('div');
@@ -4198,7 +4231,7 @@ const VideoDownloader = {
         const cancel = document.createElement('button');
         cancel.type = 'button';
         cancel.className = 'rx-dl-cancel';
-        cancel.textContent = 'Cancel';
+        cancel.textContent = rxT('dlCancel', 'Cancel');
         cancel.addEventListener('click', () => controller.abort());
         wrap.append(statusEl, barBg, cancel);
         body.appendChild(wrap);
@@ -4236,7 +4269,7 @@ const VideoDownloader = {
             cancel.remove();
             const done = document.createElement('div');
             done.className = 'rx-dl-done';
-            done.textContent = 'TS stream saved directly to your selected file.';
+            done.textContent = rxT('dlTsSaved', 'TS stream saved directly to your selected file.');
             body.appendChild(done);
         } catch (error) {
             if (writable) {
@@ -4249,7 +4282,7 @@ const VideoDownloader = {
             }
             const errorEl = document.createElement('div');
             errorEl.className = 'rx-dl-error';
-            errorEl.textContent = 'Error: ' + (error?.message || error);
+            errorEl.textContent = rxT('dlError', 'Error: {reason}', { reason: error?.message || error });
             body.appendChild(errorEl);
             void this._reportFailure({
                 operation: 'hls-stream-to-disk', operationId, stage, error,
@@ -4284,7 +4317,7 @@ const VideoDownloader = {
         const statusEl = document.createElement('div');
         statusEl.className = 'rx-dl-status';
         statusEl.setAttribute('role', 'status');
-        statusEl.textContent = 'Fetching stream playlist…';
+        statusEl.textContent = rxT('dlFetchingPlaylist', 'Fetching stream playlist…');
         const barBg = document.createElement('div');
         barBg.className = 'rx-dl-bar-bg';
         const barEl = document.createElement('div');
@@ -4298,7 +4331,7 @@ const VideoDownloader = {
         const cancel = document.createElement('button');
         cancel.type = 'button';
         cancel.className = 'rx-dl-cancel';
-        cancel.textContent = 'Cancel';
+        cancel.textContent = rxT('dlCancel', 'Cancel');
         cancel.addEventListener('click', () => controller.abort());
         wrap.append(statusEl, barBg, cancel);
         body.appendChild(wrap);
@@ -4393,7 +4426,7 @@ const VideoDownloader = {
             }
             const errorEl = document.createElement('div');
             errorEl.className = 'rx-dl-error';
-            errorEl.textContent = 'Error: ' + (e?.message || e);
+            errorEl.textContent = rxT('dlError', 'Error: {reason}', { reason: e?.message || e });
             body.appendChild(errorEl);
             console.error('[RumbleX] Download failed:', e);
             if (e?.rxUrl) diagnosticUrls.push({ role: e.rxStage || stage, url: e.rxUrl });
@@ -5591,13 +5624,19 @@ const ChannelArchiveButton = {
                     'bad-channel-url': 'Not a channel URL.',
                     'no-videos-found': 'No videos found on this page.',
                 };
-                RxToast.show('Archive failed: ' + (reasonMap[resp?.reason] || resp?.reason || 'unknown'));
+                RxToast.show(rxT('toastArchiveFailed', 'Archive failed: {reason}', {
+                    reason: reasonMap[resp?.reason] || resp?.reason || 'unknown',
+                }));
                 return;
             }
-            const skippedNote = resp.skipped ? (' · ' + resp.skipped + ' already queued') : '';
-            RxToast.show('Queued ' + resp.enqueued + ' video' + (resp.enqueued === 1 ? '' : 's') + skippedNote + '. Check RumbleX options → Channel archive queue.');
+            const skippedNote = resp.skipped
+                ? rxT('toastArchiveSkipped', ' · {count} already queued', { count: resp.skipped })
+                : '';
+            RxToast.show(resp.enqueued === 1
+                ? rxT('toastArchiveQueuedOne', 'Queued 1 video{skipped}. Check RumbleX options → Channel archive queue.', { skipped: skippedNote })
+                : rxT('toastArchiveQueuedMany', 'Queued {count} videos{skipped}. Check RumbleX options → Channel archive queue.', { count: resp.enqueued, skipped: skippedNote }));
         } catch (e) {
-            RxToast.show('Archive failed: ' + String(e?.message || e));
+            RxToast.show(rxT('toastArchiveFailed', 'Archive failed: {reason}', { reason: String(e?.message || e) }));
         } finally {
             btn.disabled = false;
             if (labelEl) labelEl.textContent = originalLabel;
@@ -6790,12 +6829,14 @@ const BulkUnsubscribe = {
         const { rows } = this._updateCount();
         const selected = rows.filter((r) => r.check?.checked);
         if (selected.length === 0) {
-            RxToast.show('Select at least one row first');
+            RxToast.show(rxT('toastSelectRowFirst', 'Select at least one row first'));
             return;
         }
         const dryRun = Settings.get('bulkUnsubscribeDryRun') !== false; // default ON
         if (dryRun) {
-            RxToast.show(`Dry-run: would unsubscribe from ${selected.length} channel${selected.length === 1 ? '' : 's'}. Turn bulkUnsubscribeDryRun OFF in Settings to run for real.`);
+            RxToast.show(selected.length === 1
+                ? rxT('toastDryRunOne', 'Dry-run: would unsubscribe from 1 channel. Turn bulkUnsubscribeDryRun OFF in Settings to run for real.')
+                : rxT('toastDryRunMany', 'Dry-run: would unsubscribe from {count} channels. Turn bulkUnsubscribeDryRun OFF in Settings to run for real.', { count: selected.length }));
             return;
         }
         // Disable the Run button + show progress in the count slot.
@@ -6823,8 +6864,12 @@ const BulkUnsubscribe = {
         if (runBtn) runBtn.disabled = false;
         if (stopBtn) stopBtn.disabled = true;
         RxToast.show(this._aborter.aborted
-            ? `Stopped after ${done} unsub${done === 1 ? '' : 's'}.`
-            : `Done: unsubscribed from ${done} channel${done === 1 ? '' : 's'}.`);
+            ? (done === 1
+                ? rxT('toastUnsubStoppedOne', 'Stopped after 1 unsubscribe.')
+                : rxT('toastUnsubStoppedMany', 'Stopped after {count} unsubscribes.', { count: done }))
+            : (done === 1
+                ? rxT('toastUnsubDoneOne', 'Done: unsubscribed from 1 channel.')
+                : rxT('toastUnsubDoneMany', 'Done: unsubscribed from {count} channels.', { count: done })));
         this._updateCount();
     },
 
@@ -8900,7 +8945,7 @@ const PlaylistQuickSave = {
                 const watchLaterOpt = menu.querySelector('[data-playlist-option="watch-later-add"]');
                 if (watchLaterOpt) {
                     watchLaterOpt.click();
-                    RxToast.show('Saved to Watch Later');
+                    RxToast.show(rxT('toastSavedWatchLater', 'Saved to Watch Later'));
                     return;
                 }
                 // Close menu if option not found
@@ -8943,10 +8988,10 @@ const PlaylistQuickSave = {
                                 bm.unshift({ url, title, channel, thumb: img?.src || '', time: Date.now() });
                                 localStorage.setItem(key, JSON.stringify(bm.slice(0, 200)));
                                 btn.classList.add('saved');
-                                RxToast.show('Bookmarked locally');
+                                RxToast.show(rxT('toastBookmarked', 'Bookmarked locally'));
                             } else {
                                 btn.classList.add('saved');
-                                RxToast.show('Already saved');
+                                RxToast.show(rxT('toastAlreadySaved', 'Already saved'));
                             }
                         } catch { /* ignore */ }
                     }
@@ -9511,13 +9556,13 @@ const SettingsPanel = {
                         wrap.classList.remove('active');
                         if (card && !card.classList.contains('rx-m-sub')) card.classList.remove('rx-m-enabled');
                         this._updateNavCounts();
-                        RxToast.show('Could not enable ' + labelText + ' — reload the page to try again');
+                        RxToast.show(rxT('toastEnableFailed', 'Could not enable {feature} — reload the page to try again', { feature: labelText }));
                         return;
                     }
                 }
-                RxToast.show(input.checked ? 'Enabled' : 'Disabled');
+                RxToast.show(input.checked ? rxT('toastEnabled', 'Enabled') : rxT('toastDisabled', 'Disabled'));
             } else {
-                RxToast.show('Reload page to apply');
+                RxToast.show(rxT('toastReloadToApply', 'Reload page to apply'));
             }
         });
         const track = document.createElement('div');
@@ -9721,7 +9766,7 @@ const SettingsPanel = {
     _buildThemeSection(pane, color) {
         const title = document.createElement('div');
         title.className = 'rx-m-section-title';
-        title.textContent = 'Theme';
+        title.textContent = rxT('modalTheme', 'Theme');
         pane.appendChild(title);
 
         const grid = document.createElement('div');
@@ -9743,7 +9788,7 @@ const SettingsPanel = {
                 for (const c of grid.querySelectorAll('.rx-m-chip')) c.setAttribute('aria-pressed', 'false');
                 chip.classList.add('rx-m-chip-active');
                 chip.setAttribute('aria-pressed', 'true');
-                RxToast.show('Theme changed — reload page to apply');
+                RxToast.show(rxT('toastThemeChanged', 'Theme changed — reload page to apply'));
             });
             grid.appendChild(chip);
         }
@@ -9753,7 +9798,7 @@ const SettingsPanel = {
     _buildSpeedSection(pane) {
         const title = document.createElement('div');
         title.className = 'rx-m-section-title';
-        title.textContent = 'Playback Speed';
+        title.textContent = rxT('modalPlaybackSpeed', 'Playback Speed');
         pane.appendChild(title);
 
         const row = document.createElement('div');
@@ -9776,7 +9821,7 @@ const SettingsPanel = {
             slider.setAttribute('aria-valuetext', speed + 'x');
             Settings.set('playbackSpeed', speed);
             for (const v of qsa('video')) v.playbackRate = speed;
-            RxToast.show(`Speed: ${speed}x`);
+            RxToast.show(rxT('toastSpeed', 'Speed: {speed}x', { speed }));
         });
         row.append(slider, label);
         pane.appendChild(row);
@@ -9785,7 +9830,7 @@ const SettingsPanel = {
     _buildBlockedSection(pane) {
         const title = document.createElement('div');
         title.className = 'rx-m-section-title';
-        title.textContent = 'Blocked Channels';
+        title.textContent = rxT('modalBlockedChannels', 'Blocked Channels');
         pane.appendChild(title);
 
         const grid = document.createElement('div');
@@ -9795,7 +9840,7 @@ const SettingsPanel = {
         if (blocked.length === 0) {
             const empty = document.createElement('span');
             empty.className = 'rx-m-empty';
-            empty.textContent = 'No channels blocked';
+            empty.textContent = rxT('modalNoChannelsBlocked', 'No channels blocked');
             grid.appendChild(empty);
         } else {
             for (const ch of blocked) {
@@ -9816,7 +9861,7 @@ const SettingsPanel = {
                 l2.setAttribute('x1', '6'); l2.setAttribute('y1', '6'); l2.setAttribute('x2', '18'); l2.setAttribute('y2', '18');
                 svg.append(l1, l2);
                 chip.append(nameSpan, svg);
-                chip.title = 'Unblock ' + ch;
+                chip.title = rxT('modalUnblockChannel', 'Unblock {channel}', { channel: ch });
                 chip.setAttribute('aria-label', 'Unblock ' + ch);
                 chip.addEventListener('click', () => {
                     ChannelBlocker._unblockChannel(ch);
@@ -9824,7 +9869,7 @@ const SettingsPanel = {
                     if (!grid.children.length) {
                         const empty = document.createElement('span');
                         empty.className = 'rx-m-empty';
-                        empty.textContent = 'No channels blocked';
+                        empty.textContent = rxT('modalNoChannelsBlocked', 'No channels blocked');
                         grid.appendChild(empty);
                     }
                 });
@@ -9837,7 +9882,7 @@ const SettingsPanel = {
     _buildCategorySection(pane) {
         const title = document.createElement('div');
         title.className = 'rx-m-section-title';
-        title.textContent = 'Homepage Categories';
+        title.textContent = rxT('modalHomepageCategories', 'Homepage Categories');
         pane.appendChild(title);
 
         const grid = document.createElement('div');
@@ -9911,7 +9956,7 @@ const SettingsPanel = {
         searchWrap.innerHTML = '<span class="rx-m-search-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></span>';
         const searchInput = document.createElement('input');
         searchInput.className = 'rx-m-search';
-        searchInput.placeholder = 'Search features...';
+        searchInput.placeholder = rxT('modalSearchFeatures', 'Search features...');
         searchInput.type = 'text';
         searchInput.setAttribute('aria-label', 'Search RumbleX features');
         let searchTimer = null;
@@ -9991,7 +10036,7 @@ const SettingsPanel = {
             <div class="rx-m-footer-right"></div>`;
         const exportBtn = document.createElement('button');
         exportBtn.className = 'rx-m-btn rx-m-btn-primary';
-        exportBtn.textContent = 'Export';
+        exportBtn.textContent = rxT('modalExport', 'Export');
         exportBtn.addEventListener('click', () => {
             const blob = new Blob([JSON.stringify(Settings._cache, null, 2)], { type: 'application/json' });
             const a = document.createElement('a');
@@ -10000,7 +10045,7 @@ const SettingsPanel = {
         });
         const importBtn = document.createElement('button');
         importBtn.className = 'rx-m-btn rx-m-btn-secondary';
-        importBtn.textContent = 'Import';
+        importBtn.textContent = rxT('modalImport', 'Import');
         importBtn.addEventListener('click', () => {
             const input = document.createElement('input');
             input.type = 'file'; input.accept = '.json';
@@ -10008,7 +10053,7 @@ const SettingsPanel = {
                 const file = input.files[0];
                 if (!file) return;
                 if (file.size > 5 * 1024 * 1024) {
-                    RxToast.show('Import failed: file exceeds the 5 MB limit');
+                    RxToast.show(rxT('toastImportTooLarge', 'Import failed: file exceeds the 5 MB limit'));
                     return;
                 }
                 const reader = new FileReader();
@@ -10027,7 +10072,7 @@ const SettingsPanel = {
                         location.reload();
                     } catch (e) {
                         console.error('[RumbleX] Import failed:', e);
-                        RxToast.show('Import failed: ' + String(e?.message || e));
+                        RxToast.show(rxT('toastImportFailed', 'Import failed: {reason}', { reason: String(e?.message || e) }));
                     }
                 };
                 reader.readAsText(file);
@@ -10052,14 +10097,14 @@ const SettingsPanel = {
 
         if (Page.isWatch() && Settings.get('videoDownload')) {
             const dlBtn = document.createElement('button');
-            dlBtn.id = 'rx-download-btn'; dlBtn.className = 'rx-tb-btn'; dlBtn.title = 'Download Video';
+            dlBtn.id = 'rx-download-btn'; dlBtn.className = 'rx-tb-btn'; dlBtn.title = rxT('dlTitle', 'Download Video');
             dlBtn.innerHTML = VideoDownloader._downloadSVG;
             dlBtn.addEventListener('click', () => VideoDownloader._showDownloadTab());
             toolbar.appendChild(dlBtn);
         }
 
         const settingsBtn = document.createElement('button');
-        settingsBtn.id = 'rx-settings-btn'; settingsBtn.className = 'rx-tb-btn'; settingsBtn.title = 'RumbleX Settings';
+        settingsBtn.id = 'rx-settings-btn'; settingsBtn.className = 'rx-tb-btn'; settingsBtn.title = rxT('modalOpenSettings', 'RumbleX Settings');
         settingsBtn.type = 'button';
         settingsBtn.setAttribute('aria-label', 'Open RumbleX settings');
         settingsBtn.innerHTML = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 00-2 2v.18a2 2 0 01-1 1.73l-.43.25a2 2 0 01-2 0l-.15-.08a2 2 0 00-2.73.73l-.22.38a2 2 0 00.73 2.73l.15.1a2 2 0 011 1.72v.51a2 2 0 01-1 1.74l-.15.09a2 2 0 00-.73 2.73l.22.38a2 2 0 002.73.73l.15-.08a2 2 0 012 0l.43.25a2 2 0 011 1.73V20a2 2 0 002 2h.44a2 2 0 002-2v-.18a2 2 0 011-1.73l.43-.25a2 2 0 012 0l.15.08a2 2 0 002.73-.73l.22-.39a2 2 0 00-.73-2.73l-.15-.08a2 2 0 01-1-1.74v-.5a2 2 0 011-1.74l.15-.09a2 2 0 00.73-2.73l-.22-.38a2 2 0 00-2.73-.73l-.15.08a2 2 0 01-2 0l-.43-.25a2 2 0 01-1-1.73V4a2 2 0 00-2-2z"/><circle cx="12" cy="12" r="3"/></svg>';
@@ -11021,13 +11066,15 @@ const CommentExport = {
     _handleClick(e) {
         const rows = this._extractAll();
         if (rows.length === 0) {
-            RxToast.show('No comments loaded yet — scroll to load comments first');
+            RxToast.show(rxT('toastNoComments', 'No comments loaded yet — scroll to load comments first'));
             return;
         }
         const stub = this._filenameStub();
         if (e?.shiftKey) {
             this._download(this._toCsv(rows), stub + '.csv', 'text/csv;charset=utf-8');
-            RxToast.show(`Exported ${rows.length} comment${rows.length === 1 ? '' : 's'} as CSV`);
+            RxToast.show(rows.length === 1
+                ? rxT('toastExportedCsvOne', 'Exported 1 comment as CSV')
+                : rxT('toastExportedCsvMany', 'Exported {count} comments as CSV', { count: rows.length }));
         } else {
             const payload = {
                 exportedAt: new Date().toISOString(),
@@ -11037,7 +11084,9 @@ const CommentExport = {
                 comments: rows,
             };
             this._download(JSON.stringify(payload, null, 2), stub + '.json', 'application/json');
-            RxToast.show(`Exported ${rows.length} comment${rows.length === 1 ? '' : 's'} as JSON (shift-click for CSV)`);
+            RxToast.show(rows.length === 1
+                ? rxT('toastExportedJsonOne', 'Exported 1 comment as JSON (shift-click for CSV)')
+                : rxT('toastExportedJsonMany', 'Exported {count} comments as JSON (shift-click for CSV)', { count: rows.length }));
         }
     },
     _build() {
@@ -14770,8 +14819,8 @@ async function boot() {
         Settings.onExternalChange((isReset) => {
             try {
                 RxToast.show(isReset
-                    ? 'RumbleX was reset — reload to see defaults'
-                    : 'Settings changed elsewhere — reload to apply');
+                    ? rxT('toastWasReset', 'RumbleX was reset — reload to see defaults')
+                    : rxT('toastChangedElsewhere', 'Settings changed elsewhere — reload to apply'));
             } catch {}
         });
 

@@ -13,6 +13,11 @@ const SCAN_FILES = [
     path.join(ROOT, 'extension', 'pages', 'options.js'),
     path.join(ROOT, 'extension', 'pages', 'popup.html'),
     path.join(ROOT, 'extension', 'pages', 'popup.js'),
+    // The shared core and the service worker were structurally invisible to
+    // this guard, which is why content.js could carry zero i18n calls without
+    // anything failing.
+    path.join(ROOT, 'extension', 'content.js'),
+    path.join(ROOT, 'extension', 'background.js'),
 ];
 
 function localeNames() {

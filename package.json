@@ -23,7 +23,10 @@
     "test:feature-catalog": "node scripts/test-feature-catalog.js",
     "test:firefox-extension": "node scripts/test-firefox-extension.js",
     "test:ad-blocking": "node scripts/test-ad-blocking.js",
-    "test:a11y-controls": "node scripts/check-a11y-controls.js"
+    "test:a11y-controls": "node scripts/check-a11y-controls.js",
+    "test:content-literals": "node scripts/check-content-literals.js",
+    "test:content-locale": "node scripts/sync-content-locale.js",
+    "locale:sync": "node scripts/sync-content-locale.js --write"
   },
   "devDependencies": {
     "@playwright/test": "^1.49.0",

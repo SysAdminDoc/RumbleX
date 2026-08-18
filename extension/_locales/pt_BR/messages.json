@@ -442,5 +442,213 @@
   "networkShieldManagerNote": {
     "message": "A limpeza do DOM continua ativa; gerenciadores Chromium MV3 nao oferecem bloqueio antecipado de solicitacoes.",
     "description": "Detalhe da limitacao do userscript."
+  },
+  "dlCancel": {
+    "message": "Cancelar",
+    "description": "In-page UI string (shared core)."
+  },
+  "dlCopyLink": {
+    "message": "Copiar link",
+    "description": "In-page UI string (shared core)."
+  },
+  "dlDeepScan": {
+    "message": "Busca profunda por mais qualidades",
+    "description": "In-page UI string (shared core)."
+  },
+  "dlDeepScanFailed": {
+    "message": "A busca profunda falhou — usando apenas os resultados da API de incorporação",
+    "description": "In-page UI string (shared core)."
+  },
+  "dlError": {
+    "message": "Erro: {reason}",
+    "description": "In-page UI string (shared core)."
+  },
+  "dlFetchingPlaylist": {
+    "message": "Buscando a playlist do stream…",
+    "description": "In-page UI string (shared core)."
+  },
+  "dlNoDownloads": {
+    "message": "Nenhum download encontrado. Reproduza o vídeo primeiro e reabra este painel.",
+    "description": "In-page UI string (shared core)."
+  },
+  "dlOpeningFile": {
+    "message": "Abrindo o arquivo selecionado…",
+    "description": "In-page UI string (shared core)."
+  },
+  "dlScanningCdn": {
+    "message": "Ainda sem qualidades da API de incorporação — verificando a CDN…",
+    "description": "In-page UI string (shared core)."
+  },
+  "dlStartingBrowser": {
+    "message": "Iniciando o download pelo navegador…",
+    "description": "In-page UI string (shared core)."
+  },
+  "dlTitle": {
+    "message": "Baixar vídeo",
+    "description": "In-page UI string (shared core)."
+  },
+  "dlTsSaved": {
+    "message": "Stream TS salvo direto no arquivo que você selecionou.",
+    "description": "In-page UI string (shared core)."
+  },
+  "modalBlockedChannels": {
+    "message": "Canais bloqueados",
+    "description": "In-page UI string (shared core)."
+  },
+  "modalExport": {
+    "message": "Exportar",
+    "description": "In-page UI string (shared core)."
+  },
+  "modalHomepageCategories": {
+    "message": "Categorias da página inicial",
+    "description": "In-page UI string (shared core)."
+  },
+  "modalImport": {
+    "message": "Importar",
+    "description": "In-page UI string (shared core)."
+  },
+  "modalNoChannelsBlocked": {
+    "message": "Nenhum canal bloqueado",
+    "description": "In-page UI string (shared core)."
+  },
+  "modalOpenSettings": {
+    "message": "Configurações do RumbleX",
+    "description": "In-page UI string (shared core)."
+  },
+  "modalPlaybackSpeed": {
+    "message": "Velocidade de reprodução",
+    "description": "In-page UI string (shared core)."
+  },
+  "modalSearchFeatures": {
+    "message": "Pesquisar recursos...",
+    "description": "In-page UI string (shared core)."
+  },
+  "modalTheme": {
+    "message": "Tema",
+    "description": "In-page UI string (shared core)."
+  },
+  "modalUnblockChannel": {
+    "message": "Desbloquear {channel}",
+    "description": "In-page UI string (shared core)."
+  },
+  "toastAlreadySaved": {
+    "message": "Já salvo",
+    "description": "In-page UI string (shared core)."
+  },
+  "toastArchiveFailed": {
+    "message": "Falha ao arquivar: {reason}",
+    "description": "In-page UI string (shared core)."
+  },
+  "toastArchiveQueuedMany": {
+    "message": "{count} vídeos na fila{skipped}. Veja Opções do RumbleX → Fila de arquivamento do canal.",
+    "description": "In-page UI string (shared core)."
+  },
+  "toastArchiveQueuedOne": {
+    "message": "1 vídeo na fila{skipped}. Veja Opções do RumbleX → Fila de arquivamento do canal.",
+    "description": "In-page UI string (shared core)."
+  },
+  "toastArchiveSkipped": {
+    "message": " · {count} já na fila",
+    "description": "In-page UI string (shared core)."
+  },
+  "toastBookmarked": {
+    "message": "Salvo localmente nos favoritos",
+    "description": "In-page UI string (shared core)."
+  },
+  "toastChangedElsewhere": {
+    "message": "As configurações mudaram em outro lugar — recarregue para aplicar",
+    "description": "In-page UI string (shared core)."
+  },
+  "toastDisabled": {
+    "message": "Desativado",
+    "description": "In-page UI string (shared core)."
+  },
+  "toastDryRunMany": {
+    "message": "Simulação: cancelaria a inscrição em {count} canais. Desative bulkUnsubscribeDryRun nas configurações para executar de verdade.",
+    "description": "In-page UI string (shared core)."
+  },
+  "toastDryRunOne": {
+    "message": "Simulação: cancelaria a inscrição em 1 canal. Desative bulkUnsubscribeDryRun nas configurações para executar de verdade.",
+    "description": "In-page UI string (shared core)."
+  },
+  "toastEnableFailed": {
+    "message": "Não foi possível ativar {feature} — recarregue a página e tente de novo",
+    "description": "In-page UI string (shared core)."
+  },
+  "toastEnabled": {
+    "message": "Ativado",
+    "description": "In-page UI string (shared core)."
+  },
+  "toastExportedCsvMany": {
+    "message": "{count} comentários exportados como CSV",
+    "description": "In-page UI string (shared core)."
+  },
+  "toastExportedCsvOne": {
+    "message": "1 comentário exportado como CSV",
+    "description": "In-page UI string (shared core)."
+  },
+  "toastExportedJsonMany": {
+    "message": "{count} comentários exportados como JSON (Shift+clique para CSV)",
+    "description": "In-page UI string (shared core)."
+  },
+  "toastExportedJsonOne": {
+    "message": "1 comentário exportado como JSON (Shift+clique para CSV)",
+    "description": "In-page UI string (shared core)."
+  },
+  "toastImportFailed": {
+    "message": "Falha na importação: {reason}",
+    "description": "In-page UI string (shared core)."
+  },
+  "toastImportTooLarge": {
+    "message": "Falha na importação: o arquivo excede o limite de 5 MB",
+    "description": "In-page UI string (shared core)."
+  },
+  "toastNoComments": {
+    "message": "Nenhum comentário carregado ainda — role a página para carregá-los primeiro",
+    "description": "In-page UI string (shared core)."
+  },
+  "toastReloadToApply": {
+    "message": "Recarregue a página para aplicar",
+    "description": "In-page UI string (shared core)."
+  },
+  "toastSavedWatchLater": {
+    "message": "Salvo em Assistir mais tarde",
+    "description": "In-page UI string (shared core)."
+  },
+  "toastSelectRowFirst": {
+    "message": "Selecione ao menos uma linha primeiro",
+    "description": "In-page UI string (shared core)."
+  },
+  "toastSelectorHealth": {
+    "message": "{message}. Abra o relatório de privacidade para ver os detalhes.",
+    "description": "In-page UI string (shared core)."
+  },
+  "toastSpeed": {
+    "message": "Velocidade: {speed}x",
+    "description": "In-page UI string (shared core)."
+  },
+  "toastThemeChanged": {
+    "message": "Tema alterado — recarregue a página para aplicar",
+    "description": "In-page UI string (shared core)."
+  },
+  "toastUnsubDoneMany": {
+    "message": "Concluído: inscrição cancelada em {count} canais.",
+    "description": "In-page UI string (shared core)."
+  },
+  "toastUnsubDoneOne": {
+    "message": "Concluído: inscrição cancelada em 1 canal.",
+    "description": "In-page UI string (shared core)."
+  },
+  "toastUnsubStoppedMany": {
+    "message": "Interrompido após {count} cancelamentos.",
+    "description": "In-page UI string (shared core)."
+  },
+  "toastUnsubStoppedOne": {
+    "message": "Interrompido após 1 cancelamento.",
+    "description": "In-page UI string (shared core)."
+  },
+  "toastWasReset": {
+    "message": "O RumbleX foi redefinido — recarregue para ver os padrões",
+    "description": "In-page UI string (shared core)."
   }
 }
