@@ -1,8 +1,15 @@
 # RumbleX
 
-![Version](https://img.shields.io/badge/version-v3.40.0-blue) ![License](https://img.shields.io/badge/license-MIT-green) ![Platform](https://img.shields.io/badge/platform-Extension%20%2B%20Userscript-lightgrey) ![Firefox](https://img.shields.io/badge/firefox-109%2B-orange)
+![Version](https://img.shields.io/badge/version-v3.41.0-blue) ![License](https://img.shields.io/badge/license-MIT-green) ![Platform](https://img.shields.io/badge/platform-Extension%20%2B%20Userscript-lightgrey) ![Firefox](https://img.shields.io/badge/firefox-109%2B-orange)
 
 **The ultimate Rumble enhancement suite.** 130+ feature modules across 14 categories — ad blocking, theater mode, video downloads with CDN deep-scan probing and an opt-in Mediabunny muxer path, five-theme engine (now including OLED Green), playback controls, chat enhancements with deterministic username colors and tier-filtered rants, chapters, SponsorBlock, clips, live DVR, transcripts, auto-hide chrome, 50+ granular hide-X toggles for every Rumble row/button/player control, thumbnail hider, dense mode, reduced-motion path, tracking-param stripping, external player handoff (MPV/PotPlayer), and full-round-trip backup/restore with snapshot history. Chrome MV3 + Firefox MV2 + userscript.
+
+### What's new in v3.41
+
+- **Trust-boundary fix for the notifier webhook** — `discordWebhookUrl` reached an outbound request without any URL validation, so a crafted backup, snapshot, or encrypted-Gist restore could silently install an arbitrary destination for followed-channel activity. Only HTTPS Discord webhook endpoints are accepted now, the destination is re-checked before every POST, and a configured webhook is listed in the local Privacy Report.
+- **No more hangs and no more downgrade prompts** — the default mux.js converter is bounded by the same termination watchdog the experimental engine already had, and the update check compares versions numerically instead of by string, so a published release older than your build is no longer advertised as an update.
+- **Failures stop reporting success** — popup toggles surface a banner when a write fails, a feature whose startup throws reverts its own switch instead of claiming it turned on, and the local error ring records on every page so a bug report has something to attach.
+- **Reset fails closed** — Reset All Data has no confirmation dialog by design because the pre-reset snapshot is the undo; if that snapshot cannot be captured, the reset now aborts instead of wiping anyway.
 
 ### What's new in v3.40
 
