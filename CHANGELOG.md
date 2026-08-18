@@ -4,6 +4,9 @@ All notable changes to RumbleX will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+- **Behavioral tests for modules that were only proven to mount.** `feature-lifecycle.spec.js` shows all 126 modules init and destroy cleanly, but mounting is not behavior — a module could produce entirely wrong output and still pass. The new `feature-behavior.spec.js` asserts actual products: which query parameters `StripTrackingParams` removes and which canonical ones it must keep, the sorted deduped chapter list `Chapters` parses (including that a mid-sentence timestamp is *not* matched), `SearchHistory` dedupe/ordering/cap, the `WatchHistory` URL trust boundary, the `ExternalPlayer` handoff target for each template shape, per-video `SponsorBlock` segment storage and the actual skip seek, `LoopControl` A/B normalisation and boundary seeks, `CommentExport` CSV escaping of embedded quotes and newlines, and `ChatExport` collection that excludes blocked messages. The shared harness moved to `tests/e2e/_harness.js` so both specs use one instrumented core.
+
 ### Fixed
 - **Settings written during startup were silently discarded.** `Settings.init()` assigned `this._cache = { ...defaults, ...stored }` wholesale and reset `_pendingKeys`, so any `Settings.set()` that landed while `init()` was still awaiting storage vanished — the write reported success and did nothing. Pending changes are now layered back on top, exactly as `_applyExternal` already did for writes racing an external change. This was the root cause of the intermittent `feature init throws` hot-toggle test failure: whether the revert survived depended purely on storage latency, which is also why it reproduced roughly one run in three rather than never or always.
 
