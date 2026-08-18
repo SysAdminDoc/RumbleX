@@ -23,7 +23,7 @@
 // @updateURL    https://raw.githubusercontent.com/SysAdminDoc/RumbleX/main/RumbleX.user.js
 // ==/UserScript==
 
-// Generated from extension/settings-schema.js + extension/content.js. Shared runtime SHA-256: 2684a8318add44062ba89d31badf63649cb1d1d253b804afbd4aabc1c3836d0b
+// Generated from extension/settings-schema.js + extension/content.js. Shared runtime SHA-256: c0e3ebff85701e66884556ccc53a05b20d3c415d2df12226fe035a851f9a5bc7
 // RumbleX shared settings schema. This file is the canonical source for
 // defaults and trust-boundary normalization across content, options, popup,
 // background profile/Gist restores, and the generated userscript.
@@ -6925,6 +6925,7 @@ const LiveChatEnhance = {
         input.id = 'rx-chat-filter-input';
         input.type = 'text';
         input.placeholder = 'Filter chat...';
+        input.setAttribute('aria-label', 'Filter chat messages');
         input.addEventListener('input', () => {
             if (input.value.trim()) {
                 this._applyFilter();
@@ -6982,6 +6983,8 @@ const VideoTimestamps = {
 
     _css: `
         .rx-timestamp-link {
+            appearance: none; background: none; border: 0; padding: 0;
+            font: inherit; display: inline;
             color: var(--rx-accent, #89b4fa);
             cursor: pointer;
             font-weight: 600;
@@ -6994,6 +6997,7 @@ const VideoTimestamps = {
             color: #b4d0fb;
             border-bottom-color: rgba(137,180,250,0.6);
         }
+        .rx-timestamp-link:focus-visible { outline: 2px solid #89b4fa; outline-offset: 2px; }
     `,
 
     // Match timestamps like 0:00, 1:23, 01:23, 1:23:45, 01:23:45
@@ -7048,11 +7052,16 @@ const VideoTimestamps = {
                 if (match.index > lastIndex) {
                     frag.appendChild(document.createTextNode(content.slice(lastIndex, match.index)));
                 }
-                // Create clickable timestamp
-                const link = document.createElement('span');
+                // Create clickable timestamp. A <button> rather than a <span>:
+                // this was the only seek affordance in the description and no
+                // keyboard user could reach it. It sits inline in prose, so the
+                // CSS strips the native button chrome back to link styling.
+                const link = document.createElement('button');
+                link.type = 'button';
                 link.className = 'rx-timestamp-link';
                 link.textContent = match[1];
                 link.title = `Seek to ${match[1]}`;
+                link.setAttribute('aria-label', `Seek to ${match[1]}`);
                 const seconds = this._parseTimestamp(match[1]);
                 link.addEventListener('click', (e) => {
                     e.preventDefault();
@@ -7330,6 +7339,7 @@ const WatchHistoryFeature = {
         search.className = 'rx-history-search';
         search.placeholder = 'Search history...';
         search.type = 'text';
+        search.setAttribute('aria-label', 'Search watch history');
 
         const clearBtn = document.createElement('button');
         clearBtn.className = 'rx-history-clear';
@@ -7710,6 +7720,9 @@ const BulkUnsubscribe = {
                 check.type = 'checkbox';
                 check.className = 'rx-bu-row-check';
                 check.title = 'Select for bulk unsubscribe';
+                check.setAttribute('aria-label', label
+                    ? `Select ${label} for bulk unsubscribe`
+                    : 'Select for bulk unsubscribe');
                 row.insertBefore(check, row.firstChild);
             }
             if (check) rows.push({ btn, check, row, label });
@@ -7770,6 +7783,8 @@ const BulkUnsubscribe = {
     _build() {
         const bar = document.createElement('div');
         bar.className = 'rx-bulk-unsub-bar';
+        bar.setAttribute('role', 'region');
+        bar.setAttribute('aria-label', 'Bulk unsubscribe');
         const label = document.createElement('span');
         label.className = 'rx-bu-label';
         label.innerHTML = '';
@@ -8178,7 +8193,9 @@ const MiniPlayer = {
         titleEl.textContent = title;
         bar.appendChild(titleEl);
         const closeBtn = document.createElement('button');
+        closeBtn.type = 'button';
         closeBtn.className = 'rx-miniplayer-close';
+        closeBtn.setAttribute('aria-label', 'Close mini player');
         closeBtn.textContent = '\u00d7';
         closeBtn.addEventListener('click', (e) => { e.stopPropagation(); this._hide(); });
         bar.appendChild(closeBtn);
@@ -8242,6 +8259,8 @@ const MiniPlayer = {
 
         this._mini = document.createElement('div');
         this._mini.className = 'rx-miniplayer';
+        this._mini.setAttribute('role', 'region');
+        this._mini.setAttribute('aria-label', 'Mini player');
         document.body.appendChild(this._mini);
         this._initDrag();
 
@@ -8417,6 +8436,8 @@ const VideoStats = {
 
             this._overlay = document.createElement('div');
             this._overlay.className = 'rx-stats-overlay';
+            this._overlay.setAttribute('role', 'region');
+            this._overlay.setAttribute('aria-label', 'Video statistics');
             container.appendChild(this._overlay);
         }).catch(() => {});
     },
@@ -8493,9 +8514,17 @@ const LoopControl = {
         return `${m}:${sec.toString().padStart(2, '0')}`;
     },
 
+    _syncLoopPressed() {
+        this._btn?.setAttribute('aria-pressed', String(!!this._btn.classList.contains('active')));
+    },
+
     _toggleLoop() {
         const video = qs('video');
         if (!video) return;
+        try { return this._toggleLoopInner(video); } finally { this._syncLoopPressed(); }
+    },
+
+    _toggleLoopInner(video) {
 
         if (this._looping) {
             // Clear AB loop
@@ -8601,8 +8630,11 @@ const LoopControl = {
 
             // Main loop button
             const btn = document.createElement('button');
+            btn.type = 'button';
             btn.className = 'rx-loop-btn';
             btn.title = 'Click: toggle loop | Right-click: A-B loop';
+            btn.setAttribute('aria-label', 'Toggle video loop');
+            btn.setAttribute('aria-pressed', 'false');
             btn.innerHTML = `<svg viewBox="0 0 24 24"><path d="M7 7h10v3l4-4-4-4v3H5v6h2V7zm10 10H7v-3l-4 4 4 4v-3h12v-6h-2v4z"/></svg>Loop`;
             btn.addEventListener('click', (e) => { e.stopPropagation(); this._toggleLoop(); });
             btn.addEventListener('contextmenu', (e) => {
@@ -8615,18 +8647,27 @@ const LoopControl = {
             // AB loop bar
             const abBar = document.createElement('div');
             abBar.className = 'rx-loop-ab-bar';
+            abBar.setAttribute('role', 'group');
+            abBar.setAttribute('aria-label', 'A-B loop');
             const aBtn = document.createElement('button');
+            aBtn.type = 'button';
             aBtn.className = 'rx-ab-a';
             aBtn.textContent = 'Set A';
+            aBtn.setAttribute('aria-label', 'Set the loop start point');
             aBtn.addEventListener('click', (e) => { e.stopPropagation(); this._setA(); });
             const bBtn = document.createElement('button');
+            bBtn.type = 'button';
             bBtn.className = 'rx-ab-b';
             bBtn.textContent = 'Set B';
+            bBtn.setAttribute('aria-label', 'Set the loop end point');
             bBtn.addEventListener('click', (e) => { e.stopPropagation(); this._setB(); });
             const info = document.createElement('span');
             info.className = 'info';
+            info.setAttribute('role', 'status');
             info.textContent = '--:-- - --:--';
             const clearBtn = document.createElement('button');
+            clearBtn.type = 'button';
+            clearBtn.setAttribute('aria-label', 'Clear the A-B loop');
             clearBtn.textContent = 'Clear';
             clearBtn.addEventListener('click', (e) => { e.stopPropagation(); this._clearAB(); });
 
@@ -8970,7 +9011,9 @@ const CommentNav = {
     },
 
     _filterOP() {
-        const opOnly = this._bar?.querySelector('.rx-op-filter')?.classList.toggle('active');
+        const opBtn = this._bar?.querySelector('.rx-op-filter');
+        const opOnly = opBtn?.classList.toggle('active');
+        opBtn?.setAttribute('aria-pressed', String(!!opOnly));
         for (const item of qsa('li.comment-item[data-comment-id]')) {
             const isOP = !!item.querySelector('.comments-meta-author-video-owner');
             if (opOnly && !isOP) {
@@ -8989,16 +9032,23 @@ const CommentNav = {
         waitForFeature(this, '#video-comments, .media-page-comments-container').then(container => {
             const bar = document.createElement('div');
             bar.className = 'rx-comment-nav';
+            bar.setAttribute('role', 'navigation');
+            bar.setAttribute('aria-label', 'Comment navigation');
 
             const prevBtn = document.createElement('button');
+            prevBtn.type = 'button';
             prevBtn.textContent = 'Prev';
+            prevBtn.setAttribute('aria-label', 'Previous top-level comment');
             prevBtn.addEventListener('click', () => this._prev());
 
             const nextBtn = document.createElement('button');
+            nextBtn.type = 'button';
             nextBtn.textContent = 'Next';
+            nextBtn.setAttribute('aria-label', 'Next top-level comment');
             nextBtn.addEventListener('click', () => this._next());
 
             const expandBtn = document.createElement('button');
+            expandBtn.type = 'button';
             expandBtn.textContent = 'Expand All';
             expandBtn.addEventListener('click', () => this._expandAll());
 
@@ -9007,12 +9057,15 @@ const CommentNav = {
             collapseBtn.addEventListener('click', () => this._collapseAll());
 
             const opBtn = document.createElement('button');
+            opBtn.type = 'button';
             opBtn.textContent = 'OP Only';
             opBtn.className = 'rx-op-filter';
+            opBtn.setAttribute('aria-pressed', 'false');
             opBtn.addEventListener('click', () => this._filterOP());
 
             const count = document.createElement('span');
             count.className = 'count';
+            count.setAttribute('role', 'status');
 
             bar.appendChild(prevBtn);
             bar.appendChild(nextBtn);
@@ -9194,6 +9247,8 @@ const RelatedFilter = {
         waitForFeature(this, '.mediaList-list, .media-page-related-media-desktop-sidebar').then(sidebar => {
             const bar = document.createElement('div');
             bar.className = 'rx-related-filter';
+            bar.setAttribute('role', 'region');
+            bar.setAttribute('aria-label', 'Related video filters');
 
             const search = document.createElement('input');
             search.className = 'rx-related-search';
@@ -10309,6 +10364,7 @@ const SettingsPanel = {
         }
         .rx-m-chip-grid { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
         .rx-m-chip {
+            appearance: none; font-family: inherit; text-align: left;
             font-size: 11px; padding: 5px 12px; border-radius: 10px;
             border: 1px solid rgba(255,255,255,0.08); background: #17171a;
             color: #f0f0f0; cursor: pointer; user-select: none;
@@ -10523,7 +10579,7 @@ const SettingsPanel = {
         return pane;
     },
 
-    _buildListSection(pane, titleText, emptyText, placeholder, settingsKey) {
+    _buildListSection(pane, titleText, emptyText, placeholder, settingsKey, removeLabel = 'Remove') {
         const title = document.createElement('div');
         title.className = 'rx-m-section-title';
         title.textContent = titleText;
@@ -10532,6 +10588,7 @@ const SettingsPanel = {
         const input = document.createElement('input');
         input.type = 'text';
         input.placeholder = placeholder;
+        input.setAttribute('aria-label', titleText);
         input.style.cssText = 'width:100%;background:rgba(49,50,68,0.5);border:1px solid rgba(255,255,255,0.08);border-radius:6px;padding:6px 10px;color:#cdd6f4;font-size:12px;margin-bottom:8px;outline:none;';
         pane.appendChild(input);
 
@@ -10551,12 +10608,18 @@ const SettingsPanel = {
             const list = Settings.get(settingsKey) || [];
             if (!list.length) { renderEmpty(); return; }
             for (const item of list) {
-                const chip = document.createElement('div');
+                // The whole chip is the remove control, so it has to be a
+                // button — as a <div> the only way to unblock an entry was to
+                // click it.
+                const chip = document.createElement('button');
+                chip.type = 'button';
                 chip.className = 'rx-m-chip';
+                chip.setAttribute('aria-label', `${removeLabel} ${item}`);
                 const nameSpan = document.createElement('span');
                 nameSpan.textContent = item;
                 const close = document.createElement('span');
                 close.textContent = '×';
+                close.setAttribute('aria-hidden', 'true');
                 close.style.cssText = 'margin-left:6px;cursor:pointer;color:#f38ba8;font-weight:700;';
                 chip.append(nameSpan, close);
                 chip.addEventListener('click', () => {
@@ -10587,15 +10650,15 @@ const SettingsPanel = {
     },
 
     _buildKeywordSection(pane) {
-        this._buildListSection(pane, 'Blocked Keywords', 'No keywords blocked', 'Add keyword (Enter to save)...', 'blockedKeywords');
+        this._buildListSection(pane, 'Blocked Keywords', 'No keywords blocked', 'Add keyword (Enter to save)...', 'blockedKeywords', 'Unblock keyword');
     },
 
     _buildBlockedChattersSection(pane) {
-        this._buildListSection(pane, 'Blocked Chatters', 'No chatters blocked', 'Add username (Enter to save)...', 'blockedChatters');
+        this._buildListSection(pane, 'Blocked Chatters', 'No chatters blocked', 'Add username (Enter to save)...', 'blockedChatters', 'Unblock chatter');
     },
 
     _buildBlockedCommentersSection(pane) {
-        this._buildListSection(pane, 'Blocked Commenters', 'No commenters blocked', 'Add username (Enter to save)...', 'blockedCommenters');
+        this._buildListSection(pane, 'Blocked Commenters', 'No commenters blocked', 'Add username (Enter to save)...', 'blockedCommenters', 'Unblock commenter');
     },
 
     _buildThemeSection(pane, color) {
@@ -10643,12 +10706,17 @@ const SettingsPanel = {
         slider.type = 'range'; slider.min = '0'; slider.max = '9'; slider.step = '1';
         slider.value = speeds.indexOf(Settings.get('playbackSpeed') || 1.0);
         if (slider.value === '-1') slider.value = '3';
+        slider.setAttribute('aria-label', 'Default playback speed');
+        // The slider indexes into `speeds`, so the raw 0-9 value is meaningless
+        // read aloud. Announce the multiplier instead.
+        slider.setAttribute('aria-valuetext', speeds[Number(slider.value)] + 'x');
         const label = document.createElement('span');
         label.className = 'rx-m-slider-label';
         label.textContent = (Settings.get('playbackSpeed') || 1.0) + 'x';
         slider.addEventListener('input', () => {
             const speed = speeds[parseInt(slider.value)];
             label.textContent = speed + 'x';
+            slider.setAttribute('aria-valuetext', speed + 'x');
             Settings.set('playbackSpeed', speed);
             for (const v of qsa('video')) v.playbackRate = speed;
             RxToast.show(`Speed: ${speed}x`);
@@ -11756,6 +11824,8 @@ const CommentSort = {
         if (!container || qs('.rx-comment-sort-bar')) return;
         const bar = document.createElement('div');
         bar.className = 'rx-comment-sort-bar';
+        bar.setAttribute('role', 'group');
+        bar.setAttribute('aria-label', 'Comment sorting');
         const modes = [
             { id: 'top', label: 'Top' },
             { id: 'new', label: 'New' },
@@ -11764,11 +11834,17 @@ const CommentSort = {
         ];
         for (const m of modes) {
             const btn = document.createElement('button');
+            btn.type = 'button';
             btn.className = 'rx-comment-sort-btn';
             btn.textContent = m.label;
+            btn.setAttribute('aria-pressed', 'false');
             btn.addEventListener('click', () => {
-                for (const b of bar.querySelectorAll('.rx-comment-sort-btn')) b.classList.remove('active');
+                for (const b of bar.querySelectorAll('.rx-comment-sort-btn')) {
+                    b.classList.remove('active');
+                    b.setAttribute('aria-pressed', 'false');
+                }
                 btn.classList.add('active');
+                btn.setAttribute('aria-pressed', 'true');
                 this._sort(m.id);
             });
             bar.appendChild(btn);
@@ -12223,8 +12299,10 @@ const AutoplayScheduler = {
             span.className = 'rx-qi-url';
             span.textContent = url.replace('https://rumble.com/', '');
             const del = document.createElement('button');
+            del.type = 'button';
             del.textContent = '×';
             del.title = 'Remove';
+            del.setAttribute('aria-label', `Remove ${span.textContent} from the queue`);
             del.addEventListener('click', () => {
                 const nq = this._queue();
                 nq.splice(i, 1);
@@ -12334,11 +12412,16 @@ const Chapters = {
             height: 4px; pointer-events: none; z-index: 5;
         }
         .rx-chapter-mark {
+            appearance: none; border: 0; padding: 0; font: inherit;
             position: absolute; top: 0; bottom: 0; width: 2px;
             background: rgba(255,255,255,0.75);
             box-shadow: 0 0 4px rgba(0,0,0,0.5);
             pointer-events: auto; cursor: pointer;
         }
+        .rx-chapter-mark:focus-visible {
+            outline: 2px solid #89b4fa; outline-offset: 1px; width: 3px; background: #fff;
+        }
+        .rx-chapter-mark:focus-visible .rx-chapter-tooltip { opacity: 1; }
         .rx-chapter-mark:hover { background: #fff; width: 3px; }
         .rx-chapter-tooltip {
             position: absolute; bottom: 12px; left: 50%; transform: translateX(-50%);
@@ -12431,13 +12514,16 @@ const Chapters = {
         for (const c of this._chapters) {
             if (c.time > duration) continue;
             const pct = (c.time / duration) * 100;
-            const m = document.createElement('div');
+            const m = document.createElement('button');
+            m.type = 'button';
             m.className = 'rx-chapter-mark';
             m.style.left = pct + '%';
             m.title = c.label;
+            m.setAttribute('aria-label', `Jump to chapter: ${c.label}`);
             const tip = document.createElement('div');
             tip.className = 'rx-chapter-tooltip';
             tip.textContent = c.label;
+            tip.setAttribute('aria-hidden', 'true');
             m.appendChild(tip);
             m.addEventListener('click', (e) => { e.stopPropagation(); this._seek(c.time); });
             wrap.appendChild(m);
@@ -12600,6 +12686,8 @@ const SponsorBlockRX = {
         if (!el) {
             el = document.createElement('div');
             el.className = 'rx-sb-notice';
+            el.setAttribute('role', 'status');
+            el.setAttribute('aria-live', 'polite');
             document.body.appendChild(el);
         }
         el.textContent = msg;
@@ -12683,9 +12771,12 @@ const SponsorBlockRX = {
                 if (c === (s.category || 'sponsor')) o.selected = true;
                 sel.appendChild(o);
             }
+            sel.setAttribute('aria-label', `Category for segment ${range.textContent}`);
             sel.addEventListener('change', () => { s.category = sel.value; this._saveSegments(); });
             const del = document.createElement('button');
+            del.type = 'button';
             del.textContent = '×';
+            del.setAttribute('aria-label', `Delete segment ${range.textContent}`);
             del.addEventListener('click', () => {
                 this._segments.splice(i, 1);
                 this._saveSegments();
@@ -13230,6 +13321,8 @@ const SubtitleSidecar = {
         if (!host || this._panel) return;
         const panel = document.createElement('div');
         panel.className = 'rx-sub-panel';
+        panel.setAttribute('role', 'region');
+        panel.setAttribute('aria-label', 'Subtitles');
         panel.innerHTML = `
             <div class="rx-sub-title">Subtitles</div>
             <div class="rx-sub-row">
@@ -13304,10 +13397,13 @@ const Transcripts = {
         .rx-trans-hint { font: 11px system-ui; color: #6c7086; margin-bottom: 6px; }
         .rx-trans-list { max-height: 300px; overflow-y: auto; display: flex; flex-direction: column; gap: 2px; }
         .rx-trans-row {
+            appearance: none; background: none; border: 0; text-align: left;
+            width: 100%; color: inherit;
             display: flex; gap: 8px; padding: 4px 6px; cursor: pointer;
             border-radius: 4px; font: 12px/1.4 system-ui;
         }
         .rx-trans-row:hover { background: rgba(203,166,247,0.1); }
+        .rx-trans-row:focus-visible { outline: 2px solid #89b4fa; outline-offset: -2px; }
         .rx-trans-row .rx-tr-time {
             color: #cba6f7; font-weight: 600; font-variant-numeric: tabular-nums;
             min-width: 52px; flex-shrink: 0;
@@ -13334,10 +13430,12 @@ const Transcripts = {
             return;
         }
         for (const c of this._cues) {
-            const row = document.createElement('div');
+            const row = document.createElement('button');
+            row.type = 'button';
             row.className = 'rx-trans-row';
             const ts = document.createElement('span'); ts.className = 'rx-tr-time'; ts.textContent = this._fmt(c.start);
             const tx = document.createElement('span'); tx.textContent = c.text;
+            row.setAttribute('aria-label', `Seek to ${this._fmt(c.start)}: ${c.text}`);
             row.append(ts, tx);
             row.addEventListener('click', () => {
                 const v = qs('video');
@@ -13716,6 +13814,7 @@ const BatchDownload = {
 
     _css: `
         .rx-batch-chk {
+            appearance: none; padding: 0; font: inherit; color: inherit;
             position: absolute; top: 6px; left: 6px; z-index: 4;
             width: 20px; height: 20px; border-radius: 4px;
             background: rgba(0,0,0,0.7); border: 2px solid rgba(255,255,255,0.5);
@@ -13725,7 +13824,9 @@ const BatchDownload = {
         .videostream:hover .rx-batch-chk,
         article.video-item:hover .rx-batch-chk,
         rum-video-thumbnail[role="listitem"]:hover .rx-batch-chk,
+        .rx-batch-chk:focus-visible,
         .rx-batch-mode .rx-batch-chk { opacity: 1; }
+        .rx-batch-chk:focus-visible { outline: 2px solid #89b4fa; outline-offset: 2px; }
         .rx-batch-chk.checked {
             background: var(--rx-accent, #89b4fa); border-color: var(--rx-accent, #89b4fa);
         }
@@ -13755,14 +13856,23 @@ const BatchDownload = {
         card.dataset.rxBatch = '1';
         this._cards?.set(card, card.style.position);
         card.style.position = card.style.position || 'relative';
-        const chk = document.createElement('div');
+        // role="checkbox" rather than a bare button: this is a selection
+        // toggle overlaid on a video card, and a screen-reader user needs the
+        // checked state, not just the action.
+        const chk = document.createElement('button');
+        chk.type = 'button';
         chk.className = 'rx-batch-chk';
+        chk.setAttribute('role', 'checkbox');
+        chk.setAttribute('aria-checked', 'false');
+        chk.setAttribute('aria-label', 'Select this video for batch download');
         chk.addEventListener('click', (e) => {
             e.preventDefault(); e.stopPropagation();
             chk.classList.toggle('checked');
+            const checked = chk.classList.contains('checked');
+            chk.setAttribute('aria-checked', String(checked));
             const url = VideoCards.url(card);
             if (!url) return;
-            if (chk.classList.contains('checked')) this._selected.add(url);
+            if (checked) this._selected.add(url);
             else this._selected.delete(url);
             this._updateBar();
         });
@@ -13970,6 +14080,8 @@ const BatchDownload = {
         if (this._queue) return;
         const bar = document.createElement('div');
         bar.className = 'rx-batch-bar';
+        bar.setAttribute('role', 'region');
+        bar.setAttribute('aria-label', 'Batch download');
         // Build the bar with DOM builders rather than innerHTML — keeps the
         // XSS-hardening discipline from v1.9.3 even though no user data flows
         // through this region today.
