@@ -2397,6 +2397,16 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                         ? stored.rx_settings
                         : {},
                 );
+                // The `encryptedGistSync` master switch shipped with the feature in
+                // v3.17.0 but was never consulted, so a user who turned the feature
+                // off still had a working push/pull path — the toggle was decorative
+                // on a control that moves every setting to a third-party host.
+                // Honor it here, at the only entry point, so the answer is the same
+                // whichever surface asks.
+                if (!settings.encryptedGistSync) {
+                    sendResponse({ ok: false, reason: 'sync-disabled' });
+                    return;
+                }
                 const token = (settings.encryptedGistSyncToken || '').trim();
                 const gistId = (settings.encryptedGistSyncId || '').trim();
                 const passphrase = (message.passphrase || '').trim();

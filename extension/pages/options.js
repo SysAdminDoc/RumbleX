@@ -2464,6 +2464,18 @@
         await new Promise((resolve) => chrome.storage.local.set({ rx_settings: settings }, resolve));
     }
 
+    // Shared so push and pull explain an identical backend refusal identically;
+    // push previously printed the raw reason slug.
+    const GIST_SYNC_REASONS = {
+        'sync-disabled': 'Encrypted Gist Sync is turned off. Enable it above first.',
+        'missing-token': 'Set a GitHub PAT first.',
+        'missing-gist-id': 'Set the Gist ID (or push first to create one).',
+        'bad-passphrase': 'Passphrase did not decrypt the gist.',
+        'weak-passphrase': 'Passphrase must be at least 8 characters.',
+        'no-payload': 'Gist has no rumblex-settings.enc.json file.',
+        'malformed-payload': 'Gist contents are not a RumbleX encrypted payload.',
+    };
+
     async function gistSyncPushAction() {
         await _persistGistSyncCredentials();
         const passphrase = elements.gistSyncPassphraseInput?.value || '';
@@ -2473,7 +2485,7 @@
         try {
             const resp = await chrome.runtime.sendMessage({ action: 'gistSyncPush', passphrase });
             if (!resp?.ok) {
-                showStatus('Push failed: ' + (resp?.reason || 'unknown'), 'error');
+                showStatus('Push failed: ' + (GIST_SYNC_REASONS[resp?.reason] || resp?.reason || 'unknown'), 'error');
                 return;
             }
             if (elements.gistSyncPassphraseInput) elements.gistSyncPassphraseInput.value = '';
@@ -2498,15 +2510,7 @@
         try {
             const resp = await chrome.runtime.sendMessage({ action: 'gistSyncPull', passphrase });
             if (!resp?.ok) {
-                const reasonMap = {
-                    'missing-token': 'Set a GitHub PAT first.',
-                    'missing-gist-id': 'Set the Gist ID (or push first to create one).',
-                    'bad-passphrase': 'Passphrase did not decrypt the gist.',
-                    'weak-passphrase': 'Passphrase must be at least 8 characters.',
-                    'no-payload': 'Gist has no rumblex-settings.enc.json file.',
-                    'malformed-payload': 'Gist contents are not a RumbleX encrypted payload.',
-                };
-                showStatus('Pull failed: ' + (reasonMap[resp?.reason] || resp?.reason || 'unknown'), 'error');
+                showStatus('Pull failed: ' + (GIST_SYNC_REASONS[resp?.reason] || resp?.reason || 'unknown'), 'error');
                 return;
             }
             if (elements.gistSyncPassphraseInput) elements.gistSyncPassphraseInput.value = '';

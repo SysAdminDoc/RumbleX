@@ -160,3 +160,47 @@ test('encrypted Gist pull preserves local credentials but rejects unsafe setting
     expect(snapshots[0].reason).toBe('pre-gist-pull');
     expect(snapshots[0].settings.encryptedGistSyncToken).toBe(localToken);
 });
+
+// The `encryptedGistSync` master switch was decorative until v3.42: it rendered
+// a live toggle in Options while the background handler never read it, so a user
+// who deliberately turned Gist sync off still had a working path that shipped
+// every setting to a third-party host.
+test('encrypted Gist sync refuses to run while the master switch is off', async ({ context, extensionId }) => {
+    const page = await context.newPage();
+    await page.goto(`chrome-extension://${extensionId}/pages/options.html`);
+
+    await page.evaluate(() => chrome.storage.local.set({
+        rx_settings: {
+            schemaVersion: 2,
+            encryptedGistSync: false,
+            encryptedGistSyncToken: 'github_pat_local_fixture',
+            encryptedGistSyncId: 'gist-fixture-id',
+        },
+    }));
+
+    for (const action of ['gistSyncPush', 'gistSyncPull']) {
+        const response = await page.evaluate((act) => chrome.runtime.sendMessage({
+            action: act,
+            passphrase: 'correct horse battery staple',
+        }), action);
+        expect(response.ok).toBe(false);
+        expect(response.reason).toBe('sync-disabled');
+    }
+
+    // Flipping the switch on must restore the normal credential-driven flow,
+    // proving the gate is the only thing that refused above.
+    await page.evaluate(() => chrome.storage.local.set({
+        rx_settings: {
+            schemaVersion: 2,
+            encryptedGistSync: true,
+            encryptedGistSyncToken: '',
+            encryptedGistSyncId: '',
+        },
+    }));
+    const enabled = await page.evaluate(() => chrome.runtime.sendMessage({
+        action: 'gistSyncPull',
+        passphrase: 'correct horse battery staple',
+    }));
+    expect(enabled.ok).toBe(false);
+    expect(enabled.reason).toBe('missing-token');
+});
