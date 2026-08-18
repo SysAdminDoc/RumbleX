@@ -553,6 +553,15 @@
             color: #ddf3ff; background: rgba(116, 199, 236, 0.12); border: 1px solid rgba(116, 199, 236, 0.2);
             padding: 3px 6px; border-radius: 6px; font-size: 9px; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase;
         }
+        /* A key that persists but that no runtime code reads yet. Muted rather
+           than alarming - this is an honest disclosure, not an error state. */
+        .settings-item-unimplemented {
+            color: #f5d7a3; background: rgba(249, 226, 175, 0.12); border: 1px solid rgba(249, 226, 175, 0.26);
+        }
+        .settings-item.is-unimplemented { opacity: 0.72; }
+        .settings-item.is-unimplemented:hover,
+        .settings-item.is-unimplemented:focus-within { opacity: 1; }
+
         .settings-item-description {
             margin: 0; color: var(--text-muted); font-size: 11px; line-height: 1.55;
         }

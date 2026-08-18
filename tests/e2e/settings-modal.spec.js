@@ -127,3 +127,42 @@ test('snapshot restore applies the same trust boundary as file import', async ({
         name: 'Safe',
     })]);
 });
+
+// 41 of 210 settings rendered fully live controls that no runtime code read —
+// a user could flip a switch, watch it save, and get no behavior change. The
+// options page must now disclose those keys instead of pretending they work.
+test('settings with no runtime consumer are disclosed and not operable', async ({ context, extensionId }) => {
+    const page = await context.newPage();
+    await page.goto(`chrome-extension://${extensionId}/pages/options.html`);
+    await page.locator('#open-settings-modal-btn').click();
+    await expect(page.locator('#settings-modal-shell')).toBeVisible();
+
+    const declared = await page.evaluate(() => Object.keys(globalThis.RumbleXSettingsSchema.UNIMPLEMENTED));
+    expect(declared.length).toBeGreaterThan(0);
+
+    // multiStreamViewer is declared unimplemented: badge shown, control dead.
+    await page.locator('#settings-search').fill('multi stream');
+    const card = page.locator('.settings-item[data-key="multiStreamViewer"]');
+    await expect(card).toBeVisible();
+    await expect(card).toHaveClass(/is-unimplemented/);
+    await expect(card.locator('.settings-item-unimplemented')).toHaveText('Not implemented yet');
+    await expect(card.locator('.settings-item-hint')).toContainText('Not implemented yet');
+    await expect(card.locator('input').first()).toBeDisabled();
+
+    // A wired setting in the same view stays fully operable — proving the
+    // disclosure is targeted rather than a blanket disable.
+    await page.locator('#settings-search').fill('shorts feed');
+    const live = page.locator('.settings-item[data-key="disableShortsFeed"]');
+    await expect(live).toBeVisible();
+    await expect(live).not.toHaveClass(/is-unimplemented/);
+    await expect(live.locator('input').first()).toBeEnabled();
+
+    // Every declared key must carry the disclosure, not just the sampled one.
+    await page.locator('#settings-search').fill('');
+    const missing = await page.evaluate(() => Object.keys(globalThis.RumbleXSettingsSchema.UNIMPLEMENTED)
+        .filter((key) => {
+            const el = document.querySelector(`.settings-item[data-key="${key}"]`);
+            return !el || el.dataset.unimplemented !== 'true';
+        }));
+    expect(missing).toEqual([]);
+});

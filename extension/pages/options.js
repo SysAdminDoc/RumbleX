@@ -67,6 +67,11 @@
     // Canonical defaults are shared with content, popup, and background.
     const DEFAULTS = RXSettingsSchema.DEFAULTS;
 
+    // Keys that persist but that no runtime code reads yet. Rendering these as
+    // ordinary live controls is what made them a trust defect: the switch moved,
+    // the value saved, and nothing happened. See settings-schema.js.
+    const UNIMPLEMENTED = RXSettingsSchema.UNIMPLEMENTED || {};
+
     // Per-key metadata: group + human label + description
     const META = {
         adNuker: { group: 'ad-blocking', label: 'Ad Nuker', desc: 'DOM cleanup for ad containers, pause overlays, and premium nags after the network shield runs' },
@@ -1086,6 +1091,13 @@
         const footer = card.querySelector('.settings-item-footer');
         if (footer && !card.classList.contains('is-complex')) footer.hidden = !dirty && !invalid;
         const hint = card.querySelector('.settings-item-hint');
+        // An unimplemented row has one thing to say and it never changes, so it
+        // wins over the dirty/default/stored hints below.
+        if (card.dataset.unimplemented === 'true') {
+            if (footer) footer.hidden = false;
+            if (hint) hint.textContent = 'Not implemented yet - ' + (card.dataset.unimplementedReason || '');
+            return;
+        }
         if (hint) {
             if (invalid) {
                 hint.textContent = 'Fix this field before saving. Invalid draft values stay local to this editor.';
@@ -1377,6 +1389,20 @@
         stateBadge.hidden = true;
         titleRow.appendChild(stateBadge);
 
+        // A control that saves but changes nothing is worse than no control, so
+        // say so plainly instead of letting the user infer it from behavior.
+        const unimplementedReason = UNIMPLEMENTED[key];
+        if (unimplementedReason) {
+            card.classList.add('is-unimplemented');
+            card.dataset.unimplemented = 'true';
+            card.dataset.unimplementedReason = unimplementedReason;
+            const badge = document.createElement('span');
+            badge.className = 'settings-item-badge settings-item-unimplemented';
+            badge.textContent = 'Not implemented yet';
+            badge.title = unimplementedReason;
+            titleRow.appendChild(badge);
+        }
+
         if (isToggle) {
             const right = document.createElement('div');
             right.className = 'settings-item-right';
@@ -1433,6 +1459,16 @@
         });
         footer.appendChild(resetBtn);
         card.appendChild(footer);
+
+        // Disable every input on an unimplemented row and state the reason in
+        // the footer hint, which is already the row's accessible description
+        // target. The value stays visible and stays in exports/backups; it just
+        // stops advertising itself as something the user can act on.
+        if (unimplementedReason) {
+            card.querySelectorAll('input, select, textarea, button').forEach((control) => {
+                control.disabled = true;
+            });
+        }
 
         updateCardState(card, key);
         return card;
@@ -1697,7 +1733,12 @@
         if (summary) summary.textContent = 'Loading…';
         const resp = await sendToContent('getPrivacyReport');
         if (!resp || !resp.ok) {
-            if (summary) summary.textContent = resp?.reason === 'no-rumble-tab' ? 'Open a Rumble tab to load the report.' : 'Unavailable.';
+            if (summary) {
+                if (resp?.reason === 'no-rumble-tab') summary.textContent = 'Open a Rumble tab to load the report.';
+                // A disabled report is a deliberate choice, not a failure.
+                else if (resp?.reason === 'disabled') summary.textContent = 'Privacy Report is turned off. Enable it in Settings to load the report.';
+                else summary.textContent = 'Unavailable.';
+            }
             return;
         }
         const report = resp.report || {};

@@ -23,7 +23,7 @@
 // @updateURL    https://raw.githubusercontent.com/SysAdminDoc/RumbleX/main/RumbleX.user.js
 // ==/UserScript==
 
-// Generated from extension/settings-schema.js + extension/content.js. Shared runtime SHA-256: c05493734219afd104b43e2e1a7323e08fc1f8e356481ec4292913a9bac4879a
+// Generated from extension/settings-schema.js + extension/content.js. Shared runtime SHA-256: 5b0a493ffb873818c08bffa6bde278010354af53885f4db0a985068fd340e46a
 // RumbleX shared settings schema. This file is the canonical source for
 // defaults and trust-boundary normalization across content, options, popup,
 // background profile/Gist restores, and the generated userscript.
@@ -532,6 +532,76 @@
         return out;
     }
 
+    // Keys that are declared and persisted but that no runtime code reads yet.
+    //
+    // Every one of these once rendered a fully live control in the Options page,
+    // so a user could flip it, see it save, and get no behavior change — the
+    // toggle silently did nothing. That is a trust defect, not a cosmetic one.
+    // Options renders anything listed here as explicitly "not implemented yet"
+    // and refuses to pretend otherwise, and `scripts/check-settings-consumers.js`
+    // asserts this list matches the real set of unread keys exactly, in both
+    // directions. Wiring a key to real behavior means deleting it from here; the
+    // guard fails until you do, and it also fails if a key stops being read.
+    const UNIMPLEMENTED = Object.freeze({
+        // Appearance preferences the theme engine does not consult.
+        glassIntensity: 'Theme engine applies a fixed glass treatment.',
+        accentColor: 'Theme engine applies the active theme accent.',
+        pageDensity: 'Layout density is fixed by the active theme.',
+
+        // Playback preferences with no consumer; see the playback-resilience
+        // roadmap item, which wires qualityMode as part of its acceptance.
+        qualityMode: 'AutoMaxQuality always targets the highest rendition.',
+        perChannelVolumeMemory: 'Volume is remembered globally, not per channel.',
+
+        // Download and export preferences the download pipeline ignores.
+        clipExportFormat: 'Clip export always writes MP4.',
+        segmentSkipMode: 'SponsorBlock segments are always local-only.',
+        downloadQualityPreference: 'Downloader always offers every rendition.',
+        downloadIncludeMetadata: 'Metadata sidecar is written per download-panel choice.',
+        downloadIncludeThumbnail: 'Thumbnail sidecar is written per download-panel choice.',
+        downloadLiveStreams: 'Live-stream downloads are gated by page state, not this key.',
+        downloadShorts: 'Shorts downloads are gated by page state, not this key.',
+        audioExtractionMode: 'Audio extraction always prefers the browser encoder.',
+        rantExportFormat: 'Rant export always writes both CSV and JSON.',
+
+        // Channel archive preferences. The archive queue reads
+        // channelArchiveMaxHeight and channelArchiveSubfolder, but not these.
+        channelArchiveEnabled: 'Archive availability follows channelArchiveButton.',
+        channelArchiveFilterClips: 'Archive queue does not filter clips.',
+        channelArchiveMaxItems: 'Archive queue uses its own internal cap.',
+
+        // Feed and filter preferences with no consumer.
+        shortsFilterScope: 'Shorts filtering applies everywhere unconditionally.',
+        blockedChannelsMeta: 'Channel blocks carry no expiry or reason metadata.',
+        filterPreviewBadges: 'Filtered cards are hidden outright, never badged.',
+        politicsFilterPreset: 'No preset keyword bundles are shipped.',
+        remoteCosmeticRulesChannel: 'Remote cosmetic rules use a single channel.',
+
+        // Chat features that were never built.
+        chatMentionHighlight: 'Not built.',
+        chatClickToMention: 'Not built.',
+        chatParticipantsList: 'Not built.',
+        chatTimedMutes: 'Not built.',
+        chatMuteDurations: 'Configures the unbuilt timed-mute feature.',
+
+        // Rant features that were never built.
+        rantStatsPanel: 'Not built.',
+        rantStickyHighValue: 'Not built.',
+
+        // Comment features that were never built.
+        commentThreadView: 'Not built.',
+        commentSearch: 'Not built.',
+        commentMuteDurations: 'Configures the unbuilt comment-mute feature.',
+
+        // Creator and multi-view features that were never built.
+        multiStreamViewer: 'Not built.',
+        rssExportEnabled: 'Not built.',
+        creatorMode: 'Not built.',
+        uploaderMetadataFill: 'Not built.',
+        studioSceneTools: 'Not built.',
+        obsAlertExport: 'Not built.',
+    });
+
     function normalizeStored(input, defaults = DEFAULTS) {
         return normalize(migrate(input), defaults);
     }
@@ -545,6 +615,7 @@
             normalizeStored,
             safeRumbleUrl,
             safeWebhookUrl,
+            UNIMPLEMENTED,
         }),
         configurable: false,
         enumerable: false,
@@ -15825,6 +15896,13 @@ RXPlatform.onMessage((msg, sender, sendResponse) => {
     }
     // v2.6.0 — privacy / backup / telemetry message API
     if (msg.action === 'getPrivacyReport') {
+        // The `privacyReport` switch rendered a live control while nothing read
+        // it, so turning the report off left it fully visible. Gate it at the
+        // only producer so every consumer gets the same answer.
+        if (!Settings.get('privacyReport')) {
+            sendResponse({ ok: false, reason: 'disabled' });
+            return true;
+        }
         sendResponse({ ok: true, report: rxBuildPrivacyReport() });
         return true;
     }

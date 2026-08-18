@@ -18,6 +18,7 @@
     "test:userscript-platform": "node scripts/test-userscript-platform.js",
     "test:extension-platform": "node scripts/test-extension-platform.js",
     "test:settings-schema": "node scripts/test-settings-schema.js",
+    "test:settings-consumers": "node scripts/check-settings-consumers.js",
     "test:feature-catalog": "node scripts/test-feature-catalog.js",
     "test:firefox-extension": "node scripts/test-firefox-extension.js",
     "test:ad-blocking": "node scripts/test-ad-blocking.js"

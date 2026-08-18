@@ -14946,6 +14946,13 @@ RXPlatform.onMessage((msg, sender, sendResponse) => {
     }
     // v2.6.0 — privacy / backup / telemetry message API
     if (msg.action === 'getPrivacyReport') {
+        // The `privacyReport` switch rendered a live control while nothing read
+        // it, so turning the report off left it fully visible. Gate it at the
+        // only producer so every consumer gets the same answer.
+        if (!Settings.get('privacyReport')) {
+            sendResponse({ ok: false, reason: 'disabled' });
+            return true;
+        }
         sendResponse({ ok: true, report: rxBuildPrivacyReport() });
         return true;
     }
