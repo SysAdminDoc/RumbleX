@@ -246,6 +246,9 @@ body {
 }
 
 /* Footer */
+.save-error { margin: 0 12px 8px; padding: 8px 10px; border-radius: 6px;
+    background: rgba(220, 60, 60, 0.14); border: 1px solid rgba(220, 60, 60, 0.4);
+    color: #ffb4b4; font-size: 12px; line-height: 1.4; }
 .footer {
     padding: 11px 14px;
     border-top: 1px solid var(--border);
@@ -368,6 +371,7 @@ body {
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"/><path d="M13 5l7 7-7 7"/></svg>
 </button>
 <div class="features" id="features"></div>
+<div class="save-error" id="save-error" role="alert" aria-live="assertive" hidden></div>
 <div class="footer">
     <div class="footer-left">
         <span class="footer-version" id="footer-version"></span>

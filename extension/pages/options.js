@@ -303,7 +303,7 @@
         channelArchiveButton: { group: 'integrations', label: 'In-Page Archive Button', desc: 'Show "Archive channel" button next to Follow on channel pages.' },
         channelArchiveMaxHeight: { group: 'downloads', label: 'Archive Max Height', desc: 'Cap archive downloads at this resolution. best | 2160 | 1440 | 1080 | 720 | 480 | 360.' },
         channelArchiveSubfolder: { group: 'downloads', label: 'Archive Subfolder', desc: 'Subfolder under Downloads for archive-queue files. Default "RumbleX".' },
-        debugErrorLog: { group: 'privacy', label: 'Error Log Ring Buffer', desc: 'Record feature init failures to a local 200-entry ring buffer. Never uploaded.' },
+        debugErrorLog: { group: 'privacy', label: 'Error Log Ring Buffer', desc: 'Show the local 200-entry feature-failure ring buffer here so it can be exported for a bug report. Capture is always on and always local; this only reveals it. Never uploaded.' },
 
         // v3.1.0 — Platform follow-through
         disableShortsFeed: { group: 'feed-controls', label: 'Disable Shorts Feed', desc: 'Redirect rumble.com/shorts to /subscriptions on every visit. Launched on web 2026-02-04.' },
@@ -1756,7 +1756,7 @@
         if (!resp?.ok) { showStatus('Error log unavailable. Open a rumble.com tab so the content script can respond.', 'error'); return; }
         const entries = Array.isArray(resp.entries) ? resp.entries : [];
         if (entries.length === 0) {
-            showStatus('Error log is empty — turn on debugErrorLog first, then reload a rumble.com tab to capture any feature init failures.', 'info');
+            showStatus('Error log is empty — no feature failures have been recorded on this page.', 'info');
             return;
         }
         const ts = new Date().toISOString().replace(/[:T]/g, '-').replace(/\..+$/, '');

@@ -284,12 +284,35 @@ function makeToggle(featId, labelText, initialChecked, onChange) {
 // the most recent value synchronously regardless of which toggle fired last.
 let _saveTimer = null;
 let _pendingSettings = null;
+// chrome.storage.local.set reports failure through the callback's
+// chrome.runtime.lastError, not by throwing, so the previous synchronous
+// try/catch could never have caught a real persist failure. A dropped write
+// left the toggle looking saved when it was not.
+function persistSettings(settings) {
+    try {
+        chrome.storage.local.set({ rx_settings: settings }, () => {
+            const err = chrome.runtime.lastError;
+            if (err) reportSaveFailure(err.message);
+        });
+    } catch (e) {
+        reportSaveFailure(e?.message || String(e));
+    }
+}
+
+function reportSaveFailure(message) {
+    console.warn('[RumbleX] settings save failed:', message);
+    const banner = document.getElementById('save-error');
+    if (!banner) return;
+    banner.textContent = 'Settings could not be saved — your last change was not applied.';
+    banner.hidden = false;
+}
+
 function saveSettings(settings) {
     _pendingSettings = settings;
     clearTimeout(_saveTimer);
     _saveTimer = setTimeout(() => {
         _saveTimer = null;
-        try { chrome.storage.local.set({ rx_settings: _pendingSettings }); } catch {}
+        persistSettings(_pendingSettings);
         _pendingSettings = null;
     }, 120);
 }
@@ -298,7 +321,7 @@ function flushPendingSave() {
     clearTimeout(_saveTimer);
     _saveTimer = null;
     if (_pendingSettings) {
-        try { chrome.storage.local.set({ rx_settings: _pendingSettings }); } catch {}
+        persistSettings(_pendingSettings);
         _pendingSettings = null;
     }
 }

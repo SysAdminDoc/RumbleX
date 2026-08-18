@@ -23,7 +23,7 @@
 // @updateURL    https://raw.githubusercontent.com/SysAdminDoc/RumbleX/main/RumbleX.user.js
 // ==/UserScript==
 
-// Generated from extension/settings-schema.js + extension/content.js. Shared runtime SHA-256: 302849d89dd1c0c4c2fbc68b3e5efebaf793f7c4f70270514aa91bbea5e4b4b0
+// Generated from extension/settings-schema.js + extension/content.js. Shared runtime SHA-256: b53c86152eb02976a7c9c87cd7b86217a6043805f1c0c75f4d742fca4be2bcb3
 // RumbleX shared settings schema. This file is the canonical source for
 // defaults and trust-boundary normalization across content, options, popup,
 // background profile/Gist restores, and the generated userscript.
@@ -10263,8 +10263,28 @@ const SettingsPanel = {
             // Hot-reload: try to toggle the feature without a page reload
             const feat = features.find(f => f.id === featureId);
             if (feat && feat.destroy && feat.init) {
-                try { feat.destroy(); } catch {}
-                if (input.checked) { try { feat.init(); } catch {} }
+                try {
+                    feat.destroy();
+                } catch (destroyError) {
+                    RxErrorLog?.record?.(featureId, destroyError, 'hot-toggle destroy');
+                }
+                // A throwing init() used to leave the switch on while the feature
+                // did nothing. Revert the control and say so instead of claiming
+                // the toggle worked.
+                if (input.checked) {
+                    try {
+                        feat.init();
+                    } catch (initError) {
+                        RxErrorLog?.record?.(featureId, initError, 'hot-toggle init');
+                        Settings.set(featureId, false);
+                        input.checked = false;
+                        wrap.classList.remove('active');
+                        if (card && !card.classList.contains('rx-m-sub')) card.classList.remove('rx-m-enabled');
+                        this._updateNavCounts();
+                        this._showToast('Could not enable ' + labelText + ' — reload the page to try again');
+                        return;
+                    }
+                }
                 this._showToast(input.checked ? 'Enabled' : 'Disabled');
             } else {
                 this._showToast('Reload page to apply');
@@ -15162,7 +15182,13 @@ const RxErrorLog = {
     _buf: [],
 
     record(featureId, error, context) {
-        if (!Settings._ready || !Settings.get('debugErrorLog')) return;
+        // Record unconditionally. `debugErrorLog` gates *surfacing* the ring
+        // (see drain()), not filling it — gating capture meant the shipped
+        // default configuration collected nothing, so the selector-telemetry
+        // export the issue template asks bug reporters for was always empty
+        // unless they had already reproduced the bug once with the flag on.
+        // Still local-only, still capped at MAX, still never uploaded.
+        if (!Settings._ready) return;
         const entry = {
             at: Date.now(),
             featureId: String(featureId || 'unknown').slice(0, 80),
@@ -15176,6 +15202,9 @@ const RxErrorLog = {
     },
 
     drain() {
+        // Capture is unconditional; revealing the ring is the part the user
+        // opts into, so the privacy disclosure stays accurate either way.
+        if (!Settings.get('debugErrorLog')) return [];
         const snapshot = this._buf.slice();
         return snapshot;
     },
@@ -15700,7 +15729,8 @@ function rxBuildPrivacyReport() {
         notes: [
             settings.stripTrackingParams ? 'Tracking-param stripping is ON' : 'Tracking-param stripping is OFF',
             settings.debugSelectorTelemetry ? 'Selector telemetry is being collected locally (ring buffer, no upload)' : 'Selector telemetry is disabled',
-            settings.debugErrorLog ? 'Error log ring buffer is being collected locally (200-entry rolling window, no upload)' : 'Error log ring buffer is disabled',
+            'Error log ring buffer is captured locally on every page (200-entry rolling window, no upload)'
+                + (settings.debugErrorLog ? ' and is visible on the options page' : ' and stays hidden until the Error Log Ring Buffer setting is enabled'),
             settings.remoteCosmeticRules ? 'Remote cosmetic rules enabled — signed payloads only' : 'Remote cosmetic rules disabled',
             settings.discordWebhookUrl
                 ? 'Channel notifier posts to a user-configured Discord webhook — followed-channel name and URL leave the browser when a watched channel goes live or uploads'

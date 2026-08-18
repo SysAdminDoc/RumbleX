@@ -331,3 +331,48 @@ test('in-page settings reports extension request blocking separately from Ad Nuk
     await expect(page.locator('.rx-m-shield-note')).toHaveText('7 verified request rules · Chromium DNR');
     await expect(page.locator('div.rx-m-card[data-feature-id="adNuker"]')).toContainText('after the network shield runs');
 });
+
+test('a feature whose init throws reverts its switch instead of reporting success', async ({ context, serviceWorker }) => {
+    const page = await openWatch(context, 'vhot-toggle-failure.html');
+    const id = await tabId(serviceWorker, page.url());
+
+    const outcome = await serviceWorker.evaluate(async (targetTabId) => {
+        const [execution] = await chrome.scripting.executeScript({
+            target: { tabId: targetTabId },
+            world: 'ISOLATED',
+            func: async () => {
+                const feature = features.find((f) => f.id && f.init && f.destroy);
+                if (!feature) throw new Error('no lifecycle feature available');
+                const originalInit = feature.init;
+                const originalValue = Settings.get(feature.id);
+                Settings.set(feature.id, false);
+                feature.init = () => { throw new Error('synthetic init failure'); };
+                try {
+                    const wrap = SettingsPanel._makeSwitch(feature.id, '#ffffff', feature.id);
+                    document.body.appendChild(wrap);
+                    const input = wrap.querySelector('input[type="checkbox"]');
+                    input.checked = true;
+                    input.dispatchEvent(new Event('change', { bubbles: true }));
+                    await new Promise((resolve) => setTimeout(resolve, 50));
+                    const result = {
+                        switchReverted: input.checked === false,
+                        settingReverted: Settings.get(feature.id) === false,
+                        recorded: RxErrorLog._buf.some((entry) => entry.context === 'hot-toggle init'),
+                    };
+                    wrap.remove();
+                    return result;
+                } finally {
+                    feature.init = originalInit;
+                    Settings.set(feature.id, originalValue);
+                }
+            },
+        });
+        return execution.result;
+    }, id);
+
+    expect(outcome.switchReverted).toBe(true);
+    expect(outcome.settingReverted).toBe(true);
+    // Capture is unconditional now, so the failure is recorded even with the
+    // debug surfacing setting off.
+    expect(outcome.recorded).toBe(true);
+});
