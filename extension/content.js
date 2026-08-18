@@ -9311,20 +9311,6 @@ const SettingsPanel = {
         body.rx-panel-open #rx-modal {
             opacity: 1; pointer-events: auto; transform: translate(-50%,-50%) scale(1);
         }
-        @media (max-width: 720px), (max-height: 620px) {
-            #rx-modal { width: calc(100% - 16px); height: calc(100dvh - 16px); max-height: none; }
-            .rx-m-body { flex-direction: column; }
-            .rx-m-sidebar {
-                width: 100%; max-height: none; flex-direction: row; align-items: center;
-                overflow-x: auto; overflow-y: hidden; padding: 6px;
-                border-right: 0; border-bottom: 1px solid #2a2a2e;
-            }
-            .rx-m-search-wrap { flex: 0 0 min(240px, 55vw); margin: 0 4px 0 0; }
-            .rx-m-tablist { flex: 0 0 auto; flex-direction: row; gap: 2px; }
-            .rx-m-nav-btn { flex: 0 0 auto; width: auto; min-height: 44px; }
-            .rx-m-nav-count { display: none; }
-            .rx-m-content { padding: 14px; }
-        }
 
         /* ── Header ── */
         .rx-m-header {
@@ -9529,6 +9515,29 @@ const SettingsPanel = {
         }
         .rx-m-btn-secondary:hover { background: #1e1e22; color: #f0f0f0; }
         .rx-m-reload-note { font-size: 10px; color: rgba(166,173,200,0.5); text-align: center; padding: 12px 0 4px; }
+
+        /* ── Narrow / short viewports ──
+           MUST stay last. A media query adds no specificity, so any property
+           also set by a base rule above would win on source order — which is
+           exactly how this block used to be silently defeated, collapsing the
+           sidebar and hiding the content pane at small window sizes. */
+        @media (max-width: 720px), (max-height: 620px) {
+            #rx-modal { width: calc(100% - 16px); height: calc(100dvh - 16px); max-height: none; }
+            .rx-m-body { flex-direction: column; }
+            .rx-m-sidebar {
+                /* border-box or the 6px padding pushes the row 12px wider than
+                   the body, which clips against the body's overflow:hidden. */
+                box-sizing: border-box;
+                width: 100%; max-height: none; flex-direction: row; align-items: center;
+                overflow-x: auto; overflow-y: hidden; padding: 6px;
+                border-right: 0; border-bottom: 1px solid #2a2a2e;
+            }
+            .rx-m-search-wrap { flex: 0 0 min(240px, 55vw); margin: 0 4px 0 0; }
+            .rx-m-tablist { flex: 0 0 auto; flex-direction: row; gap: 2px; }
+            .rx-m-nav-btn { flex: 0 0 auto; width: auto; min-height: 44px; }
+            .rx-m-nav-count { display: none; }
+            .rx-m-content { padding: 14px; }
+        }
 
 
     `,

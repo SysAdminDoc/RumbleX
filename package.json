@@ -26,7 +26,8 @@
     "test:a11y-controls": "node scripts/check-a11y-controls.js",
     "test:content-literals": "node scripts/check-content-literals.js",
     "test:content-locale": "node scripts/sync-content-locale.js",
-    "locale:sync": "node scripts/sync-content-locale.js --write"
+    "locale:sync": "node scripts/sync-content-locale.js --write",
+    "test:store-listing": "node scripts/check-store-listing.js"
   },
   "devDependencies": {
     "@playwright/test": "^1.49.0",

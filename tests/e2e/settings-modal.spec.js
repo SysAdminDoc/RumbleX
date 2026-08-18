@@ -230,3 +230,63 @@ test('dismissing the first-run welcome changes nothing and it stays gone', async
     await page.reload();
     await expect(page.locator('#welcome-panel')).toBeHidden();
 });
+
+test('the in-page settings modal stays usable in a small window', async ({ context }) => {
+    // The narrow/short-viewport rules used to sit ABOVE the desktop rules they
+    // override. A media query adds no specificity, so every property both
+    // declared lost on source order: the sidebar stayed a 240px vertical
+    // column inside a column-direction body, which pushed the category list and
+    // the entire content pane out of the modal. Only `.rx-m-body` survived,
+    // because no base rule sets flex-direction — which is precisely why this
+    // looked like it worked.
+    const fs = require('node:fs');
+    const path = require('node:path');
+    const fixture = fs.readFileSync(
+        path.join(__dirname, '..', 'fixtures', 'platform', 'modern-watch.html'),
+        'utf8',
+    );
+
+    const page = await context.newPage();
+    await page.setViewportSize({ width: 640, height: 400 });
+    await page.route('https://rumble.com/vnarrow-modal.html', (route) => route.fulfill({
+        status: 200, contentType: 'text/html', body: fixture,
+    }));
+    await page.goto('https://rumble.com/vnarrow-modal.html', { waitUntil: 'domcontentloaded' });
+    await page.locator('#rx-settings-btn').waitFor({ state: 'attached', timeout: 15_000 });
+    await page.evaluate(() => document.querySelector('#rx-settings-btn')?.click());
+    await page.waitForFunction(() => document.body.classList.contains('rx-panel-open'));
+    await page.waitForTimeout(300);
+
+    const layout = await page.evaluate(() => {
+        const box = (selector) => {
+            const el = document.querySelector(selector);
+            if (!el) return null;
+            const rect = el.getBoundingClientRect();
+            return {
+                width: Math.round(rect.width),
+                height: Math.round(rect.height),
+                direction: getComputedStyle(el).flexDirection,
+            };
+        };
+        return {
+            matches: matchMedia('(max-width: 720px), (max-height: 620px)').matches,
+            body: box('.rx-m-body'),
+            sidebar: box('.rx-m-sidebar'),
+            content: box('.rx-m-content'),
+            navButtons: document.querySelectorAll('.rx-m-nav-btn').length,
+        };
+    });
+
+    expect(layout.matches).toBe(true);
+    // The categories collapse to a scrollable horizontal strip...
+    expect(layout.sidebar.direction).toBe('row');
+    expect(layout.sidebar.height).toBeLessThan(120);
+    // ...and must not overhang the body it sits in (box-sizing).
+    expect(layout.sidebar.width).toBeLessThanOrEqual(layout.body.width);
+    // ...which is what leaves the content pane room to render at all. Without
+    // the fix this measured 40px: header height and nothing else.
+    expect(layout.content.height).toBeGreaterThan(150);
+    expect(layout.navButtons).toBeGreaterThan(6);
+
+    await page.close();
+});

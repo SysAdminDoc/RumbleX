@@ -1,0 +1,120 @@
+<!doctype html>
+<!--
+  Source for the Chrome Web Store promotional images.
+
+  Both required sizes are produced from this one file so the wordmark, palette
+  and copy cannot drift between them: tests/e2e/store-assets.spec.js sets
+  `document.documentElement.dataset.variant` to `tile` (440x280) or `marquee`
+  (1400x560), sizes the viewport to match, and screenshots the page.
+
+  Everything is inline and self-contained — no fonts, no network. The icon is
+  loaded from ../../extension/icons/128.png at capture time via file://, which
+  keeps a single source of truth for the mark.
+-->
+<meta charset="utf-8">
+<title>RumbleX store promo</title>
+<style>
+    /* Catppuccin Mocha, matching the extension's own surfaces. */
+    :root {
+        --base: #1e1e2e;
+        --mantle: #181825;
+        --crust: #11111b;
+        --text: #cdd6f4;
+        --subtext: #a6adc8;
+        --accent: #89b4fa;
+        --rumble-green: #85d551;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    html, body {
+        width: 100%;
+        height: 100%;
+        overflow: hidden;
+        background: var(--crust);
+    }
+
+    body {
+        display: flex;
+        align-items: center;
+        font: 400 16px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif;
+        color: var(--text);
+        /* A dark field with a single accent bloom — legible as a thumbnail,
+           which is the only size the tile is ever seen at. */
+        background:
+            radial-gradient(120% 140% at 12% 0%, rgba(137, 180, 250, 0.20), transparent 55%),
+            radial-gradient(90% 120% at 100% 100%, rgba(133, 213, 81, 0.16), transparent 60%),
+            linear-gradient(160deg, var(--base), var(--crust));
+    }
+
+    .mark {
+        flex-shrink: 0;
+        border-radius: 22%;
+        box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.08), 0 18px 40px rgba(0, 0, 0, 0.55);
+    }
+
+    .word { font-weight: 700; letter-spacing: -0.02em; }
+    .word span { color: var(--accent); }
+    .tag { color: var(--subtext); }
+
+    .rule {
+        border: 0;
+        border-top: 1px solid rgba(255, 255, 255, 0.08);
+    }
+
+    .points { display: flex; color: var(--subtext); }
+    .points li { list-style: none; display: flex; align-items: center; gap: 0.45em; }
+    .points li::before {
+        content: '';
+        width: 0.5em;
+        height: 0.5em;
+        border-radius: 50%;
+        background: var(--rumble-green);
+        flex-shrink: 0;
+    }
+
+    /* ── 440x280 small tile ─────────────────────────────────────────────────
+       Seen as a grid thumbnail, so it carries the mark, the name and one line.
+       Anything more is unreadable at that size. */
+    :root[data-variant="tile"] body {
+        flex-direction: column;
+        justify-content: center;
+        gap: 14px;
+        padding: 28px;
+        text-align: center;
+    }
+    :root[data-variant="tile"] .mark { width: 84px; height: 84px; }
+    :root[data-variant="tile"] .word { font-size: 38px; }
+    :root[data-variant="tile"] .tag { font-size: 15px; }
+    :root[data-variant="tile"] .rule,
+    :root[data-variant="tile"] .points { display: none; }
+
+    /* ── 1400x560 marquee ───────────────────────────────────────────────────
+       Shown large and wide, so it can carry the feature points. */
+    :root[data-variant="marquee"] body {
+        flex-direction: row;
+        /* Centred rather than left-aligned: at 1400x560 a left-anchored block
+           leaves a dead third on the right. */
+        justify-content: center;
+        gap: 64px;
+        padding: 0 90px;
+    }
+    :root[data-variant="marquee"] .mark { width: 208px; height: 208px; }
+    :root[data-variant="marquee"] .copy { display: flex; flex-direction: column; gap: 22px; }
+    :root[data-variant="marquee"] .word { font-size: 86px; }
+    :root[data-variant="marquee"] .tag { font-size: 27px; max-width: 24ch; }
+    :root[data-variant="marquee"] .rule { width: 120px; }
+    :root[data-variant="marquee"] .points { gap: 34px; font-size: 19px; }
+</style>
+
+<img class="mark" src="../../extension/icons/128.png" alt="">
+<div class="copy">
+    <h1 class="word">Rumble<span>X</span></h1>
+    <p class="tag">Ad blocking, downloads, and 120+ controls for rumble.com.</p>
+    <hr class="rule">
+    <ul class="points">
+        <li>No telemetry</li>
+        <li>Everything stored locally</li>
+        <li>Open source</li>
+    </ul>
+</div>

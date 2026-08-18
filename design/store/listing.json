@@ -1,0 +1,96 @@
+{
+  "_about": "Store listing source of truth for Chrome Web Store, AMO and Edge Add-ons. Publishing itself is blocked on developer accounts (see Roadmap_Blocked.md); everything here is the asset and copy work, which is not. Kept as JSON rather than a doc because the repo's file-hygiene rule allows no new markdown files.",
+  "version": "3.45.0",
+
+  "assets": {
+    "_note": "Regenerate with: RUMBLEX_STORE_CAPTURE=1 npx playwright test tests/e2e/store-assets.spec.js. That test re-reads every PNG from disk and asserts its exact pixel size, because a store rejects an off-by-one image at submission time.",
+    "screenshots_1280x800": [
+      "screenshot-1-options-1280x800.png",
+      "screenshot-2-editor-1280x800.png",
+      "screenshot-3-privacy-1280x800.png",
+      "screenshot-4-in-page-1280x800.png",
+      "screenshot-5-popup-1280x800.png"
+    ],
+    "screenshots_640x400": [
+      "screenshot-1-options-640x400.png",
+      "screenshot-2-editor-640x400.png",
+      "screenshot-3-privacy-640x400.png",
+      "screenshot-4-in-page-640x400.png",
+      "screenshot-5-popup-640x400.png"
+    ],
+    "promo_tile_440x280": "promo-tile-440x280.png",
+    "promo_marquee_1400x560": "promo-marquee-1400x560.png",
+    "source": "promo.html"
+  },
+
+  "permission_justifications": {
+    "_note": "One entry per manifest permission. Chrome Web Store requires a justification for each, and flags broad host patterns plus anything facilitating video downloads for in-depth review — so the narrow host list and the local-only storage claim are stated up front rather than buried.",
+    "api": {
+      "storage": "Stores the user's own settings, watch history, bookmarks and saved SponsorBlock segments in chrome.storage.local. Nothing is sent anywhere; scripts/check-manifest-privacy.js fails the build if a network sink is added to a path that reads this data.",
+      "downloads": "Saves a video the user explicitly asked to download, using the browser's own download manager so the file lands in the user's chosen directory and appears in chrome://downloads. No download is ever started without a click.",
+      "offscreen": "MV3 service workers have no DOM, so muxing a downloaded HLS stream into MP4 runs in an offscreen document. It processes only bytes already fetched for the requested download and is torn down afterwards.",
+      "contextMenus": "Adds RumbleX actions to the right-click menu on rumble.com pages and links (download, copy timestamped URL, block channel).",
+      "scripting": "Injects the settings UI and feature code into rumble.com tabs that were already open when the extension was installed or updated, so the user does not have to reload every tab.",
+      "tabs": "Reads the URL of the active rumble.com tab to decide which features apply (watch page, feed, channel, account) and to route a download request to the tab that made it. Tab contents are never read for any other host.",
+      "tabGroups": "Groups the tabs opened by the Channel Archive queue so a batch of downloads does not scatter across the tab strip.",
+      "sidePanel": "Optional side-panel view of the same options page, opened only when the user turns it on.",
+      "alarms": "Re-arms the archive queue and settings-snapshot timers across service-worker restarts. MV3 terminates the worker aggressively and setTimeout does not survive that.",
+      "notifications": "Reports the completion or failure of a long download or an archive batch, which can outlive the page the user started it from.",
+      "declarativeNetRequest": "Blocks Rumble's ad and tracking requests using seven static rules scoped to Rumble-owned hosts. Declarative rather than blocking webRequest, so the extension never sees the contents of any request."
+    },
+    "host": {
+      "*://*.rumble.com/*": "The site the extension exists to modify. Every feature is scoped to it.",
+      "*://*.1a-1791.com/*": "Rumble's media CDN. Needed to read the media manifest for a download the user requested, and to match the ad rules that Rumble serves from this host.",
+      "*://*.rumble.cloud/*": "Rumble's other media CDN (hugh.cdn.rumble.cloud). Same purpose as above.",
+      "https://api.github.com/*": "Used only by the optional encrypted-Gist settings sync, which is off by default. With the feature disabled the extension makes no request to this host at all — the background handler returns early before any fetch."
+    },
+    "not_requested": {
+      "_note": "Worth stating in the listing: the permissions a reviewer might expect and will not find.",
+      "<all_urls>": "Never requested. The four hosts above are the complete list.",
+      "webRequest / webRequestBlocking": "Never requested. Ad blocking is declarativeNetRequest only, so request bodies are never readable.",
+      "identity / cookies / history / bookmarks": "Never requested. RumbleX keeps its own local history and bookmarks and does not touch the browser's."
+    }
+  },
+
+  "copy": {
+    "_note": "CWS caps the short description at 132 characters. Localizing name/short/detailed description measurably improves ranking in each locale, so all four ship.",
+    "en": {
+      "name": "RumbleX",
+      "short_description": "Ad blocking, video downloads, and 120+ layout and player controls for rumble.com. No telemetry, everything stored locally.",
+      "detailed_description": "RumbleX is an open-source extension that gives you control over rumble.com.\n\nAD BLOCKING\nSeven declarative request rules block Rumble's ad and tracking hosts before the page loads, backed by DOM cleanup for pause overlays and premium prompts.\n\nDOWNLOADS\nSave a video as a direct MP4, convert an HLS stream to MP4, or stream the raw transport stream straight to a file you pick. Batch-select from any feed, or export a clip between two marks.\n\nPLAYER AND LAYOUT\nOver 120 toggles: theater split view, persistent playback speed, scroll-wheel volume, chapters parsed from the description, a mini player, and per-row control over the homepage.\n\nCOMMENTS AND CHAT\nComment navigation and sorting, export to JSON or CSV, per-user chat blocking, spam de-duplication, and rants that stay visible past their expiry.\n\nPRIVACY\nRumbleX collects nothing. There is no analytics, no remote config, and no account. Your settings, watch history and bookmarks live in local browser storage and never leave the machine. The built-in privacy report shows exactly which hosts the extension can reach and why. Only four host permissions are requested, and one of them is used solely by an optional sync feature that is off by default.\n\nAvailable in English, German, Spanish and Brazilian Portuguese."
+    },
+    "de": {
+      "name": "RumbleX",
+      "short_description": "Werbeblocker, Video-Downloads und über 120 Layout- und Player-Optionen für rumble.com. Keine Telemetrie, alles lokal.",
+      "detailed_description": "RumbleX ist eine quelloffene Erweiterung, die dir die Kontrolle über rumble.com gibt.\n\nWERBEBLOCKER\nSieben deklarative Netzwerkregeln blockieren Rumbles Werbe- und Tracking-Hosts, bevor die Seite lädt, ergänzt durch DOM-Bereinigung für Pause-Overlays und Premium-Hinweise.\n\nDOWNLOADS\nSpeichere ein Video als direkte MP4-Datei, wandle einen HLS-Stream in MP4 um oder schreibe den rohen Transportstream direkt in eine Datei deiner Wahl. Wähle mehrere Videos aus einem Feed aus oder exportiere einen Clip zwischen zwei Markierungen.\n\nPLAYER UND LAYOUT\nÜber 120 Schalter: Kinomodus-Split, dauerhafte Wiedergabegeschwindigkeit, Lautstärke per Mausrad, Kapitel aus der Beschreibung, ein Mini-Player und Kontrolle über jede einzelne Zeile der Startseite.\n\nKOMMENTARE UND CHAT\nKommentar-Navigation und -Sortierung, Export als JSON oder CSV, Blockieren einzelner Chat-Nutzer, Entfernen doppelter Spam-Nachrichten und Rants, die über ihren Ablauf hinaus sichtbar bleiben.\n\nDATENSCHUTZ\nRumbleX sammelt nichts. Keine Analyse, keine Fernkonfiguration, kein Konto. Deine Einstellungen, dein Wiedergabeverlauf und deine Lesezeichen liegen im lokalen Browserspeicher und verlassen das Gerät nie. Der eingebaute Datenschutzbericht zeigt genau, welche Hosts die Erweiterung erreichen kann und warum. Es werden nur vier Host-Berechtigungen angefordert, und eine davon wird ausschließlich von einer optionalen Synchronisierung genutzt, die standardmäßig aus ist.\n\nVerfügbar auf Englisch, Deutsch, Spanisch und brasilianischem Portugiesisch."
+    },
+    "es": {
+      "name": "RumbleX",
+      "short_description": "Bloqueo de anuncios, descargas y más de 120 controles de diseño y reproductor para rumble.com. Sin telemetría.",
+      "detailed_description": "RumbleX es una extensión de código abierto que te da el control de rumble.com.\n\nBLOQUEO DE ANUNCIOS\nSiete reglas de red declarativas bloquean los servidores de anuncios y rastreo de Rumble antes de que cargue la página, con limpieza del DOM para las superposiciones de pausa y los avisos de Premium.\n\nDESCARGAS\nGuarda un vídeo como MP4 directo, convierte un flujo HLS a MP4, o escribe el flujo de transporte sin procesar directamente en el archivo que elijas. Selecciona varios vídeos de cualquier feed o exporta un clip entre dos marcas.\n\nREPRODUCTOR Y DISEÑO\nMás de 120 interruptores: modo cine dividido, velocidad de reproducción persistente, volumen con la rueda del ratón, capítulos extraídos de la descripción, un minirreproductor y control fila por fila de la página de inicio.\n\nCOMENTARIOS Y CHAT\nNavegación y ordenación de comentarios, exportación a JSON o CSV, bloqueo de usuarios del chat, eliminación de spam duplicado y rants que siguen visibles tras caducar.\n\nPRIVACIDAD\nRumbleX no recopila nada. No hay analíticas, ni configuración remota, ni cuenta. Tus ajustes, tu historial y tus marcadores viven en el almacenamiento local del navegador y nunca salen del equipo. El informe de privacidad integrado muestra exactamente a qué servidores puede llegar la extensión y por qué. Solo se piden cuatro permisos de host, y uno de ellos lo usa únicamente una sincronización opcional que está desactivada por defecto.\n\nDisponible en inglés, alemán, español y portugués de Brasil."
+    },
+    "pt_BR": {
+      "name": "RumbleX",
+      "short_description": "Bloqueio de anúncios, downloads e mais de 120 controles de layout e player para o rumble.com. Sem telemetria.",
+      "detailed_description": "O RumbleX é uma extensão de código aberto que dá a você o controle do rumble.com.\n\nBLOQUEIO DE ANÚNCIOS\nSete regras de rede declarativas bloqueiam os servidores de anúncio e rastreamento do Rumble antes de a página carregar, com limpeza do DOM para as sobreposições de pausa e os avisos do Premium.\n\nDOWNLOADS\nSalve um vídeo como MP4 direto, converta um fluxo HLS em MP4 ou grave o transport stream bruto direto no arquivo que você escolher. Selecione vários vídeos de qualquer feed ou exporte um clipe entre duas marcações.\n\nPLAYER E LAYOUT\nMais de 120 chaves: modo cinema dividido, velocidade de reprodução persistente, volume pela roda do mouse, capítulos extraídos da descrição, um mini player e controle linha a linha da página inicial.\n\nCOMENTÁRIOS E CHAT\nNavegação e ordenação de comentários, exportação em JSON ou CSV, bloqueio de usuários no chat, remoção de spam repetido e rants que continuam visíveis depois de expirar.\n\nPRIVACIDADE\nO RumbleX não coleta nada. Não há análise, nem configuração remota, nem conta. Suas configurações, seu histórico e seus favoritos ficam no armazenamento local do navegador e nunca saem da máquina. O relatório de privacidade embutido mostra exatamente quais servidores a extensão consegue alcançar e por quê. Apenas quatro permissões de host são solicitadas, e uma delas é usada somente por uma sincronização opcional que vem desativada.\n\nDisponível em inglês, alemão, espanhol e português do Brasil."
+    }
+  },
+
+  "pre_publish_checklist": [
+    {
+      "item": "Native-speaker review of de, es and pt_BR",
+      "status": "CARRIED FORWARD — not cleared",
+      "detail": "Every non-English string in this repo is machine-translated, including the 424-key catalogs and the store copy above. The 'marked for human review before store publish' flag raised in v3.28 for German applies equally to Spanish, Brazilian Portuguese, and the 260 settings-catalog entries added in v3.44. This cannot be cleared by the same process that produced the translations; it needs a human speaker of each language before submission."
+    },
+    {
+      "item": "Developer accounts for Chrome Web Store, AMO and Edge",
+      "status": "BLOCKED",
+      "detail": "Tracked in Roadmap_Blocked.md. Registration and the one-time CWS fee are operator actions."
+    },
+    {
+      "item": "Re-capture assets against the version being submitted",
+      "status": "AUTOMATED",
+      "detail": "RUMBLEX_STORE_CAPTURE=1 npx playwright test tests/e2e/store-assets.spec.js. The screenshots show the version badge, so a stale capture is visibly wrong."
+    }
+  ]
+}

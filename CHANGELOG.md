@@ -2,6 +2,19 @@
 
 All notable changes to RumbleX will be documented in this file.
 
+## [Unreleased]
+
+### Fixed
+- **The in-page settings modal was unusable in a small browser window.** Its narrow/short-viewport rules sat *above* the desktop rules they override, and a media query adds no specificity — so for every property both declared, the later base rule won. The category sidebar stayed a 240px vertical column inside a column-direction body, which pushed the category list and the entire content pane out of the modal: at 640x400 the user saw a header, a search box and empty space. Only `.rx-m-body` had ever worked, and only because no base rule sets `flex-direction`, which is exactly why this looked correct. The block now sits last, with a comment saying why it must stay there, and a regression at 640x400 asserts the sidebar collapses to a horizontal strip and the content pane keeps its height. Found by capturing the 640x400 store screenshot.
+
+### Added
+- **Store listing assets.** Twelve images under `design/store/`: five screenshots at each of the Chrome Web Store's two accepted sizes (1280x800 and 640x400), a 440x280 promotional tile and a 1400x560 marquee, both rendered from one `promo.html` so the wordmark and palette cannot drift between them. `RUMBLEX_STORE_CAPTURE=1 npx playwright test tests/e2e/store-assets.spec.js` regenerates the set and re-reads every PNG from disk to assert its exact pixel size — a store rejects an off-by-one image at submission, which is far too late to find out.
+- **`design/store/listing.json`** — the listing's source of truth: a justification for each of the 11 API permissions and 4 host permissions (plus an explicit list of the permissions RumbleX does *not* request, since `<all_urls>` and blocking `webRequest` are what a reviewer looks for), and name/short/detailed store copy in all four shipped locales.
+- **`npm run test:store-listing`**, which fails if a permission is added to the manifest without a justification, if a justification outlives the permission it describes, if any locale's short description passes the 132-character cap, or if a declared asset is missing or the wrong size.
+
+### Changed
+- The German locale's "marked for human review before store publish" flag from v3.28 is **carried forward, not cleared**, and now covers Spanish, Brazilian Portuguese and the 260 settings-catalog entries added in v3.44. Every non-English string in the repo is machine-translated; that flag cannot be cleared by the same process that produced the translations. It is recorded in `listing.json`'s pre-publish checklist so it cannot be lost.
+
 ## [3.44.0] - 2026-08-18
 
 ### Added
