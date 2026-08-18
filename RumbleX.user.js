@@ -23,7 +23,7 @@
 // @updateURL    https://raw.githubusercontent.com/SysAdminDoc/RumbleX/main/RumbleX.user.js
 // ==/UserScript==
 
-// Generated from extension/settings-schema.js + extension/content.js. Shared runtime SHA-256: ebb79774cfec15e5d1bc5f8a48dafd1d670f3c0a806287235f4b9f64a1051b27
+// Generated from extension/settings-schema.js + extension/content.js. Shared runtime SHA-256: 7ad8eeedcbbbd69ca4299b2784b075d9c1f2cafebb10aa9a0ff5090bd3d8b8ff
 // RumbleX shared settings schema. This file is the canonical source for
 // defaults and trust-boundary normalization across content, options, popup,
 // background profile/Gist restores, and the generated userscript.
@@ -997,9 +997,21 @@ const Settings = {
         const stored = data.rx_settings || legacy || {};
         const migrated = this._migrate(stored);
         const sanitized = this._sanitize(migrated);
-        this._cache = { ...this._defaults, ...sanitized };
+        // A set() that lands while this await is in flight used to be discarded
+        // outright: the cache was replaced wholesale and _pendingKeys was reset,
+        // so the write reported success and silently vanished. Layer any pending
+        // changes back on top, exactly as _applyExternal already does for writes
+        // that race an external change.
+        const merged = { ...this._defaults, ...sanitized };
+        const pendingDuringBoot = this._pendingKeys;
+        if (this._cache && pendingDuringBoot && pendingDuringBoot.size > 0) {
+            for (const key of pendingDuringBoot) {
+                if (key in this._cache) merged[key] = this._cache[key];
+            }
+        }
+        this._cache = merged;
         this._lastWritten = JSON.stringify(this._cache);
-        this._pendingKeys = new Set();
+        this._pendingKeys = pendingDuringBoot || new Set();
         this._ready = true;
         if (migrated !== stored || JSON.stringify(sanitized) !== JSON.stringify(migrated)) {
             // Persist migrations and normalization so other extension surfaces

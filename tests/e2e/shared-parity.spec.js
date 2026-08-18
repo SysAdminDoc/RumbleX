@@ -435,3 +435,62 @@ test('toasts announce through one live region even when SettingsPanel never moun
     expect(outcome.count).toBe(1);
     expect(outcome.legacy).toBe(0);
 });
+
+// Settings.init() replaced the whole cache and reset _pendingKeys, so a
+// Settings.set() that landed while init() was still awaiting storage was
+// discarded outright — the write reported success and silently vanished. This
+// is what made the hot-toggle revert test flaky: whether the revert survived
+// depended on storage latency.
+//
+// No stubbing here: RXPlatform.storage is Object.freeze'd, so patching it
+// silently no-ops and the test would prove nothing. init() yields at its first
+// await, so a synchronous set() immediately after the call lands squarely in
+// the window on its own.
+test('a settings write during the boot window is not discarded by init', async ({ context, serviceWorker }) => {
+    const page = await openWatch(context, 'vboot-window-write.html');
+    const id = await tabId(serviceWorker, page.url());
+
+    const outcome = await serviceWorker.evaluate(async (targetTabId) => {
+        const [execution] = await chrome.scripting.executeScript({
+            target: { tabId: targetTabId },
+            world: 'ISOLATED',
+            func: async () => {
+                const key = 'wideLayout';
+                // Seed storage with the value the boot-time write must beat and
+                // target its opposite, so the assertions cannot hold by
+                // coincidence if the write is dropped.
+                const seeded = true;
+                const target = false;
+                const existing = (await RXPlatform.storage.get('rx_settings'))?.rx_settings || {};
+                await RXPlatform.storage.set({ rx_settings: { ...existing, schemaVersion: 3, [key]: seeded } });
+
+                Settings._cache = null;
+                Settings._pendingKeys = null;
+                Settings._ready = false;
+
+                const booting = Settings.init();
+                // Synchronous: init() is parked on its first await right now.
+                Settings.set(key, target);
+                const duringBoot = Settings.get(key);
+                await booting;
+                const afterBoot = Settings.get(key);
+
+                // Let the coalesced flush land, then confirm the write reached
+                // storage rather than only living in the cache.
+                await new Promise((resolve) => setTimeout(resolve, 400));
+                const stored = (await RXPlatform.storage.get('rx_settings'))?.rx_settings || {};
+
+                return { seeded, target, duringBoot, afterBoot, persisted: stored[key] };
+            },
+        });
+        return execution.result;
+    }, id);
+
+    // Guard against the assertions going vacuous.
+    expect(outcome.seeded).not.toBe(outcome.target);
+    expect(outcome.duringBoot).toBe(outcome.target);
+    // The bug: init() replaced the cache wholesale, so this came back as the
+    // seeded value instead of the value that had just been written.
+    expect(outcome.afterBoot).toBe(outcome.target);
+    expect(outcome.persisted).toBe(outcome.target);
+});

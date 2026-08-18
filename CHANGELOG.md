@@ -2,6 +2,11 @@
 
 All notable changes to RumbleX will be documented in this file.
 
+## [Unreleased]
+
+### Fixed
+- **Settings written during startup were silently discarded.** `Settings.init()` assigned `this._cache = { ...defaults, ...stored }` wholesale and reset `_pendingKeys`, so any `Settings.set()` that landed while `init()` was still awaiting storage vanished — the write reported success and did nothing. Pending changes are now layered back on top, exactly as `_applyExternal` already did for writes racing an external change. This was the root cause of the intermittent `feature init throws` hot-toggle test failure: whether the revert survived depended purely on storage latency, which is also why it reproduced roughly one run in three rather than never or always.
+
 ## [3.42.0] - 2026-08-18
 
 ### Added
