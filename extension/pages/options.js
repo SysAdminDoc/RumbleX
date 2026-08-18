@@ -936,11 +936,22 @@
     async function resetSettings() {
         try {
             showStatus('Resetting local settings and open Rumble-tab data…', 'info');
-            let snapshot = { ok: false };
+            // This wipe has no confirmation dialog by design — the pre-reset
+            // snapshot IS the undo. If capturing it throws, the undo path is
+            // gone, so abort rather than performing an irreversible reset.
+            // A user who deliberately disabled backup history is a different
+            // case: that is an informed opt-out, so proceed and say so.
+            let snapshot;
             try {
                 snapshot = await createSettingsSnapshot('pre-reset-all-data');
-            } catch {
-                snapshot = { ok: false };
+            } catch (snapshotError) {
+                showStatus(
+                    'Reset cancelled: could not capture the pre-reset snapshot ('
+                    + (snapshotError?.message || snapshotError)
+                    + '). Nothing was changed.',
+                    'error',
+                );
+                return;
             }
 
             // 1) Clear extension storage (settings + popup UI state).
@@ -968,7 +979,9 @@
                 : (broadcast?.pendingClear
                     ? ' Per-site data clear is staged and will run automatically next time a Rumble tab opens.'
                     : ' No Rumble tab was open; per-site data was not reachable.');
-            const snapshotNote = snapshot?.ok ? ' Snapshot captured first.' : '';
+            const snapshotNote = snapshot?.ok
+                ? ' Snapshot captured first.'
+                : ' No snapshot was taken because backup history is turned off — this reset cannot be undone.';
             showStatus('All settings cleared.' + snapshotNote + suffix, 'success');
         } catch (err) {
             showStatus('Reset failed: ' + err.message, 'error');
