@@ -420,3 +420,305 @@ test('ChatExport collects rendered messages, skips blocked ones, and writes them
     expect(parsed.map((row) => row.user)).toEqual(['alice', 'bob']);
     expect(JSON.stringify(parsed)).not.toContain('spammer');
 });
+
+test('SubtitleSidecar parses WEBVTT cues into a sorted timeline', async () => {
+    const result = await inHarness(({ body }) => {
+        document.body.innerHTML = body;
+        const harness = globalThis.__RumbleXFeatureHarness;
+        harness.enable('subtitleSidecar');
+        const feature = harness.features.find((f) => f.id === 'subtitleSidecar');
+
+        const vtt = [
+            'WEBVTT - generated',
+            '',
+            '00:00:10.000 --> 00:00:12.500',
+            'second cue',
+            '',
+            '00:00:02.000 --> 00:00:04.000',
+            'first cue',
+            'wrapped onto two lines',
+            '',
+            '00:00:20.000 --> 00:00:21.000',
+            '',
+        ].join('\n');
+
+        return {
+            cues: feature._parse(vtt),
+            tsDot: feature._tsToSec('00:01:02.500'),
+            tsShort: feature._tsToSec('01:30.000'),
+        };
+    });
+
+    // Out-of-order input is sorted, multi-line text is preserved, and a cue
+    // with no content is dropped rather than rendering as a blank subtitle.
+    expect(result.cues).toEqual([
+        { start: 2, end: 4, text: 'first cue\nwrapped onto two lines' },
+        { start: 10, end: 12.5, text: 'second cue' },
+    ]);
+    expect(result.tsDot).toBeCloseTo(62.5, 3);
+    expect(result.tsShort).toBeCloseTo(90, 3);
+});
+
+test('AutoplayScheduler queues only Rumble URLs and dedupes them', async () => {
+    const result = await inHarness(({ body }) => {
+        document.body.innerHTML = body;
+        history.replaceState({}, '', '/vqueue123-scheduler.html');
+        const harness = globalThis.__RumbleXFeatureHarness;
+        harness.enable('autoplayScheduler');
+        const feature = harness.features.find((f) => f.id === 'autoplayScheduler');
+
+        feature._saveQueue([]);
+        feature._addUrl('https://rumble.com/vone-first.html');
+        feature._addUrl('https://www.rumble.com/vtwo-second.html');
+        feature._addUrl('https://rumble.com/vone-first.html');   // duplicate
+        feature._addUrl('https://evil.example.com/vthree.html'); // off-site
+        feature._addUrl('javascript:alert(1)');                  // hostile scheme
+        feature._addUrl('   ');                                  // blank
+        return { queued: feature._queue() };
+    });
+
+    // Off-site and hostile-scheme entries must never reach the queue, since
+    // _playNext assigns whatever it finds straight to location.href.
+    expect(result.queued).toEqual([
+        'https://rumble.com/vone-first.html',
+        'https://www.rumble.com/vtwo-second.html',
+    ]);
+});
+
+test('CommentSort reads vote counts and timestamps off real comment markup', async () => {
+    const result = await inHarness(({ body }) => {
+        document.body.innerHTML = body;
+        const harness = globalThis.__RumbleXFeatureHarness;
+        harness.enable('commentSort');
+        const feature = harness.features.find((f) => f.id === 'commentSort');
+
+        const host = document.createElement('ul');
+        host.className = 'comments-list';
+        const make = (id, votes, iso) =>
+            '<li class="comment-item" data-cid="' + id + '">'
+            + '<div class="comment-actions"><span class="comment-vote-count">' + votes + '</span></div>'
+            + '<time datetime="' + iso + '">t</time></li>';
+        host.innerHTML = [
+            make('low', '3', '2026-08-01T00:00:00Z'),
+            make('high', '1,042', '2026-07-01T00:00:00Z'),
+            make('neg', '-7', '2026-08-10T00:00:00Z'),
+        ].join('');
+        document.body.appendChild(host);
+
+        const items = [...host.querySelectorAll('.comment-item')];
+        return {
+            votes: items.map((item) => feature._parseVotes(item)),
+            olderIsSmaller: feature._parseTime(items[1]) < feature._parseTime(items[0]),
+            missingVotes: feature._parseVotes(document.createElement('li')),
+            missingTime: feature._parseTime(document.createElement('li')),
+        };
+    });
+
+    // Thousands separators and negative scores must both survive parsing.
+    expect(result.votes).toEqual([3, 1042, -7]);
+    expect(result.olderIsSmaller).toBe(true);
+    // Missing widgets read as 0 rather than NaN, which would poison any sort.
+    expect(result.missingVotes).toBe(0);
+    expect(result.missingTime).toBe(0);
+});
+
+test('Transcripts formats timestamps across the hour boundary', async () => {
+    const result = await inHarness(({ body }) => {
+        document.body.innerHTML = body;
+        const harness = globalThis.__RumbleXFeatureHarness;
+        harness.enable('transcripts');
+        const feature = harness.features.find((f) => f.id === 'transcripts');
+        return {
+            fmt: [feature._fmt(0), feature._fmt(9), feature._fmt(65), feature._fmt(3725), feature._fmt(-5)],
+            hasFilter: typeof feature._filter === 'function',
+        };
+    });
+
+    // Under an hour drops the hour segment; over an hour zero-pads minutes.
+    // Negative input must clamp rather than render "-1:-5".
+    expect(result.fmt).toEqual(['0:00', '0:09', '1:05', '1:02:05', '0:00']);
+    expect(result.hasFilter).toBe(true);
+});
+
+test('VideoClips zero-pads clip durations', async () => {
+    const result = await inHarness(({ body }) => {
+        document.body.innerHTML = body;
+        history.replaceState({}, '', '/vclip123-range.html');
+        const harness = globalThis.__RumbleXFeatureHarness;
+        harness.enable('videoClips');
+        const feature = harness.features.find((f) => f.id === 'videoClips');
+        return { fmt: [feature._fmt(0), feature._fmt(9), feature._fmt(61), feature._fmt(3600)] };
+    });
+
+    // Seconds must zero-pad so a clip range never renders as "1:1", and an
+    // hour-long clip rolls into an explicit hour segment rather than "60:00".
+    expect(result.fmt).toEqual(['0:00', '0:09', '1:01', '1:00:00']);
+});
+
+test('RantPersist scopes its cache key per video and derives a clean title', async () => {
+    const result = await inHarness(({ body }) => {
+        document.body.innerHTML = body;
+        const harness = globalThis.__RumbleXFeatureHarness;
+        harness.enable('rantPersist');
+        const feature = harness.features.find((f) => f.id === 'rantPersist');
+
+        history.replaceState({}, '', '/vrant123-first-video.html');
+        const first = { key: feature._videoKey(), raw: feature._videoIdRaw() };
+        history.replaceState({}, '', '/vrant456-second-video.html');
+        const second = { key: feature._videoKey(), raw: feature._videoIdRaw() };
+        history.replaceState({}, '', '/c/somechannel');
+        const nonVideo = feature._videoKey();
+
+        // og:title wins when present.
+        const meta = document.createElement('meta');
+        meta.setAttribute('property', 'og:title');
+        meta.setAttribute('content', 'The Real Title');
+        document.head.appendChild(meta);
+        const fromMeta = feature._videoTitle();
+
+        // Falling back to document.title must strip the Rumble suffix.
+        meta.remove();
+        document.title = 'Fallback Title - Rumble';
+        const fromTitle = feature._videoTitle();
+
+        return { first, second, nonVideo, fromMeta, fromTitle };
+    });
+
+    // Two videos must never share a cache bucket.
+    expect(result.first.key).toBe('rx_rants_vrant123');
+    expect(result.second.key).toBe('rx_rants_vrant456');
+    expect(result.first.key).not.toBe(result.second.key);
+    expect(result.first.raw).toBe('vrant123');
+    // A non-watch route must produce no key at all rather than a shared one.
+    expect(result.nonVideo).toBeNull();
+    expect(result.fromMeta).toBe('The Real Title');
+    expect(result.fromTitle).toBe('Fallback Title');
+});
+
+test('PopoutChat prefers the native control and only opens a scoped window otherwise', async () => {
+    const result = await inHarness(({ body }) => {
+        document.body.innerHTML = body;
+        history.replaceState({}, '', '/vchat123-popout.html');
+        const harness = globalThis.__RumbleXFeatureHarness;
+        harness.enable('popoutChat');
+        const feature = harness.features.find((f) => f.id === 'popoutChat');
+
+        const opened = [];
+        const realOpen = window.open;
+        window.open = (url, name, features) => { opened.push({ url, name, features }); return null; };
+
+        // 1. Native toggle present: must be clicked, and no window opened.
+        let nativeClicks = 0;
+        const native = document.createElement('button');
+        native.id = 'chat-toggle-popup';
+        native.addEventListener('click', () => { nativeClicks += 1; });
+        document.body.appendChild(native);
+        feature._popout();
+        const afterNative = { nativeClicks, opened: opened.length };
+
+        // 2. No native control, but an explicit popout link: open that URL.
+        native.remove();
+        opened.length = 0;
+        const link = document.createElement('a');
+        link.href = 'https://rumble.com/chat/popup/123';
+        document.body.appendChild(link);
+        feature._popout();
+        const afterLink = opened.slice();
+        link.remove();
+
+        window.open = realOpen;
+        return { afterNative, afterLink };
+    });
+
+    // The native control is preferred, so no popup is spawned at all.
+    expect(result.afterNative).toEqual({ nativeClicks: 1, opened: 0 });
+    expect(result.afterLink).toHaveLength(1);
+    expect(result.afterLink[0].url).toBe('https://rumble.com/chat/popup/123');
+    // A named target keeps repeat clicks reusing one window instead of stacking.
+    expect(result.afterLink[0].name).toBe('rumblex_chat_popout');
+    expect(result.afterLink[0].features).toContain('width=420');
+});
+
+test('MiniPlayer clears its cloned video on hide and removes the container on destroy', async () => {
+    const result = await inHarness(({ body }) => {
+        document.body.innerHTML = body;
+        history.replaceState({}, '', '/vmini123-overlay.html');
+        const harness = globalThis.__RumbleXFeatureHarness;
+        harness.enable('miniPlayer');
+        const feature = harness.features.find((f) => f.id === 'miniPlayer');
+
+        const video = document.querySelector('video');
+        feature.init();
+        feature._show(video);
+        const shown = {
+            active: feature._active === true,
+            hasActiveClass: feature._mini.classList.contains('active'),
+            clonedVideos: feature._mini.querySelectorAll('video').length,
+            // The page's own video must stay put, not be moved into the overlay.
+            originalVideoStillInPage: document.body.contains(video),
+        };
+
+        feature._hide();
+        const hidden = {
+            active: feature._active === false,
+            hasActiveClass: feature._mini.classList.contains('active'),
+            // The clone must be torn out, not just visually hidden: a retained
+            // <video> keeps decoding and playing audio behind the page.
+            clonedVideos: feature._mini.querySelectorAll('video').length,
+            containerStillMounted: feature._mini.isConnected,
+        };
+
+        feature.destroy();
+        const afterDestroy = document.querySelectorAll('.rx-miniplayer').length;
+        return { shown, hidden, afterDestroy };
+    });
+
+    expect(result.shown.active).toBe(true);
+    expect(result.shown.hasActiveClass).toBe(true);
+    expect(result.shown.clonedVideos).toBeGreaterThan(0);
+    expect(result.shown.originalVideoStillInPage).toBe(true);
+
+    expect(result.hidden.active).toBe(true);
+    expect(result.hidden.hasActiveClass).toBe(false);
+    expect(result.hidden.clonedVideos).toBe(0);
+    // Hiding keeps the (now empty) container; only destroy tears it down.
+    expect(result.hidden.containerStillMounted).toBe(true);
+    expect(result.afterDestroy).toBe(0);
+});
+
+test('AudioOnly, LiveDVR, ScreenshotBtn and NotifEnhance each inject and fully remove their stylesheet', async () => {
+    const result = await inHarness(({ body }) => {
+        const harness = globalThis.__RumbleXFeatureHarness;
+        // These four mount into player/download surfaces the catalog fixture
+        // does not reproduce, so their observable output here is the stylesheet
+        // they own. Asserting injection AND removal still catches the real
+        // failure mode: a module that leaves styles behind after being turned
+        // off keeps restyling the page it no longer controls.
+        const probe = (id, route, styleId) => {
+            document.body.innerHTML = body;
+            history.replaceState({}, '', route);
+            harness.enable(id);
+            const feature = harness.features.find((f) => f.id === id);
+            if (!feature) return { missing: true };
+            feature.destroy();
+            document.getElementById(styleId)?.remove();
+            feature.init();
+            const injected = !!document.getElementById(styleId);
+            feature.destroy();
+            return { injected, afterDestroy: !!document.getElementById(styleId) };
+        };
+
+        return {
+            audioOnly: probe('audioOnly', '/vaudio123-only.html', 'rx-audioonly-css'),
+            liveDVR: probe('liveDVR', '/vdvr123-live.html', 'rx-livedvr-css'),
+            screenshotBtn: probe('screenshotBtn', '/vshot123-capture.html', 'rx-screenshot-css'),
+            notifEnhance: probe('notifEnhance', '/vnotif123-bell.html', 'rx-notif-enhance-css'),
+        };
+    });
+
+    for (const [id, value] of Object.entries(result)) {
+        expect(value.missing, `${id} is not in the registry`).toBeUndefined();
+        expect(value.injected, `${id} injected no stylesheet`).toBe(true);
+        expect(value.afterDestroy, `${id} left its stylesheet behind after destroy`).toBe(false);
+    }
+});
