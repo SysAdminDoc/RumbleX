@@ -472,7 +472,7 @@ const Selectors = {
             const message = `Critical selector check failed (${report.missing.join(', ')})`;
             console.warn('[RumbleX] ' + message);
             try { RxErrorLog.record('SelectorHealth', new Error(message), `route:${report.page}`); } catch {}
-            try { SettingsPanel._showToast?.(`${message}. Open Privacy Report for details.`); } catch {}
+            try { RxToast.show(`${message}. Open Privacy Report for details.`); } catch {}
             // Re-sample a reported failure so recovery clears the signature
             // without requiring another route transition.
             schedule(10000);
@@ -641,8 +641,79 @@ function injectStyle(css, id) {
     return el;
 }
 
+// ── Toast announcer ──
+//
+// One announcer for the whole in-page runtime. There used to be three separate
+// `_showToast` implementations and only the SettingsPanel copy set `role` and
+// `aria-live`, so most of the extension's feedback was invisible to assistive
+// tech. Worse, ~25 call sites reached the announcer through
+// `RxToast.show()` — optional-chained, so if SettingsPanel failed
+// to initialize the call silently became a no-op and a user could take an
+// action, receive no feedback at all, and have no way to tell whether it
+// worked. This module owns its own element and never depends on a feature
+// module having mounted.
+const RxToast = {
+    _el: null,
+    _timer: null,
+
+    _ensure() {
+        if (this._el && this._el.isConnected) return this._el;
+        injectStyle(`
+            .rx-toast {
+                position: fixed; bottom: 80px; left: 50%; transform: translateX(-50%);
+                background: #313244; color: #a6e3a1; border: 1px solid #a6e3a1;
+                border-radius: 8px; padding: 8px 18px; font: 600 13px/1.4 system-ui, sans-serif;
+                z-index: 100001; opacity: 0; transition: opacity 0.3s; pointer-events: none;
+            }
+            .rx-toast.show { opacity: 1; }
+        `, 'rx-toast-css');
+        const el = document.createElement('div');
+        el.className = 'rx-toast';
+        // WCAG 2.2 SC 4.1.3 Status Messages. role="status" (implicit
+        // aria-live="polite") announces without stealing focus; aria-atomic
+        // re-announces the whole message on update rather than just the diff.
+        el.setAttribute('role', 'status');
+        el.setAttribute('aria-live', 'polite');
+        el.setAttribute('aria-atomic', 'true');
+        (document.body || document.documentElement).appendChild(el);
+        this._el = el;
+        return el;
+    },
+
+    show(message) {
+        const text = String(message == null ? '' : message);
+        if (!text) return;
+        try {
+            const el = this._ensure();
+            // Screen readers only announce a *change* to a live region. Clearing
+            // first means two identical consecutive messages still announce.
+            el.textContent = '';
+            el.textContent = text;
+            el.classList.add('show');
+            clearTimeout(this._timer);
+            this._timer = setTimeout(() => el.classList.remove('show'), 2000);
+        } catch {
+            // Never let feedback failure break the action that triggered it.
+        }
+    },
+
+    destroy() {
+        clearTimeout(this._timer);
+        this._el?.remove();
+        this._el = null;
+    },
+};
+
 // ── Utility ──
 function qs(sel, root) { return (root || document).querySelector(sel); }
+// Escape text for interpolation into an HTML template string. This existed as
+// four byte-identical private copies across feature modules, three of which
+// were never called.
+function rxEscapeHtml(value) {
+    const holder = document.createElement('div');
+    holder.textContent = value == null ? '' : String(value);
+    return holder.innerHTML;
+}
 // Return a real array. Several shared features intentionally use array
 // helpers (`filter`, `map`, `some`) and a raw NodeList does not provide them
 // consistently across Chromium, Firefox, or userscript managers.
@@ -5494,13 +5565,13 @@ const ChannelArchiveButton = {
                     'bad-channel-url': 'Not a channel URL.',
                     'no-videos-found': 'No videos found on this page.',
                 };
-                SettingsPanel._showToast?.('Archive failed: ' + (reasonMap[resp?.reason] || resp?.reason || 'unknown'));
+                RxToast.show('Archive failed: ' + (reasonMap[resp?.reason] || resp?.reason || 'unknown'));
                 return;
             }
             const skippedNote = resp.skipped ? (' · ' + resp.skipped + ' already queued') : '';
-            SettingsPanel._showToast?.('Queued ' + resp.enqueued + ' video' + (resp.enqueued === 1 ? '' : 's') + skippedNote + '. Check RumbleX options → Channel archive queue.');
+            RxToast.show('Queued ' + resp.enqueued + ' video' + (resp.enqueued === 1 ? '' : 's') + skippedNote + '. Check RumbleX options → Channel archive queue.');
         } catch (e) {
-            SettingsPanel._showToast?.('Archive failed: ' + String(e?.message || e));
+            RxToast.show('Archive failed: ' + String(e?.message || e));
         } finally {
             btn.disabled = false;
             if (labelEl) labelEl.textContent = originalLabel;
@@ -6347,7 +6418,6 @@ const WatchHistoryFeature = {
         search.focus();
     },
 
-    _esc(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; },
 
     _safeHttpUrl(url) {
         try {
@@ -6675,12 +6745,12 @@ const BulkUnsubscribe = {
         const { rows } = this._updateCount();
         const selected = rows.filter((r) => r.check?.checked);
         if (selected.length === 0) {
-            SettingsPanel._showToast?.('Select at least one row first');
+            RxToast.show('Select at least one row first');
             return;
         }
         const dryRun = Settings.get('bulkUnsubscribeDryRun') !== false; // default ON
         if (dryRun) {
-            SettingsPanel._showToast?.(`Dry-run: would unsubscribe from ${selected.length} channel${selected.length === 1 ? '' : 's'}. Turn bulkUnsubscribeDryRun OFF in Settings to run for real.`);
+            RxToast.show(`Dry-run: would unsubscribe from ${selected.length} channel${selected.length === 1 ? '' : 's'}. Turn bulkUnsubscribeDryRun OFF in Settings to run for real.`);
             return;
         }
         // Disable the Run button + show progress in the count slot.
@@ -6707,7 +6777,7 @@ const BulkUnsubscribe = {
         }
         if (runBtn) runBtn.disabled = false;
         if (stopBtn) stopBtn.disabled = true;
-        SettingsPanel._showToast?.(this._aborter.aborted
+        RxToast.show(this._aborter.aborted
             ? `Stopped after ${done} unsub${done === 1 ? '' : 's'}.`
             : `Done: unsubscribed from ${done} channel${done === 1 ? '' : 's'}.`);
         this._updateCount();
@@ -7136,7 +7206,6 @@ const MiniPlayer = {
         this._syncClone = null;
     },
 
-    _esc(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; },
 
     _initDrag() {
         // Store bound handlers so destroy() can actually remove them.
@@ -7311,11 +7380,10 @@ const VideoStats = {
             <span class="label">Network:</span> <span class="val">${net}</span> | <span class="label">Ready:</span> <span class="val">${ready}</span><br>
             <span class="label">Buffer:</span> <span class="val">${buffered}</span><br>
             <span class="label">Frames (drop/total):</span> <span class="${frameClass}">${frames}</span><br>
-            <span class="label">Source:</span> <span class="val" style="font-size:9px">${this._esc(srcShort)}</span>
+            <span class="label">Source:</span> <span class="val" style="font-size:9px">${rxEscapeHtml(srcShort)}</span>
         `;
     },
 
-    _esc(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; },
 
     _toggle() {
         this._visible = !this._visible;
@@ -7682,7 +7750,6 @@ const QuickBookmark = {
         }
     },
 
-    _esc(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; },
 
     _safeHttpUrl(url) {
         try {
@@ -8297,18 +8364,6 @@ const ShareTimestamp = {
         #videoPlayer:hover .rx-share-ts-btn { opacity: 1; }
         .rx-share-ts-btn:hover { background: rgba(17,17,27,0.9); border-color: #89b4fa; }
         .rx-share-ts-btn svg { width: 14px; height: 14px; fill: currentColor; }
-        .rx-share-toast {
-            position: fixed; bottom: 80px; left: 50%;
-            transform: translateX(-50%);
-            background: #313244; color: #a6e3a1;
-            border: 1px solid #a6e3a1;
-            border-radius: 8px; padding: 8px 18px;
-            font: 600 13px/1.4 system-ui, sans-serif;
-            z-index: 100001;
-            opacity: 0; transition: opacity 0.3s;
-            pointer-events: none;
-        }
-        .rx-share-toast.show { opacity: 1; }
     `,
 
     _formatTime(s) {
@@ -8330,7 +8385,7 @@ const ShareTimestamp = {
         url.hash = '';
 
         navigator.clipboard.writeText(url.toString()).then(() => {
-            this._showToast(`Copied URL at ${this._formatTime(time)}`);
+            RxToast.show(`Copied URL at ${this._formatTime(time)}`);
         }).catch(() => {
             // Fallback
             const ta = document.createElement('textarea');
@@ -8339,20 +8394,8 @@ const ShareTimestamp = {
             ta.select();
             document.execCommand('copy');
             ta.remove();
-            this._showToast(`Copied URL at ${this._formatTime(time)}`);
+            RxToast.show(`Copied URL at ${this._formatTime(time)}`);
         });
-    },
-
-    _showToast(msg) {
-        if (!this._toast) {
-            this._toast = document.createElement('div');
-            this._toast.className = 'rx-share-toast';
-            document.body.appendChild(this._toast);
-        }
-        this._toast.textContent = msg;
-        this._toast.classList.add('show');
-        clearTimeout(this._toastTimer);
-        this._toastTimer = setTimeout(() => this._toast.classList.remove('show'), 2000);
     },
 
     init() {
@@ -8723,34 +8766,7 @@ const PlaylistQuickSave = {
         .rx-quick-save:hover { background: rgba(17,17,27,0.95); border-color: #89b4fa; }
         .rx-quick-save.saved { border-color: #a6e3a1; color: #a6e3a1; }
         .rx-quick-save svg { width: 16px; height: 16px; fill: currentColor; pointer-events: none; }
-        .rx-save-toast {
-            position: fixed; bottom: 80px; left: 50%;
-            transform: translateX(-50%);
-            background: #313244; color: #a6e3a1;
-            border: 1px solid #a6e3a1;
-            border-radius: 8px; padding: 8px 18px;
-            font: 600 13px/1.4 system-ui, sans-serif;
-            z-index: 100001;
-            opacity: 0; transition: opacity 0.3s;
-            pointer-events: none;
-        }
-        .rx-save-toast.show { opacity: 1; }
     `,
-
-    _toast: null,
-    _toastTimer: null,
-
-    _showToast(msg) {
-        if (!this._toast) {
-            this._toast = document.createElement('div');
-            this._toast.className = 'rx-save-toast';
-            document.body.appendChild(this._toast);
-        }
-        this._toast.textContent = msg;
-        this._toast.classList.add('show');
-        clearTimeout(this._toastTimer);
-        this._toastTimer = setTimeout(() => this._toast.classList.remove('show'), 2000);
-    },
 
     _clickNativeWatchLater(card) {
         // Find the native playlist-menu and trigger "Save to Watch Later"
@@ -8766,7 +8782,7 @@ const PlaylistQuickSave = {
                 const watchLaterOpt = menu.querySelector('[data-playlist-option="watch-later-add"]');
                 if (watchLaterOpt) {
                     watchLaterOpt.click();
-                    this._showToast('Saved to Watch Later');
+                    RxToast.show('Saved to Watch Later');
                     return;
                 }
                 // Close menu if option not found
@@ -8809,10 +8825,10 @@ const PlaylistQuickSave = {
                                 bm.unshift({ url, title, channel, thumb: img?.src || '', time: Date.now() });
                                 localStorage.setItem(key, JSON.stringify(bm.slice(0, 200)));
                                 btn.classList.add('saved');
-                                this._showToast('Bookmarked locally');
+                                RxToast.show('Bookmarked locally');
                             } else {
                                 btn.classList.add('saved');
-                                this._showToast('Already saved');
+                                RxToast.show('Already saved');
                             }
                         } catch { /* ignore */ }
                     }
@@ -9336,39 +9352,8 @@ const SettingsPanel = {
         .rx-m-btn-secondary:hover { background: #1e1e22; color: #f0f0f0; }
         .rx-m-reload-note { font-size: 10px; color: rgba(166,173,200,0.5); text-align: center; padding: 12px 0 4px; }
 
-        /* ── Settings toast ── */
-        .rx-m-toast {
-            position: fixed; bottom: 80px; left: 50%; transform: translateX(-50%);
-            background: #313244; color: #a6e3a1; border: 1px solid #a6e3a1;
-            border-radius: 8px; padding: 8px 18px; font: 600 13px/1.4 system-ui, sans-serif;
-            z-index: 100001; opacity: 0; transition: opacity 0.3s; pointer-events: none;
-        }
-        .rx-m-toast.show { opacity: 1; }
 
     `,
-
-    _toastEl: null,
-    _toastTimer: null,
-
-    _showToast(msg) {
-        if (!this._toastEl) {
-            this._toastEl = document.createElement('div');
-            this._toastEl.className = 'rx-m-toast';
-            // v3.1.0 — WCAG 2.2 SC 4.1.3 Status Messages.
-            // role="status" (implicit aria-live="polite") so screen readers
-            // announce the toast without stealing focus from whatever the user
-            // is interacting with. aria-atomic ensures the whole message is
-            // re-announced on update, not just the diff.
-            this._toastEl.setAttribute('role', 'status');
-            this._toastEl.setAttribute('aria-live', 'polite');
-            this._toastEl.setAttribute('aria-atomic', 'true');
-            document.body.appendChild(this._toastEl);
-        }
-        this._toastEl.textContent = msg;
-        this._toastEl.classList.add('show');
-        clearTimeout(this._toastTimer);
-        this._toastTimer = setTimeout(() => this._toastEl.classList.remove('show'), 2000);
-    },
 
     _makeSwitch(featureId, catColor, labelText = featureId) {
         const wrap = document.createElement('label');
@@ -9407,13 +9392,13 @@ const SettingsPanel = {
                         wrap.classList.remove('active');
                         if (card && !card.classList.contains('rx-m-sub')) card.classList.remove('rx-m-enabled');
                         this._updateNavCounts();
-                        this._showToast('Could not enable ' + labelText + ' — reload the page to try again');
+                        RxToast.show('Could not enable ' + labelText + ' — reload the page to try again');
                         return;
                     }
                 }
-                this._showToast(input.checked ? 'Enabled' : 'Disabled');
+                RxToast.show(input.checked ? 'Enabled' : 'Disabled');
             } else {
-                this._showToast('Reload page to apply');
+                RxToast.show('Reload page to apply');
             }
         });
         const track = document.createElement('div');
@@ -9632,7 +9617,7 @@ const SettingsPanel = {
                 for (const c of grid.querySelectorAll('.rx-m-chip')) c.setAttribute('aria-pressed', 'false');
                 chip.classList.add('rx-m-chip-active');
                 chip.setAttribute('aria-pressed', 'true');
-                SettingsPanel._showToast('Theme changed — reload page to apply');
+                RxToast.show('Theme changed — reload page to apply');
             });
             grid.appendChild(chip);
         }
@@ -9660,7 +9645,7 @@ const SettingsPanel = {
             label.textContent = speed + 'x';
             Settings.set('playbackSpeed', speed);
             for (const v of qsa('video')) v.playbackRate = speed;
-            SettingsPanel._showToast(`Speed: ${speed}x`);
+            RxToast.show(`Speed: ${speed}x`);
         });
         row.append(slider, label);
         pane.appendChild(row);
@@ -9892,7 +9877,7 @@ const SettingsPanel = {
                 const file = input.files[0];
                 if (!file) return;
                 if (file.size > 5 * 1024 * 1024) {
-                    this._showToast('Import failed: file exceeds the 5 MB limit');
+                    RxToast.show('Import failed: file exceeds the 5 MB limit');
                     return;
                 }
                 const reader = new FileReader();
@@ -9911,7 +9896,7 @@ const SettingsPanel = {
                         location.reload();
                     } catch (e) {
                         console.error('[RumbleX] Import failed:', e);
-                        this._showToast('Import failed: ' + String(e?.message || e));
+                        RxToast.show('Import failed: ' + String(e?.message || e));
                     }
                 };
                 reader.readAsText(file);
@@ -10082,14 +10067,11 @@ const SettingsPanel = {
         this._overlayEl?.remove();
         this._panelEl?.remove();
         this._toolbarEl?.remove();
-        this._toastEl?.remove();
         if (this._keyHandler) document.removeEventListener('keydown', this._keyHandler);
-        clearTimeout(this._toastTimer);
         this._styleEl = null;
         this._overlayEl = null;
         this._panelEl = null;
         this._toolbarEl = null;
-        this._toastEl = null;
         this._keyHandler = null;
         this._navBtns = null;
     }
@@ -10900,13 +10882,13 @@ const CommentExport = {
     _handleClick(e) {
         const rows = this._extractAll();
         if (rows.length === 0) {
-            SettingsPanel._showToast?.('No comments loaded yet — scroll to load comments first');
+            RxToast.show('No comments loaded yet — scroll to load comments first');
             return;
         }
         const stub = this._filenameStub();
         if (e?.shiftKey) {
             this._download(this._toCsv(rows), stub + '.csv', 'text/csv;charset=utf-8');
-            SettingsPanel._showToast?.(`Exported ${rows.length} comment${rows.length === 1 ? '' : 's'} as CSV`);
+            RxToast.show(`Exported ${rows.length} comment${rows.length === 1 ? '' : 's'} as CSV`);
         } else {
             const payload = {
                 exportedAt: new Date().toISOString(),
@@ -10916,7 +10898,7 @@ const CommentExport = {
                 comments: rows,
             };
             this._download(JSON.stringify(payload, null, 2), stub + '.json', 'application/json');
-            SettingsPanel._showToast?.(`Exported ${rows.length} comment${rows.length === 1 ? '' : 's'} as JSON (shift-click for CSV)`);
+            RxToast.show(`Exported ${rows.length} comment${rows.length === 1 ? '' : 's'} as JSON (shift-click for CSV)`);
         }
     },
     _build() {
@@ -14589,7 +14571,7 @@ async function boot() {
         // the Switch change-handler, which destroys + re-inits per feature.)
         Settings.onExternalChange((isReset) => {
             try {
-                SettingsPanel._showToast?.(isReset
+                RxToast.show(isReset
                     ? 'RumbleX was reset — reload to see defaults'
                     : 'Settings changed elsewhere — reload to apply');
             } catch {}
@@ -14988,7 +14970,7 @@ RXPlatform.onMessage((msg, sender, sendResponse) => {
     // confirmation on the same page the user is interacting with.
     if (msg.action === 'rxShowToast') {
         try {
-            SettingsPanel._showToast?.(String(msg.text || ''));
+            RxToast.show(String(msg.text || ''));
             sendResponse({ ok: true });
         } catch (e) { sendResponse({ ok: false, reason: String(e?.message || e) }); }
         return true;

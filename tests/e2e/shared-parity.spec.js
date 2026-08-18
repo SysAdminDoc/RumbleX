@@ -376,3 +376,62 @@ test('a feature whose init throws reverts its switch instead of reporting succes
     // debug surfacing setting off.
     expect(outcome.recorded).toBe(true);
 });
+
+// There used to be three separate `_showToast` implementations and only the
+// SettingsPanel copy set role/aria-live, so most feedback was invisible to
+// assistive tech. ~25 call sites also went through `SettingsPanel._showToast?.()`
+// — optional-chained, so if SettingsPanel had not initialized the call silently
+// became a no-op and the user got no feedback at all.
+test('toasts announce through one live region even when SettingsPanel never mounted', async ({ context, serviceWorker }) => {
+    const page = await openWatch(context, 'vtoast-announcer.html');
+    const id = await tabId(serviceWorker, page.url());
+
+    const outcome = await serviceWorker.evaluate(async (targetTabId) => {
+        const [execution] = await chrome.scripting.executeScript({
+            target: { tabId: targetTabId },
+            world: 'ISOLATED',
+            func: async () => {
+                // Simulate SettingsPanel having failed to initialize.
+                SettingsPanel.destroy?.();
+                document.querySelector('.rx-toast')?.remove();
+                RxToast._el = null;
+
+                RxToast.show('first message');
+                const el = document.querySelector('.rx-toast');
+                const first = {
+                    exists: !!el,
+                    role: el?.getAttribute('role'),
+                    live: el?.getAttribute('aria-live'),
+                    atomic: el?.getAttribute('aria-atomic'),
+                    text: el?.textContent,
+                    shown: el?.classList.contains('show'),
+                };
+
+                // A repeated identical message must still register as a change,
+                // otherwise a screen reader stays silent on the second one.
+                RxToast.show('repeat');
+                RxToast.show('repeat');
+                const second = document.querySelector('.rx-toast')?.textContent;
+
+                // Exactly one live region for the whole runtime.
+                const count = document.querySelectorAll('.rx-toast').length;
+
+                // The old per-module toast elements must be gone entirely.
+                const legacy = document.querySelectorAll('.rx-share-toast, .rx-save-toast, .rx-m-toast').length;
+
+                return { first, second, count, legacy };
+            },
+        });
+        return execution.result;
+    }, id);
+
+    expect(outcome.first.exists).toBe(true);
+    expect(outcome.first.role).toBe('status');
+    expect(outcome.first.live).toBe('polite');
+    expect(outcome.first.atomic).toBe('true');
+    expect(outcome.first.text).toBe('first message');
+    expect(outcome.first.shown).toBe(true);
+    expect(outcome.second).toBe('repeat');
+    expect(outcome.count).toBe(1);
+    expect(outcome.legacy).toBe(0);
+});

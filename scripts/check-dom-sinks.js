@@ -49,7 +49,7 @@ const APPROVED_DYNAMIC_SINKS = [
     },
     {
         file: 'extension/content.js',
-        contains: '<span class="val" style="font-size:9px">${this._esc(srcShort)}</span>',
+        contains: '<span class="val" style="font-size:9px">${rxEscapeHtml(srcShort)}</span>',
         reason: 'stats overlay uses bounded media API values and escapes the only URL-derived value',
     },
     {
