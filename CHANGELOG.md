@@ -4,6 +4,13 @@ All notable changes to RumbleX will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+- **Playback resilience: a quality ceiling, a floor, and stall recovery.** `AutoMaxQuality` always pinned the highest rendition, which is the worst possible response to the buffering that dominates Rumble complaints. It now applies a real policy: `qualityMode` picks the top (`best`), the bottom (`lowest`/`bandwidthSaver`) or nothing at all (`manual`, where the user drives quality and only stall recovery is installed); `qualityCeiling` and `qualityFloor` bound the choice. Bounds that exclude every available rendition fall back to the nearest one rather than leaving the player wherever it landed. The hls.js path and the DOM-menu fallback share one policy function, so the two cannot disagree.
+- **Stall recovery.** Three `waiting`/`stalled` events inside 30 seconds means the current rendition is not sustainable on this connection, so RumbleX drops one step and raises a toast saying why. It never steps below an explicit floor, and turning `stallRecovery` off detaches the listeners rather than merely ignoring them.
+
+### Changed
+- **`qualityMode` is no longer dead.** It shipped with four documented values and no runtime consumer at all — one of the settings the v3.42 audit labelled "Not implemented yet". It is now wired, and removed from the `UNIMPLEMENTED` registry.
+
 ### Fixed
 - **The in-page settings modal was unusable in a small browser window.** Its narrow/short-viewport rules sat *above* the desktop rules they override, and a media query adds no specificity — so for every property both declared, the later base rule won. The category sidebar stayed a 240px vertical column inside a column-direction body, which pushed the category list and the entire content pane out of the modal: at 640x400 the user saw a header, a search box and empty space. Only `.rx-m-body` had ever worked, and only because no base rule sets `flex-direction`, which is exactly why this looked correct. The block now sits last, with a comment saying why it must stay there, and a regression at 640x400 asserts the sidebar collapses to a horizontal strip and the content pane keeps its height. Found by capturing the 640x400 store screenshot.
 

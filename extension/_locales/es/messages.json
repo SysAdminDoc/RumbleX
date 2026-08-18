@@ -792,7 +792,7 @@
     "description": "In-page UI string (shared core)."
   },
   "feat_autoMaxQuality_desc": {
-    "message": "Seleccionar automáticamente la resolución más alta al cargar",
+    "message": "Elegir una resolución al cargar, dentro del máximo y el mínimo fijados en las opciones",
     "description": "In-page UI string (shared core)."
   },
   "feat_autoplayBlock_label": {
@@ -1693,6 +1693,18 @@
   },
   "modalEnableAll": {
     "message": "Activar todo en {category}",
+    "description": "In-page UI string (shared core)."
+  },
+  "toastQualityStepDown": {
+    "message": "La reproducción se detenía — calidad reducida a {height}p",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_stallRecovery_label": {
+    "message": "Recuperación de cortes",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_stallRecovery_desc": {
+    "message": "Bajar una resolución tras tres cortes en 30 segundos, e indicar el motivo",
     "description": "In-page UI string (shared core)."
   }
 }

@@ -164,6 +164,10 @@
         pageDensity: 'dense',
         // Player
         qualityMode: 'best',
+        // Resolution bounds for AutoMaxQuality. 'auto' means "no bound".
+        qualityCeiling: 'auto',
+        qualityFloor: 'auto',
+        stallRecovery: true,
         perChannelVolumeMemory: false,
         autoplayBlockMode: 'relatedEndpointAndPlayer',
         clipExportFormat: 'mp4',
@@ -288,6 +292,8 @@
         homeCleanupPreset: ['none', 'focused', 'minimal', 'custom'],
         pageDensity: ['dense', 'normal'],
         qualityMode: ['best', 'lowest', 'manual', 'bandwidthSaver'],
+        qualityCeiling: ['auto', '2160', '1440', '1080', '720', '480', '360'],
+        qualityFloor: ['auto', '2160', '1440', '1080', '720', '480', '360'],
         autoplayBlockMode: ['off', 'relatedEndpointAndPlayer', 'playerOnly'],
         clipExportFormat: ['mp4', 'webm', 'manifestOnly'],
         segmentSkipMode: ['localOnly', 'community'],
@@ -522,9 +528,7 @@
         accentColor: 'Theme engine applies the active theme accent.',
         pageDensity: 'Layout density is fixed by the active theme.',
 
-        // Playback preferences with no consumer; see the playback-resilience
-        // roadmap item, which wires qualityMode as part of its acceptance.
-        qualityMode: 'AutoMaxQuality always targets the highest rendition.',
+        // Playback preferences with no consumer.
         perChannelVolumeMemory: 'Volume is remembered globally, not per channel.',
 
         // Download and export preferences the download pipeline ignores.

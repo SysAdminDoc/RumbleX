@@ -23,7 +23,7 @@
 // @updateURL    https://raw.githubusercontent.com/SysAdminDoc/RumbleX/main/RumbleX.lite.user.js
 // ==/UserScript==
 
-// Generated from extension/settings-schema.js + extension/content.js. Shared runtime SHA-256: 5dda9a295586c1f224f415894e390b91c1bb51abbbce53b988b87858176ab0cc
+// Generated from extension/settings-schema.js + extension/content.js. Shared runtime SHA-256: 35363b3bfb7968bd6a12d3f2f5fccd0b13d26d50a7f618f16777be8487c8f550
 // RumbleX shared settings schema. This file is the canonical source for
 // defaults and trust-boundary normalization across content, options, popup,
 // background profile/Gist restores, and the generated userscript.
@@ -190,6 +190,10 @@
         pageDensity: 'dense',
         // Player
         qualityMode: 'best',
+        // Resolution bounds for AutoMaxQuality. 'auto' means "no bound".
+        qualityCeiling: 'auto',
+        qualityFloor: 'auto',
+        stallRecovery: true,
         perChannelVolumeMemory: false,
         autoplayBlockMode: 'relatedEndpointAndPlayer',
         clipExportFormat: 'mp4',
@@ -314,6 +318,8 @@
         homeCleanupPreset: ['none', 'focused', 'minimal', 'custom'],
         pageDensity: ['dense', 'normal'],
         qualityMode: ['best', 'lowest', 'manual', 'bandwidthSaver'],
+        qualityCeiling: ['auto', '2160', '1440', '1080', '720', '480', '360'],
+        qualityFloor: ['auto', '2160', '1440', '1080', '720', '480', '360'],
         autoplayBlockMode: ['off', 'relatedEndpointAndPlayer', 'playerOnly'],
         clipExportFormat: ['mp4', 'webm', 'manifestOnly'],
         segmentSkipMode: ['localOnly', 'community'],
@@ -548,9 +554,7 @@
         accentColor: 'Theme engine applies the active theme accent.',
         pageDensity: 'Layout density is fixed by the active theme.',
 
-        // Playback preferences with no consumer; see the playback-resilience
-        // roadmap item, which wires qualityMode as part of its acceptance.
-        qualityMode: 'AutoMaxQuality always targets the highest rendition.',
+        // Playback preferences with no consumer.
         perChannelVolumeMemory: 'Volume is remembered globally, not per channel.',
 
         // Download and export preferences the download pipeline ignores.
@@ -829,7 +833,7 @@
   "feat_defaultMaxVolume_label": "Default Max Volume",
   "feat_defaultMaxVolume_desc": "Start videos at 100% volume",
   "feat_autoMaxQuality_label": "Auto Max Quality",
-  "feat_autoMaxQuality_desc": "Auto-select highest resolution on load",
+  "feat_autoMaxQuality_desc": "Pick a rendition on load, within the ceiling and floor set in Options",
   "feat_autoplayBlock_label": "Autoplay Block",
   "feat_autoplayBlock_desc": "Prevent auto-play of next video",
   "feat_loopControl_label": "Loop Control",
@@ -1054,7 +1058,10 @@
   "feat_hideReportButton_desc": "Hide the 3-dot menu (report link lives here)",
   "feat_hidePremiumJoinButtons_label": "Hide Premium/Join",
   "feat_hidePremiumJoinButtons_desc": "Hide Rumble Premium and Join buttons",
-  "modalEnableAll": "Enable all {category}"
+  "modalEnableAll": "Enable all {category}",
+  "toastQualityStepDown": "Playback kept stalling — quality lowered to {height}p",
+  "feat_stallRecovery_label": "Stall Recovery",
+  "feat_stallRecovery_desc": "Drop one rendition after three stalls in 30 seconds, and say why"
 });
     const STORAGE_KEYS_WITH_CHANGE_EVENTS = ['rx_settings'];
     const ALLOWED_REQUEST_HOSTS = ['rumble.com', 'rumble.cloud', '1a-1791.com'];
@@ -6366,13 +6373,154 @@ const AutoMaxQuality = {
     _attempted: false,
     _timers: [],
 
+    // ── Stall recovery ──
+    // Rumble's most-reported 2026 complaint after ads is livestream buffering,
+    // and pinning the top rendition is the worst possible response to it. Three
+    // stalls inside the window means the current level is not sustainable on
+    // this connection, so step down one and say so.
+    _STALL_WINDOW_MS: 30_000,
+    _STALL_LIMIT: 3,
+    _stalls: [],
+    _video: null,
+    _onStall: null,
+    _steppedDown: 0,
+
     _clearTimers() {
         for (const t of this._timers) clearTimeout(t);
         this._timers = [];
     },
 
+    /**
+     * Resolution bound as a number, or null for "no bound".
+     *
+     * Takes the value rather than the key deliberately: check-settings-consumers
+     * matches literal `Settings.get('key')` reads, and a key passed through a
+     * variable would read to it as a setting nothing consumes.
+     */
+    _bound(raw) {
+        if (!raw || raw === 'auto') return null;
+        const value = parseInt(raw, 10);
+        return Number.isFinite(value) ? value : null;
+    },
+
+    _ceiling() { return this._bound(Settings.get('qualityCeiling')); },
+    _floor() { return this._bound(Settings.get('qualityFloor')); },
+
+    _mode() {
+        const mode = Settings.get('qualityMode');
+        return ['best', 'lowest', 'manual', 'bandwidthSaver'].includes(mode) ? mode : 'best';
+    },
+
+    /**
+     * Choose from a list of `{ height }` renditions, ascending by height.
+     *
+     * Returns the index into the sorted list, or -1 to leave the player alone.
+     * The ceiling and floor are applied first; if they exclude everything, the
+     * nearest rendition to the bound wins rather than nothing happening — a
+     * user who pinned 480p on a 1080p-only stream still wants video.
+     */
+    _pickIndex(sorted) {
+        if (!sorted.length) return -1;
+        const mode = this._mode();
+        if (mode === 'manual') return -1;
+
+        const ceiling = this._ceiling();
+        const floor = this._floor();
+        let eligible = sorted.map((level, index) => ({ ...level, index }));
+        if (ceiling !== null) eligible = eligible.filter((l) => l.height <= ceiling);
+        if (floor !== null) eligible = eligible.filter((l) => l.height >= floor);
+        if (!eligible.length) {
+            // Bounds excluded everything. Fall back to the rendition closest to
+            // whichever bound was set, so the setting still expresses intent.
+            const target = ceiling !== null ? ceiling : floor;
+            let best = sorted[0];
+            let bestIndex = 0;
+            sorted.forEach((level, index) => {
+                if (Math.abs(level.height - target) < Math.abs(best.height - target)) {
+                    best = level;
+                    bestIndex = index;
+                }
+            });
+            return bestIndex;
+        }
+
+        // 'lowest' and 'bandwidthSaver' both want the smallest sustainable
+        // rendition; they differ in what the user pairs them with, not here.
+        if (mode === 'lowest' || mode === 'bandwidthSaver') return eligible[0].index;
+        return eligible[eligible.length - 1].index;
+    },
+
+    /** Renditions from an hls.js instance, ascending by height. */
+    _sortedLevels(hls) {
+        if (!Array.isArray(hls?.levels)) return [];
+        return hls.levels
+            .map((level, index) => ({ height: Number(level.height) || 0, hlsIndex: index }))
+            .filter((level) => level.height > 0)
+            .sort((a, b) => a.height - b.height);
+    },
+
+    _watchForStalls(video) {
+        if (!video || this._video === video) return;
+        this._detachStallWatch();
+        if (Settings.get('stallRecovery') === false) return;
+        this._video = video;
+        this._onStall = () => this._recordStall();
+        video.addEventListener('waiting', this._onStall);
+        video.addEventListener('stalled', this._onStall);
+    },
+
+    _detachStallWatch() {
+        if (this._video && this._onStall) {
+            this._video.removeEventListener('waiting', this._onStall);
+            this._video.removeEventListener('stalled', this._onStall);
+        }
+        this._video = null;
+        this._onStall = null;
+        this._stalls = [];
+    },
+
+    _recordStall() {
+        const now = Date.now();
+        this._stalls = this._stalls.filter((t) => now - t < this._STALL_WINDOW_MS);
+        this._stalls.push(now);
+        if (this._stalls.length < this._STALL_LIMIT) return;
+        this._stalls = [];
+        this._stepDown();
+    },
+
+    /** Drop one rendition and tell the user why, rather than buffering silently. */
+    _stepDown() {
+        const hls = this._video?.hls || qs('#videoPlayer video, video')?.hls;
+        const sorted = this._sortedLevels(hls);
+        if (sorted.length < 2) return;
+
+        const currentHeight = sorted.find((l) => l.hlsIndex === hls.currentLevel)?.height;
+        let position = sorted.findIndex((l) => l.hlsIndex === hls.currentLevel);
+        if (position < 0) position = sorted.length - 1;
+        if (position === 0) return; // already at the bottom
+
+        // Never step below an explicit floor — the user asked for a minimum.
+        const floor = this._floor();
+        const next = sorted[position - 1];
+        if (floor !== null && next.height < floor) return;
+
+        try {
+            hls.nextLevel = next.hlsIndex;
+            this._steppedDown += 1;
+            RxToast.show(rxT(
+                'toastQualityStepDown',
+                'Playback kept stalling — quality lowered to {height}p',
+                { height: next.height },
+            ));
+        } catch { /* player swapped out mid-step */ }
+        void currentHeight;
+    },
+
     _selectBest() {
         if (this._attempted) return;
+        // The DOM path runs when hls.js is not exposed; stall recovery still
+        // applies, and it is the only thing 'manual' mode installs.
+        this._watchForStalls(qs('#videoPlayer video, video'));
         // Rumble's quality menu: find the settings gear, open it, pick highest
         // The player uses class .touched_overlay_item for the settings button area
         const settingsBtn = qs('.touched_overlay_item + div button, [class*="quality-menu"], .videoPlayer-Rumble-cls button[aria-label*="Settings"]');
@@ -6435,19 +6583,8 @@ const AutoMaxQuality = {
             setTimeout(() => {
                 const qualityList = qualitySection.lastChild;
                 if (qualityList) {
-                    // Get all quality options, pick the one with highest resolution
-                    const options = qualityList.children;
-                    let best = null;
-                    let bestRes = 0;
-                    for (const opt of options) {
-                        const text = opt.textContent.trim();
-                        if (text.toLowerCase() === 'auto') continue;
-                        const m = text.match(/(\d+)/);
-                        if (m && parseInt(m[1]) > bestRes) {
-                            bestRes = parseInt(m[1]);
-                            best = opt;
-                        }
-                    }
+                    // Apply the same ceiling/floor/mode policy as the hls path.
+                    const best = this._pickFromLabels(qualityList.children);
                     if (best) {
                         this._attempted = true;
                         this._clearTimers();
@@ -6464,18 +6601,8 @@ const AutoMaxQuality = {
         setTimeout(() => {
             const items = qsa('[class*="quality"] li, [class*="quality"] div[role="option"], [class*="quality"] button');
             if (!items.length) return;
-            let best = null;
-            let bestRes = 0;
-            for (const item of items) {
-                const text = item.textContent.trim();
-                if (text.toLowerCase() === 'auto') continue;
-                const m = text.match(/(\d+)/);
-                if (m && parseInt(m[1]) > bestRes) {
-                    bestRes = parseInt(m[1]);
-                    best = item;
-                }
-            }
-            if (best) best.click();
+            const target = this._pickFromLabels(items);
+            if (target) target.click();
         }, 500);
     },
 
@@ -6488,16 +6615,32 @@ const AutoMaxQuality = {
     _hlsInstances: null, // WeakRef-less Set — hls instances we've bound to
     _hlsApply: null,
 
+    /** Apply the same policy to a DOM quality menu, whose labels carry the height. */
+    _pickFromLabels(nodes) {
+        const parsed = [...nodes]
+            .map((node) => ({ node, height: parseInt((node.textContent || '').trim().match(/(\d+)/)?.[1] || '', 10) }))
+            .filter((entry) => Number.isFinite(entry.height))
+            .sort((a, b) => a.height - b.height);
+        const pick = this._pickIndex(parsed);
+        return pick >= 0 ? parsed[pick].node : null;
+    },
+
     _tryHlsDirect() {
         if (this._attempted) return false;
         const video = qs('#videoPlayer video, video');
         const hls = video?.hls;
         if (!hls) return false;
         const apply = () => {
-            if (Array.isArray(hls.levels) && hls.levels.length > 1) {
+            const sorted = this._sortedLevels(hls);
+            if (sorted.length > 1) {
+                const pick = this._pickIndex(sorted);
+                // -1 is 'manual': the user drives quality, so only the stall
+                // watch is installed. Still counts as handled, or the retry
+                // timers keep clicking through the overlay behind their back.
                 try {
-                    hls.nextLevel = hls.levels.length - 1;
+                    if (pick >= 0) hls.nextLevel = sorted[pick].hlsIndex;
                     this._attempted = true;
+                    this._watchForStalls(video);
                     this._clearTimers();
                     this._obs?.disconnect();
                     return true;
@@ -6549,6 +6692,8 @@ const AutoMaxQuality = {
     destroy() {
         this._clearTimers();
         this._obs?.disconnect();
+        this._detachStallWatch();
+        this._steppedDown = 0;
         // Detach each hls.js listener we bound, so we don't leave handlers
         // hanging on the player after the feature is disabled.
         if (this._hlsInstances) {
@@ -10447,7 +10592,8 @@ const RX_CATEGORIES = [
             { id: 'speedController', label: 'Speed Control', desc: 'Persistent playback speed with live detection' },
             { id: 'scrollVolume', label: 'Scroll Volume', desc: 'Mouse wheel volume + middle-click mute' },
             { id: 'defaultMaxVolume', label: 'Default Max Volume', desc: 'Start videos at 100% volume', parent: 'scrollVolume' },
-            { id: 'autoMaxQuality', label: 'Auto Max Quality', desc: 'Auto-select highest resolution on load' },
+            { id: 'autoMaxQuality', label: 'Auto Max Quality', desc: 'Pick a rendition on load, within the ceiling and floor set in Options' },
+            { id: 'stallRecovery', label: 'Stall Recovery', desc: 'Drop one rendition after three stalls in 30 seconds, and say why', parent: 'autoMaxQuality' },
             { id: 'autoplayBlock', label: 'Autoplay Block', desc: 'Prevent auto-play of next video' },
             { id: 'loopControl', label: 'Loop Control', desc: 'Full video loop + A-B segment loop' },
             { id: 'miniPlayer', label: 'Mini Player', desc: 'Floating draggable video when scrolling away' },

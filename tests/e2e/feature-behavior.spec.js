@@ -722,3 +722,118 @@ test('AudioOnly, LiveDVR, ScreenshotBtn and NotifEnhance each inject and fully r
         expect(value.afterDestroy, `${id} left its stylesheet behind after destroy`).toBe(false);
     }
 });
+
+test('AutoMaxQuality honours qualityMode, the ceiling and the floor', async () => {
+    // qualityMode had four documented values and no consumer at all: the
+    // module always took the top rendition regardless. These assert the policy
+    // over a fixed ladder, so a regression shows up as the wrong height rather
+    // than as "video looks bad on some connections".
+    const LADDER = [360, 480, 720, 1080, 1440, 2160];
+    const result = await inHarness(({ ladder }) => {
+        const feature = features.find((f) => f.id === 'autoMaxQuality');
+        const sorted = ladder.map((height, hlsIndex) => ({ height, hlsIndex }));
+        const pick = (mode, ceiling, floor) => {
+            Settings.set('qualityMode', mode);
+            Settings.set('qualityCeiling', ceiling);
+            Settings.set('qualityFloor', floor);
+            const index = feature._pickIndex(sorted);
+            return index < 0 ? null : sorted[index].height;
+        };
+        return {
+            best: pick('best', 'auto', 'auto'),
+            lowest: pick('lowest', 'auto', 'auto'),
+            saver: pick('bandwidthSaver', 'auto', 'auto'),
+            manual: pick('manual', 'auto', 'auto'),
+            bestUnderCeiling: pick('best', '720', 'auto'),
+            lowestOverFloor: pick('lowest', 'auto', '720'),
+            bothBounds: pick('best', '1080', '480'),
+            // A ceiling below every rendition still has to produce video.
+            impossibleCeiling: pick('best', '360', '1440'),
+            // Labels come from the DOM menu when hls.js is not exposed; the
+            // same policy has to apply there or the two paths disagree.
+            fromLabels: (() => {
+                Settings.set('qualityMode', 'best');
+                Settings.set('qualityCeiling', '480');
+                Settings.set('qualityFloor', 'auto');
+                const nodes = ['Auto', '1080p', '720p', '480p', '360p'].map((text) => {
+                    const el = document.createElement('div');
+                    el.textContent = text;
+                    return el;
+                });
+                return feature._pickFromLabels(nodes)?.textContent || null;
+            })(),
+        };
+    }, { ladder: LADDER });
+
+    expect(result.best).toBe(2160);
+    expect(result.lowest).toBe(360);
+    expect(result.saver).toBe(360);
+    // 'manual' means the user drives quality — the module must not touch it.
+    expect(result.manual).toBeNull();
+    expect(result.bestUnderCeiling).toBe(720);
+    expect(result.lowestOverFloor).toBe(720);
+    expect(result.bothBounds).toBe(1080);
+    // Bounds that exclude everything fall back to the nearest rendition rather
+    // than leaving the player on whatever it happened to pick.
+    expect(result.impossibleCeiling).toBe(360);
+    expect(result.fromLabels).toBe('480p');
+});
+
+test('AutoMaxQuality steps down after repeated stalls and respects the floor', async () => {
+    const result = await inHarness(() => {
+        const feature = features.find((f) => f.id === 'autoMaxQuality');
+        Settings.set('qualityMode', 'best');
+        Settings.set('qualityCeiling', 'auto');
+        Settings.set('stallRecovery', true);
+
+        // A stand-in for the player's hls.js instance: nextLevel is what the
+        // module writes, so it is the whole observable effect.
+        const makeHls = () => ({
+            levels: [{ height: 360 }, { height: 720 }, { height: 1080 }],
+            currentLevel: 2,
+            nextLevel: -1,
+        });
+
+        const video = document.createElement('video');
+        document.body.appendChild(video);
+        video.hls = makeHls();
+        feature._video = video;
+        feature._stalls = [];
+        feature._steppedDown = 0;
+
+        Settings.set('qualityFloor', 'auto');
+        // Two stalls are under the limit; nothing should move yet.
+        feature._recordStall();
+        feature._recordStall();
+        const afterTwo = video.hls.nextLevel;
+        feature._recordStall();
+        const afterThree = video.hls.nextLevel;
+
+        // With a 1080 floor, a step down from 1080 is not allowed at all.
+        video.hls = makeHls();
+        feature._stalls = [];
+        Settings.set('qualityFloor', '1080');
+        feature._recordStall();
+        feature._recordStall();
+        feature._recordStall();
+        const withFloor = video.hls.nextLevel;
+
+        // Turning stall recovery off must remove the listeners, not just skip.
+        Settings.set('stallRecovery', false);
+        feature._detachStallWatch();
+        feature._watchForStalls(video);
+        const watchedWhenDisabled = feature._video === video;
+
+        video.remove();
+        return { afterTwo, afterThree, withFloor, watchedWhenDisabled, stepped: feature._steppedDown };
+    });
+
+    // -1 is hls.js's "no override"; the module has not touched it.
+    expect(result.afterTwo).toBe(-1);
+    // Third stall inside the window drops one rendition: index 1 is 720p.
+    expect(result.afterThree).toBe(1);
+    expect(result.stepped).toBe(1);
+    // The floor is a hard stop, not a preference.
+    expect(result.withFloor).toBe(-1);
+    expect(result.watchedWhenDisabled).toBe(false);
+});

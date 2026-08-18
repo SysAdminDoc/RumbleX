@@ -238,7 +238,10 @@
         homeCleanupPreset: { group: 'layout', label: 'Home Cleanup Preset', desc: 'none | focused | minimal | custom.' },
         pageDensity: { group: 'layout', label: 'Page Density', desc: 'dense | normal — RumbleX UI density only.' },
         // Player
-        qualityMode: { group: 'video-player', label: 'Quality Mode', desc: 'best | lowest | manual | bandwidthSaver.' },
+        qualityMode: { group: 'video-player', label: 'Quality Mode', desc: 'best picks the highest rendition, lowest and bandwidthSaver pick the smallest, manual leaves quality to you.' },
+        qualityCeiling: { group: 'video-player', label: 'Maximum Resolution', desc: 'Never select a rendition taller than this. auto means no ceiling.' },
+        qualityFloor: { group: 'video-player', label: 'Minimum Resolution', desc: 'Never select or step down below this. auto means no floor.' },
+        stallRecovery: { group: 'video-player', label: 'Stall Recovery', desc: 'After three stalls in 30 seconds, drop one rendition and say why.' },
         perChannelVolumeMemory: { group: 'video-player', label: 'Per-Channel Volume Memory', desc: 'Remember volume per channel.' },
         autoplayBlockMode: { group: 'video-player', label: 'Autoplay Block Mode', desc: 'relatedEndpointAndPlayer | playerOnly | off.' },
         clipExportFormat: { group: 'downloads', label: 'Clip Export Format', desc: 'mp4 | webm | manifestOnly.' },

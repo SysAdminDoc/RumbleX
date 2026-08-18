@@ -792,7 +792,7 @@
     "description": "In-page UI string (shared core)."
   },
   "feat_autoMaxQuality_desc": {
-    "message": "Höchste Auflösung beim Laden automatisch wählen",
+    "message": "Beim Laden eine Auflösung wählen, innerhalb der in den Optionen gesetzten Ober- und Untergrenze",
     "description": "In-page UI string (shared core)."
   },
   "feat_autoplayBlock_label": {
@@ -1693,6 +1693,18 @@
   },
   "modalEnableAll": {
     "message": "Alle {category} aktivieren",
+    "description": "In-page UI string (shared core)."
+  },
+  "toastQualityStepDown": {
+    "message": "Wiedergabe stockte wiederholt — Qualität auf {height}p gesenkt",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_stallRecovery_label": {
+    "message": "Stockungs-Ausgleich",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_stallRecovery_desc": {
+    "message": "Nach drei Stockungen in 30 Sekunden eine Stufe herunterschalten und den Grund nennen",
     "description": "In-page UI string (shared core)."
   }
 }

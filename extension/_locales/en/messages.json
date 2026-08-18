@@ -792,7 +792,7 @@
     "description": "In-page UI string (shared core)."
   },
   "feat_autoMaxQuality_desc": {
-    "message": "Auto-select highest resolution on load",
+    "message": "Pick a rendition on load, within the ceiling and floor set in Options",
     "description": "In-page UI string (shared core)."
   },
   "feat_autoplayBlock_label": {
@@ -1693,6 +1693,18 @@
   },
   "modalEnableAll": {
     "message": "Enable all {category}",
+    "description": "In-page UI string (shared core)."
+  },
+  "toastQualityStepDown": {
+    "message": "Playback kept stalling — quality lowered to {height}p",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_stallRecovery_label": {
+    "message": "Stall Recovery",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_stallRecovery_desc": {
+    "message": "Drop one rendition after three stalls in 30 seconds, and say why",
     "description": "In-page UI string (shared core)."
   }
 }

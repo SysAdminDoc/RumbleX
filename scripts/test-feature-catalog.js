@@ -111,7 +111,8 @@ const MODAL_EXCLUSIONS = {
     autoplayBlockMode: 'enum', blockedKeywordsMode: 'enum', clipExportFormat: 'enum',
     segmentSkipMode: 'enum', downloadQualityPreference: 'enum', audioExtractionMode: 'enum',
     downloadMuxerEngine: 'enum', homeCleanupPreset: 'enum', pageDensity: 'enum',
-    qualityMode: 'enum', shortsFilterScope: 'enum', rantExportFormat: 'enum',
+    qualityMode: 'enum', qualityCeiling: 'enum', qualityFloor: 'enum',
+    shortsFilterScope: 'enum', rantExportFormat: 'enum',
     rantTierFilter: 'enum', commentThreadView: 'enum', politicsFilterPreset: 'enum',
     remoteCosmeticRulesChannel: 'enum',
 
