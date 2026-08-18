@@ -1,6 +1,6 @@
 # RumbleX
 
-![Version](https://img.shields.io/badge/version-v3.44.0-blue) ![License](https://img.shields.io/badge/license-MIT-green) ![Platform](https://img.shields.io/badge/platform-Extension%20%2B%20Userscript-lightgrey) ![Firefox](https://img.shields.io/badge/firefox-109%2B-orange)
+![Version](https://img.shields.io/badge/version-v3.45.0-blue) ![License](https://img.shields.io/badge/license-MIT-green) ![Platform](https://img.shields.io/badge/platform-Extension%20%2B%20Userscript-lightgrey) ![Firefox](https://img.shields.io/badge/firefox-109%2B-orange)
 
 **The ultimate Rumble enhancement suite.** 130+ feature modules across 14 categories — ad blocking, theater mode, video downloads with CDN deep-scan probing and an opt-in Mediabunny muxer path, five-theme engine (now including OLED Green), playback controls, chat enhancements with deterministic username colors and tier-filtered rants, chapters, SponsorBlock, clips, live DVR, transcripts, auto-hide chrome, 50+ granular hide-X toggles for every Rumble row/button/player control, thumbnail hider, dense mode, reduced-motion path, tracking-param stripping, external player handoff (MPV/PotPlayer), and full-round-trip backup/restore with snapshot history. Chrome MV3 + Firefox MV2 + userscript.
 
@@ -28,6 +28,12 @@
 - **One settings trust boundary** — content scripts, options, popup, Chrome and Firefox backgrounds, and the generated userscript now consume the same canonical defaults and schema normalizer.
 - **Safe profile and encrypted-Gist recovery** — legacy or crafted restores cannot inject unknown keys, invalid enums/types, off-site autoplay URLs, CSS-shaped categories, malformed notifier channels, or unsafe SponsorBlock data. Gist pulls keep the local token and Gist ID instead of trusting the remote copy.
 - **Smaller runtime surface** — removed more than 1,000 lines of duplicated defaults and validation logic while adding direct schema and hostile-restore regression tests.
+
+### v3.45 highlights
+- **Playback resilience.** `AutoMaxQuality` always pinned the highest rendition, which is the worst possible answer to buffering. It now honours a quality ceiling and floor, and `qualityMode` — which shipped with four documented values and no runtime consumer at all. Three stalls inside 30 seconds drops one rendition and says why.
+- **`/playlists/<id>` is a route RumbleX understands.** Batch Download mounts and multi-selects there, and Channel Archive can enqueue a whole playlist. This also fixed the archive parser, which only matched relative card hrefs and so would have found nothing on a playlist page.
+- **Document Picture-in-Picture.** Where the API exists, the mini player pops out into a real always-on-top window instead of a floating div that dies on navigation.
+- **Store listing assets**, with a guard that fails on an unjustified permission or a mis-sized image. Capturing the 640x400 screenshot exposed a layout bug: the settings modal's narrow-viewport rules sat above the desktop rules they override, so in a small window the sidebar and content pane collapsed.
 
 ### v3.44 highlights
 - **The in-page UI is actually translated now.** `content.js` had zero i18n calls, so four locales covered the extension's own pages while every string on rumble.com stayed English. 313 keys are wired: every toast, the download panel, and the whole settings modal including all 137 feature labels and 124 descriptions, in German, Spanish and Brazilian Portuguese. Feature search indexes the translated text, so searching in German finds German.

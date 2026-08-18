@@ -2,7 +2,7 @@
 
 All notable changes to RumbleX will be documented in this file.
 
-## [Unreleased]
+## [3.45.0] - 2026-08-18
 
 ### Added
 - **Document Picture-in-Picture for the mini player.** `MiniPlayer` was an in-page floating `<div>` that died on navigation and could not leave the tab. Where `documentPictureInPicture` exists, a "Pop out" control moves the video into a real always-on-top OS window. It is a control rather than an automatic upgrade because `requestWindow()` requires transient user activation and the overlay opens from an IntersectionObserver, which has none — an automatic call would simply be rejected. Unsupported browsers render no button and keep the existing overlay untouched. The `<video>` is *moved* into the PiP document rather than cloned again, since a second clone decodes the same stream twice; closing the window, hiding the overlay, or disabling the feature each bring it home and remove the `pagehide` listener.
