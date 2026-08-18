@@ -178,6 +178,59 @@ test('mux.js and Mediabunny produce playable metadata parity from one golden TS 
     expect(Math.abs(muxjsMetadata.duration - mediabunnyMetadata.duration)).toBeLessThan(0.08);
 });
 
+test('a stalled mux.js worker is terminated instead of hanging the download', async ({ context, serviceWorker }) => {
+    const rumble = await openRumbleFixture(context);
+    const tabId = await findTabId(serviceWorker, rumble.url());
+
+    const outcome = await serviceWorker.evaluate(async (targetTabId) => {
+        const executions = await chrome.scripting.executeScript({
+            target: { tabId: targetTabId },
+            world: 'ISOLATED',
+            func: async () => {
+                if (typeof VideoDownloader === 'undefined') {
+                    throw new Error('RumbleX muxer globals unavailable in the content world');
+                }
+                const originalGetWorker = VideoDownloader._getMuxWorker;
+                const originalBound = VideoDownloader._workerTimeoutMs;
+                const originalWorker = VideoDownloader._worker;
+                let terminated = false;
+                // A worker that acknowledges the post and then never answers is
+                // exactly the mux.js infinite-loop shape (videojs/mux.js#447).
+                const stalled = {
+                    addEventListener() {},
+                    removeEventListener() {},
+                    postMessage() {},
+                    terminate() { terminated = true; },
+                };
+                VideoDownloader._getMuxWorker = async () => stalled;
+                VideoDownloader._workerTimeoutMs = () => 50;
+                VideoDownloader._worker = stalled;
+                try {
+                    let message = null;
+                    let diagnostic = null;
+                    try {
+                        await VideoDownloader._transmuxWithMuxWorker([new Uint8Array(8).buffer], null);
+                    } catch (error) {
+                        message = String(error?.message || error);
+                        diagnostic = error?.rxWorkerDiagnostic || null;
+                    }
+                    return { message, diagnostic, terminated, clearedHandle: VideoDownloader._worker === null };
+                } finally {
+                    VideoDownloader._getMuxWorker = originalGetWorker;
+                    VideoDownloader._workerTimeoutMs = originalBound;
+                    VideoDownloader._worker = originalWorker;
+                }
+            },
+        });
+        return executions[0].result;
+    }, tabId);
+
+    expect(outcome.message).toContain('timed out');
+    expect(outcome.diagnostic).toMatchObject({ engine: 'muxjs', stage: 'worker-timeout' });
+    expect(outcome.terminated).toBe(true);
+    expect(outcome.clearedHandle).toBe(true);
+});
+
 test('Mediabunny selection falls back to mux.js when WebCodecs is unavailable', async ({ context, extensionId, serviceWorker }) => {
     const rumble = await openRumbleFixture(context);
     const tabId = await findTabId(serviceWorker, rumble.url());

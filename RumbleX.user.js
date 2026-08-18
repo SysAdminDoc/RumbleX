@@ -23,7 +23,7 @@
 // @updateURL    https://raw.githubusercontent.com/SysAdminDoc/RumbleX/main/RumbleX.user.js
 // ==/UserScript==
 
-// Generated from extension/settings-schema.js + extension/content.js. Shared runtime SHA-256: ee5d729245871f7a49fa56eb103ea3c3910aaaa9b2e6ee6b7a720e8c62a5b69f
+// Generated from extension/settings-schema.js + extension/content.js. Shared runtime SHA-256: 302849d89dd1c0c4c2fbc68b3e5efebaf793f7c4f70270514aa91bbea5e4b4b0
 // RumbleX shared settings schema. This file is the canonical source for
 // defaults and trust-boundary normalization across content, options, popup,
 // background profile/Gist restores, and the generated userscript.
@@ -3861,15 +3861,22 @@ const VideoDownloader = {
         return this._mediabunnyWorker;
     },
 
+    // Shared conversion bound for both muxer workers: a 20s floor for tiny
+    // inputs, ~5ms per KiB after that, capped at 10 minutes. A worker that
+    // exceeds it is terminated rather than left holding an unsettled promise.
+    _workerTimeoutMs(inputBytes) {
+        return Math.min(
+            10 * 60 * 1000,
+            Math.max(20 * 1000, 15 * 1000 + Math.ceil((Number(inputBytes) || 0) / 1024) * 5),
+        );
+    },
+
     async _transmuxWithMediabunny(tsBuffers, signal) {
         const worker = await this._getMediabunnyWorker();
         return new Promise((resolve, reject) => {
             const id = Date.now() + Math.random();
             const inputBytes = tsBuffers.reduce((total, buffer) => total + (buffer?.byteLength || 0), 0);
-            const timeoutMs = Math.min(
-                10 * 60 * 1000,
-                Math.max(20 * 1000, 15 * 1000 + Math.ceil(inputBytes / 1024) * 5),
-            );
+            const timeoutMs = this._workerTimeoutMs(inputBytes);
             let workerDiagnostic = { engine: 'mediabunnyWebCodecs', stage: 'worker-dispatch', inputBytes };
             const timeout = setTimeout(() => {
                 cleanup();
@@ -3940,8 +3947,26 @@ const VideoDownloader = {
         const worker = await this._getMuxWorker();
         return new Promise((resolve, reject) => {
             const id = Date.now();
+            // mux.js is unmaintained and parses attacker-influenced MPEG-TS, so a
+            // malformed segment can wedge it in a loop the worker never returns
+            // from. Without a bound the promise never settles: the panel hangs
+            // with no error and no diagnostics entry. Same input-scaled envelope
+            // as the Mediabunny path.
+            const inputBytes = tsBuffers.reduce((total, buffer) => total + (buffer?.byteLength || 0), 0);
+            const timeoutMs = this._workerTimeoutMs(inputBytes);
+            const timeout = setTimeout(() => {
+                cleanup();
+                if (this._worker === worker) {
+                    try { worker.terminate(); } catch {}
+                    this._worker = null;
+                }
+                const error = new Error('mux.js conversion timed out after ' + Math.ceil(timeoutMs / 1000) + 's');
+                error.rxWorkerDiagnostic = { engine: 'muxjs', stage: 'worker-timeout', inputBytes, timeoutMs };
+                reject(error);
+            }, timeoutMs);
 
             const cleanup = () => {
+                clearTimeout(timeout);
                 worker.removeEventListener('message', handler);
                 worker.removeEventListener('error', errorHandler);
                 worker.removeEventListener('messageerror', errorHandler);
