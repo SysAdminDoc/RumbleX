@@ -3044,6 +3044,97 @@
         })();
     });
 
+    // ── First-run welcome ───────────────────────────────────────────────────
+    // A fresh install lands on 126 modules and 208 settings with no orientation.
+    // This names a short list of high-value extras and turns them on in one
+    // click. It is shown once, is dismissible, adds no keyboard shortcut and no
+    // confirmation dialog, and every entry is an ordinary setting.
+    // Deliberately all default-OFF settings: a preset list that mostly toggles
+    // things already on would do nothing and teach the user the button is fake.
+    const WELCOME_PRESETS = [
+        { key: 'autoTheater', label: 'Auto theater mode', desc: 'Opens every watch page in the wide player instead of making you click.' },
+        { key: 'disableShortsFeed', label: 'Hide the Shorts feed', desc: 'Removes the Shorts row and its infinite-scroll surface.' },
+        { key: 'batchDownload', label: 'Batch download', desc: 'Multi-select videos on a channel or feed and queue them together.' },
+        { key: 'autoHideHeader', label: 'Auto-hide the header', desc: 'Reclaims vertical space until you move the pointer to the top.' },
+        { key: 'hideRelatedSidebar', label: 'Hide the related-videos rail', desc: 'Removes the recommendation column beside the player.' },
+        { key: 'hidePausedVideoAds', label: 'Hide paused-video ads', desc: 'Suppresses the overlay Rumble shows when you pause.' },
+        { key: 'liveDVR', label: 'Live DVR', desc: 'Lets you scrub backwards during a live stream to catch what you missed.' },
+        { key: 'defaultMaxVolume', label: 'Start at full volume', desc: 'Sets the player to maximum volume on load.' },
+    ];
+
+    async function setupWelcome() {
+        const panel = document.getElementById('welcome-panel');
+        const list = document.getElementById('welcome-presets');
+        if (!panel || !list) return;
+
+        const seen = await new Promise((resolve) => {
+            chrome.storage.local.get(['rx_welcome_seen'], (stored) => resolve(!!stored?.rx_welcome_seen));
+        });
+        // Honor an explicit #welcome link even after dismissal so the view is
+        // reachable again on purpose, but never re-open it on its own.
+        if (seen && window.location.hash !== '#welcome') return;
+
+        // Only offer presets that actually exist and are wired to real behavior.
+        const offered = WELCOME_PRESETS.filter((preset) => Object.hasOwn(DEFAULTS, preset.key) && !UNIMPLEMENTED[preset.key]);
+        if (!offered.length) return;
+
+        for (const preset of offered) {
+            const item = document.createElement('li');
+            const input = document.createElement('input');
+            input.type = 'checkbox';
+            input.checked = true;
+            input.id = 'welcome-preset-' + preset.key;
+            input.dataset.key = preset.key;
+            const label = document.createElement('label');
+            label.htmlFor = input.id;
+            const strong = document.createElement('strong');
+            strong.textContent = preset.label;
+            const desc = document.createElement('span');
+            desc.textContent = preset.desc;
+            label.append(strong, desc);
+            item.append(input, label);
+            list.appendChild(item);
+        }
+        panel.hidden = false;
+
+        const dismiss = async () => {
+            panel.hidden = true;
+            await new Promise((resolve) => chrome.storage.local.set({ rx_welcome_seen: true }, resolve));
+        };
+
+        document.getElementById('welcome-dismiss-btn')?.addEventListener('click', () => {
+            void dismiss().then(() => showStatus('Welcome dismissed. Everything stays at its defaults.', 'info'));
+        });
+
+        document.getElementById('welcome-apply-btn')?.addEventListener('click', async () => {
+            const chosen = [...list.querySelectorAll('input[type="checkbox"]')]
+                .filter((input) => input.checked)
+                .map((input) => input.dataset.key);
+            try {
+                const stored = await new Promise((resolve) => {
+                    chrome.storage.local.get([STORAGE_KEY], (data) => resolve(data?.[STORAGE_KEY] || {}));
+                });
+                const next = { ...stored };
+                for (const key of chosen) next[key] = true;
+                // Same trust boundary as every other settings write.
+                const normalized = RXSettingsSchema.normalizeStored(next, DEFAULTS);
+                await new Promise((resolve) => chrome.storage.local.set({ [STORAGE_KEY]: normalized }, resolve));
+                await dismiss();
+                showStatus(
+                    chosen.length
+                        ? `Turned on ${chosen.length} ${pluralize(chosen.length, 'feature')}. Reload any open Rumble tab to apply.`
+                        : 'Nothing selected — everything stays at its defaults.',
+                    'success',
+                );
+                await refreshSettingsState({ resetDraft: true });
+            } catch (err) {
+                showStatus('Could not apply the starter presets: ' + (err?.message || err), 'error');
+            }
+        });
+    }
+
+    void setupWelcome().catch((err) => console.warn('[RumbleX options] welcome setup failed:', err));
+
     void renderStorageInfo().catch((err) => {
         console.warn('[RumbleX options] initial render failed:', err);
         showStatus('Could not read extension storage: ' + err.message, 'error');

@@ -313,8 +313,24 @@ function isAllowedDownloadUrl(url) {
     }
 }
 
-chrome.runtime.onInstalled.addListener(() => {
+chrome.runtime.onInstalled.addListener((details) => {
     console.log('[RumbleX] Extension installed');
+    // A fresh install lands the user on 126 modules and 208 settings with no
+    // orientation at all. Open the welcome view once, on first install only —
+    // never on an update, never again after it is dismissed.
+    if (details?.reason === 'install') {
+        chrome.storage.local.get(['rx_welcome_seen'], (stored) => {
+            if (stored?.rx_welcome_seen) return;
+            const url = chrome.runtime.getURL('pages/options.html#welcome');
+            chrome.tabs?.create?.({ url }, () => void chrome.runtime.lastError);
+        });
+    }
+    // Point uninstall feedback at the issue tracker rather than nothing.
+    if (chrome.runtime.setUninstallURL) {
+        try {
+            chrome.runtime.setUninstallURL('https://github.com/SysAdminDoc/RumbleX/issues');
+        } catch { /* not fatal — feedback routing is not a runtime dependency */ }
+    }
     // v3.5.0 — Register context-menu items on install/update.
     rxSyncContextMenus().catch((e) => console.warn('[RumbleX] context menu sync failed:', e));
     // v3.7.0 — Sync side-panel behavior with the user's preference.

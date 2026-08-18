@@ -166,3 +166,67 @@ test('settings with no runtime consumer are disclosed and not operable', async (
         }));
     expect(missing).toEqual([]);
 });
+
+// A fresh install used to land on 126 modules and 208 settings with no
+// orientation at all: onInstalled only synced context menus, the side panel,
+// the notifier, and alarms.
+test('first-run welcome offers real default-off presets, applies them, and never returns', async ({ context, extensionId }) => {
+    const page = await context.newPage();
+    await page.goto(`chrome-extension://${extensionId}/pages/options.html`);
+
+    const panel = page.locator('#welcome-panel');
+    await expect(panel).toBeVisible();
+
+    // Every offered preset must be a real key that is off by default and
+    // actually wired — a preset list that toggles nothing teaches the user the
+    // button is fake.
+    const audit = await page.evaluate(() => {
+        const schema = globalThis.RumbleXSettingsSchema;
+        return [...document.querySelectorAll('#welcome-presets input[type="checkbox"]')].map((input) => ({
+            key: input.dataset.key,
+            exists: Object.hasOwn(schema.DEFAULTS, input.dataset.key),
+            defaultValue: schema.DEFAULTS[input.dataset.key],
+            unimplemented: !!schema.UNIMPLEMENTED[input.dataset.key],
+            checked: input.checked,
+        }));
+    });
+    expect(audit.length).toBeGreaterThan(0);
+    for (const entry of audit) {
+        expect(entry.exists, `${entry.key} is not a real setting`).toBe(true);
+        expect(entry.defaultValue, `${entry.key} is already on by default`).toBe(false);
+        expect(entry.unimplemented, `${entry.key} has no runtime consumer`).toBe(false);
+        expect(entry.checked).toBe(true);
+    }
+
+    // Deselect one so the applied set is not simply "all of them".
+    const skipped = audit[0].key;
+    await page.locator(`#welcome-preset-${skipped}`).uncheck();
+    await page.locator('#welcome-apply-btn').click();
+    await expect(panel).toBeHidden();
+
+    const stored = await page.evaluate(async () => (await chrome.storage.local.get('rx_settings')).rx_settings || {});
+    for (const entry of audit) {
+        if (entry.key === skipped) expect(stored[entry.key]).toBeFalsy();
+        else expect(stored[entry.key], `${entry.key} was not applied`).toBe(true);
+    }
+
+    // Shown once: a reload must not bring it back.
+    await page.reload();
+    await expect(page.locator('#welcome-panel')).toBeHidden();
+});
+
+test('dismissing the first-run welcome changes nothing and it stays gone', async ({ context, extensionId }) => {
+    const page = await context.newPage();
+    await page.goto(`chrome-extension://${extensionId}/pages/options.html`);
+    await expect(page.locator('#welcome-panel')).toBeVisible();
+
+    await page.locator('#welcome-dismiss-btn').click();
+    await expect(page.locator('#welcome-panel')).toBeHidden();
+
+    const stored = await page.evaluate(async () => (await chrome.storage.local.get('rx_settings')).rx_settings);
+    // Dismissal must not write settings at all.
+    expect(stored === undefined || Object.keys(stored).length === 0).toBe(true);
+
+    await page.reload();
+    await expect(page.locator('#welcome-panel')).toBeHidden();
+});

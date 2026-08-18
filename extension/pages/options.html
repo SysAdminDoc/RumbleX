@@ -208,6 +208,28 @@
         button:focus-visible { box-shadow: var(--focus-ring); border-color: var(--accent-border); }
 
         /* ── Page Status ── */
+        /* First-run welcome. Shown once, dismissible, never blocking. */
+        .welcome-panel {
+            display: grid; gap: 18px; padding: 22px 24px; margin-bottom: 18px;
+            border-radius: var(--radius-md);
+            background: linear-gradient(180deg, rgba(166,227,161,0.08), rgba(137,180,250,0.05));
+            border: 1px solid rgba(166,227,161,0.28);
+        }
+        .welcome-title { margin: 6px 0 8px; font-size: 20px; }
+        .welcome-copy p { margin: 0; color: var(--text-muted); font-size: 13px; line-height: 1.6; }
+        .welcome-presets { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+        .welcome-presets li {
+            display: flex; align-items: flex-start; gap: 10px;
+            padding: 10px 12px; border-radius: var(--radius-sm);
+            background: rgba(17,17,27,0.35); border: 1px solid rgba(205,214,244,0.1);
+        }
+        .welcome-presets input { margin-top: 3px; flex: none; }
+        .welcome-presets label { display: grid; gap: 2px; cursor: pointer; }
+        .welcome-presets strong { font-size: 13px; }
+        .welcome-presets span { color: var(--text-muted); font-size: 11px; line-height: 1.5; }
+        .welcome-actions { display: flex; gap: 10px; flex-wrap: wrap; }
+        .welcome-footnote { margin: 0; color: var(--text-muted); font-size: 11px; }
+
         .status {
             padding: 10px 14px; border-radius: var(--radius-sm);
             font-size: 12px; font-weight: 700; line-height: 1.5; display: none;
@@ -724,6 +746,19 @@
         </header>
 
         <main class="options-workspace" aria-labelledby="options-title">
+            <section class="welcome-panel" id="welcome-panel" aria-labelledby="welcome-title" hidden>
+                <div class="welcome-copy">
+                    <span class="workspace-eyebrow">Welcome</span>
+                    <h2 class="welcome-title" id="welcome-title">RumbleX is installed and already working</h2>
+                    <p>Ad blocking, feed cleanup, and tracking-parameter stripping are on by default — you do not need to configure anything. The presets below turn on the handful of extras most people want. Everything is reversible and nothing leaves your browser.</p>
+                </div>
+                <ul class="welcome-presets" id="welcome-presets"></ul>
+                <div class="welcome-actions">
+                    <button type="button" class="cta-button" id="welcome-apply-btn">Turn these on</button>
+                    <button type="button" class="settings-tertiary-button" id="welcome-dismiss-btn">Not now</button>
+                </div>
+                <p class="welcome-footnote">This only appears once. Every one of these is a normal setting you can change later.</p>
+            </section>
             <section class="workspace-command">
                 <div class="workspace-copy">
                     <span class="workspace-eyebrow" data-i18n="controlCenter">Control center</span>
