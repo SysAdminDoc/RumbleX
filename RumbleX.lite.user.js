@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         RumbleX Lite
 // @namespace    https://github.com/SysAdminDoc/RumbleX
-// @version      3.42.0
+// @version      3.43.0
 // @description  Rumble enhancement suite (Lite) — the same shared feature core, without the bundled transmuxers. Downloads save the raw stream; MP4 remux needs the full build or the extension.
 // @author       SysAdminDoc
 // @match        https://rumble.com/*
@@ -23,7 +23,7 @@
 // @updateURL    https://raw.githubusercontent.com/SysAdminDoc/RumbleX/main/RumbleX.lite.user.js
 // ==/UserScript==
 
-// Generated from extension/settings-schema.js + extension/content.js. Shared runtime SHA-256: d506f67365eb1a0f79decfcf4b560bdff8051c66f133c39ad1f059656b5fde0e
+// Generated from extension/settings-schema.js + extension/content.js. Shared runtime SHA-256: 2684a8318add44062ba89d31badf63649cb1d1d253b804afbd4aabc1c3836d0b
 // RumbleX shared settings schema. This file is the canonical source for
 // defaults and trust-boundary normalization across content, options, popup,
 // background profile/Gist restores, and the generated userscript.
@@ -628,7 +628,7 @@
 'use strict';
 
 (() => {
-    const VERSION = "3.42.0";
+    const VERSION = "3.43.0";
     const ASSETS = Object.freeze({});
     const MESSAGES = Object.freeze({"extName":"RumbleX","extDescription":"Rumble enhancement suite — ad/bloat removal, theater split view, video downloads, dark theme polish, and 130+ feature toggles.","actionTitle":"RumbleX","openSettingsEditor":"Open Settings Editor","exportBackup":"Export Backup","importBackup":"Import Backup","resetAllData":"Reset All Data","snapshotHistory":"Backup snapshot history","snapshotTakeNow":"Take snapshot now","snapshotRestore":"Restore","privacyReport":"Privacy report","telemetryNone":"Telemetry: none — no analytics, no remote logging, no usage beacons","settingsTotal":"settings","settingsUnsaved":"unsaved","saveBtn":"Save","discardBtn":"Discard","restoreDefaultsBtn":"Restore Defaults","groupAll":"All Settings","groupCore":"Core","groupAdBlocking":"Ad Blocking","groupVideoPlayer":"Video Player","groupDownloads":"Downloads & Capture","groupHistory":"History & Bookmarks","groupChat":"Comments & Chat","groupFeedControls":"Feed Controls","groupAutomation":"Automation","groupCreator":"Creator & Studio","groupIntegrations":"Integrations","groupPrivacy":"Privacy & Data","groupAdvanced":"Advanced","tipDisableShortsFeed":"Disable Shorts Feed","tipHideWalletTipButton":"Hide Wallet Tip Button","popupLocalAutosave":"Local changes autosave","popupOpenOptionsHint":"Search, groups, import/export, reset","reloadAfterChanges":"Reload after changes","groupRumbleTabs":"Group all Rumble tabs","openOptionsPage":"Open options page","githubRepo":"GitHub repo","checkForUpdates":"Check for updates","themeLabel":"Theme","noRumbleTabsOpen":"No Rumble tabs open","tabGroupsUnsupported":"Tab groups not supported in this browser","groupFailed":"Group failed","checkingUpdates":"Checking...","checkFailed":"Check failed","checkRateLimited":"GitHub rate limit reached — try again later","upToDate":"Up to date!","appStatusLocal":"Local","storageStatus":"Storage status","controlCenter":"Control center","optionsSettingsTitle":"Settings and local data","optionsIntro":"Review every RumbleX toggle, back up your local data, and manage blocked channels, keywords, chatters, and SponsorBlock segments from one control surface.","storageStatistics":"Storage statistics","enabledLabel":"Enabled","storageLabel":"Storage","channelsLabel":"Channels","keywordsLabel":"Keywords","chattersLabel":"Chatters","readingLocalStorage":"Reading local storage...","dataManagement":"Data management","loading":"Loading...","refreshList":"Refresh list","privacyReportCopy":"Every external network surface RumbleX can touch, telemetry status, and current storage footprint. Pure read - no network calls trigger when you open this.","refresh":"Refresh","exportJson":"Export JSON","exportSelectorTelemetry":"Export selector telemetry","exportErrorLog":"Export error log","clearErrorLog":"Clear error log","copyDownloadDiagnostics":"Copy download diagnostics","exportDownloadDiagnostics":"Export download diagnostics","clearDownloadDiagnostics":"Clear download diagnostics","preparingDownloadDiagnostics":"Preparing sanitized diagnostics…","downloadDiagnosticsUnavailable":"Diagnostics unavailable:","downloadDiagnosticsCopied":"Sanitized diagnostics copied.","downloadDiagnosticsExported":"Sanitized diagnostics exported.","downloadDiagnosticsEmpty":"Download diagnostics are empty. A sanitized entry is captured automatically after a failed download or clip export.","downloadDiagnosticsCleared":"Download diagnostics cleared.","copyDownloadDiagnosticsFailed":"Could not copy download diagnostics:","exportDownloadDiagnosticsFailed":"Could not export download diagnostics:","clearDownloadDiagnosticsFailed":"Could not clear download diagnostics:","settingsTitle":"Settings","closeSettings":"Close settings","searchSettings":"Search settings...","clearSearch":"Clear search","settingGroups":"Setting groups","settingsInSync":"Everything is in sync","settingsLocalUntilSave":"Changes stay local until you save them.","clearFilters":"Clear Filters","filteredView":"Filtered View","noSettingsMatch":"No settings match this view","broaderSearchOrGroup":"Try a broader search or switch back to All Settings.","catalogLabel":"Catalog","noSettingsAvailable":"No settings are available","noSettingsFound":"No defaults or stored settings were found.","noSettingsMatchSearchHere":"No settings match this search here","switchGroupsOrAll":"Switch groups or jump back to All Settings.","noSettingsMatchSearch":"No settings match this search","shorterKeywordOrClear":"Try a shorter keyword or clear the filter.","groupThemeLayout":"Theme & Layout","groupNavigation":"Navigation & Chrome","groupMainPage":"Main Page Layout","groupVideoPage":"Video Page Layout","groupPlayerControls":"Player Controls","groupVideoButtons":"Video Buttons","groupCommentsExtra":"Comments & Chat (extras)","networkShieldActive":"Network shield active","networkShieldDescription":"Verified ad delivery and measurement requests are blocked before page code can run.","networkShieldVerified":"7 verified request rules","networkShieldDomNote":"Ad Nuker controls the remaining DOM cleanup.","networkShieldManagerLimited":"Network shield depends on your userscript manager","networkShieldManagerNote":"DOM cleanup stays active; Chromium MV3 managers cannot expose early request blocking."});
     const STORAGE_KEYS_WITH_CHANGE_EVENTS = ['rx_settings'];
@@ -953,7 +953,7 @@
 })();
 
 
-// RumbleX v3.42.0 - Shared Content Core
+// RumbleX v3.43.0 - Shared Content Core
 // Rumble enhancement suite - Chrome/Firefox extension
 'use strict';
 
@@ -963,7 +963,7 @@
 // DOM feature ship from one canonical source.
 const RXPlatform = globalThis.RumbleXPlatform;
 if (!RXPlatform) throw new Error('RumbleX platform adapter is missing');
-const VERSION = RXPlatform.version || '3.42.0';
+const VERSION = RXPlatform.version || '3.43.0';
 const RXSettingsSchema = globalThis.RumbleXSettingsSchema;
 if (!RXSettingsSchema) throw new Error('RumbleX settings schema is missing');
 const SCHEMA_VERSION = RXSettingsSchema.SCHEMA_VERSION;

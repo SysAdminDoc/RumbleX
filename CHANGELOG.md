@@ -2,7 +2,7 @@
 
 All notable changes to RumbleX will be documented in this file.
 
-## [Unreleased]
+## [3.43.0] - 2026-08-18
 
 ### Fixed
 - **Two injected controls were unreachable by keyboard.** Chapter rows in the video description were clickable `<div>`s and the per-entry delete control in the search-history dropdown was a `<span>` containing `&times;` with no role, tabindex, or accessible name — so a keyboard user could not jump to a chapter or remove a saved search at all. Both are now real `<button>`s with accessible names and visible focus rings, styled to render exactly as before. The search-history row itself became a button too, and its delete control stays visible while focused rather than only on hover.
