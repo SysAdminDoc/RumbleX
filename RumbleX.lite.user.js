@@ -23,7 +23,7 @@
 // @updateURL    https://raw.githubusercontent.com/SysAdminDoc/RumbleX/main/RumbleX.lite.user.js
 // ==/UserScript==
 
-// Generated from extension/settings-schema.js + extension/content.js. Shared runtime SHA-256: 1a8bea0e3ce9aecc8ad0b19a1b5bbf441dff3ace236c933377c2e2bbf3ceea67
+// Generated from extension/settings-schema.js + extension/content.js. Shared runtime SHA-256: 16907d51ccec7a7fac2bce4d62b22d9bbcb412b6ed92f9e81022526903142bc1
 // RumbleX shared settings schema. This file is the canonical source for
 // defaults and trust-boundary normalization across content, options, popup,
 // background profile/Gist restores, and the generated userscript.
@@ -16241,7 +16241,13 @@ const RxErrorLog = {
         // export the issue template asks bug reporters for was always empty
         // unless they had already reproduced the bug once with the flag on.
         // Still local-only, still capped at MAX, still never uploaded.
-        if (!Settings._ready) return;
+        //
+        // There is deliberately no `Settings._ready` guard. There used to be
+        // one, left over from when capture itself consulted `debugErrorLog`,
+        // and it silently discarded every error raised before Settings.init()
+        // resolved — which is exactly the window where boot failures happen and
+        // the only window a user cannot retry. record() reads no setting at
+        // all; only drain() does.
         const entry = {
             at: Date.now(),
             featureId: String(featureId || 'unknown').slice(0, 80),

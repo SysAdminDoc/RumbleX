@@ -56,8 +56,17 @@ test('catalog parity: every settings key has a META entry', async ({ context, ex
     await page.locator('#open-settings-modal-btn').click();
     // Count rendered cards in "All Settings" group — should match the
     // boolean-toggle subset of catalog parity (197+).
-    const cardCount = await page.locator('.settings-item').count();
-    expect(cardCount).toBeGreaterThan(180);
+    //
+    // expect.poll, not a bare .count(): locator.count() takes a single snapshot
+    // and does not retry, while the modal builds its 200+ cards asynchronously.
+    // Under full-suite load the snapshot could land mid-render and the test
+    // failed on a partial count, in a full run only and never in isolation.
+    await expect
+        .poll(() => page.locator('.settings-item').count(), {
+            message: 'settings modal did not finish rendering its cards',
+            timeout: 15_000,
+        })
+        .toBeGreaterThan(180);
 });
 
 test('download muxer engine renders as a guarded choice', async ({ context, extensionId }) => {

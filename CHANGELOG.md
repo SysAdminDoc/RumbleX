@@ -2,6 +2,12 @@
 
 All notable changes to RumbleX will be documented in this file.
 
+## [Unreleased]
+
+### Fixed
+- **Every error raised before `Settings.init()` resolved was silently discarded.** `RxErrorLog.record()` carried a `if (!Settings._ready) return;` guard left over from when capture itself consulted `debugErrorLog`. `record()` reads no setting at all — only `drain()` does — so the guard did nothing but throw away the boot window, which is exactly where a broken feature fails and the one window a user cannot retry. The diagnostics export the issue template asks reporters for was therefore empty for the failures most worth reporting. Removed, with a regression that raises an error with `_ready` false and asserts it lands in the ring; proven to fail with the guard restored.
+- **Two intermittent test failures, both root-caused rather than re-run until green.** The hot-toggle revert test (`shared-parity.spec.js`) failed roughly once per several full-suite runs and never in isolation: it raced `Settings.init()`, and when it won, `RxErrorLog` dropped the entry, so exactly one of its three assertions failed. A probe pinning `Settings._ready` to `false` reproduces it deterministically — `recorded: false` while both reverts still pass, precisely the observed signature. The catalog-parity test used a bare `locator.count()`, which takes one snapshot and does not retry, against a modal that renders 200+ cards asynchronously; under load the snapshot landed mid-render. It now polls. Three consecutive full-suite runs are clean.
+
 ## [3.45.0] - 2026-08-18
 
 ### Added

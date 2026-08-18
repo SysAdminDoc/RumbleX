@@ -341,6 +341,17 @@ test('a feature whose init throws reverts its switch instead of reporting succes
             target: { tabId: targetTabId },
             world: 'ISOLATED',
             func: async () => {
+                // This test used to race Settings.init(): under full-suite load
+                // the script could land before init resolved, and RxErrorLog
+                // dropped the entry, so `recorded` came back false while both
+                // reverts passed. That is one assertion failing intermittently
+                // in a full run and never in isolation. The drop is fixed at
+                // source, but the wait stays so the test does not depend on
+                // boot timing either way.
+                for (let i = 0; i < 100 && !Settings._ready; i += 1) {
+                    await new Promise((resolve) => setTimeout(resolve, 20));
+                }
+                if (!Settings._ready) throw new Error('Settings.init did not resolve within 2s');
                 const feature = features.find((f) => f.id && f.init && f.destroy);
                 if (!feature) throw new Error('no lifecycle feature available');
                 const originalInit = feature.init;
@@ -493,4 +504,44 @@ test('a settings write during the boot window is not discarded by init', async (
     // seeded value instead of the value that had just been written.
     expect(outcome.afterBoot).toBe(outcome.target);
     expect(outcome.persisted).toBe(outcome.target);
+});
+
+test('errors raised before Settings.init resolves are still captured', async ({ context, serviceWorker }) => {
+    // RxErrorLog.record() carried a `if (!Settings._ready) return;` guard left
+    // over from when capture itself consulted `debugErrorLog`. It silently
+    // discarded every error raised during boot — the one window a user cannot
+    // retry, and the window where a broken feature actually fails. It also made
+    // the hot-toggle revert test above fail roughly once per several full-suite
+    // runs and never in isolation, because that test raced init.
+    const page = await openWatch(context, 'vboot-error-capture.html');
+    const id = await tabId(serviceWorker, page.url());
+
+    const outcome = await serviceWorker.evaluate(async (targetTabId) => {
+        const [execution] = await chrome.scripting.executeScript({
+            target: { tabId: targetTabId },
+            world: 'ISOLATED',
+            func: () => {
+                const wasReady = Settings._ready;
+                const before = RxErrorLog._buf.length;
+                try {
+                    // Reproduce the boot window exactly rather than waiting for
+                    // one: init() sets _ready last, so this is the same state.
+                    Settings._ready = false;
+                    RxErrorLog.record('bootFixture', new Error('synthetic boot failure'), 'boot capture');
+                    const captured = RxErrorLog._buf.some(
+                        (entry) => entry.context === 'boot capture' && entry.featureId === 'bootFixture',
+                    );
+                    return { captured, grew: RxErrorLog._buf.length > before };
+                } finally {
+                    Settings._ready = wasReady;
+                    const index = RxErrorLog._buf.findIndex((entry) => entry.context === 'boot capture');
+                    if (index >= 0) RxErrorLog._buf.splice(index, 1);
+                }
+            },
+        });
+        return execution.result;
+    }, id);
+
+    expect(outcome.captured).toBe(true);
+    expect(outcome.grew).toBe(true);
 });
