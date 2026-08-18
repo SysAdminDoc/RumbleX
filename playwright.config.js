@@ -1,8 +1,10 @@
 // @ts-check
 // RumbleX Playwright E2E config — v3.5.0
 // Loads the MV3 extension via --disable-extensions-except + --load-extension
-// using the `chromium` channel. headless: 'new' is required because the legacy
-// headless mode does not support extensions.
+// using the `chromium` channel. Chrome-branded builds dropped those switches,
+// so the bundled Chromium is required. Modern Chromium headless loads
+// extensions normally; `headless: 'new'` is no longer a valid Playwright value
+// and is rejected outright. Set RUMBLEX_HEADED=1 for a visible run.
 const { defineConfig, devices } = require('@playwright/test');
 const path = require('path');
 
@@ -30,8 +32,7 @@ module.exports = defineConfig({
                 // The default Chrome channel supports MV3 extensions.
                 channel: 'chromium',
                 launchOptions: {
-                    // headless: 'new' is needed for extensions in headless mode.
-                    headless: false,    // forced to headed via --headed override or for local debug
+                    headless: process.env.RUMBLEX_HEADED !== '1',
                     args: [
                         `--disable-extensions-except=${EXTENSION_PATH}`,
                         `--load-extension=${EXTENSION_PATH}`,

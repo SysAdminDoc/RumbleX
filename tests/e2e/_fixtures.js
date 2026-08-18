@@ -24,7 +24,10 @@ exports.test = base.extend({
     context: async ({}, use) => {
         const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'rumblex-pw-'));
         const context = await chromium.launchPersistentContext(userDataDir, {
-            headless: false,
+            // Extensions load fine in modern headless Chromium; a visible run is
+            // opt-in via RUMBLEX_HEADED=1 for debugging and visual capture.
+            headless: process.env.RUMBLEX_HEADED !== '1',
+            channel: 'chromium',
             args: [
                 `--disable-extensions-except=${EXTENSION_PATH}`,
                 `--load-extension=${EXTENSION_PATH}`,
