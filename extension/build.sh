@@ -9,6 +9,16 @@ cd "$SCRIPT_DIR"
 
 echo "=== RumbleX Extension Build ==="
 
+# A leftover backup means an earlier build died between swapping the manifest and
+# putting it back, so manifest.json may be the MV2 one. Refuse rather than
+# silently packaging a Firefox manifest as Chrome.
+if [ -f "manifest-chrome-backup.json" ]; then
+    echo "[!] Stale manifest-chrome-backup.json found in extension/."
+    echo "    A previous build was interrupted while the Firefox manifest was swapped in."
+    echo "    Verify manifest.json is the Chrome MV3 manifest, then delete the backup file."
+    exit 1
+fi
+
 # Fetch mux.js if not present.
 # v3.1.0 — SHA-256 pin so a compromised CDN can't silently swap the bundle.
 # Bump MUX_JS_SHA256 when intentionally upgrading mux.js. Verify on a clean
@@ -95,25 +105,60 @@ else
     exit 1
 fi
 
+# Files and directories that make up a packaged extension. Declared once so a
+# new runtime file cannot ship in one archiver branch and be silently missing
+# from another — the previous version repeated the list in all three branches
+# and only one substring of it was guarded.
+PACK_FILES="browser-polyfill.js settings-schema.js ad-blocker.js archive-fs.js background.js platform.js content.js worker.js mediabunny-worker.js offscreen.html offscreen.js"
+PACK_DIRS="lib icons pages rules _locales"
+
+# Stage a package in a temp directory, then archive from there.
+#
+# Firefox packaging used to copy manifest-firefox.json over manifest.json in the
+# working tree and rely on an EXIT trap to put it back. A kill or a power loss
+# between those two copies left the MV2 manifest sitting at extension/manifest.json
+# and the next Chrome build would package MV2 as Chrome. Staging never touches
+# the working tree, so an interrupted build cannot poison the next one.
 pack_extension() {
     local dest="$1"
-    if command -v zip >/dev/null 2>&1; then
-        zip -r "$dest" \
-            manifest.json browser-polyfill.js settings-schema.js ad-blocker.js archive-fs.js background.js platform.js content.js worker.js mediabunny-worker.js offscreen.html offscreen.js \
-            lib/ icons/ pages/ rules/ _locales/ \
-            -x "manifest-firefox.json" -x "manifest-chrome-backup.json" -x "build.sh" -x "*.DS_Store"
-    elif [ -x "/c/Windows/System32/tar.exe" ]; then
-        "/c/Windows/System32/tar.exe" -a -c -f "$dest" \
-            manifest.json browser-polyfill.js settings-schema.js ad-blocker.js archive-fs.js background.js platform.js content.js worker.js mediabunny-worker.js offscreen.html offscreen.js \
-            lib icons pages rules _locales
-    elif command -v bsdtar >/dev/null 2>&1; then
-        bsdtar -a -c -f "$dest" \
-            manifest.json browser-polyfill.js settings-schema.js ad-blocker.js archive-fs.js background.js platform.js content.js worker.js mediabunny-worker.js offscreen.html offscreen.js \
-            lib icons pages rules _locales
-    else
-        echo "[!] Need zip, Windows bsdtar, or bsdtar to build packages."
-        return 1
+    local manifest_src="$2"
+    local stage
+    local item
+    local abs_dest
+    local rc=0
+
+    stage="$(mktemp -d)" || return 1
+    abs_dest="$(cd "$(dirname "$dest")" && pwd)/$(basename "$dest")"
+
+    {
+        cp "$manifest_src" "$stage/manifest.json" || exit 1
+        for item in $PACK_FILES; do
+            cp "$item" "$stage/$item" || exit 1
+        done
+        for item in $PACK_DIRS; do
+            cp -R "$item" "$stage/$item" || exit 1
+        done
+    } || rc=1
+
+    if [ "$rc" -eq 0 ]; then
+        (
+            cd "$stage" || exit 1
+            find . -name '.DS_Store' -delete 2>/dev/null || true
+            if command -v zip >/dev/null 2>&1; then
+                zip -r -q "$abs_dest" manifest.json $PACK_FILES $PACK_DIRS
+            elif [ -x "/c/Windows/System32/tar.exe" ]; then
+                "/c/Windows/System32/tar.exe" -a -c -f "$abs_dest" manifest.json $PACK_FILES $PACK_DIRS
+            elif command -v bsdtar >/dev/null 2>&1; then
+                bsdtar -a -c -f "$abs_dest" manifest.json $PACK_FILES $PACK_DIRS
+            else
+                echo "[!] Need zip, Windows bsdtar, or bsdtar to build packages."
+                exit 1
+            fi
+        ) || rc=1
     fi
+
+    rm -rf "$stage"
+    return "$rc"
 }
 
 write_release_checksums() {
@@ -146,12 +191,6 @@ verify_release_checksums() {
     echo "[*] Release package checksums verified."
 }
 
-restore_chrome_manifest() {
-    if [ -f "manifest-chrome-backup.json" ]; then
-        mv manifest-chrome-backup.json manifest.json
-    fi
-}
-
 # Generate icons from favicon if no icons exist
 if [ ! -f "icons/icon-128x128.png" ]; then
     echo "[*] No icons found. Place icon-16x16.png, icon-32x32.png, icon-48x48.png, icon-128x128.png in icons/"
@@ -164,18 +203,13 @@ node ../scripts/build-userscript.js
 
 echo "[*] Building Chrome package..."
 rm -f "$CHROME_ZIP"
-pack_extension "$CHROME_ZIP"
+pack_extension "$CHROME_ZIP" "manifest.json"
 echo "    Created RumbleX-chrome.zip"
 
 # Build Firefox ZIP (swap manifest)
 echo "[*] Building Firefox package..."
 rm -f "$FIREFOX_ZIP"
-cp manifest.json manifest-chrome-backup.json
-trap restore_chrome_manifest EXIT
-cp manifest-firefox.json manifest.json
-pack_extension "$FIREFOX_ZIP"
-restore_chrome_manifest
-trap - EXIT
+pack_extension "$FIREFOX_ZIP" "manifest-firefox.json"
 echo "    Created RumbleX-firefox.zip"
 
 write_release_checksums
