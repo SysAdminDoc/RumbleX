@@ -2,7 +2,7 @@
 
 All notable changes to RumbleX will be documented in this file.
 
-## [Unreleased]
+## [3.46.0] - 2026-08-18
 
 ### Added
 - **French and Italian, at full parity — six locales now.** All 433 keys, including every toast, the download panel and the whole settings catalog, not just the extension's own pages. `tests/e2e/i18n-injected.spec.js` launches a Chromium per locale with `--lang` and asserts each probe resolves translated *and* differs from its English text, so a silent fallback cannot pass.

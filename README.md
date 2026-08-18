@@ -1,6 +1,6 @@
 # RumbleX
 
-![Version](https://img.shields.io/badge/version-v3.45.0-blue) ![License](https://img.shields.io/badge/license-MIT-green) ![Platform](https://img.shields.io/badge/platform-Extension%20%2B%20Userscript-lightgrey) ![Firefox](https://img.shields.io/badge/firefox-109%2B-orange)
+![Version](https://img.shields.io/badge/version-v3.46.0-blue) ![License](https://img.shields.io/badge/license-MIT-green) ![Platform](https://img.shields.io/badge/platform-Extension%20%2B%20Userscript-lightgrey) ![Firefox](https://img.shields.io/badge/firefox-109%2B-orange)
 
 **The ultimate Rumble enhancement suite.** 130+ feature modules across 14 categories — ad blocking, theater mode, video downloads with CDN deep-scan probing and an opt-in Mediabunny muxer path, five-theme engine (now including OLED Green), playback controls, chat enhancements with deterministic username colors and tier-filtered rants, chapters, SponsorBlock, clips, live DVR, transcripts, auto-hide chrome, 50+ granular hide-X toggles for every Rumble row/button/player control, thumbnail hider, dense mode, reduced-motion path, tracking-param stripping, external player handoff (MPV/PotPlayer), and full-round-trip backup/restore with snapshot history. Chrome MV3 + Firefox MV2 + userscript.
 
@@ -28,6 +28,11 @@
 - **One settings trust boundary** — content scripts, options, popup, Chrome and Firefox backgrounds, and the generated userscript now consume the same canonical defaults and schema normalizer.
 - **Safe profile and encrypted-Gist recovery** — legacy or crafted restores cannot inject unknown keys, invalid enums/types, off-site autoplay URLs, CSS-shaped categories, malformed notifier channels, or unsafe SponsorBlock data. Gist pulls keep the local token and Gist ID instead of trusting the remote copy.
 - **Smaller runtime surface** — removed more than 1,000 lines of duplicated defaults and validation logic while adding direct schema and hostile-restore regression tests.
+
+### v3.46 highlights
+- **Every error raised during boot was silently discarded.** `RxErrorLog.record()` carried a readiness guard left over from when capture consulted a setting; it threw away the one window a user cannot retry, so the diagnostics export was empty for exactly the failures worth reporting.
+- **Two intermittent test failures, root-caused rather than re-run until green.** The first was that same guard, reproduced deterministically. The second was a bare `locator.count()` racing an asynchronous render.
+- **French and Italian at full parity — six locales, 433 keys each.** The blocker they clear had demanded install heat maps from a project that deliberately ships no telemetry; the replacement criterion needs no analytics at all.
 
 ### v3.45 highlights
 - **Playback resilience.** `AutoMaxQuality` always pinned the highest rendition, which is the worst possible answer to buffering. It now honours a quality ceiling and floor, and `qualityMode` — which shipped with four documented values and no runtime consumer at all. Three stalls inside 30 seconds drops one rendition and says why.
