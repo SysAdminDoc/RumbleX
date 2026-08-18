@@ -1,6 +1,6 @@
 # RumbleX
 
-![Version](https://img.shields.io/badge/version-v3.41.0-blue) ![License](https://img.shields.io/badge/license-MIT-green) ![Platform](https://img.shields.io/badge/platform-Extension%20%2B%20Userscript-lightgrey) ![Firefox](https://img.shields.io/badge/firefox-109%2B-orange)
+![Version](https://img.shields.io/badge/version-v3.42.0-blue) ![License](https://img.shields.io/badge/license-MIT-green) ![Platform](https://img.shields.io/badge/platform-Extension%20%2B%20Userscript-lightgrey) ![Firefox](https://img.shields.io/badge/firefox-109%2B-orange)
 
 **The ultimate Rumble enhancement suite.** 130+ feature modules across 14 categories — ad blocking, theater mode, video downloads with CDN deep-scan probing and an opt-in Mediabunny muxer path, five-theme engine (now including OLED Green), playback controls, chat enhancements with deterministic username colors and tier-filtered rants, chapters, SponsorBlock, clips, live DVR, transcripts, auto-hide chrome, 50+ granular hide-X toggles for every Rumble row/button/player control, thumbnail hider, dense mode, reduced-motion path, tracking-param stripping, external player handoff (MPV/PotPlayer), and full-round-trip backup/restore with snapshot history. Chrome MV3 + Firefox MV2 + userscript.
 
@@ -28,6 +28,15 @@
 - **One settings trust boundary** — content scripts, options, popup, Chrome and Firefox backgrounds, and the generated userscript now consume the same canonical defaults and schema normalizer.
 - **Safe profile and encrypted-Gist recovery** — legacy or crafted restores cannot inject unknown keys, invalid enums/types, off-site autoplay URLs, CSS-shaped categories, malformed notifier channels, or unsafe SponsorBlock data. Gist pulls keep the local token and Gist ID instead of trusting the remote copy.
 - **Smaller runtime surface** — removed more than 1,000 lines of duplicated defaults and validation logic while adding direct schema and hostile-restore regression tests.
+
+### v3.42 highlights
+- **Settings that do nothing now say so.** 41 of 210 keys rendered live controls that no runtime code read — flip the switch, watch it save, nothing happens. Two were wired up (`encryptedGistSync`, `privacyReport`), two dead duplicates were removed with a schema migration, and the remaining 38 are labelled "Not implemented yet" with a stated reason and disabled inputs. A guard fails in both directions so the list cannot rot.
+- **First-run welcome** naming eight default-off, genuinely-wired presets, applied in one click. Dismissible, shown once, writes nothing if you decline.
+- **Deleting a settings profile is reversible** — inline Undo plus a pre-delete snapshot. The pre-*switch* snapshot never actually fired before this release either.
+- **`a-delivery.rmbl.ws` is blocked.** It is a CNAME alias of the already-blocked ad host, and hostname matching never follows CNAMEs, so it had been passing through every runtime. All three hand-synced host lists are now machine-checked against each other.
+- **`RumbleX.lite.user.js`** — a Greasy Fork-compliant build with the same shared runtime, minus the bundled transmuxers.
+- **One `aria-live` announcer** for all in-page feedback, replacing three implementations of which only one was announced to assistive tech.
+- Release packages are staged instead of mutating the working tree; Mediabunny upgraded to 1.55.1.
 
 ### v3.37 highlights
 

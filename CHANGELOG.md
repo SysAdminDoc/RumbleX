@@ -2,7 +2,7 @@
 
 All notable changes to RumbleX will be documented in this file.
 
-## [Unreleased]
+## [3.42.0] - 2026-08-18
 
 ### Added
 - **Settings with no runtime consumer are now disclosed instead of faked.** 41 of 210 keys rendered fully live controls in Options while no runtime code read them — a user could flip a switch, watch it save, and get no behavior change at all. The remaining 38 unwired keys are declared in a shared `UNIMPLEMENTED` registry, and Options renders them with a "Not implemented yet" badge, a stated reason, and disabled inputs. The values still persist and still appear in exports and backups; they just stop advertising themselves as something the user can act on.

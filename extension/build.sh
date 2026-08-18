@@ -36,6 +36,7 @@ MEDIABUNNY_LICENSE_SHA256="3f3d9e0024b1921b067d6f7f88deb4a60cbe7a78e76c64e3f1d7f
 CHROME_ZIP="../RumbleX-chrome.zip"
 FIREFOX_ZIP="../RumbleX-firefox.zip"
 USERSCRIPT="../RumbleX.user.js"
+USERSCRIPT_LITE="../RumbleX.lite.user.js"
 CHECKSUMS_FILE="../SHA256SUMS.txt"
 
 file_sha256() {
@@ -164,7 +165,7 @@ pack_extension() {
 write_release_checksums() {
     local pkg
     rm -f "$CHECKSUMS_FILE"
-    for pkg in "$CHROME_ZIP" "$FIREFOX_ZIP" "$USERSCRIPT"; do
+    for pkg in "$CHROME_ZIP" "$FIREFOX_ZIP" "$USERSCRIPT" "$USERSCRIPT_LITE"; do
         if [ ! -f "$pkg" ]; then
             echo "[!] Missing package for checksum: $pkg"
             return 1
