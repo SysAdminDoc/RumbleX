@@ -2,7 +2,7 @@
 
 All notable changes to RumbleX will be documented in this file.
 
-## [Unreleased]
+## [3.44.0] - 2026-08-18
 
 ### Added
 - **The settings modal is fully translated, all 261 entries.** The 12 category headings, 137 feature labels and 124 descriptions live in `RX_CATEGORIES`, which stays the English source of truth: `sync-content-locale.js` reads the array directly and derives the catalog keys from the entry ids, so there is no parallel list to hand-maintain and a newly added feature gets a key automatically — and then fails the i18n guard until de, es and pt_BR carry it. Feature search now indexes the translated text rather than the English source, so searching in German actually finds German. 313 keys are wired in total and all four catalogs hold 424.

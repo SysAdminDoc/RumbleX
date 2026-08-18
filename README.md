@@ -1,6 +1,6 @@
 # RumbleX
 
-![Version](https://img.shields.io/badge/version-v3.43.0-blue) ![License](https://img.shields.io/badge/license-MIT-green) ![Platform](https://img.shields.io/badge/platform-Extension%20%2B%20Userscript-lightgrey) ![Firefox](https://img.shields.io/badge/firefox-109%2B-orange)
+![Version](https://img.shields.io/badge/version-v3.44.0-blue) ![License](https://img.shields.io/badge/license-MIT-green) ![Platform](https://img.shields.io/badge/platform-Extension%20%2B%20Userscript-lightgrey) ![Firefox](https://img.shields.io/badge/firefox-109%2B-orange)
 
 **The ultimate Rumble enhancement suite.** 130+ feature modules across 14 categories — ad blocking, theater mode, video downloads with CDN deep-scan probing and an opt-in Mediabunny muxer path, five-theme engine (now including OLED Green), playback controls, chat enhancements with deterministic username colors and tier-filtered rants, chapters, SponsorBlock, clips, live DVR, transcripts, auto-hide chrome, 50+ granular hide-X toggles for every Rumble row/button/player control, thumbnail hider, dense mode, reduced-motion path, tracking-param stripping, external player handoff (MPV/PotPlayer), and full-round-trip backup/restore with snapshot history. Chrome MV3 + Firefox MV2 + userscript.
 
@@ -28,6 +28,11 @@
 - **One settings trust boundary** — content scripts, options, popup, Chrome and Firefox backgrounds, and the generated userscript now consume the same canonical defaults and schema normalizer.
 - **Safe profile and encrypted-Gist recovery** — legacy or crafted restores cannot inject unknown keys, invalid enums/types, off-site autoplay URLs, CSS-shaped categories, malformed notifier channels, or unsafe SponsorBlock data. Gist pulls keep the local token and Gist ID instead of trusting the remote copy.
 - **Smaller runtime surface** — removed more than 1,000 lines of duplicated defaults and validation logic while adding direct schema and hostile-restore regression tests.
+
+### v3.44 highlights
+- **The in-page UI is actually translated now.** `content.js` had zero i18n calls, so four locales covered the extension's own pages while every string on rumble.com stayed English. 313 keys are wired: every toast, the download panel, and the whole settings modal including all 137 feature labels and 124 descriptions, in German, Spanish and Brazilian Portuguese. Feature search indexes the translated text, so searching in German finds German.
+- **Five injected controls were unreachable without a mouse** — description timestamps, blocked-list chips, progress-bar chapter markers, transcript rows and the batch-download selection toggle were all click-only `<div>`/`<span>` elements. All 22 injected surfaces now get a per-surface axe WCAG 2.2 AA scan, which also caught secondary text failing contrast at 3.35:1 and four buttons under the 24x24 target-size minimum.
+- **Six features could not be re-enabled without reloading the page.** Their `destroy()` detached the panel but kept the reference, and the mount guard reads that reference. Found by the new per-surface scan, which could not mount three of them for exactly this reason.
 
 ### v3.43 highlights
 - **Settings written during startup are no longer discarded.** `Settings.init()` replaced the whole cache and reset its pending-write set, so any save that landed while it was still reading storage vanished while reporting success. This was also the root cause of an intermittent test failure that had been reproducing roughly one run in three.
