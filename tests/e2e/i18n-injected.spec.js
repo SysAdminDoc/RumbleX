@@ -40,7 +40,7 @@ const PROBES = [
     { key: 'feat_hideFooter_desc', surface: 'settings modal features' },
 ];
 
-for (const locale of ['de', 'es', 'pt_BR']) {
+for (const locale of ['de', 'es', 'fr', 'it', 'pt_BR']) {
     test(`injected UI renders in ${locale}`, async () => {
         const en = catalog('en');
         const translated = catalog(locale);

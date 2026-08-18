@@ -22,7 +22,14 @@ const STORE_DIR = path.join(ROOT, 'design', 'store');
 const MANIFEST = path.join(ROOT, 'extension', 'manifest.json');
 
 const SHORT_DESCRIPTION_MAX = 132;
-const REQUIRED_LOCALES = ['en', 'de', 'es', 'pt_BR'];
+// Derived, not hardcoded: adding a locale to extension/_locales must also add
+// store copy, or the listing silently ships in fewer languages than the
+// extension does.
+const REQUIRED_LOCALES = fs
+    .readdirSync(path.join(ROOT, 'extension', '_locales'), { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => entry.name)
+    .sort();
 const EXACT_SIZES = {
     'promo-tile-440x280.png': [440, 280],
     'promo-marquee-1400x560.png': [1400, 560],
