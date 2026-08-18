@@ -2,6 +2,18 @@
 
 All notable changes to RumbleX will be documented in this file.
 
+## [Unreleased]
+
+### Fixed
+- **Five injected controls were unreachable without a mouse.** Description and comment timestamp seek links, the blocked-keyword/chatter/commenter chips in the settings modal, the chapter markers on the progress bar, transcript cue rows, and the per-card batch-download selection toggle were all click-only `<div>`/`<span>` elements. Each is now a real `<button>` with an accessible name, its native chrome reset so it renders exactly as before, and a visible `:focus-visible` outline. The batch-download toggle also exposes `role="checkbox"` with a live `aria-checked`, and the batch checkbox now stays visible while focused instead of only on hover.
+- **Controls that axe rates as critical had no accessible name at all**: the playback-speed range slider (which also announced a meaningless 0-9 index rather than the multiplier), the chat filter, watch-history search and blocked-list text inputs, the SponsorBlock category select, and two glyph-only `×` delete buttons in the autoplay queue and SponsorBlock segment list.
+- **Six features could not be re-enabled without reloading the page.** `VideoStats`, `LoopControl`, `Chapters`, `VideoClips`, `SubtitleSidecar`, `Transcripts` and `LiveDVR` detached their cached panel in `destroy()` but never cleared the reference, and their mount guards read `if (... || this._panel) return;`. Turning any of them off and back on left the panel permanently missing. Found by the new per-surface scan, which could not mount three of them for exactly this reason.
+- **Secondary text across every injected panel failed WCAG AA contrast.** Sixteen rules used Catppuccin Overlay0 (`#6c7086`), measured by axe at 3.35:1 against the panel background where 4.5:1 is required; they now use Subtext0 (`#a6adc8`, 7.4:1). The bulk-unsubscribe DRY-RUN badge measured 4.10:1 and moved to Catppuccin Yellow. Four icon-only buttons were below the 24x24 CSS pixel minimum of WCAG 2.2 Target Size (the watch-history close button measured 22x28) and now carry an explicit minimum.
+
+### Added
+- **Every injected surface is axe-scanned.** `a11y.spec.js` previously covered only the four extension-owned pages. It now mounts all 22 in-page feature surfaces inside the content script's isolated world and runs a WCAG 2.2 AA scan scoped to each one, failing on any serious or critical violation. Surfaces that refuse to mount off their own route get that route: bulk unsubscribe is scanned on an account page. A surface that fails to render is reported as a failure rather than skipped, because an axe scan of an absent surface passes vacuously. A companion test asserts every control inside each surface is a native element that is still in the tab order.
+- **`npm run test:a11y-controls`**, a static guard that fails on any non-interactive element which takes a click handler. axe cannot see that defect class — a click-only `div` reads as inert text and passes every rule — so the static guard and the runtime scans cover different halves of the problem. Dialog backdrops are allowlisted individually, keyed to their own source line.
+
 ## [3.43.0] - 2026-08-18
 
 ### Fixed
