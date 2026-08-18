@@ -1706,5 +1706,21 @@
   "feat_stallRecovery_desc": {
     "message": "Nach drei Stockungen in 30 Sekunden eine Stufe herunterschalten und den Grund nennen",
     "description": "In-page UI string (shared core)."
+  },
+  "archivePlaylistButton": {
+    "message": "Playlist archivieren",
+    "description": "In-page UI string (shared core)."
+  },
+  "archiveChannelButton": {
+    "message": "Kanal archivieren",
+    "description": "In-page UI string (shared core)."
+  },
+  "archiveButtonTitle": {
+    "message": "Jedes Video auf dieser Seite für den direkten MP4-Download über RumbleX einreihen",
+    "description": "In-page UI string (shared core)."
+  },
+  "archiveQueuing": {
+    "message": "Wird eingereiht…",
+    "description": "In-page UI string (shared core)."
   }
 }

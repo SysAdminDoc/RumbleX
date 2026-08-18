@@ -1706,5 +1706,21 @@
   "feat_stallRecovery_desc": {
     "message": "Baixar uma resolução após três travamentos em 30 segundos, e dizer o motivo",
     "description": "In-page UI string (shared core)."
+  },
+  "archivePlaylistButton": {
+    "message": "Arquivar playlist",
+    "description": "In-page UI string (shared core)."
+  },
+  "archiveChannelButton": {
+    "message": "Arquivar canal",
+    "description": "In-page UI string (shared core)."
+  },
+  "archiveButtonTitle": {
+    "message": "Colocar na fila todos os vídeos desta página para baixar como MP4 pelo RumbleX",
+    "description": "In-page UI string (shared core)."
+  },
+  "archiveQueuing": {
+    "message": "Na fila…",
+    "description": "In-page UI string (shared core)."
   }
 }

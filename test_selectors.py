@@ -45,6 +45,7 @@ PLATFORM_FIXTURE_EXPECTATIONS = {
     'shorts-route.html': ['shorts.feed', 'shorts.card', 'shorts.player', 'shorts.navItem'],
     'wallet-tip.html': ['wallet.tipButton'],
     'premium-promo.html': ['premium.promo'],
+    'playlist-route.html': ['playlist.root', 'playlist.controlPanel', 'playlist.name', 'playlist.item'],
 }
 
 # Map from MHTML filename → list of surfaces we expect to resolve there.

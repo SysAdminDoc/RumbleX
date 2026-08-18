@@ -1706,5 +1706,21 @@
   "feat_stallRecovery_desc": {
     "message": "Drop one rendition after three stalls in 30 seconds, and say why",
     "description": "In-page UI string (shared core)."
+  },
+  "archivePlaylistButton": {
+    "message": "Archive playlist",
+    "description": "In-page UI string (shared core)."
+  },
+  "archiveChannelButton": {
+    "message": "Archive channel",
+    "description": "In-page UI string (shared core)."
+  },
+  "archiveButtonTitle": {
+    "message": "Queue every video on this page for direct MP4 download via RumbleX",
+    "description": "In-page UI string (shared core)."
+  },
+  "archiveQueuing": {
+    "message": "Queuing…",
+    "description": "In-page UI string (shared core)."
   }
 }

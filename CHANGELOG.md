@@ -5,6 +5,12 @@ All notable changes to RumbleX will be documented in this file.
 ## [Unreleased]
 
 ### Added
+- **`/playlists/<id>` is a route RumbleX understands.** `content.js` had no playlist handling whatsoever — the only two matches for "playlists" were a CSS hide toggle and a library-section selector — so Batch Download and Channel Archive could not target one, and playlist extraction is simultaneously among the most-reported yt-dlp failures on Rumble. `Page.isPlaylist()` and `Page.playlistId()` classify the route, four selector-registry entries cover the page, Batch Download mounts and multi-selects there, and the archive button anchors to the playlist control panel (a playlist has no Follow button) with its own label. A sanitized `playlist-route.html` fixture is committed and covered by both the selector-health run and a drift test proven to fail when the route gate is removed.
+
+### Fixed
+- **The archive parser only matched relative card hrefs.** Playlist pages emit absolute `https://rumble.com/v…?playlist_id=…` URLs where channel grids emit `/v…`, so the enqueue regex would have found nothing on a playlist and, worse, the same video reached through both routes would have enqueued twice because the dedupe set compared unnormalised strings. Both patterns now accept either form and normalise to a path with the tracking query stripped.
+
+### Added
 - **Playback resilience: a quality ceiling, a floor, and stall recovery.** `AutoMaxQuality` always pinned the highest rendition, which is the worst possible response to the buffering that dominates Rumble complaints. It now applies a real policy: `qualityMode` picks the top (`best`), the bottom (`lowest`/`bandwidthSaver`) or nothing at all (`manual`, where the user drives quality and only stall recovery is installed); `qualityCeiling` and `qualityFloor` bound the choice. Bounds that exclude every available rendition fall back to the nearest one rather than leaving the player wherever it landed. The hls.js path and the DOM-menu fallback share one policy function, so the two cannot disagree.
 - **Stall recovery.** Three `waiting`/`stalled` events inside 30 seconds means the current rendition is not sustainable on this connection, so RumbleX drops one step and raises a toast saying why. It never steps below an explicit floor, and turning `stallRecovery` off detaches the listeners rather than merely ignoring them.
 

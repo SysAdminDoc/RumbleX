@@ -240,6 +240,12 @@ const Page = {
     isEmbed: () => location.pathname.startsWith('/embed/'),
     isSearch: () => location.pathname === '/search/video' || location.pathname.startsWith('/search/'),
     isChannel: () => location.pathname.startsWith('/c/') || location.pathname.startsWith('/user/'),
+    // /playlists/<id>. Rumble's own Watch Later and Watch History live at
+    // /playlists/watch-later and /playlists/watch-history and use the same
+    // page component as a user playlist, which is where these selectors and
+    // this route shape are evidenced from.
+    isPlaylist: () => /^\/playlists\/[^/]+/.test(location.pathname),
+    playlistId: () => (location.pathname.match(/^\/playlists\/([^/?#]+)/) || [])[1] || null,
     isLive: () => !!document.querySelector('.media-description-info-stream-time') || !!document.querySelector('#chat-history-list'),
     isAccount: () => location.pathname.startsWith('/account/') || location.pathname === '/followed-channels',
     isStudio: () => location.hostname === 'studio.rumble.com',
@@ -257,6 +263,7 @@ const Page = {
         if (this.isChannel()) return 'channel';
         if (this.isWatch()) return this.isLive() ? 'live' : 'watch';
         if (this.isHome()) return 'home';
+        if (this.isPlaylist()) return 'playlist';
         if (this.isFeed()) return 'feed';
         return 'unknown';
     },
@@ -351,6 +358,13 @@ const Selectors = {
         'library.watchHistorySection':      { stable: '[data-js="section_playlist_watch-history"]', fallback: 'section[id*="watch-history"]' },
         'library.watchLaterSection':        { stable: '[data-js="section_playlist_watch-later"]', fallback: 'section[id*="watch-later"]' },
         'library.userPlaylistsSection':     { stable: '[data-js="section_playlist_playlists"]', fallback: 'section[id*="playlists"]' },
+
+        // /playlists/<id>. Evidenced by the Watch Later / Watch History
+        // captures, which are the same page component.
+        'playlist.root':                    { stable: '.playlist-details__container', fallback: '[class*="playlist-details"]' },
+        'playlist.controlPanel':            { stable: '.playlist-control-panel__container', fallback: '[data-js="playlist-control-panel-handler"]' },
+        'playlist.name':                    { stable: '.playlist-control-panel__playlist-name', fallback: '[class*="playlist-control-panel__playlist-name"]' },
+        'playlist.item':                    { stable: '.playlist-menu[data-video-id]', fallback: '[data-js="playlist_menu"]' },
         'library.videoGrid':                { stable: '[data-js="section_video_grid"]', fallback: '.video-grid' },
         'history.clearAllBtn':              { stable: 'button[data-js="playlist_control_panel_delete_playlist_button"]', fallback: 'button[class*="clear-history"]' },
         'history.pauseToggleBtn':           { stable: 'button[data-js="playlist_control_panel_toggle_watch_history_button"]', fallback: 'button[class*="toggle-history"]' },
@@ -5745,16 +5759,33 @@ const ChannelArchiveButton = {
     _SVG: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8v13H3V8"/><rect x="1" y="3" width="22" height="5" rx="1"/><line x1="10" y1="12" x2="14" y2="12"/></svg>',
 
     _attach() {
-        const followBtn = Selectors.find('profile.followingBtn');
-        if (!followBtn || !followBtn.parentNode) return;
+        // A playlist page has no Follow button; its control panel is the
+        // header equivalent, and the button appends inside it rather than
+        // sitting as a sibling.
+        const playlist = Page.isPlaylist();
+        const anchor = playlist
+            ? Selectors.find('playlist.controlPanel')
+            : Selectors.find('profile.followingBtn');
+        if (!anchor) return;
+        if (!playlist && !anchor.parentNode) return;
         if (this._btn && this._btn.isConnected) return;
         const btn = document.createElement('button');
         btn.type = 'button';
         btn.className = 'rx-archive-channel-btn';
-        btn.innerHTML = this._SVG + '<span>Archive channel</span>';
-        btn.title = 'Queue every video on this page for direct MP4 download via RumbleX';
+        const label = playlist
+            ? rxT('archivePlaylistButton', 'Archive playlist')
+            : rxT('archiveChannelButton', 'Archive channel');
+        const labelSpan = document.createElement('span');
+        labelSpan.textContent = label;
+        btn.innerHTML = this._SVG;
+        btn.appendChild(labelSpan);
+        btn.title = rxT(
+            'archiveButtonTitle',
+            'Queue every video on this page for direct MP4 download via RumbleX',
+        );
         btn.addEventListener('click', () => this._onClick(btn));
-        followBtn.parentNode.insertBefore(btn, followBtn.nextSibling);
+        if (playlist) anchor.appendChild(btn);
+        else anchor.parentNode.insertBefore(btn, anchor.nextSibling);
         this._btn = btn;
     },
 
@@ -5762,8 +5793,9 @@ const ChannelArchiveButton = {
         if (btn.disabled) return;
         btn.disabled = true;
         const labelEl = btn.querySelector('span');
-        const originalLabel = labelEl?.textContent || 'Archive channel';
-        if (labelEl) labelEl.textContent = 'Queuing…';
+        const originalLabel = labelEl?.textContent
+            || (Page.isPlaylist() ? rxT('archivePlaylistButton', 'Archive playlist') : rxT('archiveChannelButton', 'Archive channel'));
+        if (labelEl) labelEl.textContent = rxT('archiveQueuing', 'Queuing…');
         try {
             const resp = await RXPlatform.sendMessage({
                 action: 'archiveEnqueueChannel',
@@ -5798,10 +5830,17 @@ const ChannelArchiveButton = {
     init() {
         if (!Settings.get(this.id)) return;
         if (!RXPlatform.capabilities.persistentBackground) return;
-        if (!Page.isChannel()) return;
+        if (!Page.isChannel() && !Page.isPlaylist()) return;
         this._styleEl = injectStyle(this._css, 'rx-archive-channel-css');
-        // Channel pages render the Follow button client-side; observe until it appears.
-        waitForSelectorFeature(this, 'profile.followingBtn', { timeout: 5000 }).then(() => this._attach()).catch(() => {});
+        if (Page.isPlaylist()) {
+            // A playlist has no Follow button to anchor to; the control panel
+            // is the header equivalent and is present on first paint.
+            waitForSelectorFeature(this, 'playlist.controlPanel', { timeout: 5000 })
+                .then(() => this._attach()).catch(() => {});
+        } else {
+            // Channel pages render the Follow button client-side; observe until it appears.
+            waitForSelectorFeature(this, 'profile.followingBtn', { timeout: 5000 }).then(() => this._attach()).catch(() => {});
+        }
         this._obs = new MutationObserver(() => this._attach());
         this._obs.observe(document.body, { childList: true, subtree: true });
     },
@@ -13417,7 +13456,7 @@ const BatchDownload = {
 
     init() {
         if (!Settings.get(this.id)) return;
-        if (!Page.isFeed() && !Page.isChannel() && !Page.isSearch() && !Page.isHome()) return;
+        if (!Page.isFeed() && !Page.isChannel() && !Page.isSearch() && !Page.isHome() && !Page.isPlaylist()) return;
         this._styleEl = injectStyle(this._css, 'rx-batch-css');
         this._selected = new Set();
         this._cards = new Map();

@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="en">
+<!--
+  /playlists/<id> route fixture.
+
+  Sanitized: every channel name, avatar, video id and slug is invented. The
+  STRUCTURE is not — it is taken from the local Watch Later and Watch History
+  captures, which are Rumble's own built-in playlists at
+  /playlists/watch-later and /playlists/watch-history and render the same page
+  component a user playlist does.
+
+  Two details here are load-bearing and easy to get wrong from memory:
+   * playlist cards carry ABSOLUTE hrefs with a ?playlist_id= query, where
+     channel grids carry relative ones;
+   * each card is paired with a .playlist-menu[data-video-id][data-playlist-id]
+     wrapper that channel grids do not have.
+-->
+<head><meta charset="utf-8"><title>Playlist route fixture</title></head>
+<body>
+  <div class="constrained playlist-details__container">
+    <div class="playlist-details__widget-container">
+      <div class="playlist-control-panel__container" data-js="playlist-control-panel-handler">
+        <div class="playlist-control-panel__playlist-image-container">
+          <div class="playlist-control-panel__playlist-image"></div>
+        </div>
+        <div class="playlist-control-panel__playlist-information">
+          <h1 class="playlist-control-panel__playlist-name">Fixture Playlist</h1>
+          <div class="playlist-control-panel__data-container playlist-control-panel__data-container--row">
+            <div class="playlist-control-panel__data-item">2 videos</div>
+            <div class="playlist-control-panel__visibility-container">
+              <span class="playlist-control-panel__visibility-state">Public</span>
+            </div>
+          </div>
+          <div class="playlist-control-panel__author-wrapper">
+            <span class="playlist-control-panel__author-name">Fixture Author</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <ol class="playlist-details__list">
+      <li class="videostream thumbnail__grid">
+        <div class="videostream__thumbnail-container">
+          <div class="videostream__badge videostream__status videostream__status--duration">12:00</div>
+          <a class="videostream__link link" draggable="false"
+             href="https://rumble.com/vfixture01-first-playlist-entry.html?e9s=src_v1_wh&amp;playlist_id=fixture-playlist"></a>
+        </div>
+        <div class="videostream__footer">
+          <a class="title__link link"
+             href="https://rumble.com/vfixture01-first-playlist-entry.html?e9s=src_v1_wh&amp;playlist_id=fixture-playlist">
+            <h3 class="thumbnail__title line-clamp-2" title="First playlist entry">First playlist entry</h3>
+          </a>
+          <address class="channel">
+            <a rel="author" class="channel__link link" href="https://rumble.com/c/fixturechannel">
+              <span class="channel__name truncate" title="Fixture Channel">Fixture Channel</span>
+            </a>
+          </address>
+          <div class="playlist-menu" data-js="playlist_menu" data-video-id="1000001" data-playlist-id="fixture-playlist">
+            <button type="button" class="playlist-menu__button" data-js="playlist_menu_button" aria-expanded="false">
+              <span class="playlist-menu__icon"></span>
+            </button>
+          </div>
+        </div>
+      </li>
+
+      <li class="videostream thumbnail__grid">
+        <div class="videostream__thumbnail-container">
+          <div class="videostream__badge videostream__status videostream__status--duration">04:20</div>
+          <a class="videostream__link link" draggable="false"
+             href="https://rumble.com/vfixture02-second-playlist-entry.html?e9s=src_v1_wh&amp;playlist_id=fixture-playlist"></a>
+        </div>
+        <div class="videostream__footer">
+          <a class="title__link link"
+             href="https://rumble.com/vfixture02-second-playlist-entry.html?e9s=src_v1_wh&amp;playlist_id=fixture-playlist">
+            <h3 class="thumbnail__title line-clamp-2" title="Second playlist entry">Second playlist entry</h3>
+          </a>
+          <address class="channel">
+            <a rel="author" class="channel__link link" href="https://rumble.com/c/fixturechannel">
+              <span class="channel__name truncate" title="Fixture Channel">Fixture Channel</span>
+            </a>
+          </address>
+          <div class="playlist-menu" data-js="playlist_menu" data-video-id="1000002" data-playlist-id="fixture-playlist">
+            <button type="button" class="playlist-menu__button" data-js="playlist_menu_button" aria-expanded="false">
+              <span class="playlist-menu__icon"></span>
+            </button>
+          </div>
+        </div>
+      </li>
+    </ol>
+  </div>
+</body>
+</html>

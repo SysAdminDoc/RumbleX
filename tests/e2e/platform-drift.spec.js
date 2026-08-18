@@ -103,3 +103,36 @@ test('Premium promo contract resolves and the default ad cleanup hides it', asyn
     expect(result.route).toBe('watch');
     expect(result.surfaces['premium.promo'].display).toBe('none');
 });
+
+test('Playlist route classifies, resolves its surfaces, and mounts batch download', async ({ context, serviceWorker }) => {
+    // content.js had no playlist handling at all: the only matches for
+    // "playlists" were a CSS hide toggle and a library-section selector, so
+    // Batch Download and Channel Archive could not target one.
+    await serviceWorker.evaluate(() => chrome.storage.local.set({
+        rx_settings: { schemaVersion: 3, batchDownload: true },
+    }));
+    const page = await openFixture(context, 'playlist-route.html', '/playlists/fixture-playlist');
+    const names = ['playlist.root', 'playlist.controlPanel', 'playlist.name', 'playlist.item'];
+    const tabId = await findTabId(serviceWorker, page.url());
+    const result = await waitForInspection(serviceWorker, tabId, names);
+
+    expect(result.route).toBe('playlist');
+    for (const name of names) expect(result.surfaces[name].found).toBe(true);
+
+    // Batch Download refused to mount off feed/channel/search/home routes, so
+    // its bar and per-card checkboxes are the observable proof it now does.
+    await expect.poll(
+        async () => page.evaluate(() => ({
+            bar: !!document.querySelector('.rx-batch-bar'),
+            checkboxes: document.querySelectorAll('.rx-batch-chk').length,
+        })),
+        { message: 'batch download did not mount on the playlist route', timeout: 15_000 },
+    ).toEqual({ bar: true, checkboxes: 2 });
+
+    // The cards carry absolute hrefs with a ?playlist_id= query here, where
+    // channel grids carry relative ones — VideoCards has to resolve both.
+    const urls = await page.evaluate(() => [...document.querySelectorAll('.videostream')]
+        .map((card) => card.querySelector('.videostream__link, .title__link')?.getAttribute('href') || ''));
+    expect(urls.every((url) => url.startsWith('https://rumble.com/v'))).toBe(true);
+    expect(urls.every((url) => url.includes('playlist_id='))).toBe(true);
+});

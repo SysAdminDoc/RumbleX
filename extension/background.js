@@ -2808,11 +2808,28 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         return true;
     }
 
+/**
+ * Normalise a video-card href to a site-relative path.
+ *
+ * Channel grids emit `/v...`; playlist grids emit the absolute URL with a
+ * `?playlist_id=` query. Both have to end up as the same path, or the same
+ * video enqueues twice and the dedupe set never sees the collision.
+ */
+function rxArchiveHrefPath(href) {
+    const path = String(href || '').replace(/^https?:\/\/(?:www\.)?rumble\.com/i, '');
+    // The tracking query is Rumble's own (?e9s=, ?playlist_id=) and is not part
+    // of the video's identity.
+    return path.split('?')[0].split('#')[0];
+}
+
     if (message.action === 'archiveEnqueueChannel') {
         (async () => {
             try {
                 const channelUrl = (message.channelUrl || '').trim();
-                if (!/^https?:\/\/(www\.)?rumble\.com\/(c|user)\//i.test(channelUrl)) {
+                // /c/ and /user/ are channels; /playlists/<id> is a playlist,
+                // which renders the same video-card markup and so parses the
+                // same way.
+                if (!/^https?:\/\/(www\.)?rumble\.com\/(c|user|playlists)\//i.test(channelUrl)) {
                     sendResponse({ ok: false, reason: 'bad-channel-url' });
                     return;
                 }
@@ -2827,10 +2844,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                 const seen = new Set();
                 const found = [];
                 // Walk anchor tags; each video card has data-video-id or a /v link.
-                const re = /<a[^>]*\bvideostream__link\b[^>]*href="(\/v[^"]+)"[^>]*>[\s\S]*?<h3[^>]*\bthumbnail__title\b[^>]*(?:title="([^"]*)")?[^>]*>([^<]*)<\/h3>/g;
+                // Playlist pages emit ABSOLUTE hrefs
+                // (https://rumble.com/v...html?playlist_id=...), channel pages
+                // emit relative ones. Accept both, then normalise to a path.
+                const re = /<a[^>]*\bvideostream__link\b[^>]*href="((?:https?:\/\/(?:www\.)?rumble\.com)?\/v[^"]+)"[^>]*>[\s\S]*?<h3[^>]*\bthumbnail__title\b[^>]*(?:title="([^"]*)")?[^>]*>([^<]*)<\/h3>/g;
                 let m;
                 while ((m = re.exec(html)) && found.length < maxItems) {
-                    const href = m[1];
+                    const href = rxArchiveHrefPath(m[1]);
                     const titleAttr = (m[2] || m[3] || '').trim();
                     if (seen.has(href)) continue;
                     seen.add(href);
@@ -2847,10 +2867,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                 }
                 if (found.length === 0) {
                     // Fallback parse for older row markup.
-                    const reAlt = /<a[^>]*href="(\/v[a-z0-9][^"]*)"[^>]*>[\s\S]*?<\/a>/gi;
+                    const reAlt = /<a[^>]*href="((?:https?:\/\/(?:www\.)?rumble\.com)?\/v[a-z0-9][^"]*)"[^>]*>[\s\S]*?<\/a>/gi;
                     let mm;
                     while ((mm = reAlt.exec(html)) && found.length < maxItems) {
-                        const href = mm[1];
+                        const href = rxArchiveHrefPath(mm[1]);
                         if (seen.has(href)) continue;
                         seen.add(href);
                         const slugMatch = href.match(/^\/(v[a-z0-9]+)/i);
