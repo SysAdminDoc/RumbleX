@@ -71,6 +71,7 @@
             managedDownloads: true,
             packagedAssets: true,
             mediabunny: true,
+            muxjs: true,
             externalMessages: true,
             requestBlocking: true,
             requestBlockingMode: manifest.manifest_version === 2 ? 'firefox-webrequest' : 'chromium-dnr',

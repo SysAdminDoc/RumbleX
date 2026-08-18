@@ -6,6 +6,15 @@ const path = require('path');
 
 const ROOT = path.resolve(__dirname, '..');
 const OUTPUT = path.join(ROOT, 'RumbleX.user.js');
+// Greasy Fork caps scripts at 2 MB and forbids minified or obfuscated code.
+// The full build embeds mux.min.js (112 KB) and mediabunny.min.mjs (643 KB),
+// which violates the minification rule; shipping those two unminified instead
+// would be 1.79 MB of libraries alone and blow the size cap. The "lite" variant
+// therefore omits both transmuxers, which leaves a fully readable script well
+// under the cap. It keeps every feature except MP4 remux, and raw HLS/TS save
+// (v3.37) still works. See Roadmap_Blocked.md for the full decision.
+const LITE_OUTPUT = path.join(ROOT, 'RumbleX.lite.user.js');
+const LITE_OMITTED_ASSETS = ['worker.js', 'lib/mux.min.js', 'mediabunny-worker.js', 'lib/mediabunny.min.mjs'];
 const VERSION = require(path.join(ROOT, 'package.json')).version;
 
 function read(relativePath) {
@@ -18,11 +27,14 @@ function sha256(text) {
     return crypto.createHash('sha256').update(text).digest('hex');
 }
 
-function metadata(sharedHash) {
-    return `// ==UserScript==\n// @name         RumbleX\n// @namespace    https://github.com/SysAdminDoc/RumbleX\n// @version      ${VERSION}\n// @description  Rumble enhancement suite — the same shared feature core as the browser extension.\n// @author       SysAdminDoc\n// @match        https://rumble.com/*\n// @match        https://*.rumble.com/*\n// @noframes\n// @run-at       document-start\n// @webRequest   [{"selector":"https://a.ads.rmbl.ws/*","action":"cancel"},{"selector":"https://a-delivery.rmbl.ws/*","action":"cancel"},{"selector":"https://imasdk.googleapis.com/*","action":"cancel"},{"selector":"https://s0.2mdn.net/instream/video/*","action":"cancel"},{"selector":"https://pagead2.googlesyndication.com/omsdk/*","action":"cancel"},{"selector":"https://*.doubleclick.net/*","action":"cancel"},{"selector":"https://*.googleadservices.com/pagead/*","action":"cancel"}]\n// @grant        GM_getValue\n// @grant        GM_setValue\n// @grant        GM_deleteValue\n// @grant        GM_addValueChangeListener\n// @grant        GM_removeValueChangeListener\n// @grant        GM_xmlhttpRequest\n// @grant        GM_download\n// @connect      rumble.com\n// @connect      1a-1791.com\n// @connect      rumble.cloud\n// @downloadURL  https://raw.githubusercontent.com/SysAdminDoc/RumbleX/main/RumbleX.user.js\n// @updateURL    https://raw.githubusercontent.com/SysAdminDoc/RumbleX/main/RumbleX.user.js\n// ==/UserScript==\n\n// Generated from extension/settings-schema.js + extension/content.js. Shared runtime SHA-256: ${sharedHash}\n`;
+function metadata(sharedHash, variant) {
+    const lite = variant === 'lite';
+    const name = lite ? 'RumbleX Lite' : 'RumbleX';
+    const file = lite ? 'RumbleX.lite.user.js' : 'RumbleX.user.js';
+    return `// ==UserScript==\n// @name         ${name}\n// @namespace    https://github.com/SysAdminDoc/RumbleX\n// @version      ${VERSION}\n// @description  ${lite ? 'Rumble enhancement suite (Lite) — the same shared feature core, without the bundled transmuxers. Downloads save the raw stream; MP4 remux needs the full build or the extension.' : 'Rumble enhancement suite — the same shared feature core as the browser extension.'}\n// @author       SysAdminDoc\n// @match        https://rumble.com/*\n// @match        https://*.rumble.com/*\n// @noframes\n// @run-at       document-start\n// @webRequest   [{"selector":"https://a.ads.rmbl.ws/*","action":"cancel"},{"selector":"https://a-delivery.rmbl.ws/*","action":"cancel"},{"selector":"https://imasdk.googleapis.com/*","action":"cancel"},{"selector":"https://s0.2mdn.net/instream/video/*","action":"cancel"},{"selector":"https://pagead2.googlesyndication.com/omsdk/*","action":"cancel"},{"selector":"https://*.doubleclick.net/*","action":"cancel"},{"selector":"https://*.googleadservices.com/pagead/*","action":"cancel"}]\n// @grant        GM_getValue\n// @grant        GM_setValue\n// @grant        GM_deleteValue\n// @grant        GM_addValueChangeListener\n// @grant        GM_removeValueChangeListener\n// @grant        GM_xmlhttpRequest\n// @grant        GM_download\n// @connect      rumble.com\n// @connect      1a-1791.com\n// @connect      rumble.cloud\n// @downloadURL  https://raw.githubusercontent.com/SysAdminDoc/RumbleX/main/${file}\n// @updateURL    https://raw.githubusercontent.com/SysAdminDoc/RumbleX/main/${file}\n// ==/UserScript==\n\n// Generated from extension/settings-schema.js + extension/content.js. Shared runtime SHA-256: ${sharedHash}\n`;
 }
 
-function build() {
+function build(variant) {
     const schema = read('extension/settings-schema.js');
     const core = read('extension/content.js');
     const adapterTemplate = read('userscript/platform.js');
@@ -38,23 +50,32 @@ function build() {
         'mediabunny-worker.js': mediabunnyWorker,
         'lib/mediabunny.min.mjs': mediabunny,
     };
+    if (variant === 'lite') {
+        for (const key of LITE_OMITTED_ASSETS) delete assets[key];
+    }
     const adapter = adapterTemplate
         .replace('__RUMBLEX_VERSION__', JSON.stringify(VERSION))
         .replace('__RUMBLEX_ASSETS__', JSON.stringify(assets))
         .replace('__RUMBLEX_MESSAGES__', JSON.stringify(messages));
     const sharedRuntime = schema + '\n\n' + core;
-    return metadata(sha256(sharedRuntime)) + schema + '\n\n' + adapter + '\n\n' + core;
+    return metadata(sha256(sharedRuntime), variant) + schema + '\n\n' + adapter + '\n\n' + core;
 }
 
-const generated = build();
+const variants = [
+    { file: OUTPUT, label: 'RumbleX.user.js', source: build('full') },
+    { file: LITE_OUTPUT, label: 'RumbleX.lite.user.js', source: build('lite') },
+];
+
 if (process.argv.includes('--check')) {
-    const current = fs.existsSync(OUTPUT) ? fs.readFileSync(OUTPUT, 'utf8') : '';
-    if (current !== generated) {
-        console.error('RumbleX.user.js is stale. Run: npm run build:userscript');
-        process.exit(1);
+    for (const variant of variants) {
+        const current = fs.existsSync(variant.file) ? fs.readFileSync(variant.file, 'utf8') : '';
+        if (current !== variant.source) {
+            console.error(`${variant.label} is stale. Run: npm run build:userscript`);
+            process.exit(1);
+        }
     }
-    console.log(`Userscript parity check passed (${VERSION}, ${generated.length} bytes).`);
+    console.log(`Userscript parity check passed (${VERSION}, ${variants.map((v) => `${v.label} ${v.source.length}B`).join(', ')}).`);
 } else {
-    fs.writeFileSync(OUTPUT, generated, 'utf8');
-    console.log(`Generated RumbleX.user.js ${VERSION} (${generated.length} bytes).`);
+    for (const variant of variants) fs.writeFileSync(variant.file, variant.source, 'utf8');
+    console.log(`Generated ${variants.map((v) => `${v.label} ${VERSION} (${v.source.length} bytes)`).join(', ')}.`);
 }

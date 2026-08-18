@@ -23,7 +23,7 @@
 // @updateURL    https://raw.githubusercontent.com/SysAdminDoc/RumbleX/main/RumbleX.user.js
 // ==/UserScript==
 
-// Generated from extension/settings-schema.js + extension/content.js. Shared runtime SHA-256: 43a4f1026e51bfc1ecbd020a435ed6601078f33e1e241fe1e18ee274276904ee
+// Generated from extension/settings-schema.js + extension/content.js. Shared runtime SHA-256: 97a698ae719a08674af19ef0726086bf230ee8064292060e9d205efbba01b5c0
 // RumbleX shared settings schema. This file is the canonical source for
 // defaults and trust-boundary normalization across content, options, popup,
 // background profile/Gist restores, and the generated userscript.
@@ -637,6 +637,10 @@
     const DIAGNOSTICS_MAX = 50;
     const assetUrls = new Map();
     const hasMediabunnyAssets = 'mediabunny-worker.js' in ASSETS && 'lib/mediabunny.min.mjs' in ASSETS;
+    // The Greasy Fork-compliant "lite" build ships without either bundled
+    // transmuxer, so MP4 remux is unavailable there and raw TS save is the only
+    // download path. Detect it rather than letting the download fail at use.
+    const hasMuxjsAssets = 'worker.js' in ASSETS && 'lib/mux.min.js' in ASSETS;
 
     const isAllowedRemoteUrl = (url) => url.protocol === 'https:' && ALLOWED_REQUEST_HOSTS.some((host) =>
         url.hostname === host || url.hostname.endsWith('.' + host)
@@ -926,10 +930,11 @@
             managedDownloads: typeof GM_download === 'function',
             packagedAssets: true,
             mediabunny: hasMediabunnyAssets && typeof URL.createObjectURL === 'function',
+            muxjs: hasMuxjsAssets && typeof URL.createObjectURL === 'function',
             externalMessages: false,
             requestBlocking: false,
             requestBlockingMode: 'userscript-manager-dependent',
-            requestBlockingRules: 6,
+            requestBlockingRules: 7,
             streamingFileSave: typeof globalThis.showSaveFilePicker === 'function',
         }),
         storage,
@@ -3967,8 +3972,22 @@ const VideoDownloader = {
         return buffers;
     },
 
+    _supportsMuxjsWorker() {
+        return RXPlatform.capabilities.muxjs !== false
+            && typeof Worker === 'function'
+            && typeof Blob === 'function'
+            && typeof URL !== 'undefined'
+            && typeof URL.createObjectURL === 'function';
+    },
+
     async _getMuxWorker() {
         if (this._worker) return this._worker;
+        // The Greasy Fork-compliant "lite" userscript ships without either
+        // bundled transmuxer, so say so plainly instead of failing deep inside
+        // asset resolution with "Userscript asset is unavailable".
+        if (!this._supportsMuxjsWorker()) {
+            throw new Error('This build ships without a bundled transmuxer - save the raw stream instead');
+        }
         // Fetch worker + mux.js source and create blob Worker
         // (content script can't construct Workers from chrome-extension:// URLs)
         const [workerSrc, muxSrc] = await Promise.all([

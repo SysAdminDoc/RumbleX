@@ -146,10 +146,73 @@ const check = spawnSync(process.execPath, [path.join(ROOT, 'scripts', 'build-use
 });
 if (check.status !== 0) fail((check.stderr || check.stdout || 'generator freshness check failed').trim());
 
+// ── Greasy Fork-compliant "lite" variant ────────────────────────────────────
+// Greasy Fork caps scripts at 2 MB and forbids minified or obfuscated code. The
+// full build embeds two minified transmuxers, and shipping them unminified
+// instead would be 1.79 MB of libraries alone. The lite variant omits both, so
+// it must stay under the cap, carry no minified blob, and — critically — still
+// be the same shared runtime rather than a fork that can drift.
+const lite = read('RumbleX.lite.user.js');
+
+const GREASY_FORK_SIZE_CAP = 2 * 1024 * 1024;
+const liteBytes = Buffer.byteLength(lite, 'utf8');
+if (liteBytes > GREASY_FORK_SIZE_CAP) {
+    fail(`lite userscript is ${liteBytes} bytes, over the Greasy Fork 2 MB cap`);
+}
+
+// A minified bundle shows up as one enormous line. Readable source does not.
+const MAX_READABLE_LINE = 20000;
+const longestLiteLine = lite.split('\n').reduce((max, line) => Math.max(max, line.length), 0);
+if (longestLiteLine > MAX_READABLE_LINE) {
+    fail(`lite userscript has a ${longestLiteLine}-character line, which reads as minified code`);
+}
+
+// Same runtime, not a fork.
+if (!lite.endsWith(core)) fail('lite userscript does not end with the byte-identical canonical content core');
+if (!lite.includes(schema + '\n\n// RumbleX platform adapter')) {
+    fail('lite userscript does not embed the byte-identical canonical settings schema');
+}
+if (!lite.includes(`// @version      ${pkg.version}\n`)) fail('lite userscript version does not match package.json');
+if (!lite.includes(`Shared runtime SHA-256: ${hash}`)) fail('lite userscript shared-runtime hash is stale');
+if (!lite.includes('// @name         RumbleX Lite')) fail('lite userscript is not named distinctly');
+if (!lite.includes('RumbleX.lite.user.js')) fail('lite userscript does not point its update URL at itself');
+
+for (const forbidden of ['unsafeWindow', 'cdn.jsdelivr.net', 'GM_loadScript', 'new Function(', 'eval(']) {
+    if (lite.includes(forbidden)) fail(`lite userscript contains forbidden token: ${forbidden}`);
+}
+
+// The whole point of the variant: neither transmuxer may be bundled.
+const liteAssetsStart = lite.indexOf('const ASSETS = Object.freeze(');
+if (liteAssetsStart < 0) {
+    fail('lite userscript has no ASSETS table');
+} else {
+    const bodyStart = liteAssetsStart + 'const ASSETS = Object.freeze('.length;
+    let depth = 0;
+    let end = bodyStart;
+    for (; end < lite.length; end += 1) {
+        if (lite[end] === '{') depth += 1;
+        else if (lite[end] === '}') { depth -= 1; if (depth === 0) { end += 1; break; } }
+    }
+    let liteAssets;
+    try {
+        liteAssets = JSON.parse(lite.slice(bodyStart, end));
+    } catch {
+        liteAssets = null;
+    }
+    if (!liteAssets) fail('lite userscript ASSETS table is not parseable');
+    else if (Object.keys(liteAssets).length > 0) {
+        fail(`lite userscript still bundles assets: ${Object.keys(liteAssets).join(', ')}`);
+    }
+}
+
 if (!process.exitCode) {
     const defaultsBody = schema.match(/const DEFAULTS = Object\.freeze\(\{([\s\S]*?)\n    \}\);/)?.[1] || '';
     const settingsCount = (defaultsBody.match(/^\s{8}[A-Za-z][A-Za-z0-9]*:\s/gm) || []).length;
     const registry = core.match(/const features = \[([\s\S]*?)\n\];/)?.[1] || '';
     const registryCount = (registry.match(/\b[A-Z][A-Za-z0-9]+\b/g) || []).length;
-    console.log(`Userscript parity guard OK: v${pkg.version}, shared ${hash.slice(0, 12)}, ${settingsCount} settings, ${registryCount}+ shared registry tokens.`);
+    console.log(
+        `Userscript parity guard OK: v${pkg.version}, shared ${hash.slice(0, 12)}, ${settingsCount} settings, `
+        + `${registryCount}+ shared registry tokens, lite variant ${Math.round(liteBytes / 1024)}KB `
+        + `(cap ${GREASY_FORK_SIZE_CAP / 1024 / 1024}MB, longest line ${longestLiteLine}).`,
+    );
 }

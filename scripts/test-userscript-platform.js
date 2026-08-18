@@ -81,7 +81,10 @@ async function main() {
     assert.equal(platform.assetUrl('lib/mediabunny.min.mjs'), mediabunnyUrl);
     assert.equal(platform.capabilities.mediabunny, true);
     assert.equal(platform.capabilities.requestBlockingMode, 'userscript-manager-dependent');
-    assert.equal(platform.capabilities.requestBlockingRules, 6);
+    // Must match the @webRequest selector count in build-userscript.js: the
+    // Privacy Report renders this number directly, so a stale value misreports
+    // the shield to the user. It read 6 while the block declared 7.
+    assert.equal(platform.capabilities.requestBlockingRules, 7);
     assert.equal(platform.capabilities.streamingFileSave, true);
     assert.equal(platform.t('hello'), 'Hello');
 

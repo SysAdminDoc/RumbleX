@@ -11,6 +11,10 @@
     const DIAGNOSTICS_MAX = 50;
     const assetUrls = new Map();
     const hasMediabunnyAssets = 'mediabunny-worker.js' in ASSETS && 'lib/mediabunny.min.mjs' in ASSETS;
+    // The Greasy Fork-compliant "lite" build ships without either bundled
+    // transmuxer, so MP4 remux is unavailable there and raw TS save is the only
+    // download path. Detect it rather than letting the download fail at use.
+    const hasMuxjsAssets = 'worker.js' in ASSETS && 'lib/mux.min.js' in ASSETS;
 
     const isAllowedRemoteUrl = (url) => url.protocol === 'https:' && ALLOWED_REQUEST_HOSTS.some((host) =>
         url.hostname === host || url.hostname.endsWith('.' + host)
@@ -300,10 +304,11 @@
             managedDownloads: typeof GM_download === 'function',
             packagedAssets: true,
             mediabunny: hasMediabunnyAssets && typeof URL.createObjectURL === 'function',
+            muxjs: hasMuxjsAssets && typeof URL.createObjectURL === 'function',
             externalMessages: false,
             requestBlocking: false,
             requestBlockingMode: 'userscript-manager-dependent',
-            requestBlockingRules: 6,
+            requestBlockingRules: 7,
             streamingFileSave: typeof globalThis.showSaveFilePicker === 'function',
         }),
         storage,

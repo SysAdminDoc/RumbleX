@@ -1,3 +1,958 @@
+// ==UserScript==
+// @name         RumbleX Lite
+// @namespace    https://github.com/SysAdminDoc/RumbleX
+// @version      3.41.0
+// @description  Rumble enhancement suite (Lite) — the same shared feature core, without the bundled transmuxers. Downloads save the raw stream; MP4 remux needs the full build or the extension.
+// @author       SysAdminDoc
+// @match        https://rumble.com/*
+// @match        https://*.rumble.com/*
+// @noframes
+// @run-at       document-start
+// @webRequest   [{"selector":"https://a.ads.rmbl.ws/*","action":"cancel"},{"selector":"https://a-delivery.rmbl.ws/*","action":"cancel"},{"selector":"https://imasdk.googleapis.com/*","action":"cancel"},{"selector":"https://s0.2mdn.net/instream/video/*","action":"cancel"},{"selector":"https://pagead2.googlesyndication.com/omsdk/*","action":"cancel"},{"selector":"https://*.doubleclick.net/*","action":"cancel"},{"selector":"https://*.googleadservices.com/pagead/*","action":"cancel"}]
+// @grant        GM_getValue
+// @grant        GM_setValue
+// @grant        GM_deleteValue
+// @grant        GM_addValueChangeListener
+// @grant        GM_removeValueChangeListener
+// @grant        GM_xmlhttpRequest
+// @grant        GM_download
+// @connect      rumble.com
+// @connect      1a-1791.com
+// @connect      rumble.cloud
+// @downloadURL  https://raw.githubusercontent.com/SysAdminDoc/RumbleX/main/RumbleX.lite.user.js
+// @updateURL    https://raw.githubusercontent.com/SysAdminDoc/RumbleX/main/RumbleX.lite.user.js
+// ==/UserScript==
+
+// Generated from extension/settings-schema.js + extension/content.js. Shared runtime SHA-256: 97a698ae719a08674af19ef0726086bf230ee8064292060e9d205efbba01b5c0
+// RumbleX shared settings schema. This file is the canonical source for
+// defaults and trust-boundary normalization across content, options, popup,
+// background profile/Gist restores, and the generated userscript.
+'use strict';
+
+(() => {
+    if (globalThis.RumbleXSettingsSchema) return;
+
+    const SCHEMA_VERSION = 3;
+    const DEFAULTS = Object.freeze({
+        adNuker: true,
+        theaterSplit: true,
+        feedCleanup: true,
+        darkEnhance: true,
+        hideReposts: true,
+        wideLayout: true,
+        videoDownload: true,
+        splitRatio: 75,
+        hiddenCategories: [],
+        logoToFeed: true,
+        hidePremium: true,
+        speedController: true,
+        scrollVolume: true,
+        defaultMaxVolume: false,
+        autoMaxQuality: true,
+        watchProgress: true,
+        channelBlocker: true,
+        autoTheater: false,
+        liveChatEnhance: true,
+        videoTimestamps: true,
+        screenshotBtn: true,
+        watchHistory: true,
+        autoplayBlock: true,
+        searchHistory: true,
+        miniPlayer: true,
+        videoStats: true,
+        loopControl: true,
+        quickBookmark: true,
+        commentNav: true,
+        rantHighlight: true,
+        relatedFilter: true,
+        exactCounts: true,
+        shareTimestamp: true,
+        shortsFilter: true,
+        chatAutoScroll: true,
+        autoExpand: true,
+        notifEnhance: true,
+        quickSave: true,
+        theme: 'catppuccin',
+        playbackSpeed: 1.0,
+        blockedChannels: [],
+        // v1.8.0 additions
+        fullTitles: true,
+        titleFont: false,
+        uniqueChatters: true,
+        chatUserBlock: true,
+        chatSpamDedup: true,
+        chatExport: true,
+        rantPersist: true,
+        commentSort: true,
+        popoutChat: true,
+        keywordFilter: true,
+        autoplayScheduler: false,
+        chapters: true,
+        sponsorBlock: true,
+        videoClips: true,
+        liveDVR: false,
+        subtitleSidecar: true,
+        transcripts: true,
+        audioOnly: true,
+        batchDownload: false,
+        blockedChatters: [],
+        blockedKeywords: [],
+        sponsorSegments: {},
+        autoplayQueue: [],
+        // v1.9.0 — Rumble Enhancement Suite port
+        // Interactive modules
+        autoHideHeader: false,
+        autoHideNavSidebar: false,
+        autoLike: false,
+        autoLoadComments: true,
+        fullWidthPlayer: false,
+        adaptiveLiveLayout: true,
+        commentBlocking: true,
+        siteThemeSync: false,
+        siteTheme: 'system',
+        blockedCommenters: [],
+        // Main Page Layout (CSS hide-X toggles — all default OFF)
+        widenSearchBar: false,
+        hideUploadIcon: false,
+        hideHeaderAd: false,
+        hideProfileBacksplash: false,
+        hideFeaturedBanner: false,
+        hideEditorPicks: false,
+        hideTopLiveCategories: false,
+        hidePremiumRow: false,
+        hideHomepageAd: false,
+        hideForYouRow: false,
+        hideGamingRow: false,
+        hideFinanceRow: false,
+        hideLiveRow: false,
+        hideFeaturedPlaylistsRow: false,
+        hideSportsRow: false,
+        hideViralRow: false,
+        hidePodcastsRow: false,
+        hideLeaderboardRow: false,
+        hideVlogsRow: false,
+        hideNewsRow: false,
+        hideScienceRow: false,
+        hideMusicRow: false,
+        hideEntertainmentRow: false,
+        hideCookingRow: false,
+        hideFooter: false,
+        // Video Page Layout
+        hideRelatedOnLive: false,
+        hideRelatedSidebar: false,
+        widenContent: false,
+        hideVideoDescription: false,
+        hidePausedVideoAds: false,
+        // Player Controls
+        hideRewindButton: false,
+        hideFastForwardButton: false,
+        hideCCButton: false,
+        hideAutoplayButton: false,
+        hideTheaterButton: false,
+        hidePipButton: false,
+        hideFullscreenButton: false,
+        hidePlayerRumbleLogo: false,
+        hidePlayerGradient: false,
+        // Video Buttons
+        hideLikeDislikeButton: false,
+        hideShareButton: false,
+        hideRepostButton: false,
+        hideEmbedButton: false,
+        hideSaveButton: false,
+        hideCommentButton: false,
+        hideReportButton: false,
+        hidePremiumJoinButtons: false,
+        // Comments
+        moveReplyButton: false,
+        hideCommentReportLink: false,
+        // Chat
+        cleanLiveChat: false,
+
+        // ── v2.0.0 — Schema v2, Core Engine, Settings Superset ──
+        schemaVersion: SCHEMA_VERSION,
+        // Core & theming
+        denseMode: true,
+        reducedMotion: false,
+        glassIntensity: 'medium',
+        accentColor: 'rumbleGreen',
+        legacyKeyboardNav: false,
+        debugSelectorTelemetry: false,
+        // v3.20.0 — Per-feature error log ring buffer (Observability workstream)
+        // Default OFF; when ON, feature init failures land in rx_error_log
+        // for export via the options page. Local-only — never shipped remotely.
+        debugErrorLog: false,
+        // Layout & UI cleanup
+        hideThumbnails: false,
+        hideThumbnailsFeeds: false,
+        hideThumbnailsRelated: false,
+        compactAccountPagination: false,
+        homeCleanupPreset: 'none',
+        pageDensity: 'dense',
+        // Player
+        qualityMode: 'best',
+        perChannelVolumeMemory: false,
+        autoplayBlockMode: 'relatedEndpointAndPlayer',
+        clipExportFormat: 'mp4',
+        segmentSkipMode: 'localOnly',
+        // Downloads & archives
+        downloadManagerEnabled: true,
+        downloadQualityPreference: 'best',
+        downloadIncludeMetadata: true,
+        downloadIncludeThumbnail: false,
+        downloadLiveStreams: false,
+        downloadShorts: true,
+        downloadConcurrency: 2,
+        downloadProbeCacheTtlHours: 24,
+        downloadMuxerEngine: 'muxjs',
+        audioExtractionMode: 'browserIfSupported',
+        externalPlayerEnabled: false,
+        externalPlayerTemplate: '',
+        channelArchiveEnabled: false,
+        channelArchiveFilterClips: false,
+        channelArchiveMaxItems: 50,
+        // v3.21.0 — Max-height cap for channel archive downloads.
+        // Allowed: 'best' | '2160' | '1440' | '1080' | '720' | '480' | '360'.
+        // The discoverer picks the highest direct-MP4 quality at or below this height.
+        channelArchiveMaxHeight: 'best',
+        // v3.24.0 — Subfolder name (relative to user's default Downloads folder).
+        // Sanitized SW-side: alphanumerics + ` _-.` only; '..' segments stripped.
+        channelArchiveSubfolder: 'RumbleX',
+        // v3.19.0 — In-page "Archive channel" button on /c/<slug> + /user/<slug>
+        channelArchiveButton: true,
+        // Feed, filtering & moderation
+        shortsFilterScope: 'everywhere',
+        blockedChannelsMeta: [],
+        blockedKeywordsMode: 'literal',
+        filterPreviewBadges: true,
+        politicsFilterPreset: 'off',
+        remoteCosmeticRules: false,
+        remoteCosmeticRulesChannel: 'stable',
+        // Live chat & rants
+        chatMentionHighlight: true,
+        chatClickToMention: true,
+        chatParticipantsList: false,
+        chatUsernameColors: 'deterministic',
+        chatTimedMutes: true,
+        chatMuteDurations: [15, 30, 60, 240],
+        rantStatsPanel: true,
+        rantExportFormat: 'csvJson',
+        rantTierFilter: 0,
+        rantStickyHighValue: true,
+        multiStreamViewer: false,
+        // Comments
+        commentThreadView: false,
+        commentSearch: false,
+        commentMuteDurations: [1440, 10080],
+        commentExport: false,
+        // Automation, creator & integrations
+        bulkUnsubscribeEnabled: false,
+        bulkUnsubscribeDryRun: true,
+        channelNotifierEnabled: false,
+        discordWebhookUrl: '',
+        rssExportEnabled: false,
+        creatorMode: false,
+        uploaderMetadataFill: false,
+        studioSceneTools: false,
+        obsAlertExport: false,
+        // Privacy, data & backup
+        stripTrackingParams: true,
+        privacyReport: true,
+        activeProfileId: 'default',
+        backupHistory: true,
+        backupHistoryLimit: 10,
+        encryptedGistSync: false,
+        // v3.17.0 — Encrypted Gist Sync credentials. Token is a GitHub PAT
+        // with the `gist` scope. Gist ID is set once on first push (or filled
+        // manually if syncing from an existing gist). Passphrase is NEVER
+        // stored — user enters it on every push/pull.
+        encryptedGistSyncToken: '',
+        encryptedGistSyncId: '',
+
+        // ── v3.1.0 — Rumble Shorts (Feb 2026) + Wallet (Jan 2026) ──
+        disableShortsFeed: false,    // redirects /shorts → /subscriptions when ON
+        hideWalletTipButton: false,  // hides per-creator tip jar button
+
+        // ── v3.5.0 — chrome.contextMenus integration ──
+        contextMenusEnabled: true,
+
+        // ── v3.7.0 — chrome.sidePanel integration ──
+        // Default OFF; users opt in from the popup. Once on, clicking the
+        // toolbar icon opens the persistent side panel instead of the popup.
+        sidePanelEnabled: false,
+
+        // ── v3.9.0 — Channel Notifier ──
+        // Array of channel objects: { url, name, lastSeenVideoId, lastChecked,
+        //   isLive, etag }. Populated through the options-page UI.
+        watchedChannels: [],
+        // Poll interval in minutes. chrome.alarms enforces a 1-minute floor in
+        // Chrome MV3 — anything lower is silently clamped.
+        channelNotifierIntervalMin: 30,
+
+        // ── v3.26.0 — File System Access folder picker (BatchDownload) ──
+        // Display label of the most recently picked folder. Empty string means
+        // "no folder picked, use chrome.downloads.download() default path".
+        // The actual FileSystemDirectoryHandle is NOT JSON-serializable and is
+        // persisted separately in IndexedDB (db: rx-fs-access, store: handles).
+        // Chrome / Edge only; Firefox MV2 ignores the setting and uses the
+        // chrome.downloads path unconditionally.
+        batchDownloadFolderName: '',
+
+        // ── v3.26.0 — Offline resilience for Channel Archive queue ──
+        // When ON (default), the archive-queue alarm tick short-circuits while
+        // navigator.onLine is false so jobs aren't burned on guaranteed-fail
+        // network ops. Resumes automatically on the first online tick.
+        archiveQueuePauseOnOffline: true,
+    });
+    const FORBIDDEN_KEYS = new Set(['__proto__', 'prototype', 'constructor']);
+    const STRING_ARRAYS = new Set([
+        'blockedChannels', 'blockedChatters', 'blockedKeywords', 'blockedCommenters',
+    ]);
+    const ENUM_VALUES = Object.freeze({
+        theme: ['catppuccin', 'youtube', 'midnight', 'rumbleGreen', 'oledGreen'],
+        siteTheme: ['system', 'dark', 'light'],
+        glassIntensity: ['low', 'medium', 'high'],
+        homeCleanupPreset: ['none', 'focused', 'minimal', 'custom'],
+        pageDensity: ['dense', 'normal'],
+        qualityMode: ['best', 'lowest', 'manual', 'bandwidthSaver'],
+        autoplayBlockMode: ['off', 'relatedEndpointAndPlayer', 'playerOnly'],
+        clipExportFormat: ['mp4', 'webm', 'manifestOnly'],
+        segmentSkipMode: ['localOnly', 'community'],
+        downloadQualityPreference: ['best', '1080p', '720p', '480p', 'lowest', 'askInline'],
+        downloadMuxerEngine: ['muxjs', 'mediabunnyWebCodecs'],
+        audioExtractionMode: ['off', 'browserIfSupported', 'companion', 'external'],
+        channelArchiveMaxHeight: ['best', '2160', '1440', '1080', '720', '480', '360'],
+        shortsFilterScope: ['everywhere', 'feedOnly', 'searchOnly', 'off'],
+        blockedKeywordsMode: ['literal', 'regex', 'wildcard'],
+        politicsFilterPreset: ['off', 'reduce', 'hide'],
+        remoteCosmeticRulesChannel: ['stable', 'preview'],
+        chatUsernameColors: ['off', 'deterministic', 'tiered'],
+        rantExportFormat: ['csvJson', 'csv', 'json'],
+    });
+    const NUMERIC_BOUNDS = Object.freeze({
+        splitRatio: [20, 95], playbackSpeed: [0.1, 4],
+        downloadConcurrency: [1, 8], downloadProbeCacheTtlHours: [0, 168],
+        channelArchiveMaxItems: [1, 500], rantTierFilter: [0, 1_000_000],
+        backupHistoryLimit: [1, 50], channelNotifierIntervalMin: [1, 1440],
+    });
+    const HIDDEN_CATEGORIES = new Set([
+        'editor-picks', 'shorts', 'continue-watching', 'top-live',
+        'premium-videos', 'personal-recommendations', 'reposts',
+        'gaming', 'finance', 'live-videos', 'featured-playlists',
+        'sports', 'viral', 'podcasts', 'leaderboard', 'vlogs',
+        'news', 'science', 'music', 'entertainment', 'cooking',
+    ]);
+    const SPONSOR_CATEGORIES = new Set(['sponsor', 'intro', 'outro', 'selfpromo', 'interaction']);
+
+    function isPlainObject(value) {
+        if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+        const proto = Object.getPrototypeOf(value);
+        return proto === Object.prototype || proto === null;
+    }
+
+    function safeString(value, max = 2_000) {
+        return typeof value === 'string'
+            ? value.replace(/[\u0000-\u001f\u007f]/g, '').slice(0, max)
+            : null;
+    }
+
+    function cloneSafe(value, depth = 0) {
+        if (depth > 8) return undefined;
+        if (value == null || typeof value === 'boolean') return value;
+        if (typeof value === 'number') return Number.isFinite(value) ? value : undefined;
+        if (typeof value === 'string') return value.slice(0, 20_000);
+        if (Array.isArray(value)) {
+            if (value.length > 10_000) return undefined;
+            const out = [];
+            for (const item of value) {
+                const safe = cloneSafe(item, depth + 1);
+                if (safe !== undefined) out.push(safe);
+            }
+            return out;
+        }
+        if (!isPlainObject(value)) return undefined;
+        const out = {};
+        for (const [key, child] of Object.entries(value)) {
+            if (FORBIDDEN_KEYS.has(key) || Object.keys(out).length >= 2_000) continue;
+            const safe = cloneSafe(child, depth + 1);
+            if (safe !== undefined) out[key] = safe;
+        }
+        return out;
+    }
+
+    function safeRumbleUrl(value) {
+        const text = safeString(value, 2_000);
+        if (!text) return null;
+        try {
+            const parsed = new URL(text);
+            return parsed.protocol === 'https:' && /(^|\.)rumble\.com$/i.test(parsed.hostname)
+                ? parsed.href
+                : null;
+        } catch { return null; }
+    }
+
+    // The channel notifier POSTs a Discord-shaped `{ content }` payload, so any
+    // non-Discord destination is already broken at the protocol level. Treating
+    // this as a free string let a crafted backup, snapshot, or Gist pull install
+    // an arbitrary outbound endpoint for followed-channel activity.
+    function safeWebhookUrl(value) {
+        const text = safeString(value, 500);
+        if (!text) return null;
+        try {
+            const parsed = new URL(text);
+            if (parsed.protocol !== 'https:') return null;
+            if (parsed.username || parsed.password) return null;
+            if (!/^(?:(?:canary|ptb)\.)?discord(?:app)?\.com$/i.test(parsed.hostname)) return null;
+            if (!/^\/api\/webhooks\/[^/]+\/[^/]+$/.test(parsed.pathname)) return null;
+            return parsed.origin + parsed.pathname;
+        } catch { return null; }
+    }
+
+    function normalizeDurations(value) {
+        return Array.isArray(value)
+            ? [...new Set(value.filter((item) => Number.isFinite(item))
+                .map((item) => Math.round(item))
+                .filter((item) => item >= 1 && item <= 525_600))].slice(0, 50)
+            : null;
+    }
+
+    function migrate(input) {
+        if (!isPlainObject(input)) return {};
+        const current = Number(input.schemaVersion) || 0;
+        if (current >= SCHEMA_VERSION) return input;
+        const out = { ...input };
+        if ('keyboardNav' in out && !('legacyKeyboardNav' in out)) {
+            out.legacyKeyboardNav = !!out.keyboardNav;
+        }
+        delete out.keyboardNav;
+        // v3 - `bookmarks` and `settingsProfiles` were schema keys that nothing
+        // ever read. The real collections live in their own storage buckets
+        // (`rx_bookmarks`, `rx_settings_profiles`), so these two only ever
+        // rendered decorative controls in Options. Drop them explicitly so an
+        // upgraded profile is cleaned deterministically.
+        delete out.bookmarks;
+        delete out.settingsProfiles;
+        out.schemaVersion = SCHEMA_VERSION;
+        return out;
+    }
+
+    function normalize(input, defaults = DEFAULTS) {
+        if (!isPlainObject(input) || !isPlainObject(defaults)) return {};
+        const out = {};
+        for (const [key, value] of Object.entries(input)) {
+            if (!Object.hasOwn(defaults, key) || FORBIDDEN_KEYS.has(key)) continue;
+            const expected = defaults[key];
+            if (key === 'hiddenCategories') {
+                if (Array.isArray(value)) out[key] = [...new Set(value.filter((item) => HIDDEN_CATEGORIES.has(item)))];
+                continue;
+            }
+            if (STRING_ARRAYS.has(key)) {
+                if (Array.isArray(value)) {
+                    out[key] = [...new Set(value.map((item) => safeString(item, 500)).filter(Boolean))].slice(0, 2_000);
+                }
+                continue;
+            }
+            if (key === 'discordWebhookUrl') {
+                const webhook = safeWebhookUrl(value);
+                out[key] = webhook || '';
+                continue;
+            }
+            if (key === 'autoplayQueue') {
+                if (Array.isArray(value)) out[key] = [...new Set(value.map(safeRumbleUrl).filter(Boolean))].slice(0, 500);
+                continue;
+            }
+            if (key === 'watchedChannels') {
+                if (!Array.isArray(value)) continue;
+                out[key] = value.slice(0, 500).flatMap((item) => {
+                    if (!isPlainObject(item)) return [];
+                    const url = safeRumbleUrl(item.url);
+                    const name = safeString(item.name, 300);
+                    if (!url) return [];
+                    return [{
+                        url,
+                        name: name || url,
+                        lastSeenVideoId: safeString(item.lastSeenVideoId, 120),
+                        isLive: !!item.isLive,
+                        lastChecked: Number.isFinite(item.lastChecked) && item.lastChecked >= 0
+                            ? Math.round(item.lastChecked)
+                            : null,
+                    }];
+                });
+                continue;
+            }
+            if (key === 'chatMuteDurations' || key === 'commentMuteDurations') {
+                const durations = normalizeDurations(value);
+                if (durations) out[key] = durations;
+                continue;
+            }
+            if (key === 'sponsorSegments') {
+                if (!isPlainObject(value)) continue;
+                const segments = {};
+                for (const [videoId, list] of Object.entries(value).slice(0, 1_000)) {
+                    if (!/^v[a-z0-9]+$/i.test(videoId) || !Array.isArray(list)) continue;
+                    const safeList = list.slice(0, 200).flatMap((segment) => {
+                        if (!isPlainObject(segment)) return [];
+                        const start = Number(segment.start);
+                        const end = Number(segment.end);
+                        if (!Number.isFinite(start) || !Number.isFinite(end) || start < 0 || end <= start || end > 604_800) return [];
+                        return [{
+                            start,
+                            end,
+                            category: SPONSOR_CATEGORIES.has(segment.category) ? segment.category : 'sponsor',
+                        }];
+                    });
+                    if (safeList.length) segments[videoId] = safeList;
+                }
+                out[key] = segments;
+                continue;
+            }
+            if (key === 'schemaVersion') {
+                out[key] = SCHEMA_VERSION;
+                continue;
+            }
+            if (ENUM_VALUES[key]) {
+                if (ENUM_VALUES[key].includes(value)) out[key] = value;
+                continue;
+            }
+            if (NUMERIC_BOUNDS[key]) {
+                if (typeof value !== 'number' || !Number.isFinite(value)) continue;
+                const [min, max] = NUMERIC_BOUNDS[key];
+                out[key] = Math.min(max, Math.max(min, value));
+                continue;
+            }
+            const safe = cloneSafe(value);
+            if (safe === undefined) continue;
+            if (Array.isArray(expected)) {
+                if (Array.isArray(safe)) out[key] = safe;
+            } else if (expected && typeof expected === 'object') {
+                if (isPlainObject(safe)) out[key] = safe;
+            } else if (typeof safe === typeof expected) {
+                out[key] = safe;
+            }
+        }
+        return out;
+    }
+
+    // Keys that are declared and persisted but that no runtime code reads yet.
+    //
+    // Every one of these once rendered a fully live control in the Options page,
+    // so a user could flip it, see it save, and get no behavior change — the
+    // toggle silently did nothing. That is a trust defect, not a cosmetic one.
+    // Options renders anything listed here as explicitly "not implemented yet"
+    // and refuses to pretend otherwise, and `scripts/check-settings-consumers.js`
+    // asserts this list matches the real set of unread keys exactly, in both
+    // directions. Wiring a key to real behavior means deleting it from here; the
+    // guard fails until you do, and it also fails if a key stops being read.
+    const UNIMPLEMENTED = Object.freeze({
+        // Appearance preferences the theme engine does not consult.
+        glassIntensity: 'Theme engine applies a fixed glass treatment.',
+        accentColor: 'Theme engine applies the active theme accent.',
+        pageDensity: 'Layout density is fixed by the active theme.',
+
+        // Playback preferences with no consumer; see the playback-resilience
+        // roadmap item, which wires qualityMode as part of its acceptance.
+        qualityMode: 'AutoMaxQuality always targets the highest rendition.',
+        perChannelVolumeMemory: 'Volume is remembered globally, not per channel.',
+
+        // Download and export preferences the download pipeline ignores.
+        clipExportFormat: 'Clip export always writes MP4.',
+        segmentSkipMode: 'SponsorBlock segments are always local-only.',
+        downloadQualityPreference: 'Downloader always offers every rendition.',
+        downloadIncludeMetadata: 'Metadata sidecar is written per download-panel choice.',
+        downloadIncludeThumbnail: 'Thumbnail sidecar is written per download-panel choice.',
+        downloadLiveStreams: 'Live-stream downloads are gated by page state, not this key.',
+        downloadShorts: 'Shorts downloads are gated by page state, not this key.',
+        audioExtractionMode: 'Audio extraction always prefers the browser encoder.',
+        rantExportFormat: 'Rant export always writes both CSV and JSON.',
+
+        // Channel archive preferences. The archive queue reads
+        // channelArchiveMaxHeight and channelArchiveSubfolder, but not these.
+        channelArchiveEnabled: 'Archive availability follows channelArchiveButton.',
+        channelArchiveFilterClips: 'Archive queue does not filter clips.',
+        channelArchiveMaxItems: 'Archive queue uses its own internal cap.',
+
+        // Feed and filter preferences with no consumer.
+        shortsFilterScope: 'Shorts filtering applies everywhere unconditionally.',
+        blockedChannelsMeta: 'Channel blocks carry no expiry or reason metadata.',
+        filterPreviewBadges: 'Filtered cards are hidden outright, never badged.',
+        politicsFilterPreset: 'No preset keyword bundles are shipped.',
+        remoteCosmeticRulesChannel: 'Remote cosmetic rules use a single channel.',
+
+        // Chat features that were never built.
+        chatMentionHighlight: 'Not built.',
+        chatClickToMention: 'Not built.',
+        chatParticipantsList: 'Not built.',
+        chatTimedMutes: 'Not built.',
+        chatMuteDurations: 'Configures the unbuilt timed-mute feature.',
+
+        // Rant features that were never built.
+        rantStatsPanel: 'Not built.',
+        rantStickyHighValue: 'Not built.',
+
+        // Comment features that were never built.
+        commentThreadView: 'Not built.',
+        commentSearch: 'Not built.',
+        commentMuteDurations: 'Configures the unbuilt comment-mute feature.',
+
+        // Creator and multi-view features that were never built.
+        multiStreamViewer: 'Not built.',
+        rssExportEnabled: 'Not built.',
+        creatorMode: 'Not built.',
+        uploaderMetadataFill: 'Not built.',
+        studioSceneTools: 'Not built.',
+        obsAlertExport: 'Not built.',
+    });
+
+    function normalizeStored(input, defaults = DEFAULTS) {
+        return normalize(migrate(input), defaults);
+    }
+
+    Object.defineProperty(globalThis, 'RumbleXSettingsSchema', {
+        value: Object.freeze({
+            SCHEMA_VERSION,
+            DEFAULTS,
+            migrate,
+            normalize,
+            normalizeStored,
+            safeRumbleUrl,
+            safeWebhookUrl,
+            UNIMPLEMENTED,
+        }),
+        configurable: false,
+        enumerable: false,
+        writable: false,
+    });
+})();
+
+
+// RumbleX platform adapter - generated userscript runtime
+'use strict';
+
+(() => {
+    const VERSION = "3.41.0";
+    const ASSETS = Object.freeze({});
+    const MESSAGES = Object.freeze({"extName":"RumbleX","extDescription":"Rumble enhancement suite — ad/bloat removal, theater split view, video downloads, dark theme polish, and 130+ feature toggles.","actionTitle":"RumbleX","openSettingsEditor":"Open Settings Editor","exportBackup":"Export Backup","importBackup":"Import Backup","resetAllData":"Reset All Data","snapshotHistory":"Backup snapshot history","snapshotTakeNow":"Take snapshot now","snapshotRestore":"Restore","privacyReport":"Privacy report","telemetryNone":"Telemetry: none — no analytics, no remote logging, no usage beacons","settingsTotal":"settings","settingsUnsaved":"unsaved","saveBtn":"Save","discardBtn":"Discard","restoreDefaultsBtn":"Restore Defaults","groupAll":"All Settings","groupCore":"Core","groupAdBlocking":"Ad Blocking","groupVideoPlayer":"Video Player","groupDownloads":"Downloads & Capture","groupHistory":"History & Bookmarks","groupChat":"Comments & Chat","groupFeedControls":"Feed Controls","groupAutomation":"Automation","groupCreator":"Creator & Studio","groupIntegrations":"Integrations","groupPrivacy":"Privacy & Data","groupAdvanced":"Advanced","tipDisableShortsFeed":"Disable Shorts Feed","tipHideWalletTipButton":"Hide Wallet Tip Button","popupLocalAutosave":"Local changes autosave","popupOpenOptionsHint":"Search, groups, import/export, reset","reloadAfterChanges":"Reload after changes","groupRumbleTabs":"Group all Rumble tabs","openOptionsPage":"Open options page","githubRepo":"GitHub repo","checkForUpdates":"Check for updates","themeLabel":"Theme","noRumbleTabsOpen":"No Rumble tabs open","tabGroupsUnsupported":"Tab groups not supported in this browser","groupFailed":"Group failed","checkingUpdates":"Checking...","checkFailed":"Check failed","checkRateLimited":"GitHub rate limit reached — try again later","upToDate":"Up to date!","appStatusLocal":"Local","storageStatus":"Storage status","controlCenter":"Control center","optionsSettingsTitle":"Settings and local data","optionsIntro":"Review every RumbleX toggle, back up your local data, and manage blocked channels, keywords, chatters, and SponsorBlock segments from one control surface.","storageStatistics":"Storage statistics","enabledLabel":"Enabled","storageLabel":"Storage","channelsLabel":"Channels","keywordsLabel":"Keywords","chattersLabel":"Chatters","readingLocalStorage":"Reading local storage...","dataManagement":"Data management","loading":"Loading...","refreshList":"Refresh list","privacyReportCopy":"Every external network surface RumbleX can touch, telemetry status, and current storage footprint. Pure read - no network calls trigger when you open this.","refresh":"Refresh","exportJson":"Export JSON","exportSelectorTelemetry":"Export selector telemetry","exportErrorLog":"Export error log","clearErrorLog":"Clear error log","copyDownloadDiagnostics":"Copy download diagnostics","exportDownloadDiagnostics":"Export download diagnostics","clearDownloadDiagnostics":"Clear download diagnostics","preparingDownloadDiagnostics":"Preparing sanitized diagnostics…","downloadDiagnosticsUnavailable":"Diagnostics unavailable:","downloadDiagnosticsCopied":"Sanitized diagnostics copied.","downloadDiagnosticsExported":"Sanitized diagnostics exported.","downloadDiagnosticsEmpty":"Download diagnostics are empty. A sanitized entry is captured automatically after a failed download or clip export.","downloadDiagnosticsCleared":"Download diagnostics cleared.","copyDownloadDiagnosticsFailed":"Could not copy download diagnostics:","exportDownloadDiagnosticsFailed":"Could not export download diagnostics:","clearDownloadDiagnosticsFailed":"Could not clear download diagnostics:","settingsTitle":"Settings","closeSettings":"Close settings","searchSettings":"Search settings...","clearSearch":"Clear search","settingGroups":"Setting groups","settingsInSync":"Everything is in sync","settingsLocalUntilSave":"Changes stay local until you save them.","clearFilters":"Clear Filters","filteredView":"Filtered View","noSettingsMatch":"No settings match this view","broaderSearchOrGroup":"Try a broader search or switch back to All Settings.","catalogLabel":"Catalog","noSettingsAvailable":"No settings are available","noSettingsFound":"No defaults or stored settings were found.","noSettingsMatchSearchHere":"No settings match this search here","switchGroupsOrAll":"Switch groups or jump back to All Settings.","noSettingsMatchSearch":"No settings match this search","shorterKeywordOrClear":"Try a shorter keyword or clear the filter.","groupThemeLayout":"Theme & Layout","groupNavigation":"Navigation & Chrome","groupMainPage":"Main Page Layout","groupVideoPage":"Video Page Layout","groupPlayerControls":"Player Controls","groupVideoButtons":"Video Buttons","groupCommentsExtra":"Comments & Chat (extras)","networkShieldActive":"Network shield active","networkShieldDescription":"Verified ad delivery and measurement requests are blocked before page code can run.","networkShieldVerified":"7 verified request rules","networkShieldDomNote":"Ad Nuker controls the remaining DOM cleanup.","networkShieldManagerLimited":"Network shield depends on your userscript manager","networkShieldManagerNote":"DOM cleanup stays active; Chromium MV3 managers cannot expose early request blocking."});
+    const STORAGE_KEYS_WITH_CHANGE_EVENTS = ['rx_settings'];
+    const ALLOWED_REQUEST_HOSTS = ['rumble.com', 'rumble.cloud', '1a-1791.com'];
+    const DIAGNOSTICS_KEY = 'rx_download_diagnostics';
+    const DIAGNOSTICS_MAX = 50;
+    const assetUrls = new Map();
+    const hasMediabunnyAssets = 'mediabunny-worker.js' in ASSETS && 'lib/mediabunny.min.mjs' in ASSETS;
+    // The Greasy Fork-compliant "lite" build ships without either bundled
+    // transmuxer, so MP4 remux is unavailable there and raw TS save is the only
+    // download path. Detect it rather than letting the download fail at use.
+    const hasMuxjsAssets = 'worker.js' in ASSETS && 'lib/mux.min.js' in ASSETS;
+
+    const isAllowedRemoteUrl = (url) => url.protocol === 'https:' && ALLOWED_REQUEST_HOSTS.some((host) =>
+        url.hostname === host || url.hostname.endsWith('.' + host)
+    );
+
+    const storage = Object.freeze({
+        async get(keys) {
+            const list = typeof keys === 'string'
+                ? [keys]
+                : Array.isArray(keys)
+                    ? keys
+                    : keys && typeof keys === 'object'
+                        ? Object.keys(keys)
+                        : [];
+            const out = {};
+            for (const key of list) {
+                const fallback = keys && !Array.isArray(keys) && typeof keys === 'object' ? keys[key] : undefined;
+                out[key] = await Promise.resolve(GM_getValue(key, fallback));
+            }
+            return out;
+        },
+        async set(values) {
+            if (!values || typeof values !== 'object') return;
+            for (const [key, value] of Object.entries(values)) {
+                await Promise.resolve(GM_setValue(key, value));
+            }
+        },
+        async remove(keys) {
+            for (const key of (Array.isArray(keys) ? keys : [keys])) {
+                if (typeof key === 'string') await Promise.resolve(GM_deleteValue(key));
+            }
+        },
+        onChanged(listener) {
+            if (typeof listener !== 'function' || typeof GM_addValueChangeListener !== 'function') return () => {};
+            const ids = STORAGE_KEYS_WITH_CHANGE_EVENTS.map((key) =>
+                GM_addValueChangeListener(key, (_name, oldValue, newValue, remote) => {
+                    listener({ [key]: { oldValue, newValue, remote: !!remote } });
+                })
+            );
+            return () => {
+                if (typeof GM_removeValueChangeListener !== 'function') return;
+                for (const id of ids) GM_removeValueChangeListener(id);
+            };
+        },
+    });
+
+    function responseHeaders(raw) {
+        const headers = new Headers();
+        for (const line of String(raw || '').split(/\r?\n/)) {
+            const split = line.indexOf(':');
+            if (split <= 0) continue;
+            const name = line.slice(0, split).trim();
+            const value = line.slice(split + 1).trim();
+            if (name && value) headers.append(name, value);
+        }
+        return headers;
+    }
+
+    function gmFetch(url, init = {}) {
+        const parsed = new URL(String(url), location.href);
+        if (!isAllowedRemoteUrl(parsed)) {
+            return Promise.reject(new Error(`RumbleX refused an unapproved request URL: ${parsed.href}`));
+        }
+        return new Promise((resolve, reject) => {
+            if (init.signal?.aborted) {
+                reject(new DOMException('The operation was aborted.', 'AbortError'));
+                return;
+            }
+            let settled = false;
+            let request;
+            const cleanup = () => init.signal?.removeEventListener?.('abort', abort);
+            const finish = (fn, value) => {
+                if (settled) return;
+                settled = true;
+                cleanup();
+                fn(value);
+            };
+            const abort = () => {
+                try { request?.abort?.(); } catch {}
+                finish(reject, new DOMException('The operation was aborted.', 'AbortError'));
+            };
+            init.signal?.addEventListener?.('abort', abort, { once: true });
+            const headers = {};
+            if (init.headers instanceof Headers) {
+                for (const [key, value] of init.headers.entries()) headers[key] = value;
+            } else if (init.headers && typeof init.headers === 'object') {
+                Object.assign(headers, init.headers);
+            }
+            request = GM_xmlhttpRequest({
+                method: String(init.method || 'GET').toUpperCase(),
+                url: parsed.href,
+                headers,
+                data: init.body,
+                responseType: 'arraybuffer',
+                timeout: Math.max(1_000, Math.min(120_000, Number(init.rxTimeoutMs) || 30_000)),
+                anonymous: init.credentials === 'omit',
+                onload(result) {
+                    const body = result.response instanceof ArrayBuffer ? result.response : new ArrayBuffer(0);
+                    const response = new Response(body, {
+                        status: result.status || 200,
+                        statusText: result.statusText || '',
+                        headers: responseHeaders(result.responseHeaders),
+                    });
+                    try { Object.defineProperty(response, 'url', { value: result.finalUrl || parsed.href }); } catch {}
+                    finish(resolve, response);
+                },
+                onerror() { finish(reject, new TypeError('Network request failed')); },
+                ontimeout() { finish(reject, new DOMException('The operation timed out.', 'TimeoutError')); },
+                onabort: abort,
+            });
+        });
+    }
+
+    function platformFetch(input, init = {}) {
+        const url = new URL(typeof input === 'string' || input instanceof URL ? input : input.url, location.href);
+        if (url.protocol === 'blob:' || url.protocol === 'data:' || url.origin === location.origin) {
+            return fetch(input, init);
+        }
+        return gmFetch(url.href, init);
+    }
+
+    function saveWithAnchor(url, filename) {
+        const anchor = document.createElement('a');
+        anchor.href = url;
+        anchor.download = filename || 'rumblex-download';
+        anchor.rel = 'noopener';
+        document.body.appendChild(anchor);
+        anchor.click();
+        anchor.remove();
+        return { downloadId: `userscript-${Date.now()}` };
+    }
+
+    async function download(data) {
+        const url = String(data?.url || '');
+        const filename = String(data?.filename || 'rumblex-download').replace(/[\\/:*?"<>|]/g, '_').slice(0, 180);
+        const parsed = new URL(url, location.href);
+        if (parsed.protocol === 'blob:' || parsed.protocol === 'data:') return saveWithAnchor(parsed.href, filename);
+        if (!isAllowedRemoteUrl(parsed)) throw new Error(`Download URL is not allowed: ${parsed.href}`);
+        if (typeof GM_download !== 'function') return saveWithAnchor(parsed.href, filename);
+        return new Promise((resolve, reject) => {
+            try {
+                GM_download({
+                    url: parsed.href,
+                    name: filename,
+                    saveAs: false,
+                    timeout: 120_000,
+                    onload() { resolve({ downloadId: `userscript-${Date.now()}` }); },
+                    onerror(error) {
+                        reject(new Error(error?.error || error?.details || 'Userscript download failed'));
+                    },
+                    ontimeout() {
+                        reject(new Error('Userscript download timed out'));
+                    },
+                });
+            } catch (error) {
+                reject(error);
+            }
+        });
+    }
+
+    function sanitizeDiagnostic(value, key = '', depth = 0) {
+        if (/authorization|cookie|credential|password|passphrase|secret|token|api[_-]?key|signature/i.test(key)) return '[redacted]';
+        if (depth > 5) return '[truncated]';
+        if (value == null || typeof value === 'boolean') return value;
+        if (typeof value === 'number') return Number.isFinite(value) ? value : null;
+        if (typeof value === 'string') {
+            return value.slice(0, 1200).replace(/https?:\/\/[^\s<>"')]+/gi, (raw) => {
+                try {
+                    const parsed = new URL(raw);
+                    return parsed.origin + parsed.pathname.split('/').map((part, index) =>
+                        index < 2 || !part ? part : '[redacted]'
+                    ).join('/');
+                } catch { return '[redacted-url]'; }
+            });
+        }
+        if (Array.isArray(value)) return value.slice(0, 30).map((item) => sanitizeDiagnostic(item, key, depth + 1));
+        if (typeof value === 'object') {
+            return Object.fromEntries(Object.entries(value).slice(0, 40).map(([childKey, childValue]) => [
+                String(childKey).slice(0, 80),
+                sanitizeDiagnostic(childValue, childKey, depth + 1),
+            ]));
+        }
+        return String(value).slice(0, 1200);
+    }
+
+    async function recordDiagnostic(diagnostic) {
+        const stored = await storage.get(DIAGNOSTICS_KEY);
+        const entries = Array.isArray(stored[DIAGNOSTICS_KEY]) ? stored[DIAGNOSTICS_KEY] : [];
+        const entry = {
+            ...sanitizeDiagnostic(diagnostic || {}),
+            id: `rxd-${Date.now()}-${Math.random().toString(16).slice(2, 10)}`,
+            at: new Date().toISOString(),
+            userscriptVersion: VERSION,
+            source: 'userscript',
+        };
+        entries.push(entry);
+        await storage.set({ [DIAGNOSTICS_KEY]: entries.slice(-DIAGNOSTICS_MAX) });
+        return entry;
+    }
+
+    async function sendMessage(message) {
+        switch (message?.action) {
+            case 'download':
+                return download(message.data);
+            case 'recordDownloadDiagnostic': {
+                const entry = await recordDiagnostic(message.diagnostic);
+                return { ok: true, id: entry.id };
+            }
+            case 'getDownloadDiagnostics': {
+                const stored = await storage.get(DIAGNOSTICS_KEY);
+                const attempts = Array.isArray(stored[DIAGNOSTICS_KEY]) ? stored[DIAGNOSTICS_KEY] : [];
+                return {
+                    ok: true,
+                    bundle: {
+                        schemaVersion: 1,
+                        generatedAt: new Date().toISOString(),
+                        userscriptVersion: VERSION,
+                        count: attempts.length,
+                        privacy: 'Local-only diagnostics with URL and credential-like values redacted before storage.',
+                        capabilities: { userscript: true, managedDownloads: typeof GM_download === 'function' },
+                        attempts,
+                    },
+                };
+            }
+            case 'getPendingLocalDataOperation':
+                return { ok: true, operation: null };
+            case 'completePendingLocalDataOperation':
+                return { ok: true, cleared: false };
+            case 'archiveEnqueueChannel':
+                return { ok: false, reason: 'persistent-background-unavailable' };
+            default:
+                return { ok: false, reason: 'unsupported-userscript-message' };
+        }
+    }
+
+    async function migrateLegacySettings(defaults) {
+        const existing = await storage.get('rx_settings');
+        if (existing.rx_settings && typeof existing.rx_settings === 'object') return null;
+        const migrated = {};
+        for (const key of Object.keys(defaults || {})) {
+            const value = await Promise.resolve(GM_getValue('rx_' + key, undefined));
+            if (value !== undefined) migrated[key] = value;
+        }
+        const keyboardNav = await Promise.resolve(GM_getValue('rx_keyboardNav', undefined));
+        if (keyboardNav !== undefined && migrated.legacyKeyboardNav === undefined) migrated.legacyKeyboardNav = !!keyboardNav;
+        const speedControl = await Promise.resolve(GM_getValue('rx_speedControl', undefined));
+        if (speedControl !== undefined && migrated.speedController === undefined) migrated.speedController = !!speedControl;
+        const shareTools = await Promise.resolve(GM_getValue('rx_shareTools', undefined));
+        if (shareTools !== undefined) {
+            if (migrated.shareTimestamp === undefined) migrated.shareTimestamp = !!shareTools;
+            if (migrated.stripTrackingParams === undefined) migrated.stripTrackingParams = !!shareTools;
+        }
+        if (!Object.keys(migrated).length) return null;
+        migrated.schemaVersion = Number(migrated.schemaVersion) || 2;
+        await storage.set({ rx_settings: migrated });
+        return migrated;
+    }
+
+    const manifest = Object.freeze({
+        manifest_version: null,
+        version: VERSION,
+        permissions: ['GM_getValue', 'GM_setValue', 'GM_deleteValue', 'GM_addValueChangeListener', 'GM_removeValueChangeListener', 'GM_xmlhttpRequest', 'GM_download', 'userscriptWebRequest'],
+        host_permissions: ['https://rumble.com/*', 'https://*.rumble.com/*', 'https://1a-1791.com/*', 'https://*.1a-1791.com/*', 'https://rumble.cloud/*', 'https://*.rumble.cloud/*'],
+        web_accessible_resources: [],
+    });
+
+    function assetUrl(path) {
+        if (!(path in ASSETS)) throw new Error(`Userscript asset is unavailable: ${path}`);
+        if (assetUrls.has(path)) return assetUrls.get(path);
+        if (typeof URL.createObjectURL !== 'function') throw new Error('Blob asset URLs are unavailable');
+        const type = /\.(?:m?js)$/i.test(path) ? 'text/javascript' : 'text/plain';
+        const url = URL.createObjectURL(new Blob([ASSETS[path]], { type }));
+        assetUrls.set(path, url);
+        return url;
+    }
+
+    globalThis.addEventListener?.('pagehide', () => {
+        for (const url of assetUrls.values()) URL.revokeObjectURL?.(url);
+        assetUrls.clear();
+    }, { once: true });
+
+    globalThis.RumbleXPlatform = Object.freeze({
+        kind: 'userscript',
+        version: VERSION,
+        capabilities: Object.freeze({
+            persistentBackground: false,
+            managedDownloads: typeof GM_download === 'function',
+            packagedAssets: true,
+            mediabunny: hasMediabunnyAssets && typeof URL.createObjectURL === 'function',
+            muxjs: hasMuxjsAssets && typeof URL.createObjectURL === 'function',
+            externalMessages: false,
+            requestBlocking: false,
+            requestBlockingMode: 'userscript-manager-dependent',
+            requestBlockingRules: 7,
+            streamingFileSave: typeof globalThis.showSaveFilePicker === 'function',
+        }),
+        storage,
+        fetch: platformFetch,
+        assetText: async (path) => {
+            if (!(path in ASSETS)) throw new Error(`Userscript asset is unavailable: ${path}`);
+            return ASSETS[path];
+        },
+        assetUrl,
+        sendMessage,
+        onMessage: () => () => {},
+        getManifest: () => manifest,
+        t: (key) => MESSAGES[key] || '',
+        migrateLegacySettings,
+    });
+})();
+
+
 // RumbleX v3.41.0 - Shared Content Core
 // Rumble enhancement suite - Chrome/Firefox extension
 'use strict';
