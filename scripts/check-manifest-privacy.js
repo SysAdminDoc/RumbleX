@@ -141,7 +141,10 @@ const requiredReportSnippets = [
     'const selectorHealth = Selectors.healthCheck();',
     'requestShield,',
     'selectorHealth,',
-    'externalNetworkSurfaces: hostPermissionDisclosures.map',
+    '...hostPermissionDisclosures.map',
+    // Runtime-configured outbound destinations are invisible to the manifest,
+    // so the manifest-derived rows cannot disclose them on their own.
+    '...(settings.discordWebhookUrl',
 ];
 
 for (const snippet of requiredReportSnippets) {

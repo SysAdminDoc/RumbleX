@@ -366,6 +366,23 @@
         } catch { return null; }
     }
 
+    // The channel notifier POSTs a Discord-shaped `{ content }` payload, so any
+    // non-Discord destination is already broken at the protocol level. Treating
+    // this as a free string let a crafted backup, snapshot, or Gist pull install
+    // an arbitrary outbound endpoint for followed-channel activity.
+    function safeWebhookUrl(value) {
+        const text = safeString(value, 500);
+        if (!text) return null;
+        try {
+            const parsed = new URL(text);
+            if (parsed.protocol !== 'https:') return null;
+            if (parsed.username || parsed.password) return null;
+            if (!/^(?:(?:canary|ptb)\.)?discord(?:app)?\.com$/i.test(parsed.hostname)) return null;
+            if (!/^\/api\/webhooks\/[^/]+\/[^/]+$/.test(parsed.pathname)) return null;
+            return parsed.origin + parsed.pathname;
+        } catch { return null; }
+    }
+
     function normalizeDurations(value) {
         return Array.isArray(value)
             ? [...new Set(value.filter((item) => Number.isFinite(item))
@@ -401,6 +418,11 @@
                 if (Array.isArray(value)) {
                     out[key] = [...new Set(value.map((item) => safeString(item, 500)).filter(Boolean))].slice(0, 2_000);
                 }
+                continue;
+            }
+            if (key === 'discordWebhookUrl') {
+                const webhook = safeWebhookUrl(value);
+                out[key] = webhook || '';
                 continue;
             }
             if (key === 'autoplayQueue') {
@@ -491,6 +513,7 @@
             normalize,
             normalizeStored,
             safeRumbleUrl,
+            safeWebhookUrl,
         }),
         configurable: false,
         enumerable: false,

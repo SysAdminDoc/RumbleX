@@ -492,8 +492,16 @@ function rxParseChannelHtml(html) {
 }
 
 async function rxPostDiscordWebhook(url, payload) {
+    // Defense in depth: settings-schema.js already rejects non-Discord webhook
+    // destinations, but storage can outlive the code that wrote it, so never
+    // POST followed-channel activity to an endpoint this boundary hasn't cleared.
+    const safeUrl = RumbleXSettingsSchema.safeWebhookUrl(url);
+    if (!safeUrl) {
+        console.warn('[RumbleX] discord webhook POST blocked: destination failed validation');
+        return false;
+    }
     try {
-        const resp = await fetch(url, {
+        const resp = await fetch(safeUrl, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(payload),

@@ -23,7 +23,7 @@
 // @updateURL    https://raw.githubusercontent.com/SysAdminDoc/RumbleX/main/RumbleX.user.js
 // ==/UserScript==
 
-// Generated from extension/settings-schema.js + extension/content.js. Shared runtime SHA-256: 925c733aa65032a7884441808f6615ac0275a95e5286c44748d0fd0ae6b6ab57
+// Generated from extension/settings-schema.js + extension/content.js. Shared runtime SHA-256: ee5d729245871f7a49fa56eb103ea3c3910aaaa9b2e6ee6b7a720e8c62a5b69f
 // RumbleX shared settings schema. This file is the canonical source for
 // defaults and trust-boundary normalization across content, options, popup,
 // background profile/Gist restores, and the generated userscript.
@@ -392,6 +392,23 @@
         } catch { return null; }
     }
 
+    // The channel notifier POSTs a Discord-shaped `{ content }` payload, so any
+    // non-Discord destination is already broken at the protocol level. Treating
+    // this as a free string let a crafted backup, snapshot, or Gist pull install
+    // an arbitrary outbound endpoint for followed-channel activity.
+    function safeWebhookUrl(value) {
+        const text = safeString(value, 500);
+        if (!text) return null;
+        try {
+            const parsed = new URL(text);
+            if (parsed.protocol !== 'https:') return null;
+            if (parsed.username || parsed.password) return null;
+            if (!/^(?:(?:canary|ptb)\.)?discord(?:app)?\.com$/i.test(parsed.hostname)) return null;
+            if (!/^\/api\/webhooks\/[^/]+\/[^/]+$/.test(parsed.pathname)) return null;
+            return parsed.origin + parsed.pathname;
+        } catch { return null; }
+    }
+
     function normalizeDurations(value) {
         return Array.isArray(value)
             ? [...new Set(value.filter((item) => Number.isFinite(item))
@@ -427,6 +444,11 @@
                 if (Array.isArray(value)) {
                     out[key] = [...new Set(value.map((item) => safeString(item, 500)).filter(Boolean))].slice(0, 2_000);
                 }
+                continue;
+            }
+            if (key === 'discordWebhookUrl') {
+                const webhook = safeWebhookUrl(value);
+                out[key] = webhook || '';
                 continue;
             }
             if (key === 'autoplayQueue') {
@@ -517,6 +539,7 @@
             normalize,
             normalizeStored,
             safeRumbleUrl,
+            safeWebhookUrl,
         }),
         configurable: false,
         enumerable: false,
@@ -15636,7 +15659,14 @@ function rxBuildPrivacyReport() {
         webAccessibleResourceDisclosures,
         requestShield,
         selectorHealth,
-        externalNetworkSurfaces: hostPermissionDisclosures.map((entry) => `${entry.value} (${entry.disclosure})`),
+        externalNetworkSurfaces: [
+            ...hostPermissionDisclosures.map((entry) => `${entry.value} (${entry.disclosure})`),
+            // Runtime-configured destinations are invisible to the manifest, so
+            // the manifest-derived rows above cannot disclose them on their own.
+            ...(settings.discordWebhookUrl
+                ? [`${settings.discordWebhookUrl} (User-configured Discord webhook; receives followed-channel name and URL when the notifier fires.)`]
+                : []),
+        ],
         telemetry: 'none — no analytics, no remote logging, no usage beacons',
         localStorage: {
             keys: localKeys,
@@ -15647,6 +15677,9 @@ function rxBuildPrivacyReport() {
             settings.debugSelectorTelemetry ? 'Selector telemetry is being collected locally (ring buffer, no upload)' : 'Selector telemetry is disabled',
             settings.debugErrorLog ? 'Error log ring buffer is being collected locally (200-entry rolling window, no upload)' : 'Error log ring buffer is disabled',
             settings.remoteCosmeticRules ? 'Remote cosmetic rules enabled — signed payloads only' : 'Remote cosmetic rules disabled',
+            settings.discordWebhookUrl
+                ? 'Channel notifier posts to a user-configured Discord webhook — followed-channel name and URL leave the browser when a watched channel goes live or uploads'
+                : 'No outbound notifier webhook is configured',
             (settings.encryptedGistSyncToken && settings.encryptedGistSyncId)
                 ? 'Encrypted Gist Sync is configured — payloads are AES-GCM-256 encrypted client-side (PBKDF2-SHA256, 200k iters); passphrase is never stored'
                 : 'Encrypted Gist Sync is not configured',

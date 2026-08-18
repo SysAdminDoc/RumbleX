@@ -14785,7 +14785,14 @@ function rxBuildPrivacyReport() {
         webAccessibleResourceDisclosures,
         requestShield,
         selectorHealth,
-        externalNetworkSurfaces: hostPermissionDisclosures.map((entry) => `${entry.value} (${entry.disclosure})`),
+        externalNetworkSurfaces: [
+            ...hostPermissionDisclosures.map((entry) => `${entry.value} (${entry.disclosure})`),
+            // Runtime-configured destinations are invisible to the manifest, so
+            // the manifest-derived rows above cannot disclose them on their own.
+            ...(settings.discordWebhookUrl
+                ? [`${settings.discordWebhookUrl} (User-configured Discord webhook; receives followed-channel name and URL when the notifier fires.)`]
+                : []),
+        ],
         telemetry: 'none — no analytics, no remote logging, no usage beacons',
         localStorage: {
             keys: localKeys,
@@ -14796,6 +14803,9 @@ function rxBuildPrivacyReport() {
             settings.debugSelectorTelemetry ? 'Selector telemetry is being collected locally (ring buffer, no upload)' : 'Selector telemetry is disabled',
             settings.debugErrorLog ? 'Error log ring buffer is being collected locally (200-entry rolling window, no upload)' : 'Error log ring buffer is disabled',
             settings.remoteCosmeticRules ? 'Remote cosmetic rules enabled — signed payloads only' : 'Remote cosmetic rules disabled',
+            settings.discordWebhookUrl
+                ? 'Channel notifier posts to a user-configured Discord webhook — followed-channel name and URL leave the browser when a watched channel goes live or uploads'
+                : 'No outbound notifier webhook is configured',
             (settings.encryptedGistSyncToken && settings.encryptedGistSyncId)
                 ? 'Encrypted Gist Sync is configured — payloads are AES-GCM-256 encrypted client-side (PBKDF2-SHA256, 200k iters); passphrase is never stored'
                 : 'Encrypted Gist Sync is not configured',

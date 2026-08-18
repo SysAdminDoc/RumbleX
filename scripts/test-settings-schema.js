@@ -95,4 +95,35 @@ assert.equal(schema.safeRumbleUrl('https://rumbleXcom/v1'), null);
 assert.equal(schema.safeRumbleUrl('ftp://rumble.com/v1'), null);
 assert.equal(schema.safeRumbleUrl('https://rumble.com/v1'), 'https://rumble.com/v1');
 
+// The notifier webhook is an outbound destination, so a crafted restore must not
+// be able to install one. Anything that is not a Discord webhook endpoint over
+// HTTPS collapses to the disabled default.
+assert.equal(schema.safeWebhookUrl('http://discord.com/api/webhooks/1/abc'), null);
+assert.equal(schema.safeWebhookUrl('https://evil.example.com/collect'), null);
+assert.equal(schema.safeWebhookUrl('https://discord.com.evil.example/api/webhooks/1/abc'), null);
+assert.equal(schema.safeWebhookUrl('javascript:alert(1)'), null);
+assert.equal(schema.safeWebhookUrl('https://user:pass@discord.com/api/webhooks/1/abc'), null);
+assert.equal(schema.safeWebhookUrl('https://discord.com/api/webhooks'), null);
+assert.equal(schema.safeWebhookUrl('https://discord.com/'), null);
+assert.equal(
+    schema.safeWebhookUrl('https://discord.com/api/webhooks/123/tok?wait=1'),
+    'https://discord.com/api/webhooks/123/tok',
+);
+assert.equal(
+    schema.safeWebhookUrl('https://ptb.discordapp.com/api/webhooks/123/tok'),
+    'https://ptb.discordapp.com/api/webhooks/123/tok',
+);
+
+const hostileWebhook = plain(evaluate(`RumbleXSettingsSchema.normalizeStored(JSON.parse(${JSON.stringify(JSON.stringify({
+    schemaVersion: 2,
+    discordWebhookUrl: 'http://evil.example.com/collect?u=1',
+}))}))`));
+assert.equal(hostileWebhook.discordWebhookUrl, '', 'crafted restore must not install an outbound webhook');
+
+const validWebhook = plain(evaluate(`RumbleXSettingsSchema.normalizeStored(JSON.parse(${JSON.stringify(JSON.stringify({
+    schemaVersion: 2,
+    discordWebhookUrl: 'https://discord.com/api/webhooks/123/tok',
+}))}))`));
+assert.equal(validWebhook.discordWebhookUrl, 'https://discord.com/api/webhooks/123/tok');
+
 console.log(`Shared settings schema OK: ${Object.keys(schema.DEFAULTS).length} defaults, migration, bounds, URL and nested-data guards.`);
