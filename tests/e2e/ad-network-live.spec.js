@@ -12,7 +12,7 @@ const TARGETS = [
     { name: 'watch', url: process.env.RUMBLEX_LIVE_URL || 'https://rumble.com/v7e46xm-the-democrat-death-cult-rages-on-scrolling-w-hayley-ep.-360-08132026.html' },
 ];
 
-const AD_REQUEST_RE = /(^https:\/\/a\.ads\.rmbl\.ws(?:[/:?#]|$)|imasdk\.googleapis\.com|s0\.2mdn\.net\/instream\/video\/|pagead2\.googlesyndication\.com\/omsdk\/|(?:[^/]+\.)?doubleclick\.net|(?:[^/]+\.)?googleadservices\.com\/pagead\/|^https:\/\/(?:[^/]+\.)?rumble\.com\/l\/[^?]*\?.*(?:[?&])af=)/i;
+const AD_REQUEST_RE = /(^https:\/\/a(?:\.ads|-delivery)\.rmbl\.ws(?:[/:?#]|$)|imasdk\.googleapis\.com|s0\.2mdn\.net\/instream\/video\/|pagead2\.googlesyndication\.com\/omsdk\/|(?:[^/]+\.)?doubleclick\.net|(?:[^/]+\.)?googleadservices\.com\/pagead\/|^https:\/\/(?:[^/]+\.)?rumble\.com\/l\/[^?]*\?.*(?:[?&])af=)/i;
 
 function sanitizeAuditUrl(value) {
     if (!value) return '';

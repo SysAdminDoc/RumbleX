@@ -207,7 +207,11 @@ Its metadata also requests early ad cancellation through the userscript-manager 
 |---|---|---|
 | Chrome / Edge / Brave extension (MV3) | 7 scoped Declarative Net Request rules | `chromium-dnr`, runtime-enforced |
 | Firefox extension (MV2) | 7 scoped blocking `webRequest` checks | `firefox-webrequest`, runtime-enforced; Firefox 137 temporary-addon smoke covered |
-| Tampermonkey / Violentmonkey userscript | Static 6-rule `@webRequest` request, where the manager exposes it | `userscript-manager-dependent`; DOM cleanup guaranteed, early cancellation not claimed |
+| Tampermonkey / Violentmonkey userscript | Static 7-host `@webRequest` request, where the manager exposes it | `userscript-manager-dependent`; DOM cleanup guaranteed, early cancellation not claimed |
+
+All three copies of the blocked-host list are machine-checked against each other by `npm run test:ad-blocking`, so a host cannot be added to one runtime and forgotten in another. One difference is structural and intentional: `@webRequest` selectors are globs, so the first-party affiliate rule (a regex over `rumble.com/l/...?af=`) exists in the DNR ruleset and the Firefox listener but cannot be expressed in the userscript at all. Every blocked *host* is present in all three.
+
+**Last verified against production Rumble: 2026-08-18.** A cold-load audit of the home and watch surfaces recorded no completed ad responses and no visible ad DOM (`RUMBLEX_AD_NETWORK_AUDIT=1 npx playwright test tests/e2e/ad-network-live.spec.js`). That audit only observes hosts it already knows about, so it is a regression check rather than a discovery tool — re-date this claim on every release rather than treating it as permanent.
 
 RumbleX intentionally does not request Declarative Net Request feedback/debug permission for per-rule history. The settings and Privacy Report expose the enforcement mode and declared rule count without retaining request URLs or browsing history.
 

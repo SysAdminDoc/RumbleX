@@ -4,7 +4,10 @@
 (() => {
     const RUMBLE_ORIGIN_RE = /^https?:\/\/(?:[^/]+\.)?rumble\.com(?::\d+)?(?:\/|$)/i;
     const AD_URL_PATTERNS = Object.freeze([
-        /^https:\/\/a\.ads\.rmbl\.ws(?:[/:?#]|$)/i,
+        // a-delivery.rmbl.ws is a CNAME alias of a.ads.rmbl.ws (same servers).
+        // Request matching is by hostname, not by CNAME target, so the alias
+        // needs its own pattern or it sails straight through.
+        /^https:\/\/a(?:\.ads|-delivery)\.rmbl\.ws(?:[/:?#]|$)/i,
         /^https:\/\/imasdk\.googleapis\.com(?:[/:?#]|$)/i,
         /^https:\/\/s0\.2mdn\.net\/instream\/video\//i,
         /^https:\/\/pagead2\.googlesyndication\.com\/omsdk\//i,
@@ -29,6 +32,7 @@
             {
                 urls: [
                     '*://a.ads.rmbl.ws/*',
+                    '*://a-delivery.rmbl.ws/*',
                     '*://imasdk.googleapis.com/*',
                     '*://s0.2mdn.net/instream/video/*',
                     '*://pagead2.googlesyndication.com/omsdk/*',
