@@ -1722,5 +1722,13 @@
   "archiveQueuing": {
     "message": "Na fila…",
     "description": "In-page UI string (shared core)."
+  },
+  "miniPlayerPopOut": {
+    "message": "Janela separada",
+    "description": "In-page UI string (shared core)."
+  },
+  "miniPlayerPopOutLabel": {
+    "message": "Abrir o mini player em uma janela separada sempre visível",
+    "description": "In-page UI string (shared core)."
   }
 }

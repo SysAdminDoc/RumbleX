@@ -1722,5 +1722,13 @@
   "archiveQueuing": {
     "message": "Poniendo en cola…",
     "description": "In-page UI string (shared core)."
+  },
+  "miniPlayerPopOut": {
+    "message": "Ventana aparte",
+    "description": "In-page UI string (shared core)."
+  },
+  "miniPlayerPopOutLabel": {
+    "message": "Abrir el minirreproductor en una ventana independiente siempre visible",
+    "description": "In-page UI string (shared core)."
   }
 }

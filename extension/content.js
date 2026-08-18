@@ -7442,6 +7442,17 @@ const MiniPlayer = {
             overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
             max-width: 300px;
         }
+        .rx-miniplayer-pip {
+            appearance: none; background: rgba(137,180,250,0.14);
+            color: #89b4fa; border: 1px solid rgba(137,180,250,0.35);
+            border-radius: 6px; padding: 2px 8px; margin-left: auto;
+            font: 600 11px/1.4 system-ui, sans-serif; cursor: pointer;
+            min-height: 24px;
+        }
+        .rx-miniplayer-pip:hover { background: rgba(137,180,250,0.24); }
+        .rx-miniplayer-pip:focus-visible { outline: 2px solid #89b4fa; outline-offset: 2px; }
+        /* While the video lives in the PiP window the overlay is just a bar. */
+        .rx-miniplayer.rx-miniplayer-in-pip { height: auto; }
         .rx-miniplayer-close {
             background: rgba(243,139,168,0.2); border: none; color: #f38ba8;
             border-radius: 4px; cursor: pointer; font-size: 14px; padding: 2px 6px;
@@ -7449,6 +7460,75 @@ const MiniPlayer = {
         }
         .rx-miniplayer-close:hover { background: rgba(243,139,168,0.4); }
     `,
+
+    /**
+     * Capability gate, matching the File System Access pattern already used by
+     * the download pipeline: probe the API, never the browser.
+     */
+    _pipSupported() {
+        return typeof window !== 'undefined'
+            && 'documentPictureInPicture' in window
+            && typeof window.documentPictureInPicture?.requestWindow === 'function';
+    },
+
+    /**
+     * Move the mini player into a real always-on-top window.
+     *
+     * The <video> is MOVED, not cloned again: a second clone would decode the
+     * same stream twice, and the whole point of the overlay teardown in _hide
+     * was to stop exactly that. Everything registered on the PiP window is
+     * tracked so _closePip can unwind it — a leaked pagehide listener here
+     * outlives the feature being switched off.
+     */
+    async _openPip() {
+        if (!this._pipSupported() || this._pipWindow) return;
+        const clone = this._syncClone;
+        if (!clone) return;
+        let pip;
+        try {
+            pip = await window.documentPictureInPicture.requestWindow({
+                width: Math.max(320, Math.round(clone.videoWidth / 3) || 400),
+                height: Math.max(180, Math.round(clone.videoHeight / 3) || 225),
+            });
+        } catch {
+            // Denied, or no user activation left. The overlay is untouched.
+            return;
+        }
+        this._pipWindow = pip;
+
+        const style = pip.document.createElement('style');
+        style.textContent = 'html,body{margin:0;background:#000;height:100%;overflow:hidden}'
+            + 'video{width:100%;height:100%;object-fit:contain;background:#000}';
+        pip.document.head.appendChild(style);
+        pip.document.title = qs('.video-header-container__title, h1')?.textContent?.trim() || 'RumbleX';
+        pip.document.body.appendChild(clone);
+
+        // Closing the PiP window must put the video back rather than leaving
+        // the overlay empty with audio still playing somewhere.
+        this._onPipClose = () => this._closePip();
+        pip.addEventListener('pagehide', this._onPipClose);
+        this._mini.classList.add('rx-miniplayer-in-pip');
+    },
+
+    /** Bring the video home. Safe to call when no PiP window is open. */
+    _closePip(closeWindow = false) {
+        const pip = this._pipWindow;
+        if (!pip) return;
+        if (this._onPipClose) {
+            try { pip.removeEventListener('pagehide', this._onPipClose); } catch {}
+            this._onPipClose = null;
+        }
+        this._pipWindow = null;
+        this._mini?.classList.remove('rx-miniplayer-in-pip');
+        const clone = this._syncClone;
+        // Only re-home the clone if the overlay still wants it; _hide may have
+        // already torn everything down.
+        if (clone && this._active && this._mini) this._mini.appendChild(clone);
+        if (closeWindow) { try { pip.close(); } catch {} }
+    },
+
+    _pipWindow: null,
+    _onPipClose: null,
 
     _show(video) {
         if (this._active || !video) return;
@@ -7477,6 +7557,19 @@ const MiniPlayer = {
         titleEl.className = 'rx-miniplayer-title';
         titleEl.textContent = title;
         bar.appendChild(titleEl);
+        // Document PiP needs a real user gesture, so it cannot ride the
+        // scroll trigger that opens this overlay — it gets its own control,
+        // rendered only where the API exists.
+        if (this._pipSupported()) {
+            const pipBtn = document.createElement('button');
+            pipBtn.type = 'button';
+            pipBtn.className = 'rx-miniplayer-pip';
+            pipBtn.textContent = rxT('miniPlayerPopOut', 'Pop out');
+            pipBtn.setAttribute('aria-label', rxT('miniPlayerPopOutLabel', 'Open the mini player in a separate always-on-top window'));
+            pipBtn.addEventListener('click', (e) => { e.stopPropagation(); this._openPip(); });
+            bar.appendChild(pipBtn);
+        }
+
         const closeBtn = document.createElement('button');
         closeBtn.type = 'button';
         closeBtn.className = 'rx-miniplayer-close';
@@ -7498,6 +7591,9 @@ const MiniPlayer = {
 
     _hide() {
         if (!this._active) return;
+        // Close the PiP window first: the clone lives in it, and reading
+        // currentTime off a node in a closed document gives nothing.
+        this._closePip(true);
         this._active = false;
         this._mini.classList.remove('active');
 
@@ -7571,6 +7667,9 @@ const MiniPlayer = {
     },
 
     destroy() {
+        // _hide() closes PiP too, but only when the overlay is active; this
+        // covers a window that outlived the overlay.
+        this._closePip(true);
         this._hide();
         if (this._mini && this._dragMousedown) this._mini.removeEventListener('mousedown', this._dragMousedown);
         if (this._dragMousemove) document.removeEventListener('mousemove', this._dragMousemove);

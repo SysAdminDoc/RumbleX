@@ -837,3 +837,104 @@ test('AutoMaxQuality steps down after repeated stalls and respects the floor', a
     expect(result.withFloor).toBe(-1);
     expect(result.watchedWhenDisabled).toBe(false);
 });
+
+test('MiniPlayer uses Document PiP where available and unwinds it cleanly', async () => {
+    // requestWindow() needs transient user activation, so PiP cannot ride the
+    // scroll trigger that opens the overlay — it has to be an explicit control,
+    // and it must only exist where the API does. Both halves are asserted here
+    // with a stub, because the real API cannot be driven from a test.
+    const result = await inHarness(() => {
+        const feature = features.find((f) => f.id === 'miniPlayer');
+        Settings.set('miniPlayer', true);
+        try { feature.destroy(); } catch { /* not mounted */ }
+
+        const source = document.createElement('video');
+        document.body.appendChild(source);
+
+        const mount = () => {
+            feature._mini = document.createElement('div');
+            feature._mini.className = 'rx-miniplayer';
+            document.body.appendChild(feature._mini);
+            feature._active = false;
+            feature._pipWindow = null;
+            feature._show(source);
+        };
+
+        // 1. No API: the control must not be rendered at all.
+        const realApi = window.documentPictureInPicture;
+        try { delete window.documentPictureInPicture; } catch { /* non-configurable */ }
+        mount();
+        const withoutApi = {
+            button: !!feature._mini.querySelector('.rx-miniplayer-pip'),
+            supported: feature._pipSupported(),
+            videoInOverlay: !!feature._mini.querySelector('video'),
+        };
+        feature._hide();
+        feature._mini.remove();
+
+        // 2. Stub API: control renders, the video MOVES into the PiP document
+        //    rather than being cloned a second time, and pagehide brings it back.
+        const pipDoc = document.implementation.createHTMLDocument('pip');
+        let closed = false;
+        const listeners = new Map();
+        const fakeWindow = {
+            document: pipDoc,
+            addEventListener: (type, fn) => listeners.set(type, fn),
+            removeEventListener: (type) => listeners.delete(type),
+            close: () => { closed = true; },
+        };
+        window.documentPictureInPicture = { requestWindow: async () => fakeWindow };
+
+        mount();
+        const button = feature._mini.querySelector('.rx-miniplayer-pip');
+        const hadButton = !!button;
+        return feature._openPip().then(() => {
+            const inPip = {
+                videoInPipDoc: !!pipDoc.body.querySelector('video'),
+                videoStillInOverlay: !!feature._mini.querySelector('video'),
+                marked: feature._mini.classList.contains('rx-miniplayer-in-pip'),
+                listenerRegistered: listeners.has('pagehide'),
+            };
+
+            // The user closes the PiP window.
+            listeners.get('pagehide')?.();
+            const afterClose = {
+                videoBackInOverlay: !!feature._mini.querySelector('video'),
+                marked: feature._mini.classList.contains('rx-miniplayer-in-pip'),
+                listenerRemoved: !listeners.has('pagehide'),
+                windowCleared: feature._pipWindow === null,
+            };
+
+            // Reopen, then hide the overlay: the window must be closed for us.
+            return feature._openPip().then(() => {
+                feature._hide();
+                const afterHide = { closed, windowCleared: feature._pipWindow === null };
+                feature._mini.remove();
+                source.remove();
+                if (realApi === undefined) { try { delete window.documentPictureInPicture; } catch {} }
+                else window.documentPictureInPicture = realApi;
+                return { withoutApi, hadButton, inPip, afterClose, afterHide };
+            });
+        });
+    });
+
+    // Unsupported browsers keep the existing overlay, unchanged.
+    expect(result.withoutApi.supported).toBe(false);
+    expect(result.withoutApi.button).toBe(false);
+    expect(result.withoutApi.videoInOverlay).toBe(true);
+
+    expect(result.hadButton).toBe(true);
+    // Moved, not re-cloned: two clones would decode the same stream twice.
+    expect(result.inPip.videoInPipDoc).toBe(true);
+    expect(result.inPip.videoStillInOverlay).toBe(false);
+    expect(result.inPip.marked).toBe(true);
+    expect(result.inPip.listenerRegistered).toBe(true);
+
+    expect(result.afterClose.videoBackInOverlay).toBe(true);
+    expect(result.afterClose.marked).toBe(false);
+    expect(result.afterClose.listenerRemoved).toBe(true);
+    expect(result.afterClose.windowCleared).toBe(true);
+
+    expect(result.afterHide.closed).toBe(true);
+    expect(result.afterHide.windowCleared).toBe(true);
+});

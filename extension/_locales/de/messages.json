@@ -1722,5 +1722,13 @@
   "archiveQueuing": {
     "message": "Wird eingereiht…",
     "description": "In-page UI string (shared core)."
+  },
+  "miniPlayerPopOut": {
+    "message": "Ausklinken",
+    "description": "In-page UI string (shared core)."
+  },
+  "miniPlayerPopOutLabel": {
+    "message": "Den Mini-Player in einem separaten, immer sichtbaren Fenster öffnen",
+    "description": "In-page UI string (shared core)."
   }
 }
