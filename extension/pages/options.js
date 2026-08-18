@@ -499,6 +499,23 @@
         elements.status.textContent = message;
         elements.status.className = 'status ' + type;
     }
+    // Status line with a single inline action. The house rules ban confirmation
+    // dialogs, so a destructive action confirms nothing up front and offers undo
+    // afterwards instead — which only works if the undo is actually reachable.
+    function showStatusWithAction(message, type, actionLabel, onAction) {
+        elements.status.textContent = message + ' ';
+        elements.status.className = 'status ' + type;
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'status-action';
+        button.textContent = actionLabel;
+        button.addEventListener('click', async () => {
+            button.disabled = true;
+            await onAction();
+        });
+        elements.status.appendChild(button);
+        return button;
+    }
     function showModalStatus(message, type) {
         elements.settingsModalStatus.textContent = message;
         elements.settingsModalStatus.className = 'settings-modal-status ' + type;
@@ -2101,8 +2118,27 @@
                 del.disabled = true;
                 const r = await chrome.runtime.sendMessage({ action: 'deleteProfile', id: p.id });
                 if (r?.ok) {
-                    showStatus('Profile deleted (' + r.count + ' remaining).', 'success');
+                    const label = r.name ? '"' + r.name + '"' : 'Profile';
+                    showStatusWithAction(
+                        label + ' deleted (' + r.count + ' remaining).',
+                        'success',
+                        'Undo',
+                        async () => {
+                            const undone = await chrome.runtime.sendMessage({
+                                action: 'restoreProfile',
+                                profile: r.undo,
+                            });
+                            if (undone?.ok) {
+                                showStatus(label + ' restored.', 'success');
+                                await refreshProfileList();
+                            } else {
+                                showStatus('Restore failed: ' + (undone?.reason || 'unknown') + '.', 'error');
+                            }
+                        },
+                    );
                     await refreshProfileList();
+                    // The pre-delete snapshot is a second recovery route.
+                    await refreshSnapshotList();
                 } else {
                     showStatus('Delete failed.', 'error');
                     del.disabled = false;

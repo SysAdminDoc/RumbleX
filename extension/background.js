@@ -17,6 +17,40 @@ function rxNormalizeSettings(value) {
     return RXSettingsSchema.normalizeStored(value, RXSettingsSchema.DEFAULTS);
 }
 
+// Take a settings snapshot from the service worker.
+//
+// The SW cannot reach the content script's `backupSnapshot` handler:
+// chrome.runtime.sendMessage does not deliver to content scripts (that needs
+// chrome.tabs.sendMessage), and a service worker never receives its own
+// runtime messages either. switchProfile fired exactly that call inside a
+// `try {} catch {}`, so its documented pre-switch snapshot silently never
+// happened. Write the snapshot here instead, mirroring rxBackupSnapshot in
+// content.js so both surfaces honor the same opt-out and the same limit.
+async function rxWriteSettingsSnapshot(reason, settingsOverride) {
+    try {
+        const cur = await chrome.storage.local.get(['rx_settings', 'rx_settings_snapshots']);
+        const settings = settingsOverride !== undefined
+            ? settingsOverride
+            : (cur.rx_settings || {});
+        // Respect the user's opt-out, exactly as the content-script path does.
+        if (!rxNormalizeSettings(cur.rx_settings || {}).backupHistory) {
+            return { ok: false, reason: 'disabled' };
+        }
+        const limit = Math.max(1, Number(rxNormalizeSettings(cur.rx_settings || {}).backupHistoryLimit) || 10);
+        const next = Array.isArray(cur.rx_settings_snapshots) ? cur.rx_settings_snapshots.slice() : [];
+        next.push({
+            at: Date.now(),
+            reason: typeof reason === 'string' ? reason.slice(0, 80) : 'manual',
+            settings,
+        });
+        while (next.length > limit) next.shift();
+        await chrome.storage.local.set({ rx_settings_snapshots: next });
+        return { ok: true, count: next.length };
+    } catch (e) {
+        return { ok: false, reason: 'storage', error: String(e?.message || e) };
+    }
+}
+
 // Guard rails for download URLs accepted from the content script. We trust
 // the content script because it can only be injected on rumble.com, but we
 // still refuse downloads targeting unrelated hosts so a compromised page
@@ -2268,7 +2302,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                 // Snapshot current state first so we never lose drift between
                 // saves. Reuses the v3.0 backup system rather than introducing
                 // a parallel snapshot store.
-                try { await chrome.runtime.sendMessage({ action: 'backupSnapshot', reason: 'pre-profile-switch' }); } catch {}
+                await rxWriteSettingsSnapshot('pre-profile-switch');
                 const next = rxNormalizeSettings({ ...target.settings, activeProfileId: target.id });
                 await chrome.storage.local.set({ rx_settings: next });
                 sendResponse({ ok: true, name: target.name });
@@ -2281,8 +2315,58 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             const id = String(message.id || '');
             try {
                 const data = await chrome.storage.local.get('rx_settings_profiles');
-                const profiles = (Array.isArray(data.rx_settings_profiles) ? data.rx_settings_profiles : [])
-                    .filter((p) => p.id !== id);
+                const all = Array.isArray(data.rx_settings_profiles) ? data.rx_settings_profiles : [];
+                const removed = all.find((p) => p.id === id);
+                if (!removed) { sendResponse({ ok: false, reason: 'not-found' }); return; }
+                const profiles = all.filter((p) => p.id !== id);
+                await chrome.storage.local.set({ rx_settings_profiles: profiles });
+                // Every other destructive action snapshots first; this one used
+                // to drop a saved profile permanently with no snapshot and no
+                // undo. The project bans confirmation dialogs on the premise
+                // that snapshot-plus-undo replaces them, so without this the
+                // action had neither.
+                const snapshot = await rxWriteSettingsSnapshot(
+                    'pre-profile-delete: ' + String(removed.name || id),
+                    removed.settings || {},
+                );
+                sendResponse({
+                    ok: true,
+                    count: profiles.length,
+                    name: removed.name || '',
+                    // The caller offers undo from this blob, so deletion stays
+                    // reversible even when backup history is turned off.
+                    undo: { id: removed.id, name: removed.name, createdAt: removed.createdAt, settings: removed.settings },
+                    snapshotted: !!snapshot?.ok,
+                });
+            } catch (e) { sendResponse({ ok: false, reason: String(e?.message || e) }); }
+        })();
+        return true;
+    }
+    // Restore a profile blob returned by deleteProfile's `undo` payload.
+    if (message.action === 'restoreProfile') {
+        (async () => {
+            try {
+                const profile = message.profile;
+                if (!profile || typeof profile !== 'object' || !profile.id) {
+                    sendResponse({ ok: false, reason: 'invalid-profile' });
+                    return;
+                }
+                const data = await chrome.storage.local.get('rx_settings_profiles');
+                const profiles = Array.isArray(data.rx_settings_profiles) ? data.rx_settings_profiles.slice() : [];
+                if (profiles.some((p) => p.id === profile.id)) {
+                    sendResponse({ ok: false, reason: 'already-exists' });
+                    return;
+                }
+                if (profiles.length >= 25) { sendResponse({ ok: false, reason: 'cap-reached' }); return; }
+                profiles.push({
+                    id: String(profile.id),
+                    name: String(profile.name || 'Restored profile').slice(0, 60),
+                    createdAt: Number(profile.createdAt) || Date.now(),
+                    // The blob round-trips through the same trust boundary as
+                    // any other settings write, so an undo cannot smuggle in
+                    // values a normal save would have rejected.
+                    settings: rxNormalizeSettings(profile.settings || {}),
+                });
                 await chrome.storage.local.set({ rx_settings_profiles: profiles });
                 sendResponse({ ok: true, count: profiles.length });
             } catch (e) { sendResponse({ ok: false, reason: String(e?.message || e) }); }

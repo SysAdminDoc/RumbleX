@@ -204,3 +204,89 @@ test('encrypted Gist sync refuses to run while the master switch is off', async 
     expect(enabled.ok).toBe(false);
     expect(enabled.reason).toBe('missing-token');
 });
+
+// Every destructive action snapshots first except profile deletion, which used
+// to drop a saved profile permanently with no snapshot and no undo. The project
+// bans confirmation dialogs on the premise that snapshot-plus-undo replaces
+// them, so that action had neither.
+test('deleting a profile is reversible and snapshots the profile first', async ({ context, extensionId }) => {
+    const page = await context.newPage();
+    await page.goto(`chrome-extension://${extensionId}/pages/options.html`);
+
+    await page.evaluate(() => chrome.storage.local.set({
+        rx_settings: { schemaVersion: 3, backupHistory: true, backupHistoryLimit: 10 },
+        rx_settings_snapshots: [],
+    }));
+
+    const created = await page.evaluate(() => chrome.runtime.sendMessage({
+        action: 'saveProfile', name: 'Deletable',
+    }));
+    expect(created.ok).toBe(true);
+
+    const before = await page.evaluate(() => chrome.runtime.sendMessage({ action: 'listProfiles' }));
+    const target = before.profiles.find((p) => p.name === 'Deletable');
+    expect(target).toBeTruthy();
+
+    const deleted = await page.evaluate((id) => chrome.runtime.sendMessage({
+        action: 'deleteProfile', id,
+    }), target.id);
+    expect(deleted.ok).toBe(true);
+    expect(deleted.name).toBe('Deletable');
+    expect(deleted.undo?.id).toBe(target.id);
+    expect(deleted.snapshotted).toBe(true);
+
+    // Gone from the live list...
+    const during = await page.evaluate(() => chrome.runtime.sendMessage({ action: 'listProfiles' }));
+    expect(during.profiles.some((p) => p.id === target.id)).toBe(false);
+
+    // ...recoverable from the undo payload...
+    const restored = await page.evaluate((profile) => chrome.runtime.sendMessage({
+        action: 'restoreProfile', profile,
+    }), deleted.undo);
+    expect(restored.ok).toBe(true);
+
+    const after = await page.evaluate(() => chrome.runtime.sendMessage({ action: 'listProfiles' }));
+    expect(after.profiles.some((p) => p.id === target.id && p.name === 'Deletable')).toBe(true);
+
+    // ...and independently recoverable from the pre-delete snapshot.
+    const snapshots = await page.evaluate(async () => (
+        (await chrome.storage.local.get('rx_settings_snapshots')).rx_settings_snapshots || []
+    ));
+    expect(snapshots.some((s) => String(s.reason).startsWith('pre-profile-delete'))).toBe(true);
+
+    // Restoring the same profile twice must not duplicate it.
+    const again = await page.evaluate((profile) => chrome.runtime.sendMessage({
+        action: 'restoreProfile', profile,
+    }), deleted.undo);
+    expect(again.ok).toBe(false);
+    expect(again.reason).toBe('already-exists');
+});
+
+// switchProfile asked the service worker to message itself for its documented
+// pre-switch snapshot. That call never lands — chrome.runtime.sendMessage does
+// not reach content scripts, and a SW does not receive its own messages — and
+// it sat inside an empty catch, so the snapshot silently never happened.
+test('switching a profile actually writes its pre-switch snapshot', async ({ context, extensionId }) => {
+    const page = await context.newPage();
+    await page.goto(`chrome-extension://${extensionId}/pages/options.html`);
+
+    await page.evaluate(() => chrome.storage.local.set({
+        rx_settings: { schemaVersion: 3, backupHistory: true, backupHistoryLimit: 10, wideLayout: true },
+        rx_settings_snapshots: [],
+    }));
+
+    const created = await page.evaluate(() => chrome.runtime.sendMessage({
+        action: 'saveProfile', name: 'Switchable',
+    }));
+    expect(created.ok).toBe(true);
+
+    const switched = await page.evaluate((id) => chrome.runtime.sendMessage({
+        action: 'switchProfile', id,
+    }), created.id);
+    expect(switched.ok).toBe(true);
+
+    const snapshots = await page.evaluate(async () => (
+        (await chrome.storage.local.get('rx_settings_snapshots')).rx_settings_snapshots || []
+    ));
+    expect(snapshots.some((s) => s.reason === 'pre-profile-switch')).toBe(true);
+});
