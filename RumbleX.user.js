@@ -23,7 +23,7 @@
 // @updateURL    https://raw.githubusercontent.com/SysAdminDoc/RumbleX/main/RumbleX.user.js
 // ==/UserScript==
 
-// Generated from extension/settings-schema.js + extension/content.js. Shared runtime SHA-256: 7ad8eeedcbbbd69ca4299b2784b075d9c1f2cafebb10aa9a0ff5090bd3d8b8ff
+// Generated from extension/settings-schema.js + extension/content.js. Shared runtime SHA-256: d506f67365eb1a0f79decfcf4b560bdff8051c66f133c39ad1f059656b5fde0e
 // RumbleX shared settings schema. This file is the canonical source for
 // defaults and trust-boundary normalization across content, options, popup,
 // background profile/Gist restores, and the generated userscript.
@@ -7311,6 +7311,9 @@ const WatchHistoryFeature = {
         const history = this._getHistory();
         const overlay = document.createElement('div');
         overlay.className = 'rx-history-overlay';
+        overlay.setAttribute('role', 'dialog');
+        overlay.setAttribute('aria-modal', 'true');
+        overlay.setAttribute('aria-label', 'Watch history');
         overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
 
         const panel = document.createElement('div');
@@ -7900,6 +7903,10 @@ const SearchHistory = {
         }
         .rx-search-dropdown.show { display: block; }
         .rx-search-dropdown-item {
+            /* Real <button> for keyboard operability; reset the UA chrome so it
+               still renders as the row it always looked like. */
+            appearance: none; background: none; border: 0; text-align: left; font: inherit;
+            width: 100%;
             padding: 8px 14px;
             cursor: pointer;
             font-size: 13px;
@@ -7909,10 +7916,18 @@ const SearchHistory = {
             gap: 8px;
             border-bottom: 1px solid #313244;
         }
+        .rx-search-dropdown-item:focus-visible,
+        .rx-search-dropdown-item .remove:focus-visible {
+            outline: 2px solid #89b4fa; outline-offset: -2px;
+        }
+        /* The delete control must stay reachable by keyboard even though it is
+           only revealed on hover for pointer users. */
+        .rx-search-dropdown-item .remove:focus-visible { opacity: 1; }
         .rx-search-dropdown-item:hover { background: #313244; }
         .rx-search-dropdown-item svg { width: 14px; height: 14px; fill: #6c7086; flex-shrink: 0; }
         .rx-search-dropdown-item .text { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
         .rx-search-dropdown-item .remove {
+            appearance: none; background: none; border: 0; font: inherit; line-height: 1;
             color: #6c7086; font-size: 16px; cursor: pointer; padding: 0 4px;
             opacity: 0; transition: opacity 0.15s;
         }
@@ -7974,15 +7989,22 @@ const SearchHistory = {
         this._dropdown.appendChild(header);
 
         for (const q of filtered.slice(0, 15)) {
-            const item = document.createElement('div');
+            // Both the row and its delete control are real buttons. They used
+            // to be a <div> and a <span> carrying click handlers, so neither was
+            // reachable or operable from the keyboard at all.
+            const item = document.createElement('button');
+            item.type = 'button';
             item.className = 'rx-search-dropdown-item';
+            item.setAttribute('aria-label', 'Search again for ' + q);
             item.innerHTML = `<svg viewBox="0 0 24 24"><path d="M13 3a9 9 0 0 0-9 9H1l3.89 3.89.07.14L9 12H6c0-3.87 3.13-7 7-7s7 3.13 7 7-3.13 7-7 7c-1.93 0-3.68-.79-4.94-2.06l-1.42 1.42A8.954 8.954 0 0 0 13 21a9 9 0 0 0 0-18z"/></svg>`;
             const text = document.createElement('span');
             text.className = 'text';
             text.textContent = q;
-            const remove = document.createElement('span');
+            const remove = document.createElement('button');
+            remove.type = 'button';
             remove.className = 'remove';
-            remove.innerHTML = '&times;';
+            remove.textContent = '×';
+            remove.setAttribute('aria-label', 'Remove ' + q + ' from search history');
             remove.addEventListener('click', (e) => {
                 e.stopPropagation();
                 this._saveHistory(this._getHistory().filter(x => x !== q));
@@ -8762,6 +8784,9 @@ const QuickBookmark = {
         const bookmarks = this._getBookmarks();
         const overlay = document.createElement('div');
         overlay.className = 'rx-bookmarks-overlay';
+        overlay.setAttribute('role', 'dialog');
+        overlay.setAttribute('aria-modal', 'true');
+        overlay.setAttribute('aria-label', 'Bookmarks');
         overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
 
         const panel = document.createElement('div');
@@ -12221,6 +12246,8 @@ const AutoplayScheduler = {
 
         const panel = document.createElement('div');
         panel.className = 'rx-queue-panel';
+        panel.setAttribute('role', 'region');
+        panel.setAttribute('aria-label', 'Autoplay queue');
         panel.innerHTML = `
             <div class="rx-queue-header">
                 <span class="rx-queue-title">Autoplay Queue</span>
@@ -12332,10 +12359,14 @@ const Chapters = {
         }
         .rx-chapters-list { display: flex; flex-direction: column; gap: 2px; }
         .rx-chapters-item {
+            /* Real <button> so chapters can be reached and activated by keyboard. */
+            appearance: none; background: none; border: 0; text-align: left; font: inherit;
+            width: 100%;
             display: flex; gap: 8px; padding: 5px 8px; cursor: pointer;
             border-radius: 5px; font-size: 12px; color: #cdd6f4;
             transition: background .15s;
         }
+        .rx-chapters-item:focus-visible { outline: 2px solid #89b4fa; outline-offset: -2px; }
         .rx-chapters-item:hover { background: rgba(137,180,250,0.1); }
         .rx-chapters-item .rx-ci-time {
             color: var(--rx-accent, #89b4fa); font-weight: 600; font-variant-numeric: tabular-nums;
@@ -12424,7 +12455,8 @@ const Chapters = {
         panel.innerHTML = `<div class="rx-chapters-title">Chapters (${this._chapters.length})</div><div class="rx-chapters-list"></div>`;
         const list = panel.querySelector('.rx-chapters-list');
         for (const c of this._chapters) {
-            const row = document.createElement('div');
+            const row = document.createElement('button');
+            row.type = 'button';
             row.className = 'rx-chapters-item';
             const ts = document.createElement('span');
             ts.className = 'rx-ci-time';
@@ -12433,9 +12465,12 @@ const Chapters = {
             const lbl = document.createElement('span');
             lbl.textContent = c.label;
             row.append(ts, lbl);
+            row.setAttribute('aria-label', 'Jump to ' + ts.textContent + ' - ' + c.label);
             row.addEventListener('click', () => this._seek(c.time));
             list.appendChild(row);
         }
+        panel.setAttribute('role', 'navigation');
+        panel.setAttribute('aria-label', 'Video chapters');
         desc.prepend(panel);
         this._list = panel;
     },
@@ -12668,6 +12703,8 @@ const SponsorBlockRX = {
         if (!host || this._panel) return;
         const panel = document.createElement('div');
         panel.className = 'rx-sb-panel';
+        panel.setAttribute('role', 'region');
+        panel.setAttribute('aria-label', 'SponsorBlock segments');
         panel.innerHTML = `
             <div class="rx-sb-title">SponsorBlock (local)</div>
             <div class="rx-sb-actions">
@@ -13059,6 +13096,8 @@ const LiveDVR = {
         if (!host || this._panel || !Page.isLive()) return;
         const panel = document.createElement('div');
         panel.className = 'rx-dvr-panel';
+        panel.setAttribute('role', 'region');
+        panel.setAttribute('aria-label', 'Live DVR controls');
         panel.innerHTML = `
             <div class="rx-dvr-title">Live DVR</div>
             <div class="rx-dvr-row">
@@ -13327,6 +13366,8 @@ const Transcripts = {
         if (!host || this._panel) return;
         const panel = document.createElement('div');
         panel.className = 'rx-trans-panel';
+        panel.setAttribute('role', 'region');
+        panel.setAttribute('aria-label', 'Transcript');
         panel.innerHTML = `
             <div class="rx-trans-title">Transcript</div>
             <input type="text" class="rx-trans-search" placeholder="Search transcript...">
