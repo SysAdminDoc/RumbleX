@@ -1,8 +1,18 @@
 # RumbleX
 
-![Version](https://img.shields.io/badge/version-v3.48.0-blue) ![License](https://img.shields.io/badge/license-MIT-green) ![Platform](https://img.shields.io/badge/platform-Extension%20%2B%20Userscript-lightgrey) ![Firefox](https://img.shields.io/badge/firefox-109%2B-orange)
+![Version](https://img.shields.io/badge/version-v3.49.0-blue) ![License](https://img.shields.io/badge/license-MIT-green) ![Platform](https://img.shields.io/badge/platform-Extension%20%2B%20Userscript-lightgrey) ![Firefox](https://img.shields.io/badge/firefox-109%2B-orange)
 
 **The ultimate Rumble enhancement suite.** 130+ feature modules across 14 categories — ad blocking, theater mode, video downloads with CDN deep-scan probing and an opt-in Mediabunny muxer path, five-theme engine (now including OLED Green), playback controls, chat enhancements with deterministic username colors and tier-filtered rants, chapters, SponsorBlock, clips, live DVR, transcripts, auto-hide chrome, 50+ granular hide-X toggles for every Rumble row/button/player control, thumbnail hider, dense mode, reduced-motion path, tracking-param stripping, external player handoff (MPV/PotPlayer), and full-round-trip backup/restore with snapshot history. Chrome MV3 + Firefox MV2 + userscript.
+
+### What's new in v3.49
+
+Live chat got the things every other chat platform already has, and rants became something you can total up.
+
+- **Mention autocomplete.** Type `@` and RumbleX offers the people who have actually spoken this session, ranked so prefix matches come first. Arrow keys and Escape work the way you expect.
+- **Keyword highlight.** Name the terms you care about and matching messages stand out, with an optional short tone. Matching covers the sender's name as well as the message.
+- **User cards.** Click a name for what that person has said this session, plus mention, block, and a local nickname that sticks. Renaming is fully reversible.
+- **Chat readability.** Alternating row shading, adjustable chat text size, and an option to keep deleted messages visible struck through instead of having them vanish.
+- **Rant archive.** Totals, top supporters, and a CSV or JSON export of the rants captured for a video.
 
 ### What's new in v3.48
 

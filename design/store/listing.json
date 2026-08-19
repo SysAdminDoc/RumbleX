@@ -1,6 +1,6 @@
 {
   "_about": "Store listing source of truth for Chrome Web Store, AMO and Edge Add-ons. Publishing itself is blocked on developer accounts (see Roadmap_Blocked.md); everything here is the asset and copy work, which is not. Kept as JSON rather than a doc because the repo's file-hygiene rule allows no new markdown files.",
-  "version": "3.48.0",
+  "version": "3.49.0",
   "assets": {
     "_note": "Regenerate with: RUMBLEX_STORE_CAPTURE=1 npx playwright test tests/e2e/store-assets.spec.js. That test re-reads every PNG from disk and asserts its exact pixel size, because a store rejects an off-by-one image at submission time.",
     "screenshots_1280x800": [

@@ -2,7 +2,7 @@
 
 All notable changes to RumbleX will be documented in this file.
 
-## [Unreleased]
+## [3.49.0] - 2026-08-19
 
 ### Added
 - **Rant archive.** RumbleX already kept paid rants past the point Rumble expires them, but what it kept was only readable as chat scrollback. There is now a panel showing how many rants a stream has had, the running total, how many distinct people sent them and the top five, plus an export that honours `rantExportFormat` and writes CSV, JSON, or both. Amounts are parsed from whatever display string Rumble used, so a price it cannot read contributes nothing rather than poisoning the total, and the CSV escapes commas, quotes and newlines in message text. `rantStatsPanel` and `rantExportFormat` were both marked "not implemented yet"; the list is down to 28.

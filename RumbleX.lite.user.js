@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         RumbleX Lite
 // @namespace    https://github.com/SysAdminDoc/RumbleX
-// @version      3.48.0
+// @version      3.49.0
 // @description  Rumble enhancement suite (Lite) — the same shared feature core, without the bundled transmuxers. Downloads save the raw stream; MP4 remux needs the full build or the extension.
 // @author       SysAdminDoc
 // @match        https://rumble.com/*
@@ -23,7 +23,7 @@
 // @updateURL    https://github.com/SysAdminDoc/RumbleX/raw/main/RumbleX.lite.user.js
 // ==/UserScript==
 
-// Generated from extension/settings-schema.js + extension/content.js. Shared runtime SHA-256: a039eea5da3f6396d86f3150509ad3899acf83e3000609c1f010d7c71e79ba27
+// Generated from extension/settings-schema.js + extension/content.js. Shared runtime SHA-256: 708011341af94fad6bde5436f597e143a50bdd5aba672de3a238cb5409af000e
 // RumbleX shared settings schema. This file is the canonical source for
 // defaults and trust-boundary normalization across content, options, popup,
 // background profile/Gist restores, and the generated userscript.
@@ -684,7 +684,7 @@
 'use strict';
 
 (() => {
-    const VERSION = "3.48.0";
+    const VERSION = "3.49.0";
     const ASSETS = Object.freeze({});
     const MESSAGES = Object.freeze({
   "extName": "RumbleX",
@@ -1497,7 +1497,7 @@
 })();
 
 
-// RumbleX v3.48.0 - Shared Content Core
+// RumbleX v3.49.0 - Shared Content Core
 // Rumble enhancement suite - Chrome/Firefox extension
 'use strict';
 
@@ -1507,7 +1507,7 @@
 // DOM feature ship from one canonical source.
 const RXPlatform = globalThis.RumbleXPlatform;
 if (!RXPlatform) throw new Error('RumbleX platform adapter is missing');
-const VERSION = RXPlatform.version || '3.48.0';
+const VERSION = RXPlatform.version || '3.49.0';
 /**
  * In-page translation lookup.
  *
