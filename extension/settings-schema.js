@@ -34,6 +34,7 @@
         searchHistory: true,
         miniPlayer: true,
         videoStats: true,
+        timeRemaining: false,
         loopControl: true,
         quickBookmark: true,
         commentNav: true,

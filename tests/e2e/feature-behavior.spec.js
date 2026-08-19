@@ -938,3 +938,78 @@ test('MiniPlayer uses Document PiP where available and unwinds it cleanly', asyn
     expect(result.afterHide.closed).toBe(true);
     expect(result.afterHide.windowCleared).toBe(true);
 });
+
+test('TimeRemaining accounts for playback rate and falls back to structured duration', async () => {
+    const result = await inHarness(({ body }) => {
+        document.body.innerHTML = body;
+        const harness = globalThis.__RumbleXFeatureHarness;
+        harness.enable('timeRemaining');
+        const feature = harness.features.find((f) => f.id === 'timeRemaining');
+
+        // A stand-in for the media element: the arithmetic under test is
+        // duration, position and rate, none of which need a real decoder.
+        const video = { duration: 600, currentTime: 120, playbackRate: 1 };
+        const el = document.createElement('div');
+        document.body.appendChild(el);
+        feature._el = el;
+        feature._video = video;
+
+        const readAt = (rate) => {
+            video.playbackRate = rate;
+            feature._render();
+            return { text: el.textContent, title: el.getAttribute('title') };
+        };
+
+        const atNormalSpeed = readAt(1);
+        // 480 seconds of video at 2x is four minutes of your life, not eight.
+        const atDoubleSpeed = readAt(2);
+        const atHalfSpeed = readAt(0.5);
+
+        // Past the end must clamp rather than count upward.
+        video.currentTime = 900;
+        video.playbackRate = 1;
+        feature._render();
+        const pastEnd = el.textContent;
+
+        // A live stream reports Infinity, and there is no structured duration
+        // in the harness, so the readout must empty itself instead of printing
+        // nonsense.
+        video.duration = Infinity;
+        video.currentTime = 10;
+        feature._render();
+        const live = { text: el.textContent, title: el.getAttribute('title') };
+
+        // With no usable media duration, the schema.org value is the fallback.
+        const realDuration = PageData.durationSeconds;
+        PageData.durationSeconds = () => 300;
+        video.duration = NaN;
+        video.currentTime = 60;
+        feature._render();
+        const fromStructured = el.textContent;
+        PageData.durationSeconds = realDuration;
+
+        const hourly = (() => {
+            video.duration = 7325;
+            video.currentTime = 0;
+            video.playbackRate = 1;
+            feature._render();
+            return el.textContent;
+        })();
+
+        el.remove();
+        feature._el = null;
+        feature._video = null;
+        return { atNormalSpeed, atDoubleSpeed, atHalfSpeed, pastEnd, live, fromStructured, hourly };
+    });
+
+    expect(result.atNormalSpeed.text).toBe('8:00 left');
+    expect(result.atNormalSpeed.title).toMatch(/^Ends at /);
+    expect(result.atDoubleSpeed.text).toBe('4:00 left');
+    expect(result.atHalfSpeed.text).toBe('16:00 left');
+    expect(result.pastEnd).toBe('0:00 left');
+    // Live: nothing to show, and no stale title left behind.
+    expect(result.live.text).toBe('');
+    expect(result.live.title).toBeNull();
+    expect(result.fromStructured).toBe('4:00 left');
+    expect(result.hourly).toBe('2:02:05 left');
+});

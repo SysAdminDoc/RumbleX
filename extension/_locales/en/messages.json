@@ -1730,5 +1730,21 @@
   "miniPlayerPopOutLabel": {
     "message": "Open the mini player in a separate always-on-top window",
     "description": "In-page UI string (shared core)."
+  },
+  "feat_timeRemaining_label": {
+    "message": "Time Remaining",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_timeRemaining_desc": {
+    "message": "Show time left at the current speed and the clock time it ends",
+    "description": "In-page UI string (shared core)."
+  },
+  "timeRemainingLeft": {
+    "message": "{time} left",
+    "description": "In-page UI string (shared core)."
+  },
+  "timeRemainingEndsAt": {
+    "message": "Ends at {time}",
+    "description": "In-page UI string (shared core)."
   }
 }

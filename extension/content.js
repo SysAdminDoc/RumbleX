@@ -9039,6 +9039,147 @@ const ShareTimestamp = {
 };
 
 // ═══════════════════════════════════════════
+//  FEATURE: Time Remaining
+// ═══════════════════════════════════════════
+// How much is left, at the speed you are actually watching, and the wall-clock
+// time you will finish. Rumble shows neither, and the arithmetic is annoying to
+// do in your head once the rate is not 1x.
+const TimeRemaining = {
+    id: 'timeRemaining',
+    name: 'Time Remaining',
+    _el: null,
+    _video: null,
+    _onUpdate: null,
+
+    _css: `
+        .rx-time-remaining {
+            position: absolute;
+            bottom: 52px; left: 16px;
+            z-index: 100;
+            background: rgba(17,17,27,0.75);
+            border: 1px solid rgba(205,214,244,0.2);
+            color: #cdd6f4;
+            border-radius: 6px;
+            padding: 5px 10px;
+            font: 600 11px/1 system-ui, sans-serif;
+            font-variant-numeric: tabular-nums;
+            opacity: 0; transition: opacity 0.2s;
+            pointer-events: none;
+        }
+        .videoPlayer-Rumble-cls:hover .rx-time-remaining,
+        #videoPlayer:hover .rx-time-remaining { opacity: 1; }
+        @media (prefers-reduced-motion: reduce) {
+            .rx-time-remaining { transition: none; }
+        }
+    `,
+
+    _clock(date) {
+        try {
+            return date.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+        } catch {
+            return `${date.getHours()}:${String(date.getMinutes()).padStart(2, '0')}`;
+        }
+    },
+
+    _span(seconds) {
+        const total = Math.max(0, Math.round(seconds));
+        const h = Math.floor(total / 3600);
+        const m = Math.floor((total % 3600) / 60);
+        const s = total % 60;
+        if (h > 0) return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+        return `${m}:${String(s).padStart(2, '0')}`;
+    },
+
+    // A live stream has no meaningful end, and Rumble reports Infinity for one.
+    // The structured-data duration is the fallback for the brief window where
+    // the media element has not reported a duration yet.
+    _duration(video) {
+        if (video && Number.isFinite(video.duration) && video.duration > 0) return video.duration;
+        const structured = PageData.durationSeconds();
+        return structured && Number.isFinite(structured) ? structured : null;
+    },
+
+    _render() {
+        const video = this._video;
+        const el = this._el;
+        if (!video || !el || !el.isConnected) return;
+        const duration = this._duration(video);
+        if (duration === null) {
+            el.textContent = '';
+            el.removeAttribute('title');
+            return;
+        }
+        const rate = video.playbackRate > 0 ? video.playbackRate : 1;
+        const remaining = Math.max(0, (duration - video.currentTime) / rate);
+        el.textContent = rxT('timeRemainingLeft', '{time} left', { time: this._span(remaining) });
+        const ends = new Date(Date.now() + (remaining * 1000));
+        el.title = rxT('timeRemainingEndsAt', 'Ends at {time}', { time: this._clock(ends) });
+    },
+
+    _bind(video) {
+        if (!video || video === this._video) return;
+        this._unbind();
+        this._video = video;
+        this._onUpdate = () => this._render();
+        for (const event of ['timeupdate', 'ratechange', 'durationchange', 'loadedmetadata']) {
+            video.addEventListener(event, this._onUpdate);
+        }
+        this._render();
+    },
+
+    _unbind() {
+        if (this._video && this._onUpdate) {
+            for (const event of ['timeupdate', 'ratechange', 'durationchange', 'loadedmetadata']) {
+                this._video.removeEventListener(event, this._onUpdate);
+            }
+        }
+        this._video = null;
+        this._onUpdate = null;
+    },
+
+    init() {
+        if (!Settings.get(this.id)) return;
+        if (!Page.isWatch() && !Page.isEmbed()) return;
+        this._styleEl = injectStyle(this._css, 'rx-time-remaining-css');
+
+        waitForFeature(this, '#videoPlayer, .videoPlayer-Rumble-cls').then((container) => {
+            container.style.position = container.style.position || 'relative';
+            const el = document.createElement('div');
+            el.className = 'rx-time-remaining';
+            // Not a control, and it changes constantly; announcing every tick
+            // would flood a screen reader for no benefit.
+            el.setAttribute('aria-hidden', 'true');
+            container.appendChild(el);
+            this._el = el;
+
+            const video = getActiveMedia(container) || qs('video');
+            if (video) this._bind(video);
+            // Rumble swaps the video element on route changes and quality
+            // switches, so rebind rather than holding a detached node.
+            this._obs = new MutationObserver(() => {
+                scheduleFeatureFrame(this, 'time-remaining-rebind', () => {
+                    const current = getActiveMedia(container) || qs('video');
+                    if (current && current !== this._video) this._bind(current);
+                });
+            });
+            this._obs.observe(container, { childList: true, subtree: true });
+        }).catch(() => {});
+    },
+
+    destroy() {
+        this._obs?.disconnect();
+        this._obs = null;
+        this._unbind();
+        this._styleEl?.remove();
+        this._styleEl = null;
+        // Null the reference as well as detaching it: the mount guard reads it,
+        // so keeping it here makes the feature impossible to re-enable.
+        this._el?.remove();
+        this._el = null;
+    }
+};
+
+// ═══════════════════════════════════════════
 //  FEATURE: Shorts Filter
 // ═══════════════════════════════════════════
 const ShortsFilter = {
@@ -9513,6 +9654,7 @@ const RX_CATEGORIES = [
             { id: 'miniPlayer', label: 'Mini Player', desc: 'Floating draggable video when scrolling away' },
             { id: 'legacyKeyboardNav', label: 'Keyboard Nav (legacy)', desc: 'YouTube-style hotkeys (J/K/L, F, M, 0-9) — off by default in v2' },
             { id: 'videoStats', label: 'Video Stats', desc: 'Resolution, codec, buffer, frames overlay' },
+            { id: 'timeRemaining', label: 'Time Remaining', desc: 'Show time left at the current speed and the clock time it ends' },
             { id: 'chapters', label: 'Chapters', desc: 'Parse description timestamps + seekbar markers' },
             { id: 'autoplayScheduler', label: 'Autoplay Queue', desc: 'Queue Rumble URLs, auto-advance at end' },
         ],
@@ -15192,7 +15334,7 @@ const features = [
     WatchProgress, ChannelBlocker, KeyboardNav, AutoTheater, LiveChatEnhance,
     VideoTimestamps, ScreenshotBtn, WatchHistoryFeature, AutoplayBlock,
     SearchHistory, MiniPlayer, VideoStats, LoopControl, QuickBookmark, CommentNav,
-    RantHighlight, RelatedFilter, ExactCounts, ShareTimestamp, ShortsFilter,
+    RantHighlight, RelatedFilter, ExactCounts, ShareTimestamp, TimeRemaining, ShortsFilter,
     ChatAutoScroll, AutoExpand, NotifEnhance, PlaylistQuickSave,
     // v1.8.0 additions
     FullTitles, TitleFont, UniqueChatters, ChatUserBlock, ChatSpamDedup,

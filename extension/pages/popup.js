@@ -32,6 +32,7 @@ const GROUPS = [
             { id: 'miniPlayer', label: 'Mini Player' },
             { id: 'legacyKeyboardNav', label: 'Keyboard Nav (legacy)' },
             { id: 'videoStats', label: 'Video Stats' },
+            { id: 'timeRemaining', label: 'Time Left' },
             { id: 'chapters', label: 'Chapters' },
             { id: 'autoplayScheduler', label: 'Autoplay Queue' },
         ],

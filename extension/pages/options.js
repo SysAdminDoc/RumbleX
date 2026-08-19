@@ -92,6 +92,7 @@
         miniPlayer: { group: 'video-player', label: 'Mini Player', desc: 'Floating draggable video when scrolling away' },
         legacyKeyboardNav: { group: 'core', label: 'Keyboard Nav (legacy)', desc: 'YouTube-style hotkeys (J/K/L, F, M, 0-9). Off by default in v2 — visible controls preferred.' },
         videoStats: { group: 'video-player', label: 'Video Stats', desc: 'Resolution, codec, buffer, frames overlay' },
+        timeRemaining: { group: 'video-player', label: 'Time Remaining', desc: 'Show time left at the current speed and the clock time it ends' },
         chapters: { group: 'video-player', label: 'Chapters', desc: 'Parse description timestamps + seekbar markers' },
         autoplayScheduler: { group: 'video-player', label: 'Autoplay Queue', desc: 'Queue Rumble URLs, auto-advance at end' },
         playbackSpeed: { group: 'video-player', label: 'Playback Speed', desc: 'Saved playback rate (0.25-3x)' },
