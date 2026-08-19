@@ -130,6 +130,24 @@ const errors = [
     ),
 ];
 
+// RumbleX runs entirely in the isolated world. A content script declared with
+// `world: "MAIN"` executes in the page's own realm, where Rumble's script can
+// read and rewrite it and where the privacy report's "what this extension can
+// touch" story stops being complete. That was decided against twice — see
+// RESEARCH.md, Rejected Ideas — so the decision is enforced here rather than
+// left to memory. Reversing it means deleting this check deliberately and
+// disclosing the injected surface in the report.
+for (const [index, manifest] of manifests.entries()) {
+    for (const entry of manifest.content_scripts || []) {
+        if (entry.world && entry.world !== 'ISOLATED') {
+            errors.push(`${MANIFEST_PATHS[index]} declares a content script in the ${entry.world} world`);
+        }
+    }
+}
+if (/\bworld\s*:\s*['"]MAIN['"]/.test(content)) {
+    errors.push('content core requests MAIN-world execution');
+}
+
 const requiredReportSnippets = [
     'const permissions = rxManifestApiPermissions(manifest);',
     'const hostPermissions = rxManifestHostPermissions(manifest);',
