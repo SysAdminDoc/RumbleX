@@ -80,6 +80,9 @@ const GROUPS = [
         id: 'comments-chat', label: 'Comments & Chat',
         features: [
             { id: 'liveChatEnhance', label: 'Chat Enhance' },
+            { id: 'chatMentionAutocomplete', label: 'Mention Autocomplete' },
+            { id: 'chatMentionHighlight', label: 'Keyword Highlight' },
+            { id: 'chatReadability', label: 'Chat Readability' },
             { id: 'chatAutoScroll', label: 'Chat Scroll' },
             { id: 'uniqueChatters', label: 'Unique Chatters' },
             { id: 'chatUserBlock', label: 'User Block' },

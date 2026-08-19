@@ -2,6 +2,11 @@
 
 All notable changes to RumbleX will be documented in this file.
 
+## [Unreleased]
+
+### Added
+- **Chat gets the three things every other chat platform already has.** *Mention autocomplete*: type `@` in the chat box and RumbleX offers the people who have actually spoken this session, ranked so prefix matches come first, with arrow keys and Escape doing what you expect. An email address typed mid-sentence is not treated as a mention. *Keyword highlight*: name the terms you care about and matching messages stand out, matching on the sender's name as well as the text, with an optional short tone that is synthesized rather than shipped as an audio file. *Readability*: alternating row shading, a chat text size between 70% and 160%, and an option to keep deleted messages visible struck through instead of having them vanish and shift everything beneath them. All three are separate toggles, and `chatMentionHighlight` was another setting that had been sitting in the "not implemented yet" list.
+
 ## [3.48.0] - 2026-08-19
 
 ### Added

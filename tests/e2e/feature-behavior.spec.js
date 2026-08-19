@@ -1422,3 +1422,229 @@ test('ChannelRss builds a valid feed locally and escapes hostile titles', async 
     expect(result.emptyOk).toBe(true);
     expect(result.emptyItems).toBe(0);
 });
+
+test('ChatComposerAssist completes @mentions from the people who actually spoke', async () => {
+    const result = await inHarness(({ body }) => {
+        document.body.innerHTML = body;
+        const harness = globalThis.__RumbleXFeatureHarness;
+        harness.enable('chatMentionAutocomplete');
+        const ac = harness.features.find((f) => f.id === 'chatMentionAutocomplete');
+
+        // Extra chatters so ranking has something to sort.
+        const history = document.querySelector('#chat-history-list');
+        for (const name of ['Alfred', 'alpha_fan', 'Zoe']) {
+            const row = document.createElement('div');
+            row.className = 'chat-history--row';
+            const user = document.createElement('button');
+            user.className = 'chat-history--username';
+            user.textContent = name;
+            const msg = document.createElement('span');
+            msg.className = 'chat-history--message';
+            msg.textContent = 'hi';
+            row.append(user, msg);
+            history.appendChild(row);
+        }
+
+        ac.init();
+        const input = ac._input;
+        const hadInput = !!input;
+
+        const pendingFor = (value, caret) => {
+            input.value = value;
+            input.selectionStart = caret === undefined ? value.length : caret;
+            return ac._pending(input);
+        };
+
+        // Only a mention token immediately before the caret counts.
+        const midWord = pendingFor('email me at bob@example');
+        const plain = pendingFor('no mention here');
+        const atStart = pendingFor('@Al');
+        const afterSpace = pendingFor('hey @al');
+
+        ac._indexNames();
+        const ranked = (term) => { pendingFor('@' + term); ac._onInput(); return ac._matches.slice(); };
+        const forAl = ranked('Al');
+        // Substring matches rank after prefix matches.
+        const forFan = ranked('fan');
+
+        // Accepting rewrites the token and leaves a trailing space.
+        pendingFor('hey @al');
+        ac._onInput();
+        let inputEvents = 0;
+        input.addEventListener('input', () => { inputEvents += 1; });
+        ac._accept('Alice');
+        const accepted = input.value;
+        const hiddenAfterAccept = ac._box.hidden;
+
+        // Keyboard: arrow moves the selection, Escape closes.
+        pendingFor('@a');
+        ac._onInput();
+        const openCount = ac._matches.length;
+        ac._onKeyDown({ key: 'ArrowDown', preventDefault() {} });
+        const activeAfterArrow = ac._active;
+        ac._onKeyDown({ key: 'Escape', preventDefault() {} });
+        const hiddenAfterEscape = ac._box.hidden;
+
+        ac.destroy();
+        const boxGone = !document.querySelector('.rx-chat-ac');
+
+        return {
+            hadInput,
+            midWordNull: midWord === null,
+            plainNull: plain === null,
+            atStartTerm: atStart ? atStart.term : null,
+            afterSpaceTerm: afterSpace ? afterSpace.term : null,
+            forAl, forFan, accepted, inputEvents, hiddenAfterAccept,
+            openCount, activeAfterArrow, hiddenAfterEscape, boxGone,
+        };
+    });
+
+    expect(result.hadInput).toBe(true);
+    // "bob@example" is an address, not a mention.
+    expect(result.midWordNull).toBe(true);
+    expect(result.plainNull).toBe(true);
+    expect(result.atStartTerm).toBe('Al');
+    expect(result.afterSpaceTerm).toBe('al');
+
+    // Alice and Alfred both start with "al"; alpha_fan does too.
+    expect(result.forAl).toContain('Alice');
+    expect(result.forAl).toContain('Alfred');
+    // Prefix matches come before substring matches.
+    expect(result.forFan[0]).toBe('alpha_fan');
+
+    expect(result.accepted).toBe('hey @Alice ');
+    // The composer is framework-driven, so it must be told the value changed.
+    expect(result.inputEvents).toBe(1);
+    expect(result.hiddenAfterAccept).toBe(true);
+
+    expect(result.openCount).toBeGreaterThan(1);
+    expect(result.activeAfterArrow).toBe(1);
+    expect(result.hiddenAfterEscape).toBe(true);
+    expect(result.boxGone).toBe(true);
+});
+
+test('ChatHighlights marks only messages matching configured terms and reverts on destroy', async () => {
+    const result = await inHarness(({ body }) => {
+        document.body.innerHTML = body;
+        const harness = globalThis.__RumbleXFeatureHarness;
+        harness.enable('chatMentionHighlight');
+        const hl = harness.features.find((f) => f.id === 'chatMentionHighlight');
+
+        const history = document.querySelector('#chat-history-list');
+        history.textContent = '';
+        const add = (user, text) => {
+            const row = document.createElement('div');
+            row.className = 'chat-history--row';
+            const u = document.createElement('button');
+            u.className = 'chat-history--username';
+            u.textContent = user;
+            const m = document.createElement('span');
+            m.className = 'chat-history--message';
+            m.textContent = text;
+            row.append(u, m);
+            history.appendChild(row);
+        };
+        add('Alice', 'talking about ELECTIONS today');
+        add('Bob', 'nothing relevant here');
+        add('KeywordUser', 'plain text');
+
+        const realGet = Settings.get.bind(Settings);
+        const store = { chatHighlightKeywords: ['elections', 'keyworduser'], chatHighlightSound: false };
+        Settings.get = (key) => (Object.hasOwn(store, key) ? store[key] : realGet(key));
+
+        hl._scan();
+        const marked = [...history.children].map((r) => r.classList.contains('rx-chat-kw'));
+
+        // No terms configured means the feature does nothing at all.
+        for (const row of history.children) { row.classList.remove('rx-chat-kw'); delete row.dataset.rxKw; }
+        store.chatHighlightKeywords = [];
+        hl._scan();
+        const markedWithNoTerms = [...history.children].some((r) => r.classList.contains('rx-chat-kw'));
+
+        store.chatHighlightKeywords = ['elections'];
+        for (const row of history.children) delete row.dataset.rxKw;
+        hl._scan();
+        const beforeDestroy = [...history.children].some((r) => r.classList.contains('rx-chat-kw'));
+        Settings.get = realGet;
+        hl.destroy();
+        const afterDestroy = [...history.children].some((r) => r.classList.contains('rx-chat-kw'));
+
+        return { marked, markedWithNoTerms, beforeDestroy, afterDestroy };
+    });
+
+    // Case-insensitive, and the username counts as much as the message body.
+    expect(result.marked).toEqual([true, false, true]);
+    expect(result.markedWithNoTerms).toBe(false);
+    expect(result.beforeDestroy).toBe(true);
+    // Turning it off leaves the host chat exactly as it was.
+    expect(result.afterDestroy).toBe(false);
+});
+
+test('ChatReadability clamps the font scale and keeps deleted messages visible', async () => {
+    const result = await inHarness(({ body }) => {
+        document.body.innerHTML = body;
+        const harness = globalThis.__RumbleXFeatureHarness;
+        harness.enable('chatReadability');
+        const cr = harness.features.find((f) => f.id === 'chatReadability');
+
+        const realGet = Settings.get.bind(Settings);
+        const store = { chatReadability: true, chatShowDeleted: true, chatFontScale: 100 };
+        Settings.get = (key) => (Object.hasOwn(store, key) ? store[key] : realGet(key));
+
+        const scales = {};
+        const cases = [['low', 10], ['high', 500], ['ok', 130], ['junk', 'abc']];
+        for (const pair of cases) {
+            store.chatFontScale = pair[1];
+            scales[pair[0]] = cr._scale();
+        }
+        store.chatFontScale = 100;
+
+        cr.init();
+        const classesOn = {
+            read: document.documentElement.classList.contains('rx-chat-read'),
+            deleted: document.documentElement.classList.contains('rx-chat-deleted'),
+        };
+        // 100 means "leave the site alone", so no size stylesheet is injected.
+        const noSizeSheetAt100 = cr._sizeEl === null;
+        store.chatFontScale = 130;
+        cr._applySize();
+        const sizeSheetAt130 = !!cr._sizeEl;
+
+        const history = document.querySelector('#chat-history-list');
+        const victim = document.createElement('div');
+        victim.className = 'chat-history--row';
+        const vu = document.createElement('button');
+        vu.className = 'chat-history--username';
+        vu.textContent = 'Mod';
+        victim.appendChild(vu);
+        history.appendChild(victim);
+
+        return new Promise((resolve) => {
+            const obs = cr._watchDeletions(history);
+            obs.observe(history, { childList: true });
+            victim.remove();
+            // MutationObserver callbacks are microtask-scheduled.
+            setTimeout(() => {
+                const restored = history.contains(victim);
+                const struck = victim.classList.contains('rx-chat-gone');
+                obs.disconnect();
+                Settings.get = realGet;
+                cr.destroy();
+                const classesAfter = document.documentElement.classList.contains('rx-chat-read')
+                    || document.documentElement.classList.contains('rx-chat-deleted');
+                resolve({ scales, classesOn, noSizeSheetAt100, sizeSheetAt130, restored, struck, classesAfter });
+            }, 30);
+        });
+    });
+
+    // Clamped into a range that stays readable either way.
+    expect(result.scales).toEqual({ low: 70, high: 160, ok: 130, junk: 100 });
+    expect(result.classesOn).toEqual({ read: true, deleted: true });
+    expect(result.noSizeSheetAt100).toBe(true);
+    expect(result.sizeSheetAt130).toBe(true);
+
+    // A removed message comes back struck through rather than vanishing.
+    expect(result.restored).toBe(true);
+    expect(result.struck).toBe(true);
+    expect(result.classesAfter).toBe(false);
+});

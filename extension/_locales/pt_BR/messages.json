@@ -1814,5 +1814,49 @@
   "rssCopyTitle": {
     "message": "Criar um feed RSS deste canal inteiramente no seu navegador",
     "description": "In-page UI string (shared core)."
+  },
+  "feat_chatMentionAutocomplete_label": {
+    "message": "Autocompletar menções",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_chatMentionAutocomplete_desc": {
+    "message": "Sugerir nomes desta sessão ao digitar @ no chat",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_chatMentionHighlight_label": {
+    "message": "Destaque por palavra-chave",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_chatMentionHighlight_desc": {
+    "message": "Destacar mensagens do chat que contenham seus termos",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_chatHighlightSound_label": {
+    "message": "Som de destaque",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_chatHighlightSound_desc": {
+    "message": "Tocar um som curto quando chegar uma mensagem destacada",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_chatReadability_label": {
+    "message": "Legibilidade do chat",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_chatReadability_desc": {
+    "message": "Linhas alternadas e tamanho de texto ajustável no chat",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_chatShowDeleted_label": {
+    "message": "Mostrar mensagens excluídas",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_chatShowDeleted_desc": {
+    "message": "Manter visíveis as mensagens excluídas, riscadas",
+    "description": "In-page UI string (shared core)."
+  },
+  "chatMentionListLabel": {
+    "message": "Sugestões de nomes do chat",
+    "description": "In-page UI string (shared core)."
   }
 }

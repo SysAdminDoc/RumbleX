@@ -216,6 +216,12 @@
         remoteCosmeticRulesChannel: 'stable',
         // Live chat & rants
         chatMentionHighlight: true,
+        chatHighlightKeywords: [],
+        chatHighlightSound: false,
+        chatMentionAutocomplete: true,
+        chatReadability: false,
+        chatFontScale: 100,
+        chatShowDeleted: false,
         chatClickToMention: true,
         chatParticipantsList: false,
         chatUsernameColors: 'deterministic',
@@ -594,7 +600,6 @@
         remoteCosmeticRulesChannel: 'Remote cosmetic rules use a single channel.',
 
         // Chat features that were never built.
-        chatMentionHighlight: 'Not built.',
         chatClickToMention: 'Not built.',
         chatParticipantsList: 'Not built.',
         chatTimedMutes: 'Not built.',

@@ -1814,5 +1814,49 @@
   "rssCopyTitle": {
     "message": "Créer un flux RSS de cette chaîne entièrement dans votre navigateur",
     "description": "In-page UI string (shared core)."
+  },
+  "feat_chatMentionAutocomplete_label": {
+    "message": "Autocomplétion des mentions",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_chatMentionAutocomplete_desc": {
+    "message": "Proposer les noms de cette session après avoir tapé @ dans le chat",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_chatMentionHighlight_label": {
+    "message": "Surlignage par mot-clé",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_chatMentionHighlight_desc": {
+    "message": "Surligner les messages du chat contenant vos termes",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_chatHighlightSound_label": {
+    "message": "Son de surlignage",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_chatHighlightSound_desc": {
+    "message": "Jouer un bref signal sonore à l’arrivée d’un message surligné",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_chatReadability_label": {
+    "message": "Lisibilité du chat",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_chatReadability_desc": {
+    "message": "Lignes alternées et taille de texte réglable dans le chat",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_chatShowDeleted_label": {
+    "message": "Afficher les messages supprimés",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_chatShowDeleted_desc": {
+    "message": "Garder les messages supprimés visibles, barrés",
+    "description": "In-page UI string (shared core)."
+  },
+  "chatMentionListLabel": {
+    "message": "Suggestions de noms pour le chat",
+    "description": "In-page UI string (shared core)."
   }
 }

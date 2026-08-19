@@ -23,7 +23,7 @@
 // @updateURL    https://github.com/SysAdminDoc/RumbleX/raw/main/RumbleX.lite.user.js
 // ==/UserScript==
 
-// Generated from extension/settings-schema.js + extension/content.js. Shared runtime SHA-256: 45f08005fea1728c123c64134dda54b2215d6afbbd65814ca7440b02b33ab90b
+// Generated from extension/settings-schema.js + extension/content.js. Shared runtime SHA-256: f662b77d9963fb3d7f013500a751b95d0e61b82d80e43c618d3a03adfaf0e3f6
 // RumbleX shared settings schema. This file is the canonical source for
 // defaults and trust-boundary normalization across content, options, popup,
 // background profile/Gist restores, and the generated userscript.
@@ -242,6 +242,12 @@
         remoteCosmeticRulesChannel: 'stable',
         // Live chat & rants
         chatMentionHighlight: true,
+        chatHighlightKeywords: [],
+        chatHighlightSound: false,
+        chatMentionAutocomplete: true,
+        chatReadability: false,
+        chatFontScale: 100,
+        chatShowDeleted: false,
         chatClickToMention: true,
         chatParticipantsList: false,
         chatUsernameColors: 'deterministic',
@@ -620,7 +626,6 @@
         remoteCosmeticRulesChannel: 'Remote cosmetic rules use a single channel.',
 
         // Chat features that were never built.
-        chatMentionHighlight: 'Not built.',
         chatClickToMention: 'Not built.',
         chatParticipantsList: 'Not built.',
         chatTimedMutes: 'Not built.',
@@ -1125,7 +1130,18 @@
   "rssCopied": "RSS feed for {count} videos copied",
   "rssDownloaded": "RSS feed saved as a file",
   "rssCopyButton": "Copy RSS",
-  "rssCopyTitle": "Build an RSS feed of this channel, entirely in your browser"
+  "rssCopyTitle": "Build an RSS feed of this channel, entirely in your browser",
+  "feat_chatMentionAutocomplete_label": "Mention Autocomplete",
+  "feat_chatMentionAutocomplete_desc": "Offer names from this session after typing @ in the chat box",
+  "feat_chatMentionHighlight_label": "Keyword Highlight",
+  "feat_chatMentionHighlight_desc": "Highlight chat messages containing your chosen terms",
+  "feat_chatHighlightSound_label": "Highlight Sound",
+  "feat_chatHighlightSound_desc": "Play a short tone when a highlighted message arrives",
+  "feat_chatReadability_label": "Chat Readability",
+  "feat_chatReadability_desc": "Alternating row shading and adjustable chat text size",
+  "feat_chatShowDeleted_label": "Show Deleted Messages",
+  "feat_chatShowDeleted_desc": "Keep removed chat messages visible, struck through",
+  "chatMentionListLabel": "Chat name suggestions"
 });
     const STORAGE_KEYS_WITH_CHANGE_EVENTS = ['rx_settings'];
     const ALLOWED_REQUEST_HOSTS = ['rumble.com', 'rumble.cloud', '1a-1791.com'];
@@ -1751,6 +1767,7 @@ const Selectors = {
         'chat.history':       { stable: '#chat-history-list', fallback: '.chat-history' },
         'chat.message':       { stable: '#chat-history-list .chat-history--row', fallback: '.chat-history--row' },
         'chat.username':      { stable: '.chat-history--username, .chat-history--rant-username', fallback: '.js-chat-username' },
+        'chat.composer':      { stable: 'form.chat-message-form textarea', fallback: '.chat--input textarea, .chat--input' },
         'rant.item':          { stable: '.chat-history--rant[data-level]', fallback: '.chat-history--rant' },
         'rant.price':         { stable: '.chat-history--rant-price', fallback: '[class*="rant-price"]' },
         'modal.portal':       { stable: '#portal[data-js="portal"]', fallback: '#portal' },
@@ -7921,6 +7938,419 @@ const AutoTheater = {
 // ═══════════════════════════════════════════
 //  FEATURE: Live Chat Enhance
 // ═══════════════════════════════════════════
+// ═══════════════════════════════════════════
+//  Shared chat helpers
+// ═══════════════════════════════════════════
+// Three chat modules read the same message shape. Keeping the readers here
+// means Rumble's markup is described once rather than three times.
+const ChatDom = {
+    rows(root = document) {
+        return qsa('#chat-history-list .chat-history--row, .chat-history--row, .chat-history--rant', root);
+    },
+    usernameEl(row) {
+        return row?.querySelector('.chat-history--username, .chat-history--rant-username, .js-chat-username') || null;
+    },
+    username(row) {
+        return (this.usernameEl(row)?.textContent || '').trim();
+    },
+    messageEl(row) {
+        return row?.querySelector('.chat-history--message, .chat-history--rant-text, [class*="message"]') || null;
+    },
+    message(row) {
+        return (this.messageEl(row)?.textContent || '').trim();
+    },
+    composer(root = document) {
+        return Selectors.find('chat.composer', root)
+            || qs('form.chat-message-form textarea, .chat--input textarea', root);
+    },
+    history(root = document) {
+        return Selectors.find('chat.history', root) || qs('#chat-history-list, .chat-history', root);
+    },
+};
+
+// ═══════════════════════════════════════════
+//  FEATURE: Chat Composer Assist
+// ═══════════════════════════════════════════
+// Typing a name from memory is the reason @-mentions go unanswered on Rumble.
+// Every other chat platform completes them; this indexes the people who have
+// actually spoken in this session and offers them after an `@`.
+const ChatComposerAssist = {
+    id: 'chatMentionAutocomplete',
+    name: 'Chat Mention Autocomplete',
+    _styleEl: null,
+    _obs: null,
+    _box: null,
+    _input: null,
+    _handlers: null,
+    _names: null,
+    _matches: [],
+    _active: 0,
+
+    _css: `
+        .rx-chat-ac {
+            position: absolute; z-index: 10030;
+            background: rgba(30,30,46,0.98);
+            border: 1px solid rgba(255,255,255,0.10);
+            border-radius: 8px; padding: 4px;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.55);
+            display: flex; flex-direction: column; gap: 2px;
+            max-height: 200px; overflow-y: auto; min-width: 160px;
+        }
+        .rx-chat-ac[hidden] { display: none; }
+        .rx-chat-ac button {
+            background: transparent; border: 0; color: #cdd6f4;
+            text-align: left; padding: 6px 10px; border-radius: 5px;
+            font: 600 12px/1 system-ui, sans-serif; cursor: pointer;
+            min-height: 24px;
+        }
+        .rx-chat-ac button:hover,
+        .rx-chat-ac button[aria-selected="true"] { background: rgba(137,180,250,0.22); }
+    `,
+
+    _indexNames() {
+        for (const row of ChatDom.rows()) {
+            const name = ChatDom.username(row);
+            if (name) this._names.add(name);
+        }
+        // Bounded: a long stream would otherwise grow this without limit.
+        if (this._names.size > 500) {
+            this._names = new Set([...this._names].slice(-500));
+        }
+    },
+
+    // Returns the partial name being typed, or null when the caret is not in a
+    // mention. Only the token immediately before the caret counts.
+    _pending(input) {
+        const value = input.value || '';
+        const caret = typeof input.selectionStart === 'number' ? input.selectionStart : value.length;
+        const before = value.slice(0, caret);
+        const match = before.match(/(?:^|\s)@([^\s@]*)$/);
+        return match ? { term: match[1], start: caret - match[1].length - 1, end: caret } : null;
+    },
+
+    _rank(term) {
+        const needle = term.toLowerCase();
+        const all = [...this._names];
+        const starts = all.filter((n) => n.toLowerCase().startsWith(needle));
+        const contains = needle ? all.filter((n) => !starts.includes(n) && n.toLowerCase().includes(needle)) : [];
+        return [...starts, ...contains].slice(0, 8);
+    },
+
+    _hide() {
+        if (this._box) this._box.hidden = true;
+        this._matches = [];
+        this._active = 0;
+    },
+
+    _render() {
+        const box = this._box;
+        if (!box) return;
+        box.textContent = '';
+        this._matches.forEach((name, index) => {
+            const item = document.createElement('button');
+            item.type = 'button';
+            item.textContent = name;
+            item.setAttribute('role', 'option');
+            item.setAttribute('aria-selected', index === this._active ? 'true' : 'false');
+            // mousedown, not click: the composer must not lose focus first.
+            item.addEventListener('mousedown', (event) => {
+                event.preventDefault();
+                this._accept(name);
+            });
+            box.appendChild(item);
+        });
+        box.hidden = this._matches.length === 0;
+    },
+
+    _accept(name) {
+        const input = this._input;
+        if (!input) return;
+        const pending = this._pending(input);
+        if (!pending) { this._hide(); return; }
+        const value = input.value || '';
+        const next = `${value.slice(0, pending.start)}@${name} ${value.slice(pending.end)}`;
+        input.value = next;
+        const caret = pending.start + name.length + 2;
+        try { input.setSelectionRange(caret, caret); } catch { /* not all inputs support it */ }
+        // Rumble's composer is framework-driven; without this it never learns
+        // the value changed and sends an empty message.
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+        this._hide();
+        input.focus();
+    },
+
+    _position() {
+        const input = this._input;
+        const box = this._box;
+        if (!input || !box) return;
+        const rect = input.getBoundingClientRect();
+        box.style.left = `${Math.round(rect.left)}px`;
+        box.style.top = `${Math.round(rect.top - box.offsetHeight - 6)}px`;
+        box.style.width = `${Math.round(rect.width)}px`;
+    },
+
+    _onInput() {
+        const input = this._input;
+        if (!input) return;
+        const pending = this._pending(input);
+        if (!pending) { this._hide(); return; }
+        this._indexNames();
+        this._matches = this._rank(pending.term);
+        this._active = 0;
+        this._render();
+        if (this._matches.length) this._position();
+    },
+
+    _onKeyDown(event) {
+        if (!this._box || this._box.hidden || !this._matches.length) return;
+        if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+            event.preventDefault();
+            const delta = event.key === 'ArrowDown' ? 1 : -1;
+            this._active = (this._active + delta + this._matches.length) % this._matches.length;
+            this._render();
+        } else if (event.key === 'Enter' || event.key === 'Tab') {
+            event.preventDefault();
+            this._accept(this._matches[this._active]);
+        } else if (event.key === 'Escape') {
+            this._hide();
+        }
+    },
+
+    _attach() {
+        const input = ChatDom.composer();
+        if (!input || input === this._input) return;
+        this._detachInput();
+        this._input = input;
+        const onInput = () => this._onInput();
+        const onKeyDown = (event) => this._onKeyDown(event);
+        const onBlur = () => setTimeout(() => this._hide(), 120);
+        input.addEventListener('input', onInput);
+        input.addEventListener('keydown', onKeyDown);
+        input.addEventListener('blur', onBlur);
+        this._handlers = { onInput, onKeyDown, onBlur };
+    },
+
+    _detachInput() {
+        if (this._input && this._handlers) {
+            this._input.removeEventListener('input', this._handlers.onInput);
+            this._input.removeEventListener('keydown', this._handlers.onKeyDown);
+            this._input.removeEventListener('blur', this._handlers.onBlur);
+        }
+        this._input = null;
+        this._handlers = null;
+    },
+
+    init() {
+        if (!Settings.get(this.id)) return;
+        if (!Page.isWatch() && !Page.isLive()) return;
+        this._styleEl = injectStyle(this._css, 'rx-chat-ac-css');
+        this._names = new Set();
+        const box = document.createElement('div');
+        box.className = 'rx-chat-ac';
+        box.setAttribute('role', 'listbox');
+        box.setAttribute('aria-label', rxT('chatMentionListLabel', 'Chat name suggestions'));
+        box.hidden = true;
+        document.body.appendChild(box);
+        this._box = box;
+
+        this._attach();
+        this._indexNames();
+        this._obs = new MutationObserver(() => {
+            scheduleFeatureFrame(this, 'chat-ac', () => { this._attach(); this._indexNames(); });
+        });
+        this._obs.observe(document.documentElement, { childList: true, subtree: true });
+    },
+
+    destroy() {
+        this._obs?.disconnect();
+        this._obs = null;
+        this._detachInput();
+        this._styleEl?.remove();
+        this._styleEl = null;
+        this._box?.remove();
+        this._box = null;
+        this._names = null;
+        this._matches = [];
+    }
+};
+
+// ═══════════════════════════════════════════
+//  FEATURE: Chat Highlights
+// ═══════════════════════════════════════════
+// A fast chat scrolls past faster than anyone reads. Highlighting the messages
+// that mention a word you care about is what makes one watchable at all.
+const ChatHighlights = {
+    id: 'chatMentionHighlight',
+    name: 'Chat Keyword Highlight',
+    _styleEl: null,
+    _obs: null,
+    _audio: null,
+
+    _css: `
+        .rx-chat-kw {
+            background: rgba(249,226,175,0.14) !important;
+            border-left: 2px solid #f9e2af !important;
+        }
+    `,
+
+    _terms() {
+        const raw = Settings.get('chatHighlightKeywords');
+        if (!Array.isArray(raw)) return [];
+        return raw.map((entry) => String(entry || '').trim().toLowerCase()).filter(Boolean);
+    },
+
+    // A short synthesized blip rather than a bundled asset: no file to ship, no
+    // network request, and nothing to fail if audio is unavailable.
+    _ping() {
+        if (!Settings.get('chatHighlightSound')) return;
+        try {
+            this._audio = this._audio || new (window.AudioContext || window.webkitAudioContext)();
+            const ctx = this._audio;
+            if (ctx.state === 'suspended') return;
+            const osc = ctx.createOscillator();
+            const gain = ctx.createGain();
+            osc.frequency.value = 880;
+            gain.gain.setValueAtTime(0.0001, ctx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.06, ctx.currentTime + 0.01);
+            gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.18);
+            osc.connect(gain).connect(ctx.destination);
+            osc.start();
+            osc.stop(ctx.currentTime + 0.2);
+        } catch { /* audio is a nicety, never a requirement */ }
+    },
+
+    _scan() {
+        const terms = this._terms();
+        if (!terms.length) return;
+        let matched = false;
+        for (const row of ChatDom.rows()) {
+            if (row.dataset.rxKw) continue;
+            row.dataset.rxKw = '1';
+            const haystack = `${ChatDom.username(row)} ${ChatDom.message(row)}`.toLowerCase();
+            if (terms.some((term) => haystack.includes(term))) {
+                row.classList.add('rx-chat-kw');
+                matched = true;
+            }
+        }
+        if (matched) this._ping();
+    },
+
+    init() {
+        if (!Settings.get(this.id)) return;
+        if (!Page.isWatch() && !Page.isLive()) return;
+        this._styleEl = injectStyle(this._css, 'rx-chat-kw-css');
+        this._scan();
+        this._obs = new MutationObserver(() => {
+            scheduleFeatureFrame(this, 'chat-kw', () => this._scan());
+        });
+        this._obs.observe(document.documentElement, { childList: true, subtree: true });
+    },
+
+    destroy() {
+        this._obs?.disconnect();
+        this._obs = null;
+        this._styleEl?.remove();
+        this._styleEl = null;
+        for (const row of qsa('.rx-chat-kw')) row.classList.remove('rx-chat-kw');
+        for (const row of ChatDom.rows()) delete row.dataset.rxKw;
+        try { this._audio?.close(); } catch { /* already closed */ }
+        this._audio = null;
+    }
+};
+
+// ═══════════════════════════════════════════
+//  FEATURE: Chat Readability
+// ═══════════════════════════════════════════
+// Alternating row shading, an adjustable font size, and keeping deleted
+// messages visible as struck-through text instead of having them vanish and
+// shift everything under them.
+const ChatReadability = {
+    id: 'chatReadability',
+    name: 'Chat Readability',
+    _styleEl: null,
+    _sizeEl: null,
+    _obs: null,
+
+    _css: `
+        html.rx-chat-read #chat-history-list .chat-history--row:nth-child(even) {
+            background: rgba(255,255,255,0.035);
+        }
+        html.rx-chat-read #chat-history-list .chat-history--row {
+            padding-top: 2px; padding-bottom: 2px;
+        }
+        html.rx-chat-deleted .chat-history--row.rx-chat-gone {
+            display: block !important;
+            opacity: 0.55;
+            text-decoration: line-through;
+        }
+    `,
+
+    _scale() {
+        const raw = Number(Settings.get('chatFontScale'));
+        if (!Number.isFinite(raw)) return 100;
+        return Math.min(160, Math.max(70, Math.round(raw)));
+    },
+
+    _applySize() {
+        const scale = this._scale();
+        const css = scale === 100 ? '' : `
+            #chat-history-list, #chat-history-list .chat-history--row {
+                font-size: ${scale}% !important;
+            }`;
+        this._sizeEl?.remove();
+        this._sizeEl = css ? injectStyle(css, 'rx-chat-size-css') : null;
+    },
+
+    // Rumble removes a deleted message outright. Catching the removal and
+    // re-inserting it struck-through keeps the conversation readable, and makes
+    // moderation visible rather than silent.
+    _watchDeletions(history) {
+        return new MutationObserver((records) => {
+            if (!Settings.get('chatShowDeleted')) return;
+            for (const record of records) {
+                for (const node of record.removedNodes) {
+                    if (!(node instanceof HTMLElement)) continue;
+                    if (!node.classList?.contains('chat-history--row')) continue;
+                    if (node.classList.contains('rx-chat-gone')) continue;
+                    node.classList.add('rx-chat-gone');
+                    try {
+                        if (record.nextSibling && record.nextSibling.parentNode === history) {
+                            history.insertBefore(node, record.nextSibling);
+                        } else {
+                            history.appendChild(node);
+                        }
+                    } catch { /* the row is gone for good; nothing to restore */ }
+                }
+            }
+        });
+    },
+
+    init() {
+        if (!Settings.get(this.id)) return;
+        if (!Page.isWatch() && !Page.isLive()) return;
+        this._styleEl = injectStyle(this._css, 'rx-chat-read-css');
+        document.documentElement.classList.add('rx-chat-read');
+        if (Settings.get('chatShowDeleted')) document.documentElement.classList.add('rx-chat-deleted');
+        this._applySize();
+
+        waitForFeature(this, '#chat-history-list, .chat-history').then((history) => {
+            this._obs = this._watchDeletions(history);
+            this._obs.observe(history, { childList: true });
+        }).catch(() => {});
+    },
+
+    destroy() {
+        this._obs?.disconnect();
+        this._obs = null;
+        this._styleEl?.remove();
+        this._styleEl = null;
+        this._sizeEl?.remove();
+        this._sizeEl = null;
+        document.documentElement.classList.remove('rx-chat-read', 'rx-chat-deleted');
+        for (const row of qsa('.rx-chat-gone')) row.classList.remove('rx-chat-gone');
+    }
+};
+
 const LiveChatEnhance = {
     id: 'liveChatEnhance',
     name: 'Chat Enhance',
@@ -11424,6 +11854,11 @@ const RX_CATEGORIES = [
         icon: '<path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm0 14H5.17L4 17.17V4h16v12z"/>',
         features: [
             { id: 'liveChatEnhance', label: 'Chat Enhance', desc: '@mention highlights, message filter bar' },
+            { id: 'chatMentionAutocomplete', label: 'Mention Autocomplete', desc: 'Offer names from this session after typing @ in the chat box' },
+            { id: 'chatMentionHighlight', label: 'Keyword Highlight', desc: 'Highlight chat messages containing your chosen terms' },
+            { id: 'chatHighlightSound', label: 'Highlight Sound', desc: 'Play a short tone when a highlighted message arrives', parent: 'chatMentionHighlight' },
+            { id: 'chatReadability', label: 'Chat Readability', desc: 'Alternating row shading and adjustable chat text size' },
+            { id: 'chatShowDeleted', label: 'Show Deleted Messages', desc: 'Keep removed chat messages visible, struck through', parent: 'chatReadability' },
             { id: 'chatAutoScroll', label: 'Chat Scroll', desc: 'Smart auto-scroll with pause on scroll-up' },
             { id: 'uniqueChatters', label: 'Unique Chatters', desc: 'Live counter of unique chatters + messages' },
             { id: 'chatUserBlock', label: 'User Block', desc: 'Per-user chat hide (click "block" on message)' },
@@ -17469,6 +17904,7 @@ const features = [
     AdNuker, FeedCleanup, HidePremium, CategoryFilter, DarkEnhance, TheaterSplit,
     VideoDownloader, LogoToFeed, SpeedController, ScrollVolume, AutoMaxQuality,
     WatchProgress, ChannelBlocker, KeyboardNav, AutoTheater, LiveChatEnhance,
+    ChatComposerAssist, ChatHighlights, ChatReadability,
     VideoTimestamps, ScreenshotBtn, WatchHistoryFeature, AutoplayBlock,
     SearchHistory, MiniPlayer, VideoStats, LoopControl, QuickBookmark, CommentNav,
     RantHighlight, RelatedFilter, ExactCounts, ShareTimestamp, TimeRemaining, ShortsFilter,

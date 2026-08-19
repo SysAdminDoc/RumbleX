@@ -46,9 +46,9 @@ const cssBody = core.match(/const RX_CSS_TOGGLES = \[([\s\S]*?)\n\];/)?.[1] || '
 assert.ok(cssBody, 'CSS feature registry is missing');
 const cssIds = [...cssBody.matchAll(/\bid:\s*'([^']+)'/g)].map((match) => match[1]);
 
-assert.equal(handwritten.length, 79, 'handwritten feature count changed; update behavior coverage intentionally');
+assert.equal(handwritten.length, 82, 'handwritten feature count changed; update behavior coverage intentionally');
 assert.equal(cssIds.length, 51, 'CSS feature count changed; update behavior coverage intentionally');
-assert.equal(handwritten.length + cssIds.length, 130, 'total feature catalog changed unexpectedly');
+assert.equal(handwritten.length + cssIds.length, 133, 'total feature catalog changed unexpectedly');
 
 const allIds = [...handwritten.map(({ id }) => id), ...cssIds];
 assert.equal(new Set(allIds).size, allIds.length, 'feature ids must be unique across both registries');
@@ -106,6 +106,7 @@ const MODAL_EXCLUSIONS = {
     channelArchiveMaxItems: 'value-input', channelArchiveMaxHeight: 'value-input',
     chatMuteDurations: 'value-input', commentMuteDurations: 'value-input',
     glassIntensity: 'value-input', accentColor: 'value-input',
+    chatHighlightKeywords: 'value-input', chatFontScale: 'value-input',
     sponsorCategoryBehavior: 'value-input', sponsorTimeSaved: 'value-input',
 
     // Enum choices — same reasoning as value inputs.
@@ -138,7 +139,7 @@ const MODAL_EXCLUSIONS = {
     // These must not appear as live switches anywhere until implemented.
     multiStreamViewer: 'parked', studioSceneTools: 'parked', uploaderMetadataFill: 'parked',
     creatorMode: 'parked', obsAlertExport: 'parked',
-    commentSearch: 'parked', chatMentionHighlight: 'parked', chatClickToMention: 'parked',
+    commentSearch: 'parked', chatClickToMention: 'parked',
     chatParticipantsList: 'parked', chatTimedMutes: 'parked', chatUsernameColors: 'parked',
     rantStatsPanel: 'parked', rantStickyHighValue: 'parked', filterPreviewBadges: 'parked',
 };

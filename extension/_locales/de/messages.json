@@ -1814,5 +1814,49 @@
   "rssCopyTitle": {
     "message": "Einen RSS-Feed dieses Kanals vollständig im Browser erzeugen",
     "description": "In-page UI string (shared core)."
+  },
+  "feat_chatMentionAutocomplete_label": {
+    "message": "Erwähnungs-Autovervollständigung",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_chatMentionAutocomplete_desc": {
+    "message": "Nach der Eingabe von @ im Chatfeld Namen aus dieser Sitzung vorschlagen",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_chatMentionHighlight_label": {
+    "message": "Stichwort-Hervorhebung",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_chatMentionHighlight_desc": {
+    "message": "Chatnachrichten mit den von dir gewählten Begriffen hervorheben",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_chatHighlightSound_label": {
+    "message": "Hervorhebungston",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_chatHighlightSound_desc": {
+    "message": "Einen kurzen Ton abspielen, wenn eine hervorgehobene Nachricht eintrifft",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_chatReadability_label": {
+    "message": "Chat-Lesbarkeit",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_chatReadability_desc": {
+    "message": "Abwechselnde Zeilenfarbe und einstellbare Chat-Textgröße",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_chatShowDeleted_label": {
+    "message": "Gelöschte Nachrichten anzeigen",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_chatShowDeleted_desc": {
+    "message": "Entfernte Chatnachrichten durchgestrichen sichtbar lassen",
+    "description": "In-page UI string (shared core)."
+  },
+  "chatMentionListLabel": {
+    "message": "Namensvorschläge für den Chat",
+    "description": "In-page UI string (shared core)."
   }
 }
