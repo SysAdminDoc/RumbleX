@@ -2020,7 +2020,7 @@
     "description": "In-page UI string (shared core)."
   },
   "creatorPanelNote": {
-    "message": "Counted from the videos listed on this page, so it only sees as far back as the page loads. Raids are not counted: they are only visible as a chat notice while one happens.",
+    "message": "Counted from the videos this page lists, so it only sees as far back as the page goes. Raids are not counted: they are only visible as a chat notice while one happens.",
     "description": "In-page UI string (shared core)."
   }
 }

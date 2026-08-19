@@ -2320,6 +2320,11 @@ test('CreatorProgram counts this month from the embedded listing, not the DOM ca
         host.appendChild(junk);
 
         const all = ChannelListing.parse(host);
+        // Rumble strips these blocks out of the DOM during hydration, so the
+        // real page has none of them and the HTML parser is the path that
+        // actually runs. Both must agree.
+        const fromHtml = ChannelListing.parseHtml(host.innerHTML);
+        const domIsEmpty = ChannelListing.parse(document).length;
         const mine = ChannelListing.forPath(all, '/c/fixture');
         const byUserPath = ChannelListing.forPath(all, '/c/Fixture/videos');
         // A path nobody owns falls back to everything rather than nothing.
@@ -2350,6 +2355,9 @@ test('CreatorProgram counts this month from the embedded listing, not the DOM ca
 
         return {
             parsed: all.length,
+            fromHtml: fromHtml.length,
+            fromHtmlIds: fromHtml.map((i) => i.id),
+            domIsEmpty,
             mine: mine.length,
             byUserPathIds: byUserPath.map((i) => i.id),
             unknownPath: unknownPath.length,
@@ -2362,6 +2370,11 @@ test('CreatorProgram counts this month from the embedded listing, not the DOM ca
 
     // The malformed script contributed nothing; the six real entries survived.
     expect(result.parsed).toBe(6);
+    // Reading the same markup as text gives the same answer, which is what the
+    // shipped path does, because the live page keeps none of these blocks.
+    expect(result.fromHtml).toBe(6);
+    expect(result.fromHtmlIds).toEqual([1, 2, 3, 4, 5, 6]);
+    expect(result.domIsEmpty).toBe(0);
     expect(result.mine).toBe(5);
     // A deeper path under the same channel still matches, case-insensitively.
     expect(result.byUserPathIds).toEqual([1, 2, 3, 4, 5]);

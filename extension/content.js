@@ -6225,7 +6225,30 @@ const ChannelBlocker = {
 //
 // This is a supplement to the card adapter, never a replacement: the DOM
 // remains the source of truth for anything RumbleX modifies on screen.
+//
+// The blocks live in the served HTML and do NOT survive hydration — a channel
+// page that ships them has zero of them left in `document` by the time a
+// content script looks (verified on live channel pages, 2026-08-19). So the
+// DOM is checked first because it is free, and the page source is re-read only
+// when the DOM has nothing.
 const ChannelListing = {
+    _keep(items) {
+        return items.filter((item) => item?.object_type === 'video' && item?.relative_url);
+    },
+
+    parseHtml(html) {
+        const items = [];
+        for (const match of String(html || '').matchAll(/<script[^>]*>([\s\S]*?)<\/script>/g)) {
+            const body = match[1];
+            if (!body.includes('"items"')) continue;
+            try {
+                const parsed = JSON.parse(body.trim());
+                if (Array.isArray(parsed?.items)) items.push(...parsed.items);
+            } catch { /* not every script carrying the word is JSON */ }
+        }
+        return this._keep(items);
+    },
+
     parse(root = document) {
         const items = [];
         for (const script of root.querySelectorAll('script')) {
@@ -6236,7 +6259,17 @@ const ChannelListing = {
                 if (Array.isArray(parsed?.items)) items.push(...parsed.items);
             } catch { /* not every script carrying the word is JSON */ }
         }
-        return items.filter((item) => item?.object_type === 'video' && item?.relative_url);
+        return this._keep(items);
+    },
+
+    // Same origin, same URL the browser already loaded, cookies omitted. Costs
+    // one conditional request that usually comes straight from cache.
+    async load({ signal } = {}) {
+        const inline = this.parse();
+        if (inline.length) return inline;
+        const resp = await RXPlatform.fetch(location.href, { credentials: 'omit', signal });
+        if (!resp.ok) return [];
+        return this.parseHtml(await resp.text());
     },
 
     // A channel page also embeds unrelated rails, so keep only what this
@@ -17386,9 +17419,11 @@ const RxDownloadDiagnostics = {
 //  FEATURE: Creator Program panel (v3.50.0)
 // ═══════════════════════════════════════════
 // Rumble's Creator Program (2026-07-01) scores creators against monthly
-// thresholds. This counts the ones that are visible from a channel page you
-// are already looking at, with no request of any kind: the listing Rumble
-// embeds in the page carries `is_short` and `upload_date` per video.
+// thresholds. This counts the ones visible from the channel page you are
+// already on: Rumble embeds a listing carrying `is_short` and `upload_date`
+// per video. That listing is stripped from the DOM during hydration, so the
+// panel re-reads the page's own HTML — same origin, same URL, cookies omitted,
+// once per visit.
 //
 // Raid counting is deliberately absent. The program counts raids across five
 // separate streams, and a raid is only observable as a chat notice while it
@@ -17401,6 +17436,9 @@ const CreatorProgram = {
     _styleEl: null,
     _panel: null,
     _obs: null,
+    _controller: null,
+    _cache: null,
+    _pending: null,
 
     // Published thresholds, 2026-07-01 program terms.
     _SHORTS_TARGET: 20,
@@ -17495,18 +17533,38 @@ const CreatorProgram = {
         note.className = 'rx-cp-note';
         note.textContent = rxT(
             'creatorPanelNote',
-            'Counted from the videos listed on this page, so it only sees as far back as the page loads. Raids are not counted: they are only visible as a chat notice while one happens.',
+            'Counted from the videos this page lists, so it only sees as far back as the page goes. Raids are not counted: they are only visible as a chat notice while one happens.',
         );
         panel.appendChild(note);
         return panel;
     },
 
-    _mount() {
+    // Read once per visit and cached: the listing does not change under you,
+    // and re-reading it on every mutation would turn a page-local panel into a
+    // request loop.
+    async _items() {
+        if (this._cache) return this._cache;
+        if (!this._pending) {
+            this._pending = ChannelListing.load({ signal: this._controller?.signal })
+                .then((items) => {
+                    this._cache = ChannelListing.forPath(items, location.pathname);
+                    return this._cache;
+                })
+                .catch((err) => {
+                    RxErrorLog.record('creator-listing', err);
+                    return [];
+                });
+        }
+        return this._pending;
+    },
+
+    async _mount() {
         if (this._panel?.isConnected) return;
-        const items = ChannelListing.forPath(ChannelListing.parse(), location.pathname);
-        if (!items.length) return;
         const host = qs('.channel-header--content, .channel-header, main');
         if (!host) return;
+        const items = await this._items();
+        // Re-check: the await gave destroy() and other mounts a chance to run.
+        if (!items.length || this._panel?.isConnected || !host.isConnected) return;
         const panel = this._render(this._tally(items));
         host.prepend(panel);
         this._panel = panel;
@@ -17515,11 +17573,14 @@ const CreatorProgram = {
     init() {
         if (!Settings.get(this.id) || !Page.isChannel()) return;
         this._styleEl = injectStyle(this._css, 'rx-creator-css');
-        this._mount();
+        this._controller = new AbortController();
+        this._cache = null;
+        this._pending = null;
+        void this._mount();
         // Rumble hydrates the channel header after first paint, so the mount
         // point often does not exist yet on the first pass.
         this._obs = new MutationObserver(() => {
-            scheduleFeatureFrame(this, 'creator-mount', () => this._mount());
+            scheduleFeatureFrame(this, 'creator-mount', () => void this._mount());
         });
         this._obs.observe(document.documentElement, { childList: true, subtree: true });
     },
@@ -17527,6 +17588,10 @@ const CreatorProgram = {
     destroy() {
         this._obs?.disconnect();
         this._obs = null;
+        this._controller?.abort();
+        this._controller = null;
+        this._cache = null;
+        this._pending = null;
         this._panel?.remove();
         this._panel = null;
         this._styleEl?.remove();
@@ -17911,6 +17976,9 @@ function rxBuildPrivacyReport() {
             'Error log ring buffer is captured locally on every page (200-entry rolling window, no upload)'
                 + (settings.debugErrorLog ? ' and is visible on the options page' : ' and stays hidden until the Error Log Ring Buffer setting is enabled'),
             settings.remoteCosmeticRules ? 'Remote cosmetic rules enabled — signed payloads only' : 'Remote cosmetic rules disabled',
+            settings.creatorMode
+                ? 'The Creator Program panel re-reads the channel page you are on, once per visit, because Rumble strips its own listing data out of the DOM after load — same origin, same URL, no cookies, nothing sent'
+                : 'The Creator Program panel is off — no page is re-read',
             (settings.subtitleSidecar && settings.subtitleNativeTracks)
                 ? "Rumble's own captions are read on watch pages — one request to rumble.com/embedJS for the track list, then the caption file itself from a Rumble media host; nothing is sent anywhere"
                 : "Rumble's own captions are not requested — the Subtitles panel only reads files you pick",
