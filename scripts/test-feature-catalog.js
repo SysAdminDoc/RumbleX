@@ -124,6 +124,7 @@ const MODAL_EXCLUSIONS = {
     // userscript runtime, where these capabilities do not exist.
     contextMenusEnabled: 'extension-only', sidePanelEnabled: 'extension-only',
     channelNotifierEnabled: 'extension-only', channelArchiveEnabled: 'extension-only',
+    channelNotifierLive: 'extension-only', channelNotifierUploads: 'extension-only',
     channelArchiveFilterClips: 'extension-only', channelArchiveButton: 'extension-only',
     archiveQueuePauseOnOffline: 'extension-only', downloadManagerEnabled: 'extension-only',
     downloadIncludeMetadata: 'extension-only', downloadIncludeThumbnail: 'extension-only',

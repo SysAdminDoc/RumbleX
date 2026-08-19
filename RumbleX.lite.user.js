@@ -23,7 +23,7 @@
 // @updateURL    https://github.com/SysAdminDoc/RumbleX/raw/main/RumbleX.lite.user.js
 // ==/UserScript==
 
-// Generated from extension/settings-schema.js + extension/content.js. Shared runtime SHA-256: c290e5a9da9815ef69c5ea56ab0940c63599b1b5526a078bf6a700c7c0a330a1
+// Generated from extension/settings-schema.js + extension/content.js. Shared runtime SHA-256: 3a390fdbd86bd9d067dcf061cc36a9288370fd30c21adf0fb58c77c560185c79
 // RumbleX shared settings schema. This file is the canonical source for
 // defaults and trust-boundary normalization across content, options, popup,
 // background profile/Gist restores, and the generated userscript.
@@ -274,6 +274,9 @@
         bulkUnsubscribeEnabled: false,
         bulkUnsubscribeDryRun: true,
         channelNotifierEnabled: false,
+        // Which events the notifier raises, once the master switch above is on.
+        channelNotifierLive: true,
+        channelNotifierUploads: true,
         discordWebhookUrl: '',
         rssExportEnabled: false,
         creatorMode: false,

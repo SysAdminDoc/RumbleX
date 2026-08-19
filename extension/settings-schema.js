@@ -248,6 +248,9 @@
         bulkUnsubscribeEnabled: false,
         bulkUnsubscribeDryRun: true,
         channelNotifierEnabled: false,
+        // Which events the notifier raises, once the master switch above is on.
+        channelNotifierLive: true,
+        channelNotifierUploads: true,
         discordWebhookUrl: '',
         rssExportEnabled: false,
         creatorMode: false,

@@ -526,8 +526,77 @@ async function rxSyncChannelNotifier() {
 // channel grid + scans for the "LIVE" badge SVG / class hooks. Won't grab
 // titles when Rumble changes its markup — that's intentional, we just
 // detect "something new" and let the notification say so.
-function rxParseChannelHtml(html) {
+// Channel pages carry their listing in one or more `<script>` blocks shaped
+// `{"items":[...],"analytics":{...}}`, one entry per video with `id`, `title`,
+// `relative_url`, `upload_date` and a boolean `live`. This is the same data the
+// grid renders from, and it survives markup changes that break class-name
+// matching. Shape verified against live channel pages on 2026-08-19; the same
+// migration broke yt-dlp's channel extractor (yt-dlp #16904).
+function rxParseChannelItems(html, channelPath) {
+    const items = [];
+    for (const match of String(html || '').matchAll(/<script[^>]*>([\s\S]*?)<\/script>/g)) {
+        const body = match[1];
+        if (!body.includes('"items"')) continue;
+        try {
+            const parsed = JSON.parse(body.trim());
+            if (Array.isArray(parsed?.items)) items.push(...parsed.items);
+        } catch { /* not every script carrying the word is JSON */ }
+    }
+    const videos = items.filter((item) => item?.object_type === 'video' && item?.relative_url);
+    if (!videos.length) return null;
+
+    // A channel page also embeds unrelated rails (the "live now" sidebar), so
+    // keep only entries this channel actually published. If the filter empties
+    // the list the page shape is one we have not seen, and a blanked notifier
+    // is worse than a slightly loose match.
+    const path = String(channelPath || '').toLowerCase();
+    const owned = path
+        ? videos.filter((item) => String(item?.by?.relative_url || '').toLowerCase() === path)
+        : videos;
+    const scoped = owned.length ? owned : videos;
+
+    const stamp = (item) => {
+        const value = Date.parse(item?.upload_date || '');
+        return Number.isFinite(value) ? value : -1;
+    };
+    // Newest-first is the observed order, but upload_date is authoritative and
+    // costs nothing to honour.
+    const latest = scoped.reduce((best, item) => (stamp(item) > stamp(best) ? item : best), scoped[0]);
+    const live = scoped.find((item) => item?.live === true) || null;
+    return { videos: scoped, latest, live };
+}
+
+function rxItemToEvent(item) {
+    if (!item) return null;
+    const url = rxSafeRumbleUrl(new URL(item.relative_url, 'https://rumble.com/').href);
+    if (!url) return null;
+    return {
+        id: item.id != null ? String(item.id) : null,
+        url,
+        title: typeof item.title === 'string' ? item.title.slice(0, 300) : '',
+        viewers: Number.isFinite(item.watching_now) ? item.watching_now : null,
+    };
+}
+
+// Returns { latestVideoId, isLive, latest, live }. The `latest`/`live` entries
+// carry the watch URL so a notification can open the stream itself rather than
+// the channel page. Falls back to the old class-name scan when the JSON block
+// is absent, because some page shapes still only offer that.
+function rxParseChannelHtml(html, channelUrl) {
     try {
+        let channelPath = '';
+        try { channelPath = new URL(channelUrl).pathname; } catch { channelPath = ''; }
+        const parsed = rxParseChannelItems(html, channelPath);
+        if (parsed) {
+            const latest = rxItemToEvent(parsed.latest);
+            const live = rxItemToEvent(parsed.live);
+            return {
+                latestVideoId: latest?.id || null,
+                isLive: !!live,
+                latest,
+                live,
+            };
+        }
         // The very first data-video-id on the page is the latest video on
         // a channel page (Rumble orders newest-first by default).
         const idMatch = html.match(/data-video-id="([^"]+)"/);
@@ -537,8 +606,10 @@ function rxParseChannelHtml(html) {
         return {
             latestVideoId: idMatch ? idMatch[1] : null,
             isLive,
+            latest: null,
+            live: null,
         };
-    } catch { return { latestVideoId: null, isLive: false }; }
+    } catch { return { latestVideoId: null, isLive: false, latest: null, live: null }; }
 }
 
 // Numeric dotted-version comparison. Returns >0 when `a` is newer than `b`,
@@ -655,30 +726,38 @@ async function rxRunNotifierPass() {
                 continue;
             }
             const text = await resp.text();
-            const { latestVideoId, isLive } = rxParseChannelHtml(text);
+            const { latestVideoId, isLive, latest, live } = rxParseChannelHtml(text, channelUrl);
             const newVideo = latestVideoId && safeChannel.lastSeenVideoId && latestVideoId !== safeChannel.lastSeenVideoId;
             const liveStarted = isLive && !safeChannel.isLive;
-            if (newVideo) {
+            // Clicking a notification should land on the thing it is about.
+            // The channel page is only the fallback for a page shape that did
+            // not give us a watch URL.
+            const videoUrl = latest?.url || channelUrl;
+            const liveUrl = live?.url || channelUrl;
+            if (newVideo && s.channelNotifierUploads !== false) {
                 await rxFireNotification({
                     title: 'New video — ' + safeChannel.name,
-                    message: 'A new video is up on this channel.',
-                    url: channelUrl,
+                    message: latest?.title || 'A new video is up on this channel.',
+                    url: videoUrl,
                 });
                 if (s.discordWebhookUrl) {
                     void rxPostDiscordWebhook(s.discordWebhookUrl, {
-                        content: 'New RumbleX video on ' + safeChannel.name + ': ' + channelUrl,
+                        content: 'New RumbleX video on ' + safeChannel.name + ': ' + videoUrl,
                     });
                 }
             }
-            if (liveStarted) {
+            if (liveStarted && s.channelNotifierLive !== false) {
+                const viewers = Number.isFinite(live?.viewers) && live.viewers > 0
+                    ? ` · ${live.viewers} watching`
+                    : '';
                 await rxFireNotification({
                     title: 'LIVE — ' + safeChannel.name,
-                    message: 'This channel just went live.',
-                    url: channelUrl,
+                    message: (live?.title || 'This channel just went live.') + viewers,
+                    url: liveUrl,
                 });
                 if (s.discordWebhookUrl) {
                     void rxPostDiscordWebhook(s.discordWebhookUrl, {
-                        content: 'LIVE on ' + safeChannel.name + ' → ' + channelUrl,
+                        content: 'LIVE on ' + safeChannel.name + ' → ' + liveUrl,
                     });
                 }
             }

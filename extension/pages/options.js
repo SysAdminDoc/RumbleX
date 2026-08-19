@@ -306,6 +306,8 @@
         bulkUnsubscribeEnabled: { group: 'automation', label: 'Bulk Unsubscribe', desc: 'Preview + stop + undo toast. Local log.' },
         bulkUnsubscribeDryRun: { group: 'automation', label: 'Bulk Unsubscribe Dry-Run', desc: 'Preview unsubs before executing.' },
         channelNotifierEnabled: { group: 'automation', label: 'Channel Notifier', desc: 'Alarm-based new-video/live monitor.' },
+        channelNotifierLive: { group: 'automation', label: 'Notify On Live', desc: 'Raise a desktop notification when a watched channel goes live. Clicking it opens the stream.' },
+        channelNotifierUploads: { group: 'automation', label: 'Notify On New Video', desc: 'Raise a desktop notification when a watched channel posts a video.' },
         discordWebhookUrl: { group: 'integrations', label: 'Discord Webhook URL', desc: 'Optional user-provided webhook for notifications.' },
         rssExportEnabled: { group: 'integrations', label: 'RSS / OPML Export', desc: 'Export channels to RSS or OPML.' },
         creatorMode: { group: 'creator', label: 'Creator Mode', desc: 'Unlocks Studio + uploader helpers.' },
