@@ -106,6 +106,7 @@ const MODAL_EXCLUSIONS = {
     channelArchiveMaxItems: 'value-input', channelArchiveMaxHeight: 'value-input',
     chatMuteDurations: 'value-input', commentMuteDurations: 'value-input',
     glassIntensity: 'value-input', accentColor: 'value-input',
+    sponsorCategoryBehavior: 'value-input', sponsorTimeSaved: 'value-input',
 
     // Enum choices — same reasoning as value inputs.
     autoplayBlockMode: 'enum', blockedKeywordsMode: 'enum', clipExportFormat: 'enum',

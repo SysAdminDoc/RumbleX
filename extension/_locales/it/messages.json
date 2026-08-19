@@ -1754,5 +1754,29 @@
   "feat_titleNormalizer_desc": {
     "message": "Attenua MAIUSCOLE, raffiche di emoji e !!! ripetuti nei titoli; l’originale resta al passaggio del mouse",
     "description": "In-page UI string (shared core)."
+  },
+  "feat_sponsorSkipUndo_label": {
+    "message": "Annulla salto",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_sponsorSkipUndo_desc": {
+    "message": "Mostra un pulsante Annulla dopo aver saltato un segmento",
+    "description": "In-page UI string (shared core)."
+  },
+  "sbUndo": {
+    "message": "Annulla",
+    "description": "In-page UI string (shared core)."
+  },
+  "sbSkipped": {
+    "message": "{category} saltato",
+    "description": "In-page UI string (shared core)."
+  },
+  "sbSegmentHere": {
+    "message": "Segmento: {category}",
+    "description": "In-page UI string (shared core)."
+  },
+  "sbTimeSaved": {
+    "message": "{time} saltati finora",
+    "description": "In-page UI string (shared core)."
   }
 }

@@ -248,6 +248,9 @@
         perChannelVolumeMemory: { group: 'video-player', label: 'Per-Channel Volume Memory', desc: 'Remember volume per channel.' },
         autoplayBlockMode: { group: 'video-player', label: 'Autoplay Block Mode', desc: 'relatedEndpointAndPlayer | playerOnly | off.' },
         clipExportFormat: { group: 'downloads', label: 'Clip Export Format', desc: 'mp4 | webm | manifestOnly.' },
+        sponsorCategoryBehavior: { group: 'integrations', label: 'Segment Behavior by Category', desc: 'JSON map of category to auto | once | notice. Missing categories auto-skip.' },
+        sponsorSkipUndo: { group: 'integrations', label: 'Segment Skip Undo', desc: 'Show an Undo button on the skip notice.' },
+        sponsorTimeSaved: { group: 'integrations', label: 'Time Saved (seconds)', desc: 'Cumulative seconds skipped. Local counter; reset by editing to 0.' },
         segmentSkipMode: { group: 'ad-blocking', label: 'Segment Skip Mode', desc: 'localOnly | community (community DB later).' },
         // Downloads & archives
         downloadManagerEnabled: { group: 'downloads', label: 'Download Manager', desc: 'Track RumbleX-owned browser downloads, pause them when the device goes offline, and resume recoverable transfers when connectivity returns.' },

@@ -23,7 +23,7 @@
 // @updateURL    https://github.com/SysAdminDoc/RumbleX/raw/main/RumbleX.user.js
 // ==/UserScript==
 
-// Generated from extension/settings-schema.js + extension/content.js. Shared runtime SHA-256: 7c673e37e0fe76788ffa2d160fe862a342128730e195491c8f74c9e5dffd172a
+// Generated from extension/settings-schema.js + extension/content.js. Shared runtime SHA-256: 03e69d0ebc4daf1610236aedba57586a42071955fc89fb3dfbc62f86d9932f98
 // RumbleX shared settings schema. This file is the canonical source for
 // defaults and trust-boundary normalization across content, options, popup,
 // background profile/Gist restores, and the generated userscript.
@@ -201,6 +201,12 @@
         autoplayBlockMode: 'relatedEndpointAndPlayer',
         clipExportFormat: 'mp4',
         segmentSkipMode: 'localOnly',
+        // Per-category skip behavior: 'auto' | 'once' | 'notice'. Absent
+        // categories fall back to auto-skip.
+        sponsorCategoryBehavior: {},
+        sponsorSkipUndo: true,
+        // Cumulative seconds skipped, shown in the panel. Local only.
+        sponsorTimeSaved: 0,
         // Downloads & archives
         downloadManagerEnabled: true,
         downloadQualityPreference: 'best',
@@ -351,7 +357,16 @@
         'sports', 'viral', 'podcasts', 'leaderboard', 'vlogs',
         'news', 'science', 'music', 'entertainment', 'cooking',
     ]);
-    const SPONSOR_CATEGORIES = new Set(['sponsor', 'intro', 'outro', 'selfpromo', 'interaction']);
+    // Extended beyond SponsorBlock's original five. These segments are marked
+    // locally by the person watching, so the taxonomy is theirs to choose;
+    // `spoiler`, `loudNoise` and `flashingLights` are the three most-requested
+    // additions upstream and the last one is an accessibility need, not a
+    // preference.
+    const SPONSOR_CATEGORIES = new Set([
+        'sponsor', 'intro', 'outro', 'selfpromo', 'interaction',
+        'spoiler', 'loudNoise', 'flashingLights',
+    ]);
+    const SPONSOR_BEHAVIORS = new Set(['auto', 'once', 'notice']);
 
     function isPlainObject(value) {
         if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
@@ -503,6 +518,17 @@
             if (key === 'chatMuteDurations' || key === 'commentMuteDurations') {
                 const durations = normalizeDurations(value);
                 if (durations) out[key] = durations;
+                continue;
+            }
+            // A restored profile must not be able to invent categories or
+            // behaviors; anything unrecognized is dropped rather than carried.
+            if (key === 'sponsorCategoryBehavior') {
+                if (!isPlainObject(value)) continue;
+                const behavior = {};
+                for (const [category, mode] of Object.entries(value).slice(0, 64)) {
+                    if (SPONSOR_CATEGORIES.has(category) && SPONSOR_BEHAVIORS.has(mode)) behavior[category] = mode;
+                }
+                out[key] = behavior;
                 continue;
             }
             if (key === 'sponsorSegments') {
@@ -1086,7 +1112,13 @@
   "timeRemainingLeft": "{time} left",
   "timeRemainingEndsAt": "Ends at {time}",
   "feat_titleNormalizer_label": "Title Normalizer",
-  "feat_titleNormalizer_desc": "Calm ALL-CAPS, emoji spray and repeated !!! in video titles; original stays on hover"
+  "feat_titleNormalizer_desc": "Calm ALL-CAPS, emoji spray and repeated !!! in video titles; original stays on hover",
+  "feat_sponsorSkipUndo_label": "Skip Undo",
+  "feat_sponsorSkipUndo_desc": "Offer an Undo button after a segment is skipped",
+  "sbUndo": "Undo",
+  "sbSkipped": "Skipped {category}",
+  "sbSegmentHere": "{category} segment",
+  "sbTimeSaved": "Skipped {time} so far"
 });
     const STORAGE_KEYS_WITH_CHANGE_EVENTS = ['rx_settings'];
     const ALLOWED_REQUEST_HOSTS = ['rumble.com', 'rumble.cloud', '1a-1791.com'];
@@ -11150,6 +11182,7 @@ const RX_CATEGORIES = [
             { id: 'hidePremium', label: 'Hide Premium', desc: 'Hide premium/PPV videos from feeds' },
             { id: 'shortsFilter', label: 'Shorts Filter', desc: 'Hide Shorts from all feeds' },
             { id: 'sponsorBlock', label: 'SponsorBlock', desc: 'Local per-video segments with auto-skip' },
+            { id: 'sponsorSkipUndo', label: 'Skip Undo', desc: 'Offer an Undo button after a segment is skipped', parent: 'sponsorBlock' },
         ],
     },
     {
@@ -14022,6 +14055,10 @@ const SponsorBlockRX = {
     _skipHandler: null,
     _metadataHandler: null,
     _markerEl: null,
+    // Session-scoped: a 'once' segment already skipped, or one the viewer
+    // undid. Cleared on destroy so a re-enable behaves like a fresh visit.
+    _suppressed: new Set(),
+    _noticed: new Set(),
 
     _css: `
         .rx-sb-markers {
@@ -14036,6 +14073,9 @@ const SponsorBlockRX = {
         .rx-sb-segment.category-outro { background: rgba(249,226,175,0.7); }
         .rx-sb-segment.category-selfpromo { background: rgba(203,166,247,0.7); }
         .rx-sb-segment.category-sponsor { background: rgba(243,139,168,0.75); }
+        .rx-sb-segment.category-spoiler { background: rgba(148,226,213,0.7); }
+        .rx-sb-segment.category-loudNoise { background: rgba(250,179,135,0.75); }
+        .rx-sb-segment.category-flashingLights { background: rgba(245,224,220,0.8); }
         .rx-sb-notice {
             position: fixed; bottom: 90px; left: 50%; transform: translateX(-50%);
             padding: 8px 16px; background: rgba(30,30,46,0.95);
@@ -14045,6 +14085,13 @@ const SponsorBlockRX = {
             opacity: 0; transition: opacity .3s;
         }
         .rx-sb-notice.visible { opacity: 1; }
+        .rx-sb-notice { display: flex; align-items: center; gap: 10px; }
+        .rx-sb-undo {
+            background: rgba(243,139,168,0.18); border: 1px solid rgba(243,139,168,0.5);
+            color: #f38ba8; border-radius: 5px; padding: 4px 10px; cursor: pointer;
+            font: 700 11px/1 system-ui, sans-serif; min-height: 24px; min-width: 44px;
+        }
+        .rx-sb-undo:hover { background: rgba(243,139,168,0.3); }
 
         .rx-sb-panel {
             margin: 8px 0; padding: 10px;
@@ -14059,6 +14106,8 @@ const SponsorBlockRX = {
             font: 600 11px/1 system-ui, sans-serif;
         }
         .rx-sb-btn:hover { background: rgba(49,50,68,0.7); }
+        .rx-sb-saved { font: 600 10px/1.4 system-ui, sans-serif; color: #a6adc8; margin-bottom: 6px; }
+        .rx-sb-saved:empty { display: none; }
         .rx-sb-list { display: flex; flex-direction: column; gap: 3px; font-size: 11px; }
         .rx-sb-item {
             display: flex; gap: 6px; align-items: center; padding: 3px 6px;
@@ -14098,7 +14147,9 @@ const SponsorBlockRX = {
         return (h ? h + ':' + String(m).padStart(2, '0') : m) + ':' + String(s).padStart(2, '0');
     },
 
-    _notice(msg) {
+    // `onUndo` renders a real button rather than a hint, because a skip the
+    // viewer did not want is only fixable while the notice is still up.
+    _notice(msg, onUndo) {
         let el = qs('.rx-sb-notice');
         if (!el) {
             el = document.createElement('div');
@@ -14107,10 +14158,26 @@ const SponsorBlockRX = {
             el.setAttribute('aria-live', 'polite');
             document.body.appendChild(el);
         }
-        el.textContent = msg;
+        el.textContent = '';
+        const label = document.createElement('span');
+        label.textContent = msg;
+        el.appendChild(label);
+        if (typeof onUndo === 'function') {
+            const undo = document.createElement('button');
+            undo.type = 'button';
+            undo.className = 'rx-sb-undo';
+            undo.textContent = rxT('sbUndo', 'Undo');
+            undo.addEventListener('click', () => {
+                el.classList.remove('visible');
+                clearTimeout(this._noticeT);
+                try { onUndo(); } catch (err) { RxErrorLog.record('sponsor-undo', err); }
+            });
+            el.appendChild(undo);
+        }
         el.classList.add('visible');
         clearTimeout(this._noticeT);
-        this._noticeT = setTimeout(() => el.classList.remove('visible'), 2200);
+        // A little longer when there is something to click.
+        this._noticeT = setTimeout(() => el.classList.remove('visible'), onUndo ? 5000 : 2200);
     },
 
     _findSeekbar() {
@@ -14138,20 +14205,76 @@ const SponsorBlockRX = {
         this._markerEl = wrap;
     },
 
+    // 'auto' skips every time, 'once' skips the first encounter and then leaves
+    // the segment alone for the rest of the session, 'notice' never seeks and
+    // only says the segment is here. Anything unconfigured auto-skips, which is
+    // what the feature did before this existed.
+    _behaviorFor(category) {
+        const map = Settings.get('sponsorCategoryBehavior');
+        const mode = map && typeof map === 'object' ? map[category] : null;
+        return (mode === 'once' || mode === 'notice') ? mode : 'auto';
+    },
+
+    _segmentKey(segment) {
+        return `${segment.category}:${segment.start}:${segment.end}`;
+    },
+
+    // Accepts a negative delta so an undo hands the credit back. The running
+    // total is clamped at zero: a counter that can go negative is a bug report
+    // waiting to happen.
+    _recordTimeSaved(seconds) {
+        if (!Number.isFinite(seconds) || seconds === 0) return;
+        const total = Number(Settings.get('sponsorTimeSaved')) || 0;
+        void Settings.set('sponsorTimeSaved', Math.max(0, Math.round(total + seconds)));
+    },
+
+    // The undo has to capture where playback actually was, because by the time
+    // the user reaches for it the video has moved on.
+    _offerUndo(video, from, segment) {
+        if (!Settings.get('sponsorSkipUndo')) {
+            this._notice(rxT('sbSkipped', 'Skipped {category}', { category: segment.category }));
+            return;
+        }
+        this._notice(rxT('sbSkipped', 'Skipped {category}', { category: segment.category }), () => {
+            if (!video.isConnected) return;
+            // Re-entering the segment must not trigger the same skip again.
+            this._suppressed.add(this._segmentKey(segment));
+            video.currentTime = from;
+            this._recordTimeSaved(-(segment.end - from));
+        });
+    },
+
+    // Split out of the timeupdate listener so the decision can be exercised
+    // against a stand-in media object; a real <video> with no source will not
+    // hold a currentTime write.
+    _evaluateSkip(v) {
+        const t = v.currentTime;
+        for (const s of this._segments) {
+            if (t >= s.start && t < s.end - 0.5) {
+                const key = this._segmentKey(s);
+                if (this._suppressed.has(key)) return;
+                const behavior = this._behaviorFor(s.category);
+                if (behavior === 'notice') {
+                    if (!this._noticed.has(key)) {
+                        this._noticed.add(key);
+                        this._notice(rxT('sbSegmentHere', '{category} segment', { category: s.category }));
+                    }
+                    return;
+                }
+                v.currentTime = s.end;
+                if (behavior === 'once') this._suppressed.add(key);
+                this._recordTimeSaved(s.end - t);
+                this._offerUndo(v, t, s);
+                return;
+            }
+        }
+    },
+
     _attachSkip() {
         const v = qs('video');
         if (!v || v.dataset.rxSbBound) return;
         v.dataset.rxSbBound = '1';
-        this._skipHandler = () => {
-            const t = v.currentTime;
-            for (const s of this._segments) {
-                if (t >= s.start && t < s.end - 0.5) {
-                    v.currentTime = s.end;
-                    this._notice(`Skipped ${s.category}`);
-                    return;
-                }
-            }
-        };
+        this._skipHandler = () => this._evaluateSkip(v);
         v.addEventListener('timeupdate', this._skipHandler);
         this._metadataHandler = () => this._renderMarkers(v.duration);
         v.addEventListener('loadedmetadata', this._metadataHandler, { once: true });
@@ -14168,8 +14291,27 @@ const SponsorBlockRX = {
         if (v?.duration) this._renderMarkers(v.duration);
     },
 
+    _formatSaved(seconds) {
+        const total = Math.max(0, Math.round(seconds));
+        if (total < 60) return `${total}s`;
+        const m = Math.floor(total / 60);
+        if (m < 60) return `${m}m`;
+        return `${Math.floor(m / 60)}h ${m % 60}m`;
+    },
+
+    _refreshSaved() {
+        if (!this._panel) return;
+        const el = this._panel.querySelector('.rx-sb-saved');
+        if (!el) return;
+        const saved = Number(Settings.get('sponsorTimeSaved')) || 0;
+        el.textContent = saved > 0
+            ? rxT('sbTimeSaved', 'Skipped {time} so far', { time: this._formatSaved(saved) })
+            : '';
+    },
+
     _refreshPanel() {
         if (!this._panel) return;
+        this._refreshSaved();
         const list = this._panel.querySelector('.rx-sb-list');
         list.innerHTML = '';
         if (!this._segments.length) {
@@ -14183,7 +14325,7 @@ const SponsorBlockRX = {
             range.style.flex = '1';
             range.textContent = `${this._fmt(s.start)} → ${this._fmt(s.end)}`;
             const sel = document.createElement('select');
-            for (const c of ['sponsor', 'intro', 'outro', 'selfpromo', 'interaction']) {
+            for (const c of ['sponsor', 'intro', 'outro', 'selfpromo', 'interaction', 'spoiler', 'loudNoise', 'flashingLights']) {
                 const o = document.createElement('option'); o.value = c; o.textContent = c;
                 if (c === (s.category || 'sponsor')) o.selected = true;
                 sel.appendChild(o);
@@ -14221,6 +14363,7 @@ const SponsorBlockRX = {
                 <button class="rx-sb-btn rx-sb-export">Export</button>
                 <button class="rx-sb-btn rx-sb-import">Import</button>
             </div>
+            <div class="rx-sb-saved"></div>
             <div class="rx-sb-list"></div>`;
         host.prepend(panel);
         this._panel = panel;
@@ -14301,6 +14444,10 @@ const SponsorBlockRX = {
         }
         this._skipHandler = null;
         this._metadataHandler = null;
+        // Session state, not preferences: a re-enable should behave like a
+        // fresh visit rather than inheriting what was already skipped.
+        this._suppressed.clear();
+        this._noticed.clear();
     }
 };
 

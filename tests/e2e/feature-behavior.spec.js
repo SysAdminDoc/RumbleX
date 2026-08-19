@@ -1164,3 +1164,105 @@ test('VideoDownloader writes info.json and NFO sidecars from page metadata', asy
     expect(result.withThumb.sent).toEqual(['Some Video - 1080p.jpg']);
     expect(result.withThumb.urls).toEqual(['https://1a-1791.com/video/fww1/9f/thumb.jpg']);
 });
+
+test('SponsorBlockRX honours per-category behavior, undo and the time-saved counter', async () => {
+    const result = await inHarness(({ body }) => {
+        document.body.innerHTML = body;
+        const harness = globalThis.__RumbleXFeatureHarness;
+        harness.enable('sponsorBlock');
+        const sb = harness.features.find((f) => f.id === 'sponsorBlock');
+
+        // A stand-in media object: a real <video> with no source refuses to hold
+        // a currentTime write, which is the thing under test.
+        const video = { currentTime: 0, duration: 600, isConnected: true };
+
+        const realGet = Settings.get.bind(Settings);
+        const realSet = Settings.set.bind(Settings);
+        let saved = 0;
+        const store = { sponsorCategoryBehavior: {}, sponsorSkipUndo: true, sponsorTimeSaved: 0 };
+        Settings.get = (key) => (Object.hasOwn(store, key) ? store[key] : realGet(key));
+        Settings.set = (key, value) => { if (key === 'sponsorTimeSaved') { store[key] = value; saved = value; } return Promise.resolve(); };
+
+        sb._segments = [{ start: 10, end: 40, category: 'sponsor' }];
+        sb._suppressed.clear();
+        sb._noticed.clear();
+
+        const fire = (t) => { video.currentTime = t; sb._evaluateSkip(video); return video.currentTime; };
+
+        // auto: skips every time it is entered.
+        store.sponsorCategoryBehavior = {};
+        const auto1 = fire(15);
+        const auto2 = fire(20);
+        const autoSaved = saved;
+
+        // notice: never seeks, and only announces once.
+        sb._suppressed.clear(); sb._noticed.clear(); store.sponsorTimeSaved = 0; saved = 0;
+        store.sponsorCategoryBehavior = { sponsor: 'notice' };
+        const noticePos = fire(15);
+        const noticedTwice = sb._noticed.size;
+        const noticeSaved = saved;
+
+        // once: skips the first entry, then leaves the segment alone.
+        sb._suppressed.clear(); sb._noticed.clear(); store.sponsorTimeSaved = 0; saved = 0;
+        store.sponsorCategoryBehavior = { sponsor: 'once' };
+        const once1 = fire(15);
+        const once2 = fire(20);
+
+        // undo: the notice carries a button that seeks back and un-does the credit.
+        sb._suppressed.clear(); sb._noticed.clear(); store.sponsorTimeSaved = 0; saved = 0;
+        store.sponsorCategoryBehavior = {};
+        fire(15);
+        const savedBeforeUndo = saved;
+        const undoBtn = document.querySelector('.rx-sb-notice .rx-sb-undo');
+        const hadUndo = !!undoBtn;
+        if (undoBtn) undoBtn.click();
+        const afterUndo = video.currentTime;
+        const savedAfterUndo = saved;
+        // Re-entering must not immediately re-skip what the viewer just undid.
+        const afterUndoReenter = fire(16);
+
+        // With undo disabled the notice is plain text.
+        sb._suppressed.clear(); store.sponsorSkipUndo = false;
+        fire(15);
+        const undoWhenDisabled = !!document.querySelector('.rx-sb-notice .rx-sb-undo');
+
+        const savedLabels = [sb._formatSaved(45), sb._formatSaved(600), sb._formatSaved(7200)];
+
+        Settings.get = realGet; Settings.set = realSet;
+        sb.destroy();
+        const clearedAfterDestroy = sb._suppressed.size + sb._noticed.size;
+
+        return {
+            auto1, auto2, autoSaved, noticePos, noticedTwice, noticeSaved,
+            once1, once2, hadUndo, afterUndo, savedBeforeUndo, savedAfterUndo,
+            afterUndoReenter, undoWhenDisabled, savedLabels, clearedAfterDestroy,
+        };
+    });
+
+    // auto-skip jumps to the segment end each time.
+    expect(result.auto1).toBe(40);
+    expect(result.auto2).toBe(40);
+    // 25s from t=15 plus 20s from t=20.
+    expect(result.autoSaved).toBe(45);
+
+    // notice-only leaves playback exactly where it was, and says so once.
+    expect(result.noticePos).toBe(15);
+    expect(result.noticedTwice).toBe(1);
+    expect(result.noticeSaved).toBe(0);
+
+    // skip-once skips, then stops interfering.
+    expect(result.once1).toBe(40);
+    expect(result.once2).toBe(20);
+
+    expect(result.hadUndo).toBe(true);
+    expect(result.savedBeforeUndo).toBe(25);
+    expect(result.afterUndo).toBe(15);
+    // The credit is handed back, not kept.
+    expect(result.savedAfterUndo).toBe(0);
+    // And the segment does not immediately re-skip.
+    expect(result.afterUndoReenter).toBe(16);
+
+    expect(result.undoWhenDisabled).toBe(false);
+    expect(result.savedLabels).toEqual(['45s', '10m', '2h 0m']);
+    expect(result.clearedAfterDestroy).toBe(0);
+});

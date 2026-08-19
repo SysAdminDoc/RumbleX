@@ -1754,5 +1754,29 @@
   "feat_titleNormalizer_desc": {
     "message": "Beruhigt GROSSBUCHSTABEN, Emoji-Flut und wiederholte !!! in Videotiteln; das Original bleibt beim Überfahren sichtbar",
     "description": "In-page UI string (shared core)."
+  },
+  "feat_sponsorSkipUndo_label": {
+    "message": "Sprung rückgängig",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_sponsorSkipUndo_desc": {
+    "message": "Nach dem Überspringen eines Abschnitts eine Rückgängig-Schaltfläche anbieten",
+    "description": "In-page UI string (shared core)."
+  },
+  "sbUndo": {
+    "message": "Rückgängig",
+    "description": "In-page UI string (shared core)."
+  },
+  "sbSkipped": {
+    "message": "{category} übersprungen",
+    "description": "In-page UI string (shared core)."
+  },
+  "sbSegmentHere": {
+    "message": "Abschnitt: {category}",
+    "description": "In-page UI string (shared core)."
+  },
+  "sbTimeSaved": {
+    "message": "Bisher {time} übersprungen",
+    "description": "In-page UI string (shared core)."
   }
 }

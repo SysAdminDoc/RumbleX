@@ -1754,5 +1754,29 @@
   "feat_titleNormalizer_desc": {
     "message": "Atténue les MAJUSCULES, les emojis en rafale et les !!! répétés dans les titres ; l'original reste au survol",
     "description": "In-page UI string (shared core)."
+  },
+  "feat_sponsorSkipUndo_label": {
+    "message": "Annuler le saut",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_sponsorSkipUndo_desc": {
+    "message": "Proposer un bouton Annuler après le saut d’un segment",
+    "description": "In-page UI string (shared core)."
+  },
+  "sbUndo": {
+    "message": "Annuler",
+    "description": "In-page UI string (shared core)."
+  },
+  "sbSkipped": {
+    "message": "{category} ignoré",
+    "description": "In-page UI string (shared core)."
+  },
+  "sbSegmentHere": {
+    "message": "Segment : {category}",
+    "description": "In-page UI string (shared core)."
+  },
+  "sbTimeSaved": {
+    "message": "{time} ignorées jusqu’ici",
+    "description": "In-page UI string (shared core)."
   }
 }

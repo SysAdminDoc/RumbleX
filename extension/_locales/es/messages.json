@@ -1754,5 +1754,29 @@
   "feat_titleNormalizer_desc": {
     "message": "Suaviza MAYÚSCULAS, exceso de emojis y !!! repetidos en los títulos; el original se mantiene al pasar el cursor",
     "description": "In-page UI string (shared core)."
+  },
+  "feat_sponsorSkipUndo_label": {
+    "message": "Deshacer salto",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_sponsorSkipUndo_desc": {
+    "message": "Mostrar un botón para deshacer tras saltar un segmento",
+    "description": "In-page UI string (shared core)."
+  },
+  "sbUndo": {
+    "message": "Deshacer",
+    "description": "In-page UI string (shared core)."
+  },
+  "sbSkipped": {
+    "message": "{category} omitido",
+    "description": "In-page UI string (shared core)."
+  },
+  "sbSegmentHere": {
+    "message": "Segmento: {category}",
+    "description": "In-page UI string (shared core)."
+  },
+  "sbTimeSaved": {
+    "message": "{time} omitidos hasta ahora",
+    "description": "In-page UI string (shared core)."
   }
 }

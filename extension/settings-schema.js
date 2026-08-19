@@ -175,6 +175,12 @@
         autoplayBlockMode: 'relatedEndpointAndPlayer',
         clipExportFormat: 'mp4',
         segmentSkipMode: 'localOnly',
+        // Per-category skip behavior: 'auto' | 'once' | 'notice'. Absent
+        // categories fall back to auto-skip.
+        sponsorCategoryBehavior: {},
+        sponsorSkipUndo: true,
+        // Cumulative seconds skipped, shown in the panel. Local only.
+        sponsorTimeSaved: 0,
         // Downloads & archives
         downloadManagerEnabled: true,
         downloadQualityPreference: 'best',
@@ -325,7 +331,16 @@
         'sports', 'viral', 'podcasts', 'leaderboard', 'vlogs',
         'news', 'science', 'music', 'entertainment', 'cooking',
     ]);
-    const SPONSOR_CATEGORIES = new Set(['sponsor', 'intro', 'outro', 'selfpromo', 'interaction']);
+    // Extended beyond SponsorBlock's original five. These segments are marked
+    // locally by the person watching, so the taxonomy is theirs to choose;
+    // `spoiler`, `loudNoise` and `flashingLights` are the three most-requested
+    // additions upstream and the last one is an accessibility need, not a
+    // preference.
+    const SPONSOR_CATEGORIES = new Set([
+        'sponsor', 'intro', 'outro', 'selfpromo', 'interaction',
+        'spoiler', 'loudNoise', 'flashingLights',
+    ]);
+    const SPONSOR_BEHAVIORS = new Set(['auto', 'once', 'notice']);
 
     function isPlainObject(value) {
         if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
@@ -477,6 +492,17 @@
             if (key === 'chatMuteDurations' || key === 'commentMuteDurations') {
                 const durations = normalizeDurations(value);
                 if (durations) out[key] = durations;
+                continue;
+            }
+            // A restored profile must not be able to invent categories or
+            // behaviors; anything unrecognized is dropped rather than carried.
+            if (key === 'sponsorCategoryBehavior') {
+                if (!isPlainObject(value)) continue;
+                const behavior = {};
+                for (const [category, mode] of Object.entries(value).slice(0, 64)) {
+                    if (SPONSOR_CATEGORIES.has(category) && SPONSOR_BEHAVIORS.has(mode)) behavior[category] = mode;
+                }
+                out[key] = behavior;
                 continue;
             }
             if (key === 'sponsorSegments') {

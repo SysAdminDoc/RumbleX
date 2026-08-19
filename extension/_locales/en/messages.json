@@ -1754,5 +1754,29 @@
   "feat_titleNormalizer_desc": {
     "message": "Calm ALL-CAPS, emoji spray and repeated !!! in video titles; original stays on hover",
     "description": "In-page UI string (shared core)."
+  },
+  "feat_sponsorSkipUndo_label": {
+    "message": "Skip Undo",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_sponsorSkipUndo_desc": {
+    "message": "Offer an Undo button after a segment is skipped",
+    "description": "In-page UI string (shared core)."
+  },
+  "sbUndo": {
+    "message": "Undo",
+    "description": "In-page UI string (shared core)."
+  },
+  "sbSkipped": {
+    "message": "Skipped {category}",
+    "description": "In-page UI string (shared core)."
+  },
+  "sbSegmentHere": {
+    "message": "{category} segment",
+    "description": "In-page UI string (shared core)."
+  },
+  "sbTimeSaved": {
+    "message": "Skipped {time} so far",
+    "description": "In-page UI string (shared core)."
   }
 }
