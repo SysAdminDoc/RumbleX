@@ -231,6 +231,23 @@ The userscript supports settings, themes, page cleanup, selectors/routes, screen
 
 Its metadata also requests early ad cancellation through the userscript-manager `@webRequest` facility. Manager/browser support is not uniform: current Chromium MV3 Tampermonkey does not expose that request hook, so the userscript UI and Privacy Report mark the shield as manager-dependent and do not claim extension-level network blocking there. Ad Nuker still performs document-start and reinsertion cleanup.
 
+### Verifying a download
+
+Every release ships `SHA256SUMS.txt` covering both extension ZIPs and both userscripts. Check what you downloaded against it:
+
+```bash
+sha256sum -c SHA256SUMS.txt --ignore-missing
+```
+
+That proves the file arrived intact. It does not prove who built it, so releases are also signed with the project's SSH release key. When a release carries `SHA256SUMS.txt.sig` and the repo carries `allowed_signers`, verify the origin too:
+
+```bash
+ssh-keygen -Y verify -f allowed_signers -I release@rumblex -n file \
+  -s SHA256SUMS.txt.sig < SHA256SUMS.txt
+```
+
+A `Good "file" signature` result means the checksums came from the key published in this repository. If either check fails, do not install the files. The only official sources are this repository's Releases page and the raw userscript URLs above; copies elsewhere are not ours.
+
 ### Request-shield support matrix
 
 | Runtime | Early request layer | Reported state |
@@ -331,6 +348,14 @@ cd extension
 ./build.sh       # produces both ZIPs, the generated userscript, and SHA256SUMS.txt in the parent dir
 ```
 Requires `zip`; on Windows without `zip`, the script falls back to the Windows-bundled bsdtar so ZIP entries keep browser-safe forward-slash paths. See `CHANGELOG.md` for per-version details.
+
+Release builds also sign the checksums. Point `RUMBLEX_SIGNING_KEY` at the release private key and the build writes `SHA256SUMS.txt.sig`, then verifies it against `allowed_signers` before finishing:
+
+```bash
+RUMBLEX_SIGNING_KEY=~/.ssh/rumblex_release ./build.sh
+```
+
+A signature that does not verify against the published key fails the build rather than shipping. Builds without the variable set are unsigned and say so, which is fine for local development.
 
 ## License
 MIT

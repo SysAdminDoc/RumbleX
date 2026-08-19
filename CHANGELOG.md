@@ -2,6 +2,12 @@
 
 All notable changes to RumbleX will be documented in this file.
 
+## [Unreleased]
+
+### Added
+- **Release checksums can now be signed, and a bad signature stops the build.** `SHA256SUMS.txt` has always proved a download arrived intact; it never proved who produced it, which is the half that matters when 2026's live threat to extension users is lookalike repositories serving their own ZIPs. Setting `RUMBLEX_SIGNING_KEY` makes `extension/build.sh` write `SHA256SUMS.txt.sig` and then verify it against the public key published in `allowed_signers` — if the signing key and the published identity disagree, the build refuses to finish rather than shipping an unverifiable release. Builds without the variable are unsigned and say so. README documents the one-command `ssh-keygen -Y verify` check for users. The signing key itself is a trust-root decision left to the maintainer; until it exists the path is inert by design.
+- Private Vulnerability Reporting is enabled on the repository, and a `refs/tags/v*` ruleset blocks tag deletion and non-fast-forward updates so a published release tag cannot be quietly repointed.
+
 ## [3.46.0] - 2026-08-18
 
 ### Added

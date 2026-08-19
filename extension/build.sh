@@ -38,6 +38,8 @@ FIREFOX_ZIP="../RumbleX-firefox.zip"
 USERSCRIPT="../RumbleX.user.js"
 USERSCRIPT_LITE="../RumbleX.lite.user.js"
 CHECKSUMS_FILE="../SHA256SUMS.txt"
+SIGNATURE_FILE="../SHA256SUMS.txt.sig"
+ALLOWED_SIGNERS_FILE="../allowed_signers"
 
 file_sha256() {
     local file="$1"
@@ -192,6 +194,63 @@ verify_release_checksums() {
     echo "[*] Release package checksums verified."
 }
 
+# SHA256SUMS.txt proves the packages were not altered in transit; it does not
+# prove who built them. An SSH signature over that file binds it to a published
+# key, which is what defends against a lookalike repo serving its own ZIPs.
+#
+# Set RUMBLEX_SIGNING_KEY to the path of the release signing key to sign. The
+# matching public key must be published in ./allowed_signers so a user can run
+#   ssh-keygen -Y verify -f allowed_signers -I <identity> -n file \
+#     -s SHA256SUMS.txt.sig < SHA256SUMS.txt
+# Unsigned builds are allowed (development, local testing) and say so; a signing
+# key that produces an unverifiable signature fails the build.
+sign_release_checksums() {
+    rm -f "$SIGNATURE_FILE"
+
+    if [ -z "${RUMBLEX_SIGNING_KEY:-}" ]; then
+        echo "[*] RUMBLEX_SIGNING_KEY not set — SHA256SUMS.txt is unsigned."
+        echo "    Release builds should set it so users can verify provenance."
+        return 0
+    fi
+
+    if [ ! -f "$RUMBLEX_SIGNING_KEY" ]; then
+        echo "[!] RUMBLEX_SIGNING_KEY points at a missing file: $RUMBLEX_SIGNING_KEY"
+        return 1
+    fi
+
+    if ! command -v ssh-keygen >/dev/null 2>&1; then
+        echo "[!] ssh-keygen not found; cannot sign SHA256SUMS.txt."
+        return 1
+    fi
+
+    if ! ssh-keygen -Y sign -f "$RUMBLEX_SIGNING_KEY" -n file "$CHECKSUMS_FILE" >/dev/null 2>&1; then
+        echo "[!] Failed to sign SHA256SUMS.txt with $RUMBLEX_SIGNING_KEY"
+        return 1
+    fi
+    echo "[*] Signed SHA256SUMS.txt -> SHA256SUMS.txt.sig"
+
+    if [ ! -f "$ALLOWED_SIGNERS_FILE" ]; then
+        echo "[!] No allowed_signers file — the signature cannot be verified against a"
+        echo "    published identity. Publish the release public key before shipping."
+        return 1
+    fi
+
+    local signer
+    signer=$(awk 'NF && $1 !~ /^#/ { print $1; exit }' "$ALLOWED_SIGNERS_FILE")
+    if [ -z "$signer" ]; then
+        echo "[!] allowed_signers has no usable identity line."
+        return 1
+    fi
+
+    if ! ssh-keygen -Y verify -f "$ALLOWED_SIGNERS_FILE" -I "$signer" -n file \
+        -s "$SIGNATURE_FILE" < "$CHECKSUMS_FILE" >/dev/null 2>&1; then
+        echo "[!] Signature over SHA256SUMS.txt does not verify against allowed_signers."
+        echo "    The signing key and the published identity disagree — refusing to ship."
+        return 1
+    fi
+    echo "[*] Signature verified against allowed_signers ($signer)."
+}
+
 # Generate icons from favicon if no icons exist
 if [ ! -f "icons/icon-128x128.png" ]; then
     echo "[*] No icons found. Place icon-16x16.png, icon-32x32.png, icon-48x48.png, icon-128x128.png in icons/"
@@ -215,6 +274,7 @@ echo "    Created RumbleX-firefox.zip"
 
 write_release_checksums
 verify_release_checksums
+sign_release_checksums
 
 echo ""
 echo "=== Build Complete ==="
