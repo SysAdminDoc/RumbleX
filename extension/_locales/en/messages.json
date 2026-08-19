@@ -1946,5 +1946,29 @@
   "rantArchiveExport": {
     "message": "Export",
     "description": "In-page UI string (shared core)."
+  },
+  "dlSponsorTrimToggle": {
+    "message": "Trim {count} marked segments ({time}) from this download",
+    "description": "In-page UI string (shared core)."
+  },
+  "dlSponsorTrimNote": {
+    "message": "Only stream segments that fall entirely inside a marked range are dropped, so a little of a mark can survive at each edge. Nothing is re-encoded.",
+    "description": "In-page UI string (shared core)."
+  },
+  "dlSponsorRemoved": {
+    "message": "{count} marked segments removed ({time}).",
+    "description": "In-page UI string (shared core)."
+  },
+  "dlSponsorTrimmed": {
+    "message": "Skipping {count} marked segments ({time} removed)…",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_sponsorTrimDownloads_label": {
+    "message": "Trim Downloads",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_sponsorTrimDownloads_desc": {
+    "message": "Drop stream segments that fall entirely inside a marked range",
+    "description": "In-page UI string (shared core)."
   }
 }

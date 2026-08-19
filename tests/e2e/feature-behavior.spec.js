@@ -1937,3 +1937,180 @@ test('RantArchive totals rant amounts, ranks supporters, and escapes CSV safely'
     // Nothing captured means nothing written.
     expect(result.whenEmpty).toEqual([]);
 });
+
+test('VideoDownloader trims only the stream segments a mark fully covers', async () => {
+    const result = await inHarness(async ({ body }) => {
+        document.body.innerHTML = body;
+        const harness = globalThis.__RumbleXFeatureHarness;
+        harness.enable('videoDownload');
+        const dl = harness.features.find((f) => f.id === 'videoDownload');
+
+        const BASE = 'https://hugh.cdn.rumble.cloud/live/fixture/playlist.m3u8';
+        // Ten four-second segments, so the timeline runs 0 to 40 seconds and
+        // every boundary lands on a multiple of four.
+        const playlist = ['#EXTM3U', '#EXT-X-VERSION:3', '#EXT-X-TARGETDURATION:4']
+            .concat(Array.from({ length: 10 }, (_, i) => `#EXTINF:4.000,\nseg${i}.ts`))
+            .concat(['#EXT-X-ENDLIST'])
+            .join('\n');
+        const entries = dl._parseSegmentEntries(playlist, BASE);
+        // The URL-only parser is the same walk, so the two must agree exactly.
+        const urlsOnly = dl._parseSegmentPlaylist(playlist, BASE);
+
+        const name = (entry) => entry.url.split('/').pop();
+
+        // 8-16 covers segments 2 and 3 exactly. 21-27 covers no whole segment:
+        // it clips the tail of 5 and the head of 6, and both must survive.
+        const aligned = dl._planSponsorTrim(entries, [
+            { start: 8, end: 16, category: 'sponsor' },
+            { start: 21, end: 27, category: 'intro' },
+        ]);
+
+        // Adjacent and overlapping marks collapse before anything is counted,
+        // or segment 4 would be removed once and counted twice.
+        const merged = dl._mergeSponsorRanges([
+            { start: 20, end: 24, category: 'intro' },
+            { start: 4, end: 12, category: 'sponsor' },
+            { start: 10, end: 16, category: 'selfpromo' },
+        ]);
+        const overlapping = dl._planSponsorTrim(entries, [
+            { start: 4, end: 12, category: 'sponsor' },
+            { start: 10, end: 16, category: 'selfpromo' },
+        ]);
+
+        // A playlist with no #EXTINF lines has no timeline to cut against.
+        const noDurations = dl._planSponsorTrim(
+            dl._parseSegmentEntries(['#EXTM3U', 'a.ts', 'b.ts', 'c.ts'].join('\n'), BASE),
+            [{ start: 0, end: 5, category: 'sponsor' }],
+        );
+
+        // A mark spanning the whole video would leave an empty file.
+        const everything = dl._planSponsorTrim(entries, [{ start: 0, end: 40, category: 'sponsor' }]);
+        // No marks at all is the ordinary case and must not touch the list.
+        const noMarks = dl._planSponsorTrim(entries, []);
+        // Garbage in the store is ignored rather than throwing.
+        const junk = dl._planSponsorTrim(entries, [
+            { start: 'x', end: 4 }, { start: 8, end: 8 }, { start: 12, end: 4 }, null,
+        ]);
+
+        // The setting gates the cut; the marks alone never trim anything.
+        const realGet = Settings.get.bind(Settings);
+        const store = {
+            sponsorTrimDownloads: false,
+            sponsorSegments: { vfeature123: [{ start: 8, end: 16, category: 'sponsor' }] },
+        };
+        Settings.get = (key) => (Object.hasOwn(store, key) ? store[key] : realGet(key));
+
+        const gatedOff = dl._applySponsorTrim(entries);
+        store.sponsorTrimDownloads = true;
+        const gatedOn = dl._applySponsorTrim(entries);
+        // Marks stored against a different video are not this video's business.
+        store.sponsorSegments = { vsomeother: [{ start: 8, end: 16, category: 'sponsor' }] };
+        const otherVideo = dl._applySponsorTrim(entries);
+        store.sponsorSegments = { vfeature123: [{ start: 8, end: 16, category: 'sponsor' }] };
+        const localMarks = dl._localSponsorSegments().length;
+
+        // Sidecar fields describe the original timeline either way.
+        const trimmedFields = dl._sponsorSidecarFields(aligned);
+        // Marked, but the mark covered no whole segment, so nothing was cut.
+        const markOnlyFields = dl._sponsorSidecarFields(
+            dl._planSponsorTrim(entries, [{ start: 21, end: 27, category: 'intro' }]),
+        );
+        const cleanFields = dl._sponsorSidecarFields(noMarks);
+
+        // And they have to reach the written file.
+        const saved = [];
+        const realSave = dl._triggerSave;
+        dl._triggerSave = (data, filename) => { saved.push({ filename, data }); };
+        store.downloadIncludeMetadata = true;
+        store.downloadIncludeThumbnail = false;
+        dl._writeSidecars('Fixture - 1080p', trimmedFields);
+        const infoJson = saved.find((f) => f.filename.endsWith('.info.json'));
+        const written = JSON.parse(infoJson ? await infoJson.data.text() : '{}');
+        dl._triggerSave = realSave;
+        Settings.get = realGet;
+
+        return {
+            count: entries.length,
+            first: entries[0],
+            last: entries[9],
+            urlsMatch: JSON.stringify(urlsOnly) === JSON.stringify(entries.map((e) => e.url)),
+            aligned: {
+                kept: aligned.entries.map(name),
+                removed: aligned.removed.map(name),
+                removedCount: aligned.removedCount,
+                removedSeconds: aligned.removedSeconds,
+                ranges: aligned.ranges,
+            },
+            merged,
+            overlapping: { removed: overlapping.removed.map(name), seconds: overlapping.removedSeconds },
+            noDurations: { kept: noDurations.entries.length, removedCount: noDurations.removedCount },
+            everything: { kept: everything.entries.length, removedCount: everything.removedCount },
+            noMarks: { kept: noMarks.entries.length, ranges: noMarks.ranges.length },
+            junk: { kept: junk.entries.length, ranges: junk.ranges.length },
+            gatedOff, gatedOn: gatedOn && gatedOn.removed.map(name), otherVideo, localMarks,
+            trimmedFields, markOnlyFields, cleanFields,
+            written: { chapters: written.chapters, removed: written.sponsorblock_removed, title: written.title },
+        };
+    });
+
+    expect(result.count).toBe(10);
+    expect(result.first).toEqual({ url: expect.stringContaining('seg0.ts'), duration: 4, start: 0, end: 4 });
+    expect(result.last.start).toBe(36);
+    expect(result.last.end).toBe(40);
+    expect(result.urlsMatch).toBe(true);
+
+    // Only the two segments the first mark fully covers.
+    expect(result.aligned.removed).toEqual(['seg2.ts', 'seg3.ts']);
+    expect(result.aligned.removedCount).toBe(2);
+    expect(result.aligned.removedSeconds).toBe(8);
+    expect(result.aligned.kept).not.toContain('seg2.ts');
+    // 21-27 straddles two segments and takes neither.
+    expect(result.aligned.kept).toContain('seg5.ts');
+    expect(result.aligned.kept).toContain('seg6.ts');
+    expect(result.aligned.kept.length).toBe(8);
+    // Both marks are still reported, even though one removed nothing.
+    expect(result.aligned.ranges.length).toBe(2);
+
+    // Three marks, two of which touch, collapse to two ranges.
+    expect(result.merged).toEqual([
+        { start: 4, end: 16, categories: ['sponsor', 'selfpromo'] },
+        { start: 20, end: 24, categories: ['intro'] },
+    ]);
+    // Segments 1-3 sit inside the merged 4-16 window, counted once each.
+    expect(result.overlapping.removed).toEqual(['seg1.ts', 'seg2.ts', 'seg3.ts']);
+    expect(result.overlapping.seconds).toBe(12);
+
+    // No timeline, no cut.
+    expect(result.noDurations).toEqual({ kept: 3, removedCount: 0 });
+    // An all-covering mark returns the untrimmed list rather than nothing.
+    expect(result.everything).toEqual({ kept: 10, removedCount: 0 });
+    expect(result.noMarks).toEqual({ kept: 10, ranges: 0 });
+    // Reversed, zero-length and malformed marks are all discarded.
+    expect(result.junk).toEqual({ kept: 10, ranges: 0 });
+
+    // The toggle, not the presence of marks, decides.
+    expect(result.gatedOff).toBeNull();
+    expect(result.gatedOn).toEqual(['seg2.ts', 'seg3.ts']);
+    expect(result.otherVideo).toBeNull();
+    expect(result.localMarks).toBe(1);
+
+    // yt-dlp's chapter shape, on the original timeline.
+    expect(result.trimmedFields.chapters).toEqual([
+        { start_time: 8, end_time: 16, title: '[SponsorBlock]: sponsor' },
+        { start_time: 21, end_time: 27, title: '[SponsorBlock]: intro' },
+    ]);
+    expect(result.trimmedFields.sponsorblock_removed.segments).toBe(2);
+    expect(result.trimmedFields.sponsorblock_removed.seconds).toBe(8);
+    // Marked but not trimmed: chapters, and no removal record to imply otherwise.
+    expect(result.markOnlyFields.chapters).toEqual([
+        { start_time: 21, end_time: 27, title: '[SponsorBlock]: intro' },
+    ]);
+    expect(result.markOnlyFields.sponsorblock_removed).toBeUndefined();
+    // Nothing marked at all writes no sponsor fields.
+    expect(result.cleanFields).toBeNull();
+
+    // The extra fields land in the info.json without displacing the metadata.
+    expect(result.written.chapters).toEqual(result.trimmedFields.chapters);
+    expect(result.written.removed.segments).toBe(2);
+    expect(result.written.title).toBe('Feature Fixture Video');
+});

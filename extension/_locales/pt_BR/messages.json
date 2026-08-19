@@ -1946,5 +1946,29 @@
   "rantArchiveExport": {
     "message": "Exportar",
     "description": "In-page UI string (shared core)."
+  },
+  "dlSponsorTrimToggle": {
+    "message": "Remover {count} segmentos marcados ({time}) deste download",
+    "description": "In-page UI string (shared core)."
+  },
+  "dlSponsorTrimNote": {
+    "message": "Só são descartados os segmentos do stream que ficam inteiramente dentro de um intervalo marcado, então pode sobrar um pouco em cada borda. Nada é recodificado.",
+    "description": "In-page UI string (shared core)."
+  },
+  "dlSponsorRemoved": {
+    "message": "{count} segmentos marcados removidos ({time}).",
+    "description": "In-page UI string (shared core)."
+  },
+  "dlSponsorTrimmed": {
+    "message": "Ignorando {count} segmentos marcados ({time} removidos)…",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_sponsorTrimDownloads_label": {
+    "message": "Cortar downloads",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_sponsorTrimDownloads_desc": {
+    "message": "Descartar os segmentos do stream que ficam inteiramente dentro de um intervalo marcado",
+    "description": "In-page UI string (shared core)."
   }
 }

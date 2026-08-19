@@ -181,6 +181,9 @@
         sponsorSkipUndo: true,
         // Cumulative seconds skipped, shown in the panel. Local only.
         sponsorTimeSaved: 0,
+        // Drop locally-marked segments from downloads. Off by default: it
+        // changes the bytes you get, so it has to be asked for.
+        sponsorTrimDownloads: false,
         // Downloads & archives
         downloadManagerEnabled: true,
         downloadQualityPreference: 'best',

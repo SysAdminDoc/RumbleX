@@ -110,6 +110,15 @@ test('injected settings modal passes axe-core WCAG 2.2 AA on offline Rumble fixt
     await expect(page.locator('#rx-modal')).toHaveAttribute('role', 'dialog');
     await expect(page.locator('#rx-modal')).toHaveAttribute('aria-modal', 'true');
     await page.waitForFunction(() => document.activeElement?.classList.contains('rx-m-search'), null, { timeout: 5_000 });
+    // The modal fades in over 300ms and axe measures whatever opacity it finds.
+    // Analysing mid-transition reads the Rumble page showing through the panel
+    // instead of the panel's own colours, which lands text a hundredth of a
+    // point under the 4.5:1 contrast floor and fails at random.
+    await page.waitForFunction(
+        () => getComputedStyle(document.querySelector('#rx-modal')).opacity === '1',
+        null,
+        { timeout: 5_000 },
+    );
 
     const results = await new AxeBuilder({ page })
         .include('#rx-modal')

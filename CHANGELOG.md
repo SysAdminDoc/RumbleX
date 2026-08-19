@@ -2,6 +2,14 @@
 
 All notable changes to RumbleX will be documented in this file.
 
+## [Unreleased]
+
+### Added
+- **Downloads can drop the segments you marked.** Mark a sponsor read or an intro with SponsorBlock and the download can leave it out of the file. It works on whole stream segments, the smallest unit that can go without re-encoding anything, so a mark only removes the segments it covers end to end and a second or two can survive at each edge. That is deliberate: trimming a partly covered segment would take real video with it. The panel says how many segments and how much time it will drop before you start, the toggle only appears on videos that actually have marks, and it is off until you turn it on because it changes the bytes you get. Marks are also written into the sidecar as chapters in yt-dlp's format, which Jellyfin and Kodi already read, so even an untrimmed download records where the sponsor was. TS-to-disk saves now write sidecars too, though they land in your download folder rather than beside the file the picker chose.
+
+### Fixed
+- The accessibility suite ran its colour-contrast pass while the settings modal was still fading in, so it measured the Rumble page showing through a half-transparent panel. That put text a hundredth of a point under the contrast floor and failed at random depending on how much else was on screen.
+
 ## [3.49.0] - 2026-08-19
 
 ### Added

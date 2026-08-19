@@ -1946,5 +1946,29 @@
   "rantArchiveExport": {
     "message": "Exportieren",
     "description": "In-page UI string (shared core)."
+  },
+  "dlSponsorTrimToggle": {
+    "message": "{count} markierte Abschnitte ({time}) aus diesem Download entfernen",
+    "description": "In-page UI string (shared core)."
+  },
+  "dlSponsorTrimNote": {
+    "message": "Entfernt werden nur Streamsegmente, die vollständig in einem markierten Bereich liegen. An den Rändern kann also ein Rest bleiben. Es wird nichts neu kodiert.",
+    "description": "In-page UI string (shared core)."
+  },
+  "dlSponsorRemoved": {
+    "message": "{count} markierte Abschnitte entfernt ({time}).",
+    "description": "In-page UI string (shared core)."
+  },
+  "dlSponsorTrimmed": {
+    "message": "{count} markierte Abschnitte werden übersprungen ({time} entfernt)…",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_sponsorTrimDownloads_label": {
+    "message": "Downloads kürzen",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_sponsorTrimDownloads_desc": {
+    "message": "Streamsegmente verwerfen, die vollständig in einem markierten Bereich liegen",
+    "description": "In-page UI string (shared core)."
   }
 }

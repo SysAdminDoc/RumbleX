@@ -1946,5 +1946,29 @@
   "rantArchiveExport": {
     "message": "Exporter",
     "description": "In-page UI string (shared core)."
+  },
+  "dlSponsorTrimToggle": {
+    "message": "Retirer {count} segments marqués ({time}) de ce téléchargement",
+    "description": "In-page UI string (shared core)."
+  },
+  "dlSponsorTrimNote": {
+    "message": "Seuls les segments du flux entièrement compris dans une plage marquée sont supprimés, un reste peut donc subsister à chaque bord. Rien n’est réencodé.",
+    "description": "In-page UI string (shared core)."
+  },
+  "dlSponsorRemoved": {
+    "message": "{count} segments marqués retirés ({time}).",
+    "description": "In-page UI string (shared core)."
+  },
+  "dlSponsorTrimmed": {
+    "message": "Suppression de {count} segments marqués ({time} retirés)…",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_sponsorTrimDownloads_label": {
+    "message": "Rogner les téléchargements",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_sponsorTrimDownloads_desc": {
+    "message": "Écarter les segments du flux entièrement compris dans une plage marquée",
+    "description": "In-page UI string (shared core)."
   }
 }

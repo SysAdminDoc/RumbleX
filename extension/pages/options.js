@@ -250,6 +250,7 @@
         clipExportFormat: { group: 'downloads', label: 'Clip Export Format', desc: 'mp4 | webm | manifestOnly.' },
         sponsorCategoryBehavior: { group: 'integrations', label: 'Segment Behavior by Category', desc: 'JSON map of category to auto | once | notice. Missing categories auto-skip.' },
         sponsorSkipUndo: { group: 'integrations', label: 'Segment Skip Undo', desc: 'Show an Undo button on the skip notice.' },
+        sponsorTrimDownloads: { group: 'integrations', label: 'Trim Marked Segments From Downloads', desc: 'Drop whole stream segments that fall inside a marked range. Partly covered segments are kept.' },
         sponsorTimeSaved: { group: 'integrations', label: 'Time Saved (seconds)', desc: 'Cumulative seconds skipped. Local counter; reset by editing to 0.' },
         segmentSkipMode: { group: 'ad-blocking', label: 'Segment Skip Mode', desc: 'localOnly | community (community DB later).' },
         // Downloads & archives

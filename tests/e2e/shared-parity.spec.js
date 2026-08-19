@@ -308,7 +308,13 @@ test('HLS TS streams to a selected file in bounded chunks and aborts partial wor
     await expect.poll(() => inContent(serviceWorker, id, 'settingsReady')).toBe(true);
 
     const result = await inContent(serviceWorker, id, 'streamToDisk');
-    expect(result.normal).toEqual({ bytes: 5, segments: 2 });
+    expect(result.normal.bytes).toBe(5);
+    expect(result.normal.segments).toBe(2);
+    // Nothing is marked on this fixture, so the stream is written untouched and
+    // the sponsor plan reports an empty cut rather than being absent.
+    expect(result.normal.trimmed).toBe(false);
+    expect(result.normal.sponsorPlan.removedCount).toBe(0);
+    expect(result.normal.sponsorPlan.ranges).toEqual([]);
     expect(result.normalBytes).toEqual([1, 2, 3, 4, 5]);
     expect(result.normalClosed).toBe(true);
     expect(result.progress).toEqual([
@@ -318,7 +324,8 @@ test('HLS TS streams to a selected file in bounded chunks and aborts partial wor
     expect(result.abortName).toBe('AbortError');
     expect(result.abortedBytes).toEqual([1, 2, 3]);
     expect(result.abortCalled).toBe(true);
-    expect(result.direct).toEqual({ bytes: 2, segments: 1 });
+    expect(result.direct.bytes).toBe(2);
+    expect(result.direct.segments).toBe(1);
     expect(result.directBytes).toEqual([9, 8]);
 });
 

@@ -23,7 +23,7 @@
 // @updateURL    https://github.com/SysAdminDoc/RumbleX/raw/main/RumbleX.lite.user.js
 // ==/UserScript==
 
-// Generated from extension/settings-schema.js + extension/content.js. Shared runtime SHA-256: 708011341af94fad6bde5436f597e143a50bdd5aba672de3a238cb5409af000e
+// Generated from extension/settings-schema.js + extension/content.js. Shared runtime SHA-256: 37249884294e9821121c3bf49de7b49f3992ed44df8b049126d517e4efc14942
 // RumbleX shared settings schema. This file is the canonical source for
 // defaults and trust-boundary normalization across content, options, popup,
 // background profile/Gist restores, and the generated userscript.
@@ -207,6 +207,9 @@
         sponsorSkipUndo: true,
         // Cumulative seconds skipped, shown in the panel. Local only.
         sponsorTimeSaved: 0,
+        // Drop locally-marked segments from downloads. Off by default: it
+        // changes the bytes you get, so it has to be asked for.
+        sponsorTrimDownloads: false,
         // Downloads & archives
         downloadManagerEnabled: true,
         downloadQualityPreference: 'best',
@@ -1173,7 +1176,13 @@
   "rantArchiveCount": "rants",
   "rantArchiveAmount": "total",
   "rantArchiveSupporters": "supporters",
-  "rantArchiveExport": "Export"
+  "rantArchiveExport": "Export",
+  "dlSponsorTrimToggle": "Trim {count} marked segments ({time}) from this download",
+  "dlSponsorTrimNote": "Only stream segments that fall entirely inside a marked range are dropped, so a little of a mark can survive at each edge. Nothing is re-encoded.",
+  "dlSponsorRemoved": "{count} marked segments removed ({time}).",
+  "dlSponsorTrimmed": "Skipping {count} marked segments ({time} removed)…",
+  "feat_sponsorTrimDownloads_label": "Trim Downloads",
+  "feat_sponsorTrimDownloads_desc": "Drop stream segments that fall entirely inside a marked range"
 });
     const STORAGE_KEYS_WITH_CHANGE_EVENTS = ['rx_settings'];
     const ALLOWED_REQUEST_HOSTS = ['rumble.com', 'rumble.cloud', '1a-1791.com'];
@@ -4355,6 +4364,16 @@ const VideoDownloader = {
             word-break: break-word;
         }
 
+        .rx-dl-sponsor-trim {
+            display: flex; align-items: center; gap: 8px;
+            margin-top: 10px; padding: 8px 10px;
+            background: rgba(243,139,168,0.08);
+            border: 1px solid rgba(243,139,168,0.2); border-radius: 8px;
+            font: 600 12px/1.4 system-ui, sans-serif; color: #cdd6f4;
+            cursor: pointer;
+        }
+        .rx-dl-sponsor-trim input { accent-color: #f38ba8; min-width: 16px; min-height: 16px; }
+
         .rx-dl-format-row {
             display: flex;
             gap: 8px;
@@ -4607,21 +4626,134 @@ const VideoDownloader = {
     },
 
     _parseSegmentPlaylist(text, baseUrl) {
-        const segments = [];
-        const lines = text.trim().split('\n');
+        return this._parseSegmentEntries(text, baseUrl).map((entry) => entry.url);
+    },
+
+    // Same walk as above, but keeping the #EXTINF duration that precedes each
+    // URL. Those durations are the only way to map a wall-clock SponsorBlock
+    // region onto the segment list. A playlist without them still parses; every
+    // entry just reports a zero-length window, which the trim planner treats as
+    // "no timeline" and refuses to cut against.
+    _parseSegmentEntries(text, baseUrl) {
+        const entries = [];
+        const lines = String(text || '').trim().split('\n');
+        let pending = 0;
+        let clock = 0;
         for (const line of lines) {
             const t = line.trim();
-            if (t && !t.startsWith('#')) {
-                const safeUrl = this._safeMediaUrl(t, baseUrl);
-                if (safeUrl) segments.push(safeUrl);
+            if (!t) continue;
+            if (t.startsWith('#EXTINF:')) {
+                const value = Number.parseFloat(t.slice('#EXTINF:'.length));
+                pending = Number.isFinite(value) && value > 0 ? value : 0;
+                continue;
             }
+            if (t.startsWith('#')) continue;
+            const safeUrl = this._safeMediaUrl(t, baseUrl);
+            if (safeUrl) {
+                entries.push({ url: safeUrl, duration: pending, start: clock, end: clock + pending });
+                clock += pending;
+            }
+            pending = 0;
         }
-        return segments;
+        return entries;
     },
 
     _supportsStreamingFileSave() {
         return !!RXPlatform.capabilities.streamingFileSave
             && typeof globalThis.showSaveFilePicker === 'function';
+    },
+
+    // Read straight from storage rather than from SponsorBlockRX, so a download
+    // can still honour marks the viewer made earlier even if the skipping
+    // feature is currently switched off.
+    _localSponsorSegments() {
+        const key = location.pathname.match(/^\/(v[a-z0-9]+)/)?.[1];
+        if (!key) return [];
+        const all = Settings.get('sponsorSegments') || {};
+        return Array.isArray(all[key]) ? all[key] : [];
+    },
+
+    // Overlapping marks would each remove the same segments and then be counted
+    // twice in the "removed" total, so they collapse into disjoint ranges first.
+    _mergeSponsorRanges(segments) {
+        const ranges = (Array.isArray(segments) ? segments : [])
+            .map((s) => ({
+                start: Number(s?.start),
+                end: Number(s?.end),
+                category: typeof s?.category === 'string' && s.category ? s.category : 'sponsor',
+            }))
+            .filter((s) => Number.isFinite(s.start) && Number.isFinite(s.end) && s.end > s.start)
+            .sort((a, b) => a.start - b.start);
+        const merged = [];
+        for (const range of ranges) {
+            const last = merged[merged.length - 1];
+            if (last && range.start <= last.end) {
+                last.end = Math.max(last.end, range.end);
+                if (!last.categories.includes(range.category)) last.categories.push(range.category);
+            } else {
+                merged.push({ start: range.start, end: range.end, categories: [range.category] });
+            }
+        }
+        return merged;
+    },
+
+    // A whole HLS segment is the smallest unit that can be dropped without
+    // re-encoding, so a mark only removes the segments it fully covers. A
+    // partially covered segment stays: cutting it would take real content with
+    // it, and leaving a second or two of a sponsor read is the honest trade for
+    // a copy that is otherwise bit-identical to the source.
+    _planSponsorTrim(entries, marks, { tolerance = 0.25 } = {}) {
+        const all = Array.isArray(entries) ? entries : [];
+        const ranges = this._mergeSponsorRanges(marks);
+        // The ranges travel with every return, trimmed or not: even a download
+        // that cuts nothing still wants the marks written out as chapters.
+        const untrimmed = { entries: all, removed: [], removedCount: 0, removedSeconds: 0, ranges };
+        if (!ranges.length || !all.length) return untrimmed;
+        // No usable timeline (a playlist with no #EXTINF lines) means every
+        // window is zero-length and would test as "inside" the first mark.
+        const timeline = all.reduce((sum, entry) => sum + (Number(entry?.duration) || 0), 0);
+        if (!(timeline > 0)) return untrimmed;
+
+        const kept = [];
+        const removed = [];
+        let removedSeconds = 0;
+        for (const entry of all) {
+            const start = Number(entry?.start);
+            const end = Number(entry?.end);
+            const covered = Number.isFinite(start) && Number.isFinite(end) && end > start
+                && ranges.some((r) => start >= r.start - tolerance && end <= r.end + tolerance);
+            if (covered) {
+                removed.push(entry);
+                removedSeconds += end - start;
+            } else {
+                kept.push(entry);
+            }
+        }
+        // Removing everything means the marks cover the whole video; a
+        // zero-byte file is worse than an untrimmed one.
+        if (!kept.length) return untrimmed;
+        return { entries: kept, removed, removedCount: removed.length, removedSeconds, ranges };
+    },
+
+    // yt-dlp writes SponsorBlock findings into the sidecar as chapters, which
+    // is what Jellyfin and Kodi already know how to read. Always describes the
+    // original timeline, so a trimmed copy still records what was there.
+    _sponsorSidecarFields(plan) {
+        if (!plan?.ranges?.length) return null;
+        const chapters = plan.ranges.map((range) => ({
+            start_time: Math.round(range.start * 1000) / 1000,
+            end_time: Math.round(range.end * 1000) / 1000,
+            title: `[SponsorBlock]: ${range.categories.join(', ')}`,
+        }));
+        const fields = { chapters };
+        if (plan.removedCount) {
+            fields.sponsorblock_removed = {
+                segments: plan.removedCount,
+                seconds: Math.round(plan.removedSeconds * 1000) / 1000,
+                note: 'Whole HLS segments fully inside a marked range were dropped; partially covered segments were kept.',
+            };
+        }
+        return fields;
     },
 
     async _resolveHlsSegments(quality, { signal, diagnosticUrls = [], onStage } = {}) {
@@ -4655,14 +4787,25 @@ const VideoDownloader = {
             variantText = await variantResponse.text();
         }
 
-        const segmentUrls = this._parseSegmentPlaylist(variantText, variantUrl);
-        if (!segmentUrls.length) {
+        const segmentEntries = this._parseSegmentEntries(variantText, variantUrl);
+        if (!segmentEntries.length) {
             const error = new Error('No segments found in playlist');
             error.rxStage = 'segment-playlist';
             error.rxUrl = variantUrl;
             throw error;
         }
-        return { segmentUrls, variantUrl };
+        return { segmentUrls: segmentEntries.map((entry) => entry.url), segmentEntries, variantUrl };
+    },
+
+    // Applied at the point the segment list is resolved so every download path
+    // trims identically. Returns the plan as well as the URLs, because the
+    // caller reports what was cut and writes it into the sidecar.
+    _applySponsorTrim(segmentEntries) {
+        if (!Settings.get('sponsorTrimDownloads')) return null;
+        const marks = this._localSponsorSegments();
+        if (!marks.length) return null;
+        const plan = this._planSponsorTrim(segmentEntries, marks);
+        return plan.removedCount ? plan : null;
     },
 
     async _streamHlsToWritable(quality, writable, {
@@ -4674,11 +4817,15 @@ const VideoDownloader = {
         if (!writable || typeof writable.write !== 'function') {
             throw new Error('The selected file is not writable.');
         }
-        const { segmentUrls } = await this._resolveHlsSegments(quality, {
+        const resolved = await this._resolveHlsSegments(quality, {
             signal,
             diagnosticUrls,
             onStage,
         });
+        const trim = this._applySponsorTrim(resolved.segmentEntries);
+        const segmentUrls = trim ? trim.entries.map((entry) => entry.url) : resolved.segmentUrls;
+        const sponsorPlan = trim
+            || this._planSponsorTrim(resolved.segmentEntries, this._localSponsorSegments());
         let bytes = 0;
         let completed = 0;
 
@@ -4712,7 +4859,7 @@ const VideoDownloader = {
             completed++;
             onProgress?.({ completed, total: segmentUrls.length, bytes });
         }
-        return { bytes, segments: completed };
+        return { bytes, segments: completed, sponsorPlan, trimmed: !!trim };
     },
 
     async _downloadBuffers(urls, { signal, concurrency = 6, onProgress, stage = 'segment-download' } = {}) {
@@ -5046,7 +5193,7 @@ const VideoDownloader = {
 
     // `base` is the media filename without its extension, so the sidecars sort
     // next to the video and media servers pair them automatically.
-    _writeSidecars(base) {
+    _writeSidecars(base, extra = null) {
         const wantMetadata = Settings.get('downloadIncludeMetadata');
         const wantThumbnail = Settings.get('downloadIncludeThumbnail');
         if (!wantMetadata && !wantThumbnail) return;
@@ -5054,6 +5201,7 @@ const VideoDownloader = {
         let meta = null;
         try { meta = this._sidecarMetadata(); } catch { meta = null; }
         if (!meta) return;
+        if (extra) meta = { ...meta, ...extra };
 
         if (wantMetadata) {
             try {
@@ -5090,6 +5238,13 @@ const VideoDownloader = {
         a.click();
         a.remove();
         setTimeout(() => URL.revokeObjectURL(url), 60000);
+    },
+
+    _fmtClock(seconds) {
+        const total = Math.max(0, Math.round(Number(seconds) || 0));
+        const m = Math.floor(total / 60);
+        const s = total % 60;
+        return `${m}:${String(s).padStart(2, '0')}`;
     },
 
     _formatSize(bytes) {
@@ -5820,6 +5975,41 @@ const VideoDownloader = {
             note.textContent = `MP4 conversion stays disabled above ${this._formatSize(this._MAX_IN_MEMORY_BYTES)}. TS-to-disk writes each network chunk directly to your selected file and discards partial output if cancelled.`;
             body.appendChild(note);
         }
+        this._mountSponsorTrimToggle(body);
+    },
+
+    // Only rendered when this video actually has marks, because the choice is
+    // meaningless otherwise and an always-present dead toggle trains people to
+    // ignore it. Mirrors the options-page setting rather than shadowing it.
+    _mountSponsorTrimToggle(body) {
+        const marks = this._localSponsorSegments();
+        if (!marks.length) return;
+        const ranges = this._mergeSponsorRanges(marks);
+        if (!ranges.length) return;
+        const marked = ranges.reduce((sum, range) => sum + (range.end - range.start), 0);
+
+        const wrap = document.createElement('label');
+        wrap.className = 'rx-dl-sponsor-trim';
+        const box = document.createElement('input');
+        box.type = 'checkbox';
+        box.checked = !!Settings.get('sponsorTrimDownloads');
+        box.addEventListener('change', () => Settings.set('sponsorTrimDownloads', box.checked));
+        const text = document.createElement('span');
+        text.textContent = rxT(
+            'dlSponsorTrimToggle',
+            'Trim {count} marked segments ({time}) from this download',
+            { count: ranges.length, time: this._fmtClock(marked) },
+        );
+        wrap.append(box, text);
+        body.appendChild(wrap);
+
+        const note = document.createElement('div');
+        note.className = 'rx-dl-tar-note';
+        note.textContent = rxT(
+            'dlSponsorTrimNote',
+            'Only stream segments that fall entirely inside a marked range are dropped, so a little of a mark can survive at each edge. Nothing is re-encoded.',
+        );
+        body.appendChild(note);
     },
 
     _newOperationId(prefix) {
@@ -5924,7 +6114,12 @@ const VideoDownloader = {
                 }
             } else if (resp?.downloadId) {
                 this._setBodyText('rx-dl-done', 'Download started! Check your browser downloads.');
-                this._writeSidecars(`${title} - ${quality.label}`);
+                // A direct file is never trimmed, but the marks still describe
+                // its timeline exactly, so they are worth recording.
+                this._writeSidecars(
+                    `${title} - ${quality.label}`,
+                    this._sponsorSidecarFields(this._planSponsorTrim([], this._localSponsorSegments())),
+                );
             } else {
                 const error = new Error('Download failed to start');
                 error.code = 'missing-download-id';
@@ -6047,6 +6242,25 @@ const VideoDownloader = {
             done.className = 'rx-dl-done';
             done.textContent = rxT('dlTsSaved', 'TS stream saved directly to your selected file.');
             body.appendChild(done);
+            if (streamed.trimmed) {
+                const trimmedNote = document.createElement('div');
+                trimmedNote.className = 'rx-dl-status';
+                trimmedNote.textContent = rxT(
+                    'dlSponsorRemoved',
+                    '{count} marked segments removed ({time}).',
+                    {
+                        count: streamed.sponsorPlan.removedCount,
+                        time: this._fmtClock(streamed.sponsorPlan.removedSeconds),
+                    },
+                );
+                body.appendChild(trimmedNote);
+            }
+            // The media went to a location the page cannot see, so the sidecars
+            // land in the browser's download folder instead of beside it.
+            this._writeSidecars(
+                `${title} - ${quality.label}`,
+                this._sponsorSidecarFields(streamed.sponsorPlan),
+            );
         } catch (error) {
             if (writable) {
                 try { await writable.abort(); } catch {}
@@ -6118,7 +6332,7 @@ const VideoDownloader = {
         };
 
         try {
-            const { segmentUrls } = await this._resolveHlsSegments(quality, {
+            const resolved = await this._resolveHlsSegments(quality, {
                 signal,
                 diagnosticUrls,
                 onStage: (nextStage, pct, message) => {
@@ -6126,6 +6340,19 @@ const VideoDownloader = {
                     setProgress(pct, message);
                 },
             });
+
+            const trim = this._applySponsorTrim(resolved.segmentEntries);
+            const segmentUrls = trim ? trim.entries.map((entry) => entry.url) : resolved.segmentUrls;
+            if (trim) {
+                setProgress(4, rxT(
+                    'dlSponsorTrimmed',
+                    'Skipping {count} marked segments ({time} removed)…',
+                    { count: trim.removedCount, time: this._fmtClock(trim.removedSeconds) },
+                ));
+            }
+            const sidecarExtra = this._sponsorSidecarFields(
+                trim || this._planSponsorTrim(resolved.segmentEntries, this._localSponsorSegments()),
+            );
 
             const total = segmentUrls.length;
             const CONCURRENT = 6;
@@ -6171,7 +6398,7 @@ const VideoDownloader = {
                 stage = 'save';
                 setProgress(100, 'Starting download...');
                 this._triggerSave(mp4Blob, `${title} - ${quality.label}.mp4`, 'video/mp4');
-                this._writeSidecars(`${title} - ${quality.label}`);
+                this._writeSidecars(`${title} - ${quality.label}`, sidecarExtra);
                 this._setBody('<div class="rx-dl-done">Download complete!</div>');
             } else {
                 // TS: download in chunks, build Blob
@@ -6194,7 +6421,7 @@ const VideoDownloader = {
                 tsParts.length = 0;
                 setProgress(100, 'Starting download...');
                 this._triggerSave(blob, `${title} - ${quality.label}.ts`, 'video/mp2t');
-                this._writeSidecars(`${title} - ${quality.label}`);
+                this._writeSidecars(`${title} - ${quality.label}`, sidecarExtra);
                 this._setBody('<div class="rx-dl-done">Download complete!</div>');
             }
         } catch (e) {
@@ -12105,6 +12332,7 @@ const RX_CATEGORIES = [
             { id: 'shortsFilter', label: 'Shorts Filter', desc: 'Hide Shorts from all feeds' },
             { id: 'sponsorBlock', label: 'SponsorBlock', desc: 'Local per-video segments with auto-skip' },
             { id: 'sponsorSkipUndo', label: 'Skip Undo', desc: 'Offer an Undo button after a segment is skipped', parent: 'sponsorBlock' },
+            { id: 'sponsorTrimDownloads', label: 'Trim Downloads', desc: 'Drop stream segments that fall entirely inside a marked range', parent: 'sponsorBlock' },
         ],
     },
     {
