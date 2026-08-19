@@ -1910,5 +1910,41 @@
   "chatCardLabel": {
     "message": "Partecipante della chat",
     "description": "In-page UI string (shared core)."
+  },
+  "feat_rantStatsPanel_label": {
+    "message": "Archivio dei rant",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_rantStatsPanel_desc": {
+    "message": "Totali ed esportazione locale dei rant registrati per questo video",
+    "description": "In-page UI string (shared core)."
+  },
+  "rantArchiveEmpty": {
+    "message": "Nessun rant registrato per questo video finora",
+    "description": "In-page UI string (shared core)."
+  },
+  "rantArchiveExported": {
+    "message": "{count} rant esportati",
+    "description": "In-page UI string (shared core)."
+  },
+  "rantArchiveTitle": {
+    "message": "Archivio dei rant (locale)",
+    "description": "In-page UI string (shared core)."
+  },
+  "rantArchiveCount": {
+    "message": "rant",
+    "description": "In-page UI string (shared core)."
+  },
+  "rantArchiveAmount": {
+    "message": "totale",
+    "description": "In-page UI string (shared core)."
+  },
+  "rantArchiveSupporters": {
+    "message": "sostenitori",
+    "description": "In-page UI string (shared core)."
+  },
+  "rantArchiveExport": {
+    "message": "Esporta",
+    "description": "In-page UI string (shared core)."
   }
 }

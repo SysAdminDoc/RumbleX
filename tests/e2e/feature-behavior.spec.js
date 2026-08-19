@@ -1830,3 +1830,110 @@ test('ChatClickToMention stands down when user cards are handling the same click
     // Listener removed, so the click does nothing.
     expect(result.afterDestroy).toBe('');
 });
+
+test('RantArchive totals rant amounts, ranks supporters, and escapes CSV safely', async () => {
+    const result = await inHarness(() => {
+        const harness = globalThis.__RumbleXFeatureHarness;
+        harness.enable('rantStatsPanel');
+        const ra = harness.features.find((f) => f.id === 'rantStatsPanel');
+
+        // Rumble renders prices as display strings, and an unparseable one must
+        // contribute nothing rather than poisoning the sum with NaN.
+        const amounts = {
+            plain: ra.parseAmount('$10'),
+            decimal: ra.parseAmount('$1.50'),
+            thousands: ra.parseAmount('$1,234.50'),
+            otherCurrency: ra.parseAmount('R$5'),
+            number: ra.parseAmount(20),
+            junk: ra.parseAmount('free'),
+            empty: ra.parseAmount(''),
+            missing: ra.parseAmount(undefined),
+            negative: ra.parseAmount(-5),
+        };
+
+        const entries = [
+            { user: 'Alice', price: '$10', text: 'hi', level: 3, ts: 1_755_000_000_000 },
+            { user: 'Bob', price: '$2.50', text: 'yo', level: 1, ts: 1_755_000_001_000 },
+            { user: 'Alice', price: '$5', text: 'again', level: 2, ts: 1_755_000_002_000 },
+            { user: '', price: 'free', text: 'no amount', level: 0, ts: 1_755_000_003_000 },
+        ];
+        const totals = ra.totals(entries);
+        const emptyTotals = ra.totals([]);
+        const junkTotals = ra.totals(null);
+
+        // A comma, a quote and a newline in the message body all have to survive
+        // a round trip through the CSV.
+        const csv = ra.toCsv([
+            { user: 'Eve', price: '$3', text: 'hello, "world"\nsecond line', level: 1, ts: 1_755_000_000_000 },
+        ]);
+        const csvLines = csv.split('\n');
+
+        const realGet = Settings.get.bind(Settings);
+        const store = { rantExportFormat: 'csvJson' };
+        Settings.get = (key) => (Object.hasOwn(store, key) ? store[key] : realGet(key));
+        const formats = {};
+        for (const mode of ['csv', 'json', 'csvJson', 'nonsense']) {
+            store.rantExportFormat = mode;
+            formats[mode] = ra._format();
+        }
+
+        // Export writes one file per selected format, and nothing when empty.
+        const saved = [];
+        const realSave = ra._save;
+        const realEntries = ra._entries;
+        ra._save = (content, filename) => { saved.push(filename.replace(/^.*_/, '')); };
+        ra._entries = () => entries;
+
+        store.rantExportFormat = 'csv';
+        saved.length = 0; ra._export();
+        const csvOnly = saved.slice();
+
+        store.rantExportFormat = 'json';
+        saved.length = 0; ra._export();
+        const jsonOnly = saved.slice();
+
+        store.rantExportFormat = 'csvJson';
+        saved.length = 0; ra._export();
+        const both = saved.slice();
+
+        ra._entries = () => [];
+        saved.length = 0; ra._export();
+        const whenEmpty = saved.slice();
+
+        ra._save = realSave;
+        ra._entries = realEntries;
+        Settings.get = realGet;
+
+        return { amounts, totals, emptyTotals, junkTotals, csvLines, formats, csvOnly, jsonOnly, both, whenEmpty };
+    });
+
+    expect(result.amounts).toEqual({
+        plain: 10, decimal: 1.5, thousands: 1234.5, otherCurrency: 5,
+        number: 20, junk: 0, empty: 0, missing: 0, negative: 0,
+    });
+
+    expect(result.totals.count).toBe(4);
+    // 10 + 2.50 + 5, with the unparseable one contributing nothing.
+    expect(result.totals.amount).toBe(17.5);
+    expect(result.totals.supporters).toBe(3);
+    // Ranked by amount, so Alice's two rants put her first.
+    expect(result.totals.top[0]).toEqual({ user: 'Alice', total: 15 });
+    expect(result.totals.top[1]).toEqual({ user: 'Bob', total: 2.5 });
+    // A missing username is bucketed rather than dropped.
+    expect(result.totals.top[2]).toEqual({ user: 'unknown', total: 0 });
+
+    expect(result.emptyTotals).toEqual({ count: 0, amount: 0, supporters: 0, top: [] });
+    expect(result.junkTotals.count).toBe(0);
+
+    expect(result.csvLines[0]).toBe('user,price,amount,level,text,timestamp');
+    // Quotes doubled, whole field wrapped, and the embedded newline preserved.
+    expect(result.csvLines[1]).toContain('"hello, ""world""');
+
+    expect(result.formats).toEqual({ csv: 'csv', json: 'json', csvJson: 'csvJson', nonsense: 'csvJson' });
+
+    expect(result.csvOnly).toEqual(['rants.csv']);
+    expect(result.jsonOnly).toEqual(['rants.json']);
+    expect(result.both).toEqual(['rants.csv', 'rants.json']);
+    // Nothing captured means nothing written.
+    expect(result.whenEmpty).toEqual([]);
+});

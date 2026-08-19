@@ -598,7 +598,6 @@
         downloadLiveStreams: 'Live-stream downloads are gated by page state, not this key.',
         downloadShorts: 'Shorts downloads are gated by page state, not this key.',
         audioExtractionMode: 'Audio extraction always prefers the browser encoder.',
-        rantExportFormat: 'Rant export always writes both CSV and JSON.',
 
         // Channel archive preferences. The archive queue reads
         // channelArchiveMaxHeight and channelArchiveSubfolder, but not these.
@@ -618,7 +617,6 @@
         chatMuteDurations: 'Configures the unbuilt timed-mute feature.',
 
         // Rant features that were never built.
-        rantStatsPanel: 'Not built.',
         rantStickyHighValue: 'Not built.',
 
         // Comment features that were never built.

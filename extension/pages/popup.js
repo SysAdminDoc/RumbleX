@@ -84,6 +84,7 @@ const GROUPS = [
             { id: 'chatMentionHighlight', label: 'Keyword Highlight' },
             { id: 'chatReadability', label: 'Chat Readability' },
             { id: 'chatParticipantsList', label: 'Chat User Cards' },
+            { id: 'rantStatsPanel', label: 'Rant Archive' },
             { id: 'chatAutoScroll', label: 'Chat Scroll' },
             { id: 'uniqueChatters', label: 'Unique Chatters' },
             { id: 'chatUserBlock', label: 'User Block' },

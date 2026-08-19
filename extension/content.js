@@ -10688,6 +10688,7 @@ const RX_CATEGORIES = [
             { id: 'chatMentionAutocomplete', label: 'Mention Autocomplete', desc: 'Offer names from this session after typing @ in the chat box' },
             { id: 'chatMentionHighlight', label: 'Keyword Highlight', desc: 'Highlight chat messages containing your chosen terms' },
             { id: 'chatHighlightSound', label: 'Highlight Sound', desc: 'Play a short tone when a highlighted message arrives', parent: 'chatMentionHighlight' },
+            { id: 'rantStatsPanel', label: 'Rant Archive', desc: 'Totals and a local export of the rants captured for this video' },
             { id: 'chatParticipantsList', label: 'Chat User Cards', desc: 'Click a chat name for their messages this session, plus mention, block and a local nickname' },
             { id: 'chatClickToMention', label: 'Click Name To Mention', desc: 'Clicking a chat name drops an @mention into the box (when user cards are off)' },
             { id: 'chatReadability', label: 'Chat Readability', desc: 'Alternating row shading and adjustable chat text size' },
@@ -12522,6 +12523,250 @@ const ChatExport = {
 // ═══════════════════════════════════════════
 //  FEATURE: Rant Persist (keep rants past expiry + export)
 // ═══════════════════════════════════════════
+// ═══════════════════════════════════════════
+//  FEATURE: Rant Archive
+// ═══════════════════════════════════════════
+// RantPersist already keeps paid rants past the point Rumble expires them, but
+// what it keeps was only ever readable as chat scrollback. This turns that
+// store into something you can actually total up and take away with you.
+//
+// Everything is read from the local per-video cache RantPersist already writes;
+// no new capture, no network, and nothing leaves the browser until the export
+// button is pressed.
+const RantArchive = {
+    id: 'rantStatsPanel',
+    name: 'Rant Archive',
+    _styleEl: null,
+    _panel: null,
+    _obs: null,
+
+    _css: `
+        .rx-rant-archive {
+            margin: 8px 0; padding: 10px;
+            background: rgba(249,226,175,0.07);
+            border: 1px solid rgba(249,226,175,0.22);
+            border-radius: 8px;
+            color: #cdd6f4; font: 12px/1.45 system-ui, sans-serif;
+        }
+        .rx-rant-archive__title {
+            font: 700 11px/1 system-ui, sans-serif; color: #f9e2af;
+            text-transform: uppercase; margin-bottom: 8px;
+        }
+        .rx-rant-archive__totals { display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 8px; }
+        .rx-rant-archive__stat strong { display: block; font-size: 15px; color: #f9e2af; }
+        .rx-rant-archive__stat span { font-size: 10px; color: #a6adc8; }
+        .rx-rant-archive__top { display: flex; flex-direction: column; gap: 3px; margin-bottom: 8px; }
+        .rx-rant-archive__top div {
+            display: flex; justify-content: space-between; gap: 8px;
+            background: rgba(49,50,68,0.35); border-radius: 4px; padding: 3px 6px; font-size: 11px;
+        }
+        .rx-rant-archive__actions { display: flex; gap: 6px; }
+        .rx-rant-archive__actions button {
+            background: rgba(49,50,68,0.6); border: 1px solid rgba(255,255,255,0.08);
+            color: #cdd6f4; border-radius: 5px; padding: 5px 10px; cursor: pointer;
+            font: 600 11px/1 system-ui, sans-serif; min-height: 24px;
+        }
+        .rx-rant-archive__actions button:hover { background: rgba(49,50,68,0.9); }
+        .rx-rant-archive__empty { color: #6c7086; font-size: 11px; }
+    `,
+
+    // Rumble writes rant prices as display strings ("$10", "$1,234.50", "R$5").
+    // Only the numeric part is meaningful for a total, and an unparseable price
+    // contributes nothing rather than NaN-poisoning the sum.
+    parseAmount(price) {
+        if (typeof price === 'number') return Number.isFinite(price) && price > 0 ? price : 0;
+        const match = String(price || '').replace(/,/g, '').match(/(\d+(?:\.\d+)?)/);
+        if (!match) return 0;
+        const value = Number(match[1]);
+        return Number.isFinite(value) && value > 0 ? value : 0;
+    },
+
+    totals(entries) {
+        const list = Array.isArray(entries) ? entries : [];
+        let amount = 0;
+        const byUser = new Map();
+        for (const entry of list) {
+            const value = this.parseAmount(entry?.price);
+            amount += value;
+            const user = (entry?.user || '').trim() || 'unknown';
+            byUser.set(user, (byUser.get(user) || 0) + value);
+        }
+        const top = [...byUser.entries()]
+            .sort((a, b) => b[1] - a[1])
+            .slice(0, 5)
+            .map(([user, total]) => ({ user, total }));
+        return { count: list.length, amount: Math.round(amount * 100) / 100, supporters: byUser.size, top };
+    },
+
+    toCsv(entries) {
+        const esc = (value) => {
+            const text = String(value === undefined || value === null ? '' : value);
+            return /[",\n\r]/.test(text) ? '"' + text.replace(/"/g, '""') + '"' : text;
+        };
+        const lines = ['user,price,amount,level,text,timestamp'];
+        for (const entry of (Array.isArray(entries) ? entries : [])) {
+            lines.push([
+                entry?.user, entry?.price, this.parseAmount(entry?.price), entry?.level, entry?.text,
+                entry?.ts ? new Date(entry.ts).toISOString() : '',
+            ].map(esc).join(','));
+        }
+        return lines.join('\n');
+    },
+
+    _entries() {
+        // RantPersist owns the cache; read through it when it is live, and fall
+        // back to the same localStorage key when it is not.
+        if (Array.isArray(RantPersist._cached) && RantPersist._cached.length) return RantPersist._cached;
+        try {
+            const id = location.pathname.match(/\/(v[a-z0-9]+)-/i)?.[1];
+            if (!id) return [];
+            return JSON.parse(localStorage.getItem('rx_rants_' + id) || '[]') || [];
+        } catch { return []; }
+    },
+
+    _stub() {
+        const title = (qs('.video-header-container__title')?.textContent || 'rumblex')
+            .trim().replace(/[^\w-]+/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '').slice(0, 80);
+        return `${new Date().toISOString().slice(0, 10)}_${title || 'rumblex'}_rants`;
+    },
+
+    _save(content, filename, mime) {
+        try {
+            const blob = new Blob([content], { type: mime });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = filename;
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
+            setTimeout(() => URL.revokeObjectURL(url), 5000);
+        } catch (err) {
+            RxErrorLog.record('rant-archive-export', err);
+        }
+    },
+
+    _format() {
+        const mode = Settings.get('rantExportFormat');
+        return ['csv', 'json', 'csvJson'].includes(mode) ? mode : 'csvJson';
+    },
+
+    _export() {
+        const entries = this._entries();
+        if (!entries.length) {
+            RxToast.show(rxT('rantArchiveEmpty', 'No rants captured for this video yet'));
+            return;
+        }
+        const stub = this._stub();
+        const format = this._format();
+        if (format === 'csv' || format === 'csvJson') {
+            this._save(this.toCsv(entries), `${stub}.csv`, 'text/csv;charset=utf-8');
+        }
+        if (format === 'json' || format === 'csvJson') {
+            const totals = this.totals(entries);
+            const payload = {
+                exportedAt: new Date().toISOString(),
+                pageUrl: location.href.split('?')[0],
+                totals,
+                rants: entries,
+            };
+            this._save(JSON.stringify(payload, null, 2), `${stub}.json`, 'application/json');
+        }
+        RxToast.show(rxT('rantArchiveExported', 'Exported {count} rants', { count: entries.length }));
+    },
+
+    _render() {
+        const panel = this._panel;
+        if (!panel) return;
+        const entries = this._entries();
+        const totals = this.totals(entries);
+
+        panel.textContent = '';
+        const title = document.createElement('div');
+        title.className = 'rx-rant-archive__title';
+        title.textContent = rxT('rantArchiveTitle', 'Rant archive (local)');
+        panel.appendChild(title);
+
+        if (!entries.length) {
+            const empty = document.createElement('div');
+            empty.className = 'rx-rant-archive__empty';
+            empty.textContent = rxT('rantArchiveEmpty', 'No rants captured for this video yet');
+            panel.appendChild(empty);
+            return;
+        }
+
+        const stats = document.createElement('div');
+        stats.className = 'rx-rant-archive__totals';
+        const addStat = (value, label) => {
+            const wrap = document.createElement('div');
+            wrap.className = 'rx-rant-archive__stat';
+            const strong = document.createElement('strong');
+            strong.textContent = value;
+            const span = document.createElement('span');
+            span.textContent = label;
+            wrap.append(strong, span);
+            stats.appendChild(wrap);
+        };
+        addStat(String(totals.count), rxT('rantArchiveCount', 'rants'));
+        addStat(totals.amount.toFixed(2), rxT('rantArchiveAmount', 'total'));
+        addStat(String(totals.supporters), rxT('rantArchiveSupporters', 'supporters'));
+        panel.appendChild(stats);
+
+        const top = document.createElement('div');
+        top.className = 'rx-rant-archive__top';
+        for (const row of totals.top) {
+            const line = document.createElement('div');
+            const who = document.createElement('span');
+            who.textContent = row.user;
+            const amount = document.createElement('span');
+            amount.textContent = row.total.toFixed(2);
+            line.append(who, amount);
+            top.appendChild(line);
+        }
+        panel.appendChild(top);
+
+        const actions = document.createElement('div');
+        actions.className = 'rx-rant-archive__actions';
+        const exportBtn = document.createElement('button');
+        exportBtn.type = 'button';
+        exportBtn.textContent = rxT('rantArchiveExport', 'Export');
+        exportBtn.addEventListener('click', () => this._export());
+        actions.appendChild(exportBtn);
+        panel.appendChild(actions);
+    },
+
+    _mount() {
+        const host = Selectors.find('chat.root') || qs('aside.media-page-chat-aside-chat');
+        if (!host || (this._panel && this._panel.isConnected)) return;
+        const panel = document.createElement('section');
+        panel.className = 'rx-rant-archive';
+        panel.setAttribute('aria-label', rxT('rantArchiveTitle', 'Rant archive (local)'));
+        host.prepend(panel);
+        this._panel = panel;
+        this._render();
+    },
+
+    init() {
+        if (!Settings.get(this.id)) return;
+        if (!Page.isWatch() && !Page.isLive()) return;
+        this._styleEl = injectStyle(this._css, 'rx-rant-archive-css');
+        this._mount();
+        this._obs = new MutationObserver(() => {
+            scheduleFeatureFrame(this, 'rant-archive', () => { this._mount(); this._render(); });
+        });
+        this._obs.observe(document.documentElement, { childList: true, subtree: true });
+    },
+
+    destroy() {
+        this._obs?.disconnect();
+        this._obs = null;
+        this._styleEl?.remove();
+        this._styleEl = null;
+        this._panel?.remove();
+        this._panel = null;
+    }
+};
+
 const RantPersist = {
     id: 'rantPersist',
     name: 'Rant Persist',
@@ -16738,6 +16983,7 @@ const features = [
     VideoDownloader, LogoToFeed, SpeedController, ScrollVolume, AutoMaxQuality,
     WatchProgress, ChannelBlocker, KeyboardNav, AutoTheater, LiveChatEnhance,
     ChatComposerAssist, ChatHighlights, ChatUserCards, ChatClickToMention, ChatReadability,
+    RantArchive,
     VideoTimestamps, ScreenshotBtn, WatchHistoryFeature, AutoplayBlock,
     SearchHistory, MiniPlayer, VideoStats, LoopControl, QuickBookmark, CommentNav,
     RantHighlight, RelatedFilter, ExactCounts, ShareTimestamp, TimeRemaining, ShortsFilter,
