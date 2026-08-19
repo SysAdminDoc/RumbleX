@@ -46,9 +46,9 @@ const cssBody = core.match(/const RX_CSS_TOGGLES = \[([\s\S]*?)\n\];/)?.[1] || '
 assert.ok(cssBody, 'CSS feature registry is missing');
 const cssIds = [...cssBody.matchAll(/\bid:\s*'([^']+)'/g)].map((match) => match[1]);
 
-assert.equal(handwritten.length, 77, 'handwritten feature count changed; update behavior coverage intentionally');
+assert.equal(handwritten.length, 78, 'handwritten feature count changed; update behavior coverage intentionally');
 assert.equal(cssIds.length, 51, 'CSS feature count changed; update behavior coverage intentionally');
-assert.equal(handwritten.length + cssIds.length, 128, 'total feature catalog changed unexpectedly');
+assert.equal(handwritten.length + cssIds.length, 129, 'total feature catalog changed unexpectedly');
 
 const allIds = [...handwritten.map(({ id }) => id), ...cssIds];
 assert.equal(new Set(allIds).size, allIds.length, 'feature ids must be unique across both registries');
@@ -141,7 +141,6 @@ const MODAL_EXCLUSIONS = {
     commentSearch: 'parked', chatMentionHighlight: 'parked', chatClickToMention: 'parked',
     chatParticipantsList: 'parked', chatTimedMutes: 'parked', chatUsernameColors: 'parked',
     rantStatsPanel: 'parked', rantStickyHighValue: 'parked', filterPreviewBadges: 'parked',
-    perChannelVolumeMemory: 'parked',
 };
 
 const categoriesStart = core.indexOf('const RX_CATEGORIES');

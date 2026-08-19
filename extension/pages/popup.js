@@ -48,6 +48,7 @@ const GROUPS = [
             { id: 'fullTitles', label: 'Full Titles' },
             { id: 'titleFont', label: 'Title Font' },
             { id: 'titleNormalizer', label: 'Title Normalizer' },
+            { id: 'perChannelVolumeMemory', label: 'Per-Channel Playback' },
         ],
     },
     {

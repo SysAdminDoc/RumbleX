@@ -1778,5 +1778,13 @@
   "sbTimeSaved": {
     "message": "{time} ignorées jusqu’ici",
     "description": "In-page UI string (shared core)."
+  },
+  "feat_perChannelVolumeMemory_label": {
+    "message": "Lecture par chaîne",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_perChannelVolumeMemory_desc": {
+    "message": "Mémoriser le volume, la vitesse et un plafond de qualité pour chaque chaîne",
+    "description": "In-page UI string (shared core)."
   }
 }

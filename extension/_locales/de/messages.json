@@ -1778,5 +1778,13 @@
   "sbTimeSaved": {
     "message": "Bisher {time} übersprungen",
     "description": "In-page UI string (shared core)."
+  },
+  "feat_perChannelVolumeMemory_label": {
+    "message": "Kanalbezogene Wiedergabe",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_perChannelVolumeMemory_desc": {
+    "message": "Lautstärke, Geschwindigkeit und eine Qualitätsgrenze pro Kanal merken",
+    "description": "In-page UI string (shared core)."
   }
 }

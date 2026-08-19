@@ -1778,5 +1778,13 @@
   "sbTimeSaved": {
     "message": "{time} pulados até agora",
     "description": "In-page UI string (shared core)."
+  },
+  "feat_perChannelVolumeMemory_label": {
+    "message": "Reprodução por canal",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_perChannelVolumeMemory_desc": {
+    "message": "Lembrar volume, velocidade e um limite de qualidade para cada canal",
+    "description": "In-page UI string (shared core)."
   }
 }

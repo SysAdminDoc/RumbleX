@@ -1266,3 +1266,101 @@ test('SponsorBlockRX honours per-category behavior, undo and the time-saved coun
     expect(result.savedLabels).toEqual(['45s', '10m', '2h 0m']);
     expect(result.clearedAfterDestroy).toBe(0);
 });
+
+test('PerChannelPrefs scopes playback settings to a channel and bounds the quality ceiling', async () => {
+    const result = await inHarness(() => {
+        const harness = globalThis.__RumbleXFeatureHarness;
+        harness.enable('perChannelVolumeMemory');
+        const prefs = harness.features.find((f) => f.id === 'perChannelVolumeMemory');
+        localStorage.removeItem(prefs._KEY);
+
+        const slugs = {
+            channel: prefs.slugFrom('/c/SomeChannel'),
+            user: prefs.slugFrom('https://rumble.com/user/Another'),
+            cased: prefs.slugFrom('/c/MiXeDCase'),
+            watch: prefs.slugFrom('/v7abc-some-video.html'),
+            junk: prefs.slugFrom(''),
+        };
+
+        prefs.remember('podcast', { volume: 0.4, speed: 1.75 });
+        prefs.remember('music', { volume: 1, speed: 1 });
+        // Out-of-range values must not be persisted: they would produce an
+        // unusable player on the next load.
+        prefs.remember('bad', { volume: 9, speed: 99 });
+
+        const stored = { podcast: prefs.get('podcast'), music: prefs.get('music'), bad: prefs.get('bad') };
+
+        const videoA = { volume: 1, playbackRate: 1 };
+        const appliedPodcast = prefs.applyTo(videoA, 'podcast');
+        const afterPodcast = { volume: videoA.volume, rate: videoA.playbackRate };
+
+        const videoB = { volume: 0.2, playbackRate: 2 };
+        // A channel with nothing stored must be left entirely alone.
+        const appliedUnknown = prefs.applyTo(videoB, 'never-visited');
+        const afterUnknown = { volume: videoB.volume, rate: videoB.playbackRate };
+
+        // Merging keeps prior fields rather than replacing the entry.
+        prefs.remember('podcast', { speed: 2 });
+        const merged = prefs.get('podcast');
+
+        // Quality ceiling: per-channel only ever lowers the global bound.
+        prefs.remember('capped', { quality: '720' });
+        const realGet = Settings.get.bind(Settings);
+        const amq = harness.features.find((f) => f.id === 'autoMaxQuality');
+        const ceilingWith = (globalCeiling, slug) => {
+            Settings.get = (key) => {
+                if (key === 'qualityCeiling') return globalCeiling;
+                if (key === 'perChannelVolumeMemory') return true;
+                return realGet(key);
+            };
+            const realSlug = prefs.currentSlug;
+            prefs.currentSlug = () => slug;
+            const out = amq._ceiling();
+            prefs.currentSlug = realSlug;
+            return out;
+        };
+        const ceilingNoGlobal = ceilingWith('auto', 'capped');
+        const ceilingHigherGlobal = ceilingWith('1080', 'capped');
+        const ceilingLowerGlobal = ceilingWith('480', 'capped');
+        const ceilingNoChannel = ceilingWith('1080', 'never-visited');
+        Settings.get = realGet;
+
+        // Pruning keeps the store bounded.
+        for (let i = 0; i < prefs._MAX + 25; i += 1) prefs.remember('ch' + i, { volume: 0.5 });
+        const size = Object.keys(prefs._load()).length;
+
+        localStorage.removeItem(prefs._KEY);
+        return {
+            slugs, stored, appliedPodcast, afterPodcast, appliedUnknown, afterUnknown,
+            merged, ceilingNoGlobal, ceilingHigherGlobal, ceilingLowerGlobal, ceilingNoChannel, size, max: prefs._MAX,
+        };
+    });
+
+    expect(result.slugs.channel).toBe('somechannel');
+    expect(result.slugs.user).toBe('another');
+    expect(result.slugs.cased).toBe('mixedcase');
+    // A watch URL is not a channel URL.
+    expect(result.slugs.watch).toBeNull();
+    expect(result.slugs.junk).toBeNull();
+
+    expect(result.stored.podcast).toMatchObject({ volume: 0.4, speed: 1.75 });
+    // Rejected outright rather than clamped to something the user never chose.
+    expect(result.stored.bad.volume).toBeUndefined();
+    expect(result.stored.bad.speed).toBeUndefined();
+
+    expect(result.appliedPodcast).toBe(true);
+    expect(result.afterPodcast).toEqual({ volume: 0.4, rate: 1.75 });
+
+    expect(result.appliedUnknown).toBe(false);
+    expect(result.afterUnknown).toEqual({ volume: 0.2, rate: 2 });
+
+    expect(result.merged).toMatchObject({ volume: 0.4, speed: 2 });
+
+    expect(result.ceilingNoGlobal).toBe(720);
+    expect(result.ceilingHigherGlobal).toBe(720);
+    // The global bound still wins when it is the stricter of the two.
+    expect(result.ceilingLowerGlobal).toBe(480);
+    expect(result.ceilingNoChannel).toBe(1080);
+
+    expect(result.size).toBeLessThanOrEqual(result.max);
+});

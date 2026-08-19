@@ -570,7 +570,6 @@
         pageDensity: 'Layout density is fixed by the active theme.',
 
         // Playback preferences with no consumer.
-        perChannelVolumeMemory: 'Volume is remembered globally, not per channel.',
 
         // Download and export preferences the download pipeline ignores.
         clipExportFormat: 'Clip export always writes MP4.',

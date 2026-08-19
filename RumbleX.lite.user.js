@@ -23,7 +23,7 @@
 // @updateURL    https://github.com/SysAdminDoc/RumbleX/raw/main/RumbleX.lite.user.js
 // ==/UserScript==
 
-// Generated from extension/settings-schema.js + extension/content.js. Shared runtime SHA-256: 03e69d0ebc4daf1610236aedba57586a42071955fc89fb3dfbc62f86d9932f98
+// Generated from extension/settings-schema.js + extension/content.js. Shared runtime SHA-256: 522870d2c25f7a6ccb93612176dd6e13e7267426ee3af0ae38a50b224f2dca87
 // RumbleX shared settings schema. This file is the canonical source for
 // defaults and trust-boundary normalization across content, options, popup,
 // background profile/Gist restores, and the generated userscript.
@@ -596,7 +596,6 @@
         pageDensity: 'Layout density is fixed by the active theme.',
 
         // Playback preferences with no consumer.
-        perChannelVolumeMemory: 'Volume is remembered globally, not per channel.',
 
         // Download and export preferences the download pipeline ignores.
         clipExportFormat: 'Clip export always writes MP4.',
@@ -1118,7 +1117,9 @@
   "sbUndo": "Undo",
   "sbSkipped": "Skipped {category}",
   "sbSegmentHere": "{category} segment",
-  "sbTimeSaved": "Skipped {time} so far"
+  "sbTimeSaved": "Skipped {time} so far",
+  "feat_perChannelVolumeMemory_label": "Per-Channel Playback",
+  "feat_perChannelVolumeMemory_desc": "Remember volume, speed and a quality ceiling for each channel"
 });
     const STORAGE_KEYS_WITH_CHANGE_EVENTS = ['rx_settings'];
     const ALLOWED_REQUEST_HOSTS = ['rumble.com', 'rumble.cloud', '1a-1791.com'];
@@ -6724,7 +6725,16 @@ const AutoMaxQuality = {
         return Number.isFinite(value) ? value : null;
     },
 
-    _ceiling() { return this._bound(Settings.get('qualityCeiling')); },
+    // A channel-specific ceiling wins over the global one when the viewer has
+    // set one, and only ever lowers it: a per-channel preference should not be
+    // able to exceed the bound the user set for everything.
+    _ceiling() {
+        const global = this._bound(Settings.get('qualityCeiling'));
+        if (!Settings.get('perChannelVolumeMemory')) return global;
+        const perChannel = this._bound(PerChannelPrefs.ceilingFor());
+        if (perChannel === null) return global;
+        return global === null ? perChannel : Math.min(global, perChannel);
+    },
     _floor() { return this._bound(Settings.get('qualityFloor')); },
 
     _mode() {
@@ -11217,6 +11227,7 @@ const RX_CATEGORIES = [
             { id: 'notifEnhance', label: 'Notif Enhance', desc: 'Themed notification dropdown + bell pulse' },
             { id: 'fullTitles', label: 'Full Titles', desc: 'Remove title truncation on video cards' },
             { id: 'titleFont', label: 'Title Font', desc: 'Unbold + normalize title typography' },
+            { id: 'perChannelVolumeMemory', label: 'Per-Channel Playback', desc: 'Remember volume, speed and a quality ceiling for each channel' },
             { id: 'titleNormalizer', label: 'Title Normalizer', desc: 'Calm ALL-CAPS, emoji spray and repeated !!! in video titles; original stays on hover' },
             // v2.1.0 — Premium UI and Layout Superset
             { id: 'denseMode', label: 'Dense Mode', desc: 'Compact spacing across grids and the watch page' },
@@ -12456,6 +12467,133 @@ const FullTitles = {
 // because a normalizer that touches everything is just a different kind of
 // vandalism. The untouched original is kept on the element's tooltip and
 // restored when the feature is turned off.
+// ═══════════════════════════════════════════
+//  FEATURE: Per-Channel Playback Preferences
+// ═══════════════════════════════════════════
+// One global playback speed is wrong the moment you watch two kinds of thing.
+// A podcast wants 1.75x and a music channel wants 1x, and re-setting it on
+// every video is the tax for having only one setting.
+//
+// Volume, speed and a quality ceiling are remembered per channel and re-applied
+// when the next video from that channel loads. Channels never visited keep
+// using the global values, so turning this on changes nothing until you
+// actually adjust something.
+const PerChannelPrefs = {
+    id: 'perChannelVolumeMemory',
+    name: 'Per-Channel Playback',
+    _KEY: 'rx_channel_prefs',
+    _MAX: 200,
+    _handlers: null,
+    _video: null,
+
+    // `/c/<slug>` and `/user/<slug>` are the two channel URL shapes. Anything
+    // else is not a channel and gets no entry.
+    slugFrom(href) {
+        if (!href) return null;
+        let path = String(href);
+        try { path = new URL(href, location.origin).pathname; } catch { /* already a path */ }
+        const match = path.match(/^\/(?:c|user)\/([^/?#]+)/i);
+        return match ? decodeURIComponent(match[1]).toLowerCase() : null;
+    },
+
+    currentSlug() {
+        const own = this.slugFrom(location.pathname);
+        if (own) return own;
+        const anchor = qs('.media-by--a, .media-heading-name a, a[rel="author"]');
+        return this.slugFrom(anchor?.getAttribute('href'));
+    },
+
+    _load() {
+        try {
+            const raw = localStorage.getItem(this._KEY);
+            const parsed = raw ? JSON.parse(raw) : null;
+            return (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) ? parsed : {};
+        } catch { return {}; }
+    },
+
+    _save(store) {
+        try {
+            const keys = Object.keys(store);
+            if (keys.length > this._MAX) {
+                // Oldest first by last-touched stamp, same pruning contract as
+                // watch progress and history.
+                const ordered = keys.sort((a, b) => (store[a]?.at || 0) - (store[b]?.at || 0));
+                for (const key of ordered.slice(0, keys.length - this._MAX)) delete store[key];
+            }
+            localStorage.setItem(this._KEY, JSON.stringify(store));
+        } catch { /* quota or disabled storage — preferences are best-effort */ }
+    },
+
+    get(slug) {
+        if (!slug) return null;
+        const entry = this._load()[slug];
+        return (entry && typeof entry === 'object') ? entry : null;
+    },
+
+    remember(slug, patch) {
+        if (!slug || !patch) return;
+        const store = this._load();
+        const next = { ...(store[slug] || {}), ...patch, at: Date.now() };
+        // Reject values that would produce an unusable player on the next load.
+        if (next.volume !== undefined && !(next.volume >= 0 && next.volume <= 1)) delete next.volume;
+        if (next.speed !== undefined && !(next.speed >= 0.25 && next.speed <= 3)) delete next.speed;
+        store[slug] = next;
+        this._save(store);
+    },
+
+    applyTo(video, slug) {
+        const prefs = this.get(slug);
+        if (!video || !prefs) return false;
+        let applied = false;
+        if (typeof prefs.volume === 'number') { video.volume = prefs.volume; applied = true; }
+        if (typeof prefs.speed === 'number') { video.playbackRate = prefs.speed; applied = true; }
+        return applied;
+    },
+
+    // Consulted by AutoMaxQuality so a channel can carry its own ceiling
+    // without a second settings surface.
+    ceilingFor(slug) {
+        const prefs = this.get(slug || this.currentSlug());
+        const quality = prefs?.quality;
+        return (typeof quality === 'string' && quality) ? quality : null;
+    },
+
+    init() {
+        if (!Settings.get(this.id)) return;
+        if (!Page.isWatch()) return;
+
+        waitForFeature(this, 'video').then((video) => {
+            const slug = this.currentSlug();
+            if (!slug) return;
+            this._video = video;
+            this.applyTo(video, slug);
+
+            // Record what the viewer actually settles on, not every intermediate
+            // value while they drag a slider.
+            let timer = null;
+            const record = () => {
+                clearTimeout(timer);
+                timer = setTimeout(() => {
+                    this.remember(slug, { volume: video.volume, speed: video.playbackRate });
+                }, 600);
+            };
+            this._handlers = { record, timer: () => timer };
+            video.addEventListener('volumechange', record);
+            video.addEventListener('ratechange', record);
+        }).catch(() => {});
+    },
+
+    destroy() {
+        if (this._video && this._handlers) {
+            this._video.removeEventListener('volumechange', this._handlers.record);
+            this._video.removeEventListener('ratechange', this._handlers.record);
+            clearTimeout(this._handlers.timer());
+        }
+        this._handlers = null;
+        this._video = null;
+    }
+};
+
 const TitleNormalizer = {
     id: 'titleNormalizer',
     name: 'Title Normalizer',
@@ -17183,7 +17321,7 @@ const features = [
     RantHighlight, RelatedFilter, ExactCounts, ShareTimestamp, TimeRemaining, ShortsFilter,
     ChatAutoScroll, AutoExpand, NotifEnhance, PlaylistQuickSave,
     // v1.8.0 additions
-    FullTitles, TitleNormalizer, TitleFont, UniqueChatters, ChatUserBlock, ChatSpamDedup,
+    FullTitles, PerChannelPrefs, TitleNormalizer, TitleFont, UniqueChatters, ChatUserBlock, ChatSpamDedup,
     ChatExport, RantPersist, CommentSort, CommentExport, PopoutChat, KeywordFilter,
     AutoplayScheduler, Chapters, SponsorBlockRX, VideoClips, LiveDVR,
     SubtitleSidecar, Transcripts, AudioOnly, BatchDownload,
