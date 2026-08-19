@@ -46,9 +46,9 @@ const cssBody = core.match(/const RX_CSS_TOGGLES = \[([\s\S]*?)\n\];/)?.[1] || '
 assert.ok(cssBody, 'CSS feature registry is missing');
 const cssIds = [...cssBody.matchAll(/\bid:\s*'([^']+)'/g)].map((match) => match[1]);
 
-assert.equal(handwritten.length, 76, 'handwritten feature count changed; update behavior coverage intentionally');
+assert.equal(handwritten.length, 77, 'handwritten feature count changed; update behavior coverage intentionally');
 assert.equal(cssIds.length, 51, 'CSS feature count changed; update behavior coverage intentionally');
-assert.equal(handwritten.length + cssIds.length, 127, 'total feature catalog changed unexpectedly');
+assert.equal(handwritten.length + cssIds.length, 128, 'total feature catalog changed unexpectedly');
 
 const allIds = [...handwritten.map(({ id }) => id), ...cssIds];
 assert.equal(new Set(allIds).size, allIds.length, 'feature ids must be unique across both registries');
@@ -114,6 +114,7 @@ const MODAL_EXCLUSIONS = {
     qualityMode: 'enum', qualityCeiling: 'enum', qualityFloor: 'enum',
     shortsFilterScope: 'enum', rantExportFormat: 'enum',
     rantTierFilter: 'enum', commentThreadView: 'enum', politicsFilterPreset: 'enum',
+    titleNormalizerMode: 'enum',
     remoteCosmeticRulesChannel: 'enum',
 
     // Extension-only privileged surfaces. The in-page modal is shared with the

@@ -9670,6 +9670,7 @@ const RX_CATEGORIES = [
             { id: 'notifEnhance', label: 'Notif Enhance', desc: 'Themed notification dropdown + bell pulse' },
             { id: 'fullTitles', label: 'Full Titles', desc: 'Remove title truncation on video cards' },
             { id: 'titleFont', label: 'Title Font', desc: 'Unbold + normalize title typography' },
+            { id: 'titleNormalizer', label: 'Title Normalizer', desc: 'Calm ALL-CAPS, emoji spray and repeated !!! in video titles; original stays on hover' },
             // v2.1.0 — Premium UI and Layout Superset
             { id: 'denseMode', label: 'Dense Mode', desc: 'Compact spacing across grids and the watch page' },
             { id: 'reducedMotion', label: 'Reduced Motion', desc: 'Disable shimmer/stagger/spring animations' },
@@ -10897,6 +10898,190 @@ const FullTitles = {
 // ═══════════════════════════════════════════
 //  FEATURE: Title Font Override
 // ═══════════════════════════════════════════
+// ═══════════════════════════════════════════
+//  FEATURE: Title Normalizer
+// ═══════════════════════════════════════════
+// Calms shouty titles: ALL CAPS, emoji spray and "!!!!" are the house style of
+// engagement-bait, and they are the parts a reader did not ask for.
+//
+// Deliberately conservative. A title is only rewritten when it shows one of
+// those traits; an ordinary title is left exactly as its author wrote it,
+// because a normalizer that touches everything is just a different kind of
+// vandalism. The untouched original is kept on the element's tooltip and
+// restored when the feature is turned off.
+const TitleNormalizer = {
+    id: 'titleNormalizer',
+    name: 'Title Normalizer',
+    _obs: null,
+    _originals: null,
+
+    _TITLE_SELECTOR: [
+        'rum-video-thumbnail rum-text[role="heading"]',
+        '.thumbnail__title',
+        '.videostream__title',
+        '.mediaList-heading',
+        '.media-item__title',
+        '.video-item--title',
+        '.video-header-container__title',
+    ].join(', '),
+
+    // Words that stay lowercase inside a title unless they lead or close it.
+    _MINOR: new Set([
+        'a', 'an', 'and', 'as', 'at', 'but', 'by', 'for', 'from', 'in', 'nor',
+        'of', 'on', 'or', 'the', 'to', 'up', 'via', 'vs', 'with',
+    ]),
+
+    _hasEmoji(text) {
+        try { return /\p{Extended_Pictographic}/u.test(text); } catch { return false; }
+    },
+
+    _stripEmoji(text) {
+        try {
+            return text
+                .replace(/\p{Extended_Pictographic}/gu, ' ')
+                // Variation selectors and zero-width joiners are left behind
+                // once the pictographs they modify are gone.
+                .replace(/[︎️‍⃣]/g, '');
+        } catch {
+            return text;
+        }
+    },
+
+    // "Shouty" means most of the letters are capitals, over enough letters for
+    // that to be a choice rather than an accident. A short acronym-heavy title
+    // like "NEW CPU VS GPU" is genuinely all caps and is fair game.
+    _isShouty(text) {
+        let letters = 0;
+        let upper = 0;
+        try {
+            letters = (text.match(/\p{L}/gu) || []).length;
+            upper = (text.match(/\p{Lu}/gu) || []).length;
+        } catch {
+            const ascii = text.replace(/[^A-Za-z]/g, '');
+            letters = ascii.length;
+            upper = ascii.replace(/[^A-Z]/g, '').length;
+        }
+        return letters >= 8 && (upper / letters) >= 0.6;
+    },
+
+    // Any run of two or more, not just a repeated one: "?!?!" alternates, and a
+    // backreference would miss the most common bait shape of all.
+    _hasShoutyPunctuation(text) {
+        return /[!?]{2,}/.test(text);
+    },
+
+    _hasLowercase(text) {
+        try { return /\p{Ll}/u.test(text); } catch { return /[a-z]/.test(text); }
+    },
+
+    // A short all-caps run inside an otherwise mixed-case title is an acronym,
+    // not shouting. "CPU vs GPU" must survive intact; lowercasing it to
+    // "Cpu vs gpu" is worse than leaving the title alone.
+    _isAcronym(token) {
+        const bare = token.replace(/[^\p{L}\p{N}]/gu, '');
+        if (!bare || bare.length > 4) return false;
+        try { return /^[\p{Lu}\p{N}]+$/u.test(bare) && /\p{Lu}/u.test(bare); } catch { return /^[A-Z0-9]+$/.test(bare); }
+    },
+
+    _lowerParts(text, preserveAcronyms) {
+        return text
+            .split(/(\s+)/)
+            .map((part) => (preserveAcronyms && this._isAcronym(part) ? part : part.toLowerCase()))
+            .join('');
+    },
+
+    _toSentenceCase(text, preserveAcronyms) {
+        const lowered = this._lowerParts(text, preserveAcronyms);
+        // Capitalize the opening letter and anything that starts a new sentence.
+        return lowered.replace(/(^|[.!?]\s+)(\p{L})/gu, (_, lead, letter) => lead + letter.toUpperCase());
+    },
+
+    _toTitleCase(text, preserveAcronyms) {
+        const words = this._lowerParts(text, preserveAcronyms).split(/(\s+)/);
+        const lastWordIndex = words.reduce((last, part, i) => (/\S/.test(part) ? i : last), 0);
+        return words.map((part, i) => {
+            if (!/\S/.test(part)) return part;
+            if (preserveAcronyms && this._isAcronym(part)) return part;
+            const bare = part.replace(/[^\p{L}\p{N}']/gu, '');
+            if (i !== 0 && i !== lastWordIndex && this._MINOR.has(bare)) return part;
+            return part.replace(/\p{L}/u, (letter) => letter.toUpperCase());
+        }).join('');
+    },
+
+    // Pure, and the unit under test. Returns the input unchanged when there is
+    // nothing bait-like to fix, which is what keeps the feature quiet.
+    normalize(raw, mode) {
+        const text = String(raw || '');
+        if (!text.trim()) return text;
+
+        const emoji = this._hasEmoji(text);
+        const shouty = this._isShouty(text);
+        const punctuation = this._hasShoutyPunctuation(text);
+        if (!emoji && !shouty && !punctuation) return text;
+
+        // A title with no lowercase at all is pure shouting, so everything gets
+        // re-cased. One that mixes cases is more likely to be carrying
+        // acronyms, so short capital runs are kept.
+        const preserveAcronyms = this._hasLowercase(text);
+
+        let out = text;
+        if (emoji) out = this._stripEmoji(out);
+        // "WHAT?!?!" collapses to "What?" rather than losing the mark entirely.
+        out = out.replace(/([!?])[!?]+/g, '$1');
+        out = out.replace(/\s+/g, ' ').replace(/\s+([,.!?;:])/g, '$1').trim();
+        if (shouty) {
+            out = mode === 'title'
+                ? this._toTitleCase(out, preserveAcronyms)
+                : this._toSentenceCase(out, preserveAcronyms);
+        }
+        return out || text;
+    },
+
+    _apply(el, mode) {
+        if (!el || el.dataset.rxTitleNorm) return;
+        const original = el.textContent;
+        const normalized = this.normalize(original, mode);
+        if (normalized === original) return;
+        this._originals = this._originals || new Map();
+        this._originals.set(el, { text: original, title: el.getAttribute('title') });
+        el.textContent = normalized;
+        // The author's version stays one hover away.
+        el.setAttribute('title', original.trim());
+        el.dataset.rxTitleNorm = '1';
+    },
+
+    _scan() {
+        const mode = Settings.get('titleNormalizerMode') || 'sentence';
+        for (const [el] of [...(this._originals?.entries() || [])]) {
+            if (!el.isConnected) this._originals.delete(el);
+        }
+        for (const el of qsa(this._TITLE_SELECTOR)) this._apply(el, mode);
+    },
+
+    init() {
+        if (!Settings.get(this.id)) return;
+        this._originals = new Map();
+        this._scan();
+        this._obs = new MutationObserver(() => {
+            scheduleFeatureFrame(this, 'title-normalize', () => this._scan());
+        });
+        this._obs.observe(document.documentElement, { childList: true, subtree: true });
+    },
+
+    destroy() {
+        this._obs?.disconnect();
+        this._obs = null;
+        for (const [el, saved] of this._originals || []) {
+            if (!el.isConnected) continue;
+            el.textContent = saved.text;
+            if (saved.title === null) el.removeAttribute('title');
+            else el.setAttribute('title', saved.title);
+            delete el.dataset.rxTitleNorm;
+        }
+        this._originals = null;
+    }
+};
+
 const TitleFont = {
     id: 'titleFont',
     name: 'Title Font',
@@ -15337,7 +15522,7 @@ const features = [
     RantHighlight, RelatedFilter, ExactCounts, ShareTimestamp, TimeRemaining, ShortsFilter,
     ChatAutoScroll, AutoExpand, NotifEnhance, PlaylistQuickSave,
     // v1.8.0 additions
-    FullTitles, TitleFont, UniqueChatters, ChatUserBlock, ChatSpamDedup,
+    FullTitles, TitleNormalizer, TitleFont, UniqueChatters, ChatUserBlock, ChatSpamDedup,
     ChatExport, RantPersist, CommentSort, CommentExport, PopoutChat, KeywordFilter,
     AutoplayScheduler, Chapters, SponsorBlockRX, VideoClips, LiveDVR,
     SubtitleSidecar, Transcripts, AudioOnly, BatchDownload,

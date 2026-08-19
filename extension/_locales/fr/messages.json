@@ -1746,5 +1746,13 @@
   "timeRemainingEndsAt": {
     "message": "Se termine à {time}",
     "description": "In-page UI string (shared core)."
+  },
+  "feat_titleNormalizer_label": {
+    "message": "Normalisation des titres",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_titleNormalizer_desc": {
+    "message": "Atténue les MAJUSCULES, les emojis en rafale et les !!! répétés dans les titres ; l'original reste au survol",
+    "description": "In-page UI string (shared core)."
   }
 }

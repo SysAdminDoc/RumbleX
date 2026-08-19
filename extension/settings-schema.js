@@ -53,6 +53,8 @@
         // v1.8.0 additions
         fullTitles: true,
         titleFont: false,
+        titleNormalizer: false,
+        titleNormalizerMode: 'sentence',
         uniqueChatters: true,
         chatUserBlock: true,
         chatSpamDedup: true,
@@ -307,6 +309,7 @@
         politicsFilterPreset: ['off', 'reduce', 'hide'],
         remoteCosmeticRulesChannel: ['stable', 'preview'],
         chatUsernameColors: ['off', 'deterministic', 'tiered'],
+        titleNormalizerMode: ['sentence', 'title'],
         rantExportFormat: ['csvJson', 'csv', 'json'],
     });
     const NUMERIC_BOUNDS = Object.freeze({

@@ -1746,5 +1746,13 @@
   "timeRemainingEndsAt": {
     "message": "Termina a las {time}",
     "description": "In-page UI string (shared core)."
+  },
+  "feat_titleNormalizer_label": {
+    "message": "Normalizador de títulos",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_titleNormalizer_desc": {
+    "message": "Suaviza MAYÚSCULAS, exceso de emojis y !!! repetidos en los títulos; el original se mantiene al pasar el cursor",
+    "description": "In-page UI string (shared core)."
   }
 }

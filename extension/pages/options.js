@@ -104,6 +104,8 @@
         notifEnhance: { group: 'theme-layout', label: 'Notif Enhance', desc: 'Themed notification dropdown + bell pulse' },
         fullTitles: { group: 'theme-layout', label: 'Full Titles', desc: 'Remove title truncation on video cards' },
         titleFont: { group: 'theme-layout', label: 'Title Font', desc: 'Unbold + normalize title typography' },
+        titleNormalizer: { group: 'theme-layout', label: 'Title Normalizer', desc: 'Calm ALL-CAPS, emoji spray and repeated !!! in video titles; original stays on hover' },
+        titleNormalizerMode: { group: 'theme-layout', label: 'Title Normalizer Style', desc: 'sentence | title. How a shouty title is re-cased.' },
         theme: { group: 'theme-layout', label: 'Theme', desc: 'catppuccin | youtube | midnight | rumbleGreen' },
         splitRatio: { group: 'theme-layout', label: 'Split Ratio', desc: 'Theater split panel width % (40-90)' },
 
@@ -1196,6 +1198,10 @@
             { value: 'system', label: 'System' },
             { value: 'dark', label: 'Dark' },
             { value: 'light', label: 'Light' },
+        ],
+        titleNormalizerMode: [
+            { value: 'sentence', label: 'Sentence case' },
+            { value: 'title', label: 'Title Case' },
         ],
         downloadMuxerEngine: [
             { value: 'mediabunnyWebCodecs', label: 'Mediabunny + WebCodecs (default)' },

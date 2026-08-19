@@ -1746,5 +1746,13 @@
   "timeRemainingEndsAt": {
     "message": "Endet um {time}",
     "description": "In-page UI string (shared core)."
+  },
+  "feat_titleNormalizer_label": {
+    "message": "Titel-Normalisierung",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_titleNormalizer_desc": {
+    "message": "Beruhigt GROSSBUCHSTABEN, Emoji-Flut und wiederholte !!! in Videotiteln; das Original bleibt beim Überfahren sichtbar",
+    "description": "In-page UI string (shared core)."
   }
 }

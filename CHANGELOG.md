@@ -2,6 +2,11 @@
 
 All notable changes to RumbleX will be documented in this file.
 
+## [Unreleased]
+
+### Added
+- **Title Normalizer**, off by default. Calms the house style of engagement-bait: ALL CAPS, emoji spray and repeated `!!!`. It is deliberately conservative and only touches a title showing one of those traits, so an ordinary headline is left exactly as its author wrote it. Choose sentence case or Title Case, hover to see the original, and turning the feature off puts every title back. Acronyms survive: a short run of capitals inside an otherwise mixed-case title is treated as meaning rather than volume, so "CPU vs GPU" stays as it is instead of becoming "Cpu vs gpu".
+
 ## [3.47.0] - 2026-08-19
 
 ### Added

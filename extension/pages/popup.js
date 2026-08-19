@@ -47,6 +47,7 @@ const GROUPS = [
             { id: 'notifEnhance', label: 'Notif Enhance' },
             { id: 'fullTitles', label: 'Full Titles' },
             { id: 'titleFont', label: 'Title Font' },
+            { id: 'titleNormalizer', label: 'Title Normalizer' },
         ],
     },
     {

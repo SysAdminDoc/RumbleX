@@ -1746,5 +1746,13 @@
   "timeRemainingEndsAt": {
     "message": "Ends at {time}",
     "description": "In-page UI string (shared core)."
+  },
+  "feat_titleNormalizer_label": {
+    "message": "Title Normalizer",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_titleNormalizer_desc": {
+    "message": "Calm ALL-CAPS, emoji spray and repeated !!! in video titles; original stays on hover",
+    "description": "In-page UI string (shared core)."
   }
 }

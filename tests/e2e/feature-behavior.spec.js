@@ -1013,3 +1013,67 @@ test('TimeRemaining accounts for playback rate and falls back to structured dura
     expect(result.fromStructured).toBe('4:00 left');
     expect(result.hourly).toBe('2:02:05 left');
 });
+
+test('TitleNormalizer only rewrites bait-shaped titles and restores originals', async () => {
+    const result = await inHarness(() => {
+        const harness = globalThis.__RumbleXFeatureHarness;
+        harness.enable('titleNormalizer');
+        const feature = harness.features.find((f) => f.id === 'titleNormalizer');
+        const sentence = (t) => feature.normalize(t, 'sentence');
+        const title = (t) => feature.normalize(t, 'title');
+
+        // Round-trip through the real DOM path, including restore on destroy.
+        const el = document.createElement('h3');
+        el.className = 'thumbnail__title';
+        el.textContent = 'BREAKING!!! THIS CHANGES EVERYTHING 🔥🔥';
+        el.setAttribute('title', 'pre-existing tooltip');
+        document.body.appendChild(el);
+        feature._originals = new Map();
+        feature._apply(el, 'sentence');
+        const applied = { text: el.textContent, tooltip: el.getAttribute('title'), marked: el.dataset.rxTitleNorm };
+        feature.destroy();
+        const restored = { text: el.textContent, tooltip: el.getAttribute('title'), marked: el.dataset.rxTitleNorm };
+        el.remove();
+
+        return {
+            // Left alone: ordinary titles are none of the feature's business.
+            ordinary: sentence('How to rebuild a carburettor in an afternoon'),
+            mixedCase: sentence('The Dan Bongino Show Episode 2576'),
+            shortCaps: sentence('CPU vs GPU'),
+            // Rewritten.
+            shouty: sentence('THIS CHANGES EVERYTHING FOR DRIVERS'),
+            shoutyTitleCase: title('THIS CHANGES EVERYTHING FOR DRIVERS'),
+            emojiOnly: sentence('A calm and reasonable headline 🔥🔥🔥'),
+            punctuationOnly: sentence('Wait, what?!?!?!'),
+            combined: sentence('BREAKING!!! THIS CHANGES EVERYTHING 🔥'),
+            multiSentence: sentence('IT IS OVER. THEY ADMITTED IT ALL'),
+            applied,
+            restored,
+        };
+    });
+
+    // Untouched.
+    expect(result.ordinary).toBe('How to rebuild a carburettor in an afternoon');
+    expect(result.mixedCase).toBe('The Dan Bongino Show Episode 2576');
+    // Acronym-heavy but mixed case: the capitals are meaning, not volume.
+    expect(result.shortCaps).toBe('CPU vs GPU');
+
+    // Rewritten.
+    expect(result.shouty).toBe('This changes everything for drivers');
+    expect(result.shoutyTitleCase).toBe('This Changes Everything for Drivers');
+    expect(result.emojiOnly).toBe('A calm and reasonable headline');
+    expect(result.punctuationOnly).toBe('Wait, what?');
+    expect(result.combined).toBe('Breaking! This changes everything');
+    // Sentence case restarts after terminal punctuation.
+    expect(result.multiSentence).toBe('It is over. They admitted it all');
+
+    expect(result.applied.text).toBe('Breaking! This changes everything');
+    // The author's original is one hover away.
+    expect(result.applied.tooltip).toBe('BREAKING!!! THIS CHANGES EVERYTHING 🔥🔥');
+    expect(result.applied.marked).toBe('1');
+
+    // destroy() puts back the text, the prior tooltip and the marker.
+    expect(result.restored.text).toBe('BREAKING!!! THIS CHANGES EVERYTHING 🔥🔥');
+    expect(result.restored.tooltip).toBe('pre-existing tooltip');
+    expect(result.restored.marked).toBeUndefined();
+});
