@@ -40,6 +40,8 @@ USERSCRIPT_LITE="../RumbleX.lite.user.js"
 CHECKSUMS_FILE="../SHA256SUMS.txt"
 SIGNATURE_FILE="../SHA256SUMS.txt.sig"
 ALLOWED_SIGNERS_FILE="../allowed_signers"
+FIREFOX_XPI="../RumbleX-firefox.xpi"
+SOURCE_BUNDLE="../RumbleX-source.zip"
 
 file_sha256() {
     local file="$1"
@@ -167,7 +169,7 @@ pack_extension() {
 write_release_checksums() {
     local pkg
     rm -f "$CHECKSUMS_FILE"
-    for pkg in "$CHROME_ZIP" "$FIREFOX_ZIP" "$USERSCRIPT" "$USERSCRIPT_LITE"; do
+    for pkg in "$CHROME_ZIP" "$FIREFOX_ZIP" "$FIREFOX_XPI" "$USERSCRIPT" "$USERSCRIPT_LITE"; do
         if [ ! -f "$pkg" ]; then
             echo "[!] Missing package for checksum: $pkg"
             return 1
@@ -192,6 +194,62 @@ verify_release_checksums() {
         fi
     done < "$CHECKSUMS_FILE"
     echo "[*] Release package checksums verified."
+}
+
+# AMO signs an .xpi, which is just the MV2 package under a different extension.
+# Producing it here means the submission artifact is built by the same staged
+# path as everything else rather than renamed by hand at release time.
+build_firefox_xpi() {
+    rm -f "$FIREFOX_XPI"
+    cp "$FIREFOX_ZIP" "$FIREFOX_XPI" || return 1
+    echo "[*] Wrote RumbleX-firefox.xpi (AMO submission / signing input)"
+}
+
+# AMO review requires the source for anything minified in the package, plus the
+# steps to reproduce it. extension/lib/ ships two vendored minified libraries,
+# so a submission without this bundle stalls in human review.
+build_source_bundle() {
+    local stage
+    local abs_dest
+    local rc=0
+
+    rm -f "$SOURCE_BUNDLE"
+    stage="$(mktemp -d)" || return 1
+    abs_dest="$(cd "$(dirname "$SOURCE_BUNDLE")" && pwd)/$(basename "$SOURCE_BUNDLE")"
+
+    {
+        mkdir -p "$stage/extension" "$stage/scripts" || exit 1
+        cp -R . "$stage/extension/" || exit 1
+        rm -rf "$stage/extension/_metadata" || true
+        cp ../scripts/build-userscript.js "$stage/scripts/" || exit 1
+        cp ../package.json "$stage/" || exit 1
+        cp ../LICENSE "$stage/" || exit 1
+        cp ../README.md "$stage/" || exit 1
+    } || rc=1
+
+    if [ "$rc" -eq 0 ]; then
+        (
+            cd "$stage" || exit 1
+            find . -name '.DS_Store' -delete 2>/dev/null || true
+            # Name the roots explicitly. Archiving "." prefixes every entry with
+            # "./", which buries the layout a reviewer is meant to read.
+            local roots="extension scripts package.json LICENSE README.md"
+            if command -v zip >/dev/null 2>&1; then
+                zip -r -q "$abs_dest" $roots
+            elif [ -x "/c/Windows/System32/tar.exe" ]; then
+                "/c/Windows/System32/tar.exe" -a -c -f "$abs_dest" $roots
+            elif command -v bsdtar >/dev/null 2>&1; then
+                bsdtar -a -c -f "$abs_dest" $roots
+            else
+                echo "[!] Need zip, Windows bsdtar, or bsdtar to build the source bundle."
+                exit 1
+            fi
+        ) || rc=1
+    fi
+
+    rm -rf "$stage"
+    [ "$rc" -eq 0 ] && echo "[*] Wrote RumbleX-source.zip (AMO source-code requirement)"
+    return "$rc"
 }
 
 # SHA256SUMS.txt proves the packages were not altered in transit; it does not
@@ -272,9 +330,15 @@ rm -f "$FIREFOX_ZIP"
 pack_extension "$FIREFOX_ZIP" "manifest-firefox.json"
 echo "    Created RumbleX-firefox.zip"
 
+build_firefox_xpi
+build_source_bundle
+
 write_release_checksums
 verify_release_checksums
 sign_release_checksums
+
+echo "[*] Validating the Firefox update manifest..."
+node ../scripts/build-update-manifest.js --check
 
 echo ""
 echo "=== Build Complete ==="

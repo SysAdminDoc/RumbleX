@@ -1,0 +1,52 @@
+{
+  "_comment": [
+    "Provenance for every third-party file in extension/lib/. extension/build.sh pins",
+    "the same SHA-256 values and refuses to package a file that does not match, so a",
+    "compromised CDN cannot swap a bundle silently. This file records where each one",
+    "came from and how to reproduce it, which build.sh alone does not say.",
+    "AMO review requires the pre-minification source for anything minified in a",
+    "submitted package; 'reproduce' below is that answer for each file.",
+    "Verify everything at once with: npm run test:vendor-manifest"
+  ],
+  "files": [
+    {
+      "path": "mux.min.js",
+      "package": "mux.js",
+      "version": "7.0.3",
+      "license": "Apache-2.0",
+      "registry": "https://registry.npmjs.org/mux.js/-/mux.js-7.0.3.tgz",
+      "pathInTarball": "package/dist/mux.min.js",
+      "sha256": "79da5742f8985d9362b14a3ca4d705eea726cea6d513d0d019c359bf4eec856b",
+      "bytes": 115158,
+      "reproduce": "curl -sL https://registry.npmjs.org/mux.js/-/mux.js-7.0.3.tgz | tar -xzO package/dist/mux.min.js | sha256sum",
+      "upstream": "https://github.com/videojs/mux.js",
+      "role": "Legacy HLS-to-MP4 transmuxer. Fallback engine since the Mediabunny default; upstream has had no commit since 2024-10-11."
+    },
+    {
+      "path": "mediabunny.min.mjs",
+      "package": "mediabunny",
+      "version": "1.55.1",
+      "license": "MPL-2.0",
+      "registry": "https://registry.npmjs.org/mediabunny/-/mediabunny-1.55.1.tgz",
+      "pathInTarball": "package/dist/bundles/mediabunny.min.mjs",
+      "sha256": "953110266df5e5ea4d3c339ffe24a70f795643be07ee8375093897534bad1346",
+      "bytes": 658106,
+      "reproduce": "curl -sL https://registry.npmjs.org/mediabunny/-/mediabunny-1.55.1.tgz | tar -xzO package/dist/bundles/mediabunny.min.mjs | sha256sum",
+      "upstream": "https://github.com/Vanilagy/mediabunny",
+      "role": "Default HLS-to-MP4 transmuxer, running WebCodecs inside a module Worker."
+    },
+    {
+      "path": "mediabunny.LICENSE",
+      "package": "mediabunny",
+      "version": "1.55.1",
+      "license": "MPL-2.0",
+      "registry": "https://registry.npmjs.org/mediabunny/-/mediabunny-1.55.1.tgz",
+      "pathInTarball": "package/LICENSE",
+      "sha256": "3f3d9e0024b1921b067d6f7f88deb4a60cbe7a78e76c64e3f1d7fc3b779b9d04",
+      "bytes": 16726,
+      "reproduce": "curl -sL https://registry.npmjs.org/mediabunny/-/mediabunny-1.55.1.tgz | tar -xzO package/LICENSE | sha256sum",
+      "upstream": "https://github.com/Vanilagy/mediabunny",
+      "role": "MPL-2.0 license text, required to ship alongside the bundle."
+    }
+  ]
+}

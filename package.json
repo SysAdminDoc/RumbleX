@@ -29,6 +29,7 @@
     "locale:sync": "node scripts/sync-content-locale.js --write",
     "test:store-listing": "node scripts/check-store-listing.js",
     "test:update-manifest": "node scripts/build-update-manifest.js --check",
+    "test:vendor-manifest": "node scripts/check-vendor-manifest.js",
     "build:update-manifest": "node scripts/build-update-manifest.js"
   },
   "devDependencies": {

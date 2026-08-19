@@ -213,6 +213,8 @@ Click the extension icon for quick toggles, grouped by category with enabled-cou
 
 ## Install
 
+Install instructions for every browser, plus the checksum and signature commands, also live on the project page at **<https://sysadmindoc.github.io/RumbleX/>**. That page and this repository are the only official sources.
+
 ### Chrome / Edge / Brave (MV3)
 1. Grab `RumbleX-chrome.zip` from [Releases](https://github.com/SysAdminDoc/RumbleX/releases)
 2. Extract the zip
@@ -356,6 +358,15 @@ RUMBLEX_SIGNING_KEY=~/.ssh/rumblex_release ./build.sh
 ```
 
 A signature that does not verify against the published key fails the build rather than shipping. Builds without the variable set are unsigned and say so, which is fine for local development.
+
+Each build also produces `RumbleX-firefox.xpi` (the AMO signing input) and `RumbleX-source.zip` (the source bundle AMO review asks for, since the package ships two minified libraries). Provenance for those libraries is recorded in `extension/lib/VENDOR.json`: package, version, npm tarball URL, SHA-256, and the command that reproduces the exact vendored bytes. `npm run test:vendor-manifest` checks that record against the files on disk and against the hashes pinned in `build.sh`, so the three cannot drift apart.
+
+`docs/updates.json` is the Firefox update feed for self-distributed signed builds, served from GitHub Pages. Regenerate it when a signed XPI exists:
+
+```bash
+npm run build:update-manifest -- --xpi path/to/rumblex-<version>-signed.xpi
+npm run test:update-manifest
+```
 
 ## License
 MIT
