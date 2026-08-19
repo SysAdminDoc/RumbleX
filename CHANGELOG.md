@@ -2,7 +2,7 @@
 
 All notable changes to RumbleX will be documented in this file.
 
-## [Unreleased]
+## [3.48.0] - 2026-08-19
 
 ### Added
 - **Channel RSS, built in your browser.** Rumble publishes no per-channel RSS: the official MRSS feeds sit behind the creator dashboard, and the third-party generators that fill the gap get rate-blocked because they scrape from a server. A "Copy RSS" button on a channel page assembles a standard RSS 2.0 document from the cards already on screen, so no request is made at all and nothing can be rate-limited. Falls back to saving a file if the browser refuses clipboard access. `rssExportEnabled` was another "not implemented yet" setting; the list is down to 33.

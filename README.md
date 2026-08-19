@@ -1,8 +1,16 @@
 # RumbleX
 
-![Version](https://img.shields.io/badge/version-v3.47.0-blue) ![License](https://img.shields.io/badge/license-MIT-green) ![Platform](https://img.shields.io/badge/platform-Extension%20%2B%20Userscript-lightgrey) ![Firefox](https://img.shields.io/badge/firefox-109%2B-orange)
+![Version](https://img.shields.io/badge/version-v3.48.0-blue) ![License](https://img.shields.io/badge/license-MIT-green) ![Platform](https://img.shields.io/badge/platform-Extension%20%2B%20Userscript-lightgrey) ![Firefox](https://img.shields.io/badge/firefox-109%2B-orange)
 
 **The ultimate Rumble enhancement suite.** 130+ feature modules across 14 categories — ad blocking, theater mode, video downloads with CDN deep-scan probing and an opt-in Mediabunny muxer path, five-theme engine (now including OLED Green), playback controls, chat enhancements with deterministic username colors and tier-filtered rants, chapters, SponsorBlock, clips, live DVR, transcripts, auto-hide chrome, 50+ granular hide-X toggles for every Rumble row/button/player control, thumbnail hider, dense mode, reduced-motion path, tracking-param stripping, external player handoff (MPV/PotPlayer), and full-round-trip backup/restore with snapshot history. Chrome MV3 + Firefox MV2 + userscript.
+
+### What's new in v3.48
+
+- **SponsorBlock skip controls.** Each category can auto-skip, skip only the first time, or just say the segment is there. Every skip offers an Undo for five seconds, the panel keeps a running total of time skipped, and three categories were added, including flashing lights.
+- **Playback settings per channel.** Volume, speed and an optional quality ceiling are remembered for each channel, so a podcast at 1.75x doesn't force a music channel to the same speed.
+- **Downloads bring their metadata.** An `.info.json`, a Jellyfin/Kodi `.nfo` and the thumbnail can be saved alongside a video, named to match so a media server pairs them.
+- **Channel RSS, generated locally.** Rumble has no per-channel RSS and server-side generators get rate-blocked. This one builds the feed from the page you're already on, so there's nothing to block.
+- **Title Normalizer**, off by default: calms ALL CAPS, emoji spray and repeated `!!!` while leaving ordinary titles and acronyms alone.
 
 ### What's new in v3.47
 
