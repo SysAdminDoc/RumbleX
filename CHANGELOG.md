@@ -2,7 +2,7 @@
 
 All notable changes to RumbleX will be documented in this file.
 
-## [Unreleased]
+## [3.50.0] - 2026-08-19
 
 ### Added
 - **Captions load themselves now.** The Subtitles panel used to need a file from your disk before it could do anything, which meant the transcript stayed empty on videos that already had captions. Rumble publishes creator-uploaded caption tracks in the same embed payload the downloader has always read, so RumbleX picks them up: the first track loads on its own, any other languages appear as buttons, and the transcript fills in without you touching a file picker. It only reads Rumble's own media hosts, and switching it off means the endpoint is never called.

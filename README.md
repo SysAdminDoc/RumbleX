@@ -1,8 +1,18 @@
 # RumbleX
 
-![Version](https://img.shields.io/badge/version-v3.49.0-blue) ![License](https://img.shields.io/badge/license-MIT-green) ![Platform](https://img.shields.io/badge/platform-Extension%20%2B%20Userscript-lightgrey) ![Firefox](https://img.shields.io/badge/firefox-109%2B-orange)
+![Version](https://img.shields.io/badge/version-v3.50.0-blue) ![License](https://img.shields.io/badge/license-MIT-green) ![Platform](https://img.shields.io/badge/platform-Extension%20%2B%20Userscript-lightgrey) ![Firefox](https://img.shields.io/badge/firefox-109%2B-orange)
 
 **The ultimate Rumble enhancement suite.** 130+ feature modules across 14 categories — ad blocking, theater mode, video downloads with CDN deep-scan probing and an opt-in Mediabunny muxer path, five-theme engine (now including OLED Green), playback controls, chat enhancements with deterministic username colors and tier-filtered rants, chapters, SponsorBlock, clips, live DVR, transcripts, auto-hide chrome, 50+ granular hide-X toggles for every Rumble row/button/player control, thumbnail hider, dense mode, reduced-motion path, tracking-param stripping, external player handoff (MPV/PotPlayer), and full-round-trip backup/restore with snapshot history. Chrome MV3 + Firefox MV2 + userscript.
+
+### What's new in v3.50
+
+Downloads, captions and creator numbers, plus a notifier that had quietly stopped working.
+
+- **Downloads can drop the segments you marked.** Mark a sponsor read with SponsorBlock and the download can leave it out. It works on whole stream segments so nothing is re-encoded, which means a second or two of a mark can survive at each edge. The panel tells you how much it will drop before you start.
+- **Captions load themselves.** Rumble publishes creator-uploaded caption tracks, and RumbleX now picks them up. The transcript fills in without a file picker, and other languages appear as buttons.
+- **The channel notifier was reading markup Rumble no longer ships**, so new uploads went unnoticed and live streams never registered. It reads the listing data the page is actually built from now, and a live alert opens the stream rather than the channel page.
+- **A Creator Program panel** on channel pages, counting this month's shorts against the program's 20.
+- Marked segments are written into download sidecars as chapters, in the format Jellyfin and Kodi already read.
 
 ### What's new in v3.49
 
