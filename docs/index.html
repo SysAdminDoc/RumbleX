@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RumbleX</title>
+<meta name="description" content="RumbleX is a local-first enhancement suite for Rumble.com. Chrome, Firefox, and userscript builds, with no telemetry and no remote code.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%2385c742'/%3E%3Cpath d='M11 9h7a5 5 0 0 1 1.6 9.7L23 25h-4.3l-3-5.6H15V25h-4z' fill='%2307090d'/%3E%3C/svg%3E">
+<style>
+  :root {
+    --bg: #07090d;
+    --surface: #0e1218;
+    --surface-2: #141a22;
+    --border: rgba(255,255,255,.09);
+    --text: #e8edf4;
+    --muted: #97a3b4;
+    --accent: #85c742;
+    --accent-dim: rgba(133,199,66,.14);
+    --warn: #f0b429;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font: 16px/1.65 system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 880px; margin: 0 auto; padding: 0 20px 72px; }
+  header { padding: 64px 0 40px; border-bottom: 1px solid var(--border); }
+  .brand { display: flex; align-items: center; gap: 14px; }
+  .mark {
+    width: 46px; height: 46px; border-radius: 10px; background: var(--accent);
+    color: #07090d; display: grid; place-items: center; font-weight: 800; font-size: 24px;
+    flex: none;
+  }
+  h1 { margin: 0; font-size: 30px; letter-spacing: -.02em; }
+  .tag { color: var(--muted); margin: 14px 0 0; font-size: 17px; max-width: 62ch; }
+  .pills { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 22px; }
+  .pill {
+    border: 1px solid var(--border); background: var(--surface);
+    border-radius: 6px; padding: 5px 11px; font-size: 13px; color: var(--muted);
+  }
+  .pill strong { color: var(--accent); font-weight: 600; }
+  h2 { font-size: 21px; margin: 44px 0 6px; letter-spacing: -.01em; }
+  h3 { font-size: 16px; margin: 26px 0 8px; }
+  p { margin: 10px 0; }
+  a { color: var(--accent); }
+  .lead { color: var(--muted); margin-top: 0; }
+  .card {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 10px; padding: 20px 22px; margin: 18px 0;
+  }
+  ol, ul { margin: 10px 0; padding-left: 22px; }
+  li { margin: 6px 0; }
+  code, pre {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 13.5px;
+  }
+  code { background: var(--surface-2); padding: 2px 6px; border-radius: 4px; }
+  pre {
+    background: var(--surface-2); border: 1px solid var(--border); border-radius: 8px;
+    padding: 14px 16px; overflow-x: auto; margin: 12px 0;
+  }
+  pre code { background: none; padding: 0; }
+  .note {
+    border-left: 3px solid var(--accent); background: var(--accent-dim);
+    padding: 12px 16px; border-radius: 0 8px 8px 0; margin: 16px 0;
+  }
+  .note.caution { border-left-color: var(--warn); background: rgba(240,180,41,.10); }
+  .btn {
+    display: inline-block; background: var(--accent); color: #07090d;
+    font-weight: 650; text-decoration: none; padding: 11px 20px;
+    border-radius: 8px; margin: 8px 8px 8px 0;
+  }
+  .btn.ghost { background: transparent; color: var(--text); border: 1px solid var(--border); }
+  table { border-collapse: collapse; width: 100%; margin: 14px 0; font-size: 14.5px; }
+  th, td { text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  th { color: var(--muted); font-weight: 600; }
+  footer { margin-top: 56px; padding-top: 22px; border-top: 1px solid var(--border); color: var(--muted); font-size: 14px; }
+  .scroll { overflow-x: auto; }
+  @media (max-width: 560px) {
+    header { padding-top: 44px; }
+    h1 { font-size: 25px; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <div class="brand">
+    <div class="mark">R</div>
+    <div>
+      <h1>RumbleX</h1>
+      <div style="color:var(--muted);font-size:14px">Enhancement suite for Rumble.com</div>
+    </div>
+  </div>
+  <p class="tag">Ad and clutter removal, a theater layout, downloads, five dark themes, live chat tooling, watch progress, chapters, transcripts, and about a hundred other toggles. Everything runs on your machine.</p>
+  <div class="pills">
+    <span class="pill"><strong>126</strong> feature modules</span>
+    <span class="pill"><strong>6</strong> languages</span>
+    <span class="pill"><strong>0</strong> trackers</span>
+    <span class="pill">Chrome, Firefox, userscript</span>
+    <span class="pill">MIT</span>
+  </div>
+  <div style="margin-top:24px">
+    <a class="btn" href="https://github.com/SysAdminDoc/RumbleX/releases/latest">Get the latest release</a>
+    <a class="btn ghost" href="https://github.com/SysAdminDoc/RumbleX">Source on GitHub</a>
+  </div>
+</header>
+
+<h2>Install</h2>
+<p class="lead">Pick your browser. Every download comes from this project's Releases page.</p>
+
+<div class="card">
+  <h3>Chrome, Edge, or Brave</h3>
+  <ol>
+    <li>Download <code>RumbleX-chrome.zip</code> from the <a href="https://github.com/SysAdminDoc/RumbleX/releases/latest">latest release</a> and extract it.</li>
+    <li>Open <code>chrome://extensions</code> and turn on <strong>Developer mode</strong>.</li>
+    <li>Click <strong>Load unpacked</strong> and choose the folder you extracted.</li>
+  </ol>
+  <p style="color:var(--muted);font-size:14.5px;margin-bottom:0">Chrome shows a reminder about developer-mode extensions, and it won't update this install for you. Check back here or watch the repository for new releases. Chrome hasn't allowed self-hosted CRX installs on Windows or macOS for years, so unpacked is the honest route.</p>
+</div>
+
+<div class="card">
+  <h3>Firefox</h3>
+  <p>Firefox 109 and newer. Two ways in, depending on what the release contains:</p>
+  <ul>
+    <li><strong>Signed build</strong> (when the release includes an <code>.xpi</code>): open it in Firefox and accept the prompt. If Firefox downloads the file instead of offering to install it, go to <code>about:addons</code>, click the gear, and pick <strong>Install Add-on From File</strong>. Signed builds update themselves.</li>
+    <li><strong>Temporary install</strong>: download <code>RumbleX-firefox.zip</code>, extract it, open <code>about:debugging#/runtime/this-firefox</code>, click <strong>Load Temporary Add-on</strong>, and select <code>manifest.json</code>. This one disappears when you restart Firefox.</li>
+  </ul>
+</div>
+
+<div class="card">
+  <h3>Userscript</h3>
+  <p>For Tampermonkey, Violentmonkey, or ScriptCat. Two builds:</p>
+  <ul>
+    <li><a href="https://github.com/SysAdminDoc/RumbleX/raw/main/RumbleX.user.js">RumbleX.user.js</a> is the complete build. It bundles the media workers, so downloads convert to MP4 in the browser.</li>
+    <li><a href="https://github.com/SysAdminDoc/RumbleX/raw/main/RumbleX.lite.user.js">RumbleX.lite.user.js</a> is a smaller build without the bundled converters. Saving a raw stream still works, but MP4 remuxing doesn't.</li>
+  </ul>
+  <p style="color:var(--muted);font-size:14.5px;margin-bottom:0">Userscripts get most of the suite. The pieces that need a privileged background process stay out: the channel archive queue, alarms, native notifications, context menus, and the side panel.</p>
+</div>
+
+<h2>Check what you downloaded</h2>
+<p class="lead">Every release ships <code>SHA256SUMS.txt</code>. This confirms the file arrived in one piece.</p>
+<pre><code>sha256sum -c SHA256SUMS.txt --ignore-missing</code></pre>
+<p>That proves the download wasn't corrupted or swapped in transit. It doesn't prove who built it, which is the part that matters if someone puts up a copy of this project somewhere else. When a release also carries <code>SHA256SUMS.txt.sig</code>, you can check the origin:</p>
+<pre><code>ssh-keygen -Y verify -f allowed_signers -I release@rumblex -n file \
+  -s SHA256SUMS.txt.sig &lt; SHA256SUMS.txt</code></pre>
+<p><code>Good "file" signature</code> means the checksums came from the key published in the repository. If either check fails, don't install the files.</p>
+
+<div class="note caution">
+  <strong>Only two official sources.</strong> This page, and <a href="https://github.com/SysAdminDoc/RumbleX">github.com/SysAdminDoc/RumbleX</a>. Copies of RumbleX hosted anywhere else aren't ours and we can't vouch for what's in them.
+</div>
+
+<h2>What it does to your data</h2>
+<div class="note">
+  Nothing leaves your browser unless you ask it to. There's no analytics, no remote logging, and no usage beacons anywhere in the code. Settings live in browser storage. Watch progress, history, and bookmarks live in Rumble's own local storage on your machine.
+</div>
+<p>RumbleX only reaches the network for things you trigger: fetching a video you chose to download, checking GitHub for a newer release, and, if you switch it on yourself, syncing settings to a private Gist you own or posting to a Discord webhook you configured. The built-in Privacy Report lists every one of these, generated from the actual manifest rather than written by hand.</p>
+<p>Permissions stay narrow on purpose. RumbleX asks for Rumble's own domains and the ad hosts it blocks, and nothing else.</p>
+
+<h2>Ad blocking, honestly</h2>
+<p>The request-level shield works differently on each runtime, so here's what actually happens:</p>
+<div class="scroll">
+<table>
+  <tr><th>Runtime</th><th>Early request blocking</th><th>What we claim</th></tr>
+  <tr><td>Chrome, Edge, Brave</td><td>Scoped Declarative Net Request rules</td><td>Enforced by the browser</td></tr>
+  <tr><td>Firefox</td><td>Scoped blocking webRequest</td><td>Enforced by the browser</td></tr>
+  <tr><td>Userscript managers</td><td>Only where the manager still offers the request hook</td><td>Depends on your manager, so we don't claim it</td></tr>
+</table>
+</div>
+<p style="color:var(--muted);font-size:14.5px">Current Chromium versions of Tampermonkey and Violentmonkey dropped that hook when they moved to Manifest V3. On those, the page cleanup still runs and still removes ads from the layout. It just can't cancel the request before it happens, and RumbleX says so in its own interface rather than pretending otherwise.</p>
+
+<footer>
+  <p>MIT licensed. Built and released from a local machine, not a CI server. <a href="https://github.com/SysAdminDoc/RumbleX/blob/main/CHANGELOG.md">Changelog</a> &middot; <a href="https://github.com/SysAdminDoc/RumbleX/issues">Report a problem</a></p>
+  <p>Not affiliated with Rumble Inc.</p>
+</footer>
+
+</div>
+</body>
+</html>

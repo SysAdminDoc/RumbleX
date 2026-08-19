@@ -33,7 +33,8 @@
   "browser_specific_settings": {
     "gecko": {
       "id": "rumblex@sysadmindoc",
-      "strict_min_version": "109.0"
+      "strict_min_version": "109.0",
+      "update_url": "https://sysadmindoc.github.io/RumbleX/updates.json"
     }
   },
   "background": {

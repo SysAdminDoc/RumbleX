@@ -19,8 +19,8 @@
 // @connect      rumble.com
 // @connect      1a-1791.com
 // @connect      rumble.cloud
-// @downloadURL  https://raw.githubusercontent.com/SysAdminDoc/RumbleX/main/RumbleX.user.js
-// @updateURL    https://raw.githubusercontent.com/SysAdminDoc/RumbleX/main/RumbleX.user.js
+// @downloadURL  https://github.com/SysAdminDoc/RumbleX/raw/main/RumbleX.user.js
+// @updateURL    https://github.com/SysAdminDoc/RumbleX/raw/main/RumbleX.user.js
 // ==/UserScript==
 
 // Generated from extension/settings-schema.js + extension/content.js. Shared runtime SHA-256: 2ad737e7705c4c59d9ef0cb673976d120b0bfe856fd2b164b1298629ee4a80d9

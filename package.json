@@ -27,7 +27,9 @@
     "test:content-literals": "node scripts/check-content-literals.js",
     "test:content-locale": "node scripts/sync-content-locale.js",
     "locale:sync": "node scripts/sync-content-locale.js --write",
-    "test:store-listing": "node scripts/check-store-listing.js"
+    "test:store-listing": "node scripts/check-store-listing.js",
+    "test:update-manifest": "node scripts/build-update-manifest.js --check",
+    "build:update-manifest": "node scripts/build-update-manifest.js"
   },
   "devDependencies": {
     "@playwright/test": "^1.49.0",
