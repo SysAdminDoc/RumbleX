@@ -246,6 +246,8 @@ Install instructions for every browser, plus the checksum and signature commands
 3. Visit `chrome://extensions` and enable **Developer mode**
 4. Click **Load unpacked** and select the extracted folder
 
+No minimum Chrome version is declared beyond what MV3 itself requires. Chrome 148 added a `browser` namespace alongside `chrome`, which would let the Firefox compatibility shim go away, but only by refusing to run on anything older. RumbleX detects whichever namespace the browser offers instead, so it works on Chrome 148, on Chrome well below it, and on Firefox, and the page-feature core touches neither namespace directly.
+
 ### Firefox (109+)
 1. Download `RumbleX-firefox.zip` from [Releases](https://github.com/SysAdminDoc/RumbleX/releases)
 2. Go to `about:debugging#/runtime/this-firefox`

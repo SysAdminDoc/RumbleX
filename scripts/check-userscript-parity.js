@@ -84,7 +84,11 @@ function stripCommentsAndStrings(source) {
 
 const executableCore = stripCommentsAndStrings(core);
 const executableSchema = stripCommentsAndStrings(schema);
-if (/\bchrome\s*\./.test(executableCore)) fail('canonical content core still executes chrome.* directly');
+// Both namespaces, not just `chrome`. Chrome 148 exposes every extension API
+// under `browser` as well, so a call written that way now runs fine in a
+// developer's browser and still breaks the userscript build, where neither
+// namespace exists. The core goes through RXPlatform or it does not go.
+if (/\b(?:chrome|browser)\s*\./.test(executableCore)) fail('canonical content core still executes chrome.*/browser.* directly');
 if (/\b(?:unsafeWindow|eval)\b|new\s+Function\s*\(/.test(executableCore)) fail('canonical content core contains dynamic-code execution');
 if (/\b(?:chrome|browser)\s*\./.test(executableSchema)) fail('canonical settings schema must remain platform-independent');
 if (/\b(?:unsafeWindow|eval)\b|new\s+Function\s*\(/.test(executableSchema)) fail('canonical settings schema contains dynamic-code execution');
