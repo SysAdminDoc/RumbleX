@@ -1786,5 +1786,33 @@
   "feat_perChannelVolumeMemory_desc": {
     "message": "Recordar volumen, velocidad y un límite de calidad para cada canal",
     "description": "In-page UI string (shared core)."
+  },
+  "feat_rssExportEnabled_label": {
+    "message": "Exportar RSS del canal",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_rssExportEnabled_desc": {
+    "message": "Genera un feed RSS de un canal localmente, sin ningún servidor",
+    "description": "In-page UI string (shared core)."
+  },
+  "rssNoVideos": {
+    "message": "Todavía no se han encontrado vídeos en esta página",
+    "description": "In-page UI string (shared core)."
+  },
+  "rssCopied": {
+    "message": "Feed RSS con {count} vídeos copiado",
+    "description": "In-page UI string (shared core)."
+  },
+  "rssDownloaded": {
+    "message": "Feed RSS guardado como archivo",
+    "description": "In-page UI string (shared core)."
+  },
+  "rssCopyButton": {
+    "message": "Copiar RSS",
+    "description": "In-page UI string (shared core)."
+  },
+  "rssCopyTitle": {
+    "message": "Crear un feed RSS de este canal íntegramente en tu navegador",
+    "description": "In-page UI string (shared core)."
   }
 }

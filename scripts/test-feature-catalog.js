@@ -46,9 +46,9 @@ const cssBody = core.match(/const RX_CSS_TOGGLES = \[([\s\S]*?)\n\];/)?.[1] || '
 assert.ok(cssBody, 'CSS feature registry is missing');
 const cssIds = [...cssBody.matchAll(/\bid:\s*'([^']+)'/g)].map((match) => match[1]);
 
-assert.equal(handwritten.length, 78, 'handwritten feature count changed; update behavior coverage intentionally');
+assert.equal(handwritten.length, 79, 'handwritten feature count changed; update behavior coverage intentionally');
 assert.equal(cssIds.length, 51, 'CSS feature count changed; update behavior coverage intentionally');
-assert.equal(handwritten.length + cssIds.length, 129, 'total feature catalog changed unexpectedly');
+assert.equal(handwritten.length + cssIds.length, 130, 'total feature catalog changed unexpectedly');
 
 const allIds = [...handwritten.map(({ id }) => id), ...cssIds];
 assert.equal(new Set(allIds).size, allIds.length, 'feature ids must be unique across both registries');
@@ -137,7 +137,7 @@ const MODAL_EXCLUSIONS = {
     // Parked keys shipped ahead of their features; see Roadmap_Blocked.md.
     // These must not appear as live switches anywhere until implemented.
     multiStreamViewer: 'parked', studioSceneTools: 'parked', uploaderMetadataFill: 'parked',
-    creatorMode: 'parked', obsAlertExport: 'parked', rssExportEnabled: 'parked',
+    creatorMode: 'parked', obsAlertExport: 'parked',
     commentSearch: 'parked', chatMentionHighlight: 'parked', chatClickToMention: 'parked',
     chatParticipantsList: 'parked', chatTimedMutes: 'parked', chatUsernameColors: 'parked',
     rantStatsPanel: 'parked', rantStickyHighValue: 'parked', filterPreviewBadges: 'parked',

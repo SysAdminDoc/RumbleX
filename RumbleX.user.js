@@ -23,7 +23,7 @@
 // @updateURL    https://github.com/SysAdminDoc/RumbleX/raw/main/RumbleX.user.js
 // ==/UserScript==
 
-// Generated from extension/settings-schema.js + extension/content.js. Shared runtime SHA-256: 522870d2c25f7a6ccb93612176dd6e13e7267426ee3af0ae38a50b224f2dca87
+// Generated from extension/settings-schema.js + extension/content.js. Shared runtime SHA-256: fdc26fe2116662eb8d7b48d38c73f4bf9c225c2625e686737e7115d745074e03
 // RumbleX shared settings schema. This file is the canonical source for
 // defaults and trust-boundary normalization across content, options, popup,
 // background profile/Gist restores, and the generated userscript.
@@ -637,7 +637,6 @@
 
         // Creator and multi-view features that were never built.
         multiStreamViewer: 'Not built.',
-        rssExportEnabled: 'Not built.',
         creatorMode: 'Not built.',
         uploaderMetadataFill: 'Not built.',
         studioSceneTools: 'Not built.',
@@ -1119,7 +1118,14 @@
   "sbSegmentHere": "{category} segment",
   "sbTimeSaved": "Skipped {time} so far",
   "feat_perChannelVolumeMemory_label": "Per-Channel Playback",
-  "feat_perChannelVolumeMemory_desc": "Remember volume, speed and a quality ceiling for each channel"
+  "feat_perChannelVolumeMemory_desc": "Remember volume, speed and a quality ceiling for each channel",
+  "feat_rssExportEnabled_label": "Channel RSS Export",
+  "feat_rssExportEnabled_desc": "Build an RSS feed of a channel locally, with no server involved",
+  "rssNoVideos": "No videos found on this page yet",
+  "rssCopied": "RSS feed for {count} videos copied",
+  "rssDownloaded": "RSS feed saved as a file",
+  "rssCopyButton": "Copy RSS",
+  "rssCopyTitle": "Build an RSS feed of this channel, entirely in your browser"
 });
     const STORAGE_KEYS_WITH_CHANGE_EVENTS = ['rx_settings'];
     const ALLOWED_REQUEST_HOSTS = ['rumble.com', 'rumble.cloud', '1a-1791.com'];
@@ -7429,6 +7435,152 @@ const ChannelBlocker = {
 // toggle. One click enqueues the channel (using the v3.18 background API)
 // with sensible defaults — 50 items max, no clip filter. User can fine-tune
 // limits in the options-page "Channel archive queue" section.
+// ═══════════════════════════════════════════
+//  FEATURE: Channel RSS Export
+// ═══════════════════════════════════════════
+// Rumble publishes no per-channel RSS. The official MRSS feeds are behind the
+// creator dashboard, and the third-party generators that fill the gap get
+// rate-blocked because they scrape from a server.
+//
+// Building the feed in the page sidesteps both problems: the cards are already
+// rendered and already authenticated, so no request is made at all. The result
+// is a plain RSS 2.0 document on the clipboard.
+const ChannelRss = {
+    id: 'rssExportEnabled',
+    name: 'Channel RSS Export',
+    _styleEl: null,
+    _btn: null,
+    _obs: null,
+
+    _css: `
+        .rx-rss-btn {
+            display: inline-flex; align-items: center; gap: 6px;
+            background: rgba(250,179,135,0.12);
+            color: #fab387;
+            border: 1px solid rgba(250,179,135,0.35);
+            border-radius: 6px;
+            padding: 6px 12px;
+            font: 600 12px/1 system-ui, sans-serif;
+            cursor: pointer; margin-left: 8px; min-height: 24px;
+        }
+        .rx-rss-btn:hover { background: rgba(250,179,135,0.22); border-color: rgba(250,179,135,0.55); }
+    `,
+
+    _SVG: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 11a9 9 0 0 1 9 9"/><path d="M4 4a16 16 0 0 1 16 16"/><circle cx="5" cy="19" r="1"/></svg>',
+
+    _esc(value) {
+        return String(value ?? '')
+            .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    },
+
+    // Pure, so the feed shape is testable without a page.
+    buildFeed(channel, items) {
+        const esc = (v) => this._esc(v);
+        const out = [
+            '<?xml version="1.0" encoding="UTF-8"?>',
+            '<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">',
+            '  <channel>',
+            `    <title>${esc(channel.title || 'Rumble channel')}</title>`,
+            `    <link>${esc(channel.url || '')}</link>`,
+            `    <description>${esc(channel.description || `Videos from ${channel.title || 'this channel'}`)}</description>`,
+            '    <generator>RumbleX</generator>',
+        ];
+        if (channel.url) out.push(`    <atom:link href="${esc(channel.url)}" rel="self" type="application/rss+xml"/>`);
+        for (const item of items) {
+            if (!item?.url) continue;
+            out.push('    <item>');
+            out.push(`      <title>${esc(item.title || 'Untitled')}</title>`);
+            out.push(`      <link>${esc(item.url)}</link>`);
+            // The video id is stable where a publish date is not exposed on a
+            // card, so it is the honest choice for a permanent identifier.
+            out.push(`      <guid isPermaLink="true">${esc(item.url)}</guid>`);
+            if (item.date) out.push(`      <pubDate>${esc(item.date)}</pubDate>`);
+            out.push('    </item>');
+        }
+        out.push('  </channel>', '</rss>', '');
+        return out.join('\n');
+    },
+
+    _collect() {
+        const seen = new Set();
+        const items = [];
+        for (const card of VideoCards.all()) {
+            const url = VideoCards.url(card);
+            if (!url || seen.has(url)) continue;
+            seen.add(url);
+            items.push({ url, title: VideoCards.title(card) });
+        }
+        return items;
+    },
+
+    _channelMeta() {
+        const heading = qs('h1.channel-header--title, .channel-header--title, h1');
+        return {
+            title: (heading?.textContent || document.title || '').trim(),
+            url: location.href.split('?')[0],
+        };
+    },
+
+    async _copyFeed() {
+        const items = this._collect();
+        if (!items.length) {
+            RxToast.show(rxT('rssNoVideos', 'No videos found on this page yet'));
+            return;
+        }
+        const xml = this.buildFeed(this._channelMeta(), items);
+        try {
+            await navigator.clipboard.writeText(xml);
+            RxToast.show(rxT('rssCopied', 'RSS feed for {count} videos copied', { count: items.length }));
+        } catch {
+            // Clipboard can be refused without a gesture the browser trusts;
+            // a download is the fallback rather than a dead button.
+            VideoDownloader._triggerSave(
+                new Blob([xml], { type: 'application/rss+xml' }),
+                `${(this._channelMeta().title || 'rumble-channel').replace(/[^\w.-]+/g, '_')}.xml`,
+                'application/rss+xml',
+            );
+            RxToast.show(rxT('rssDownloaded', 'RSS feed saved as a file'));
+        }
+    },
+
+    _attach() {
+        const anchor = Selectors.find('profile.followingBtn');
+        if (!anchor?.parentNode) return;
+        if (this._btn && this._btn.isConnected) return;
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'rx-rss-btn';
+        btn.innerHTML = this._SVG;
+        const label = document.createElement('span');
+        label.textContent = rxT('rssCopyButton', 'Copy RSS');
+        btn.appendChild(label);
+        btn.title = rxT('rssCopyTitle', 'Build an RSS feed of this channel, entirely in your browser');
+        btn.addEventListener('click', () => void this._copyFeed());
+        anchor.parentNode.insertBefore(btn, anchor.nextSibling);
+        this._btn = btn;
+    },
+
+    init() {
+        if (!Settings.get(this.id)) return;
+        if (!Page.isChannel()) return;
+        this._styleEl = injectStyle(this._css, 'rx-rss-css');
+        this._attach();
+        this._obs = new MutationObserver(() => {
+            scheduleFeatureFrame(this, 'rss-attach', () => this._attach());
+        });
+        this._obs.observe(document.documentElement, { childList: true, subtree: true });
+    },
+
+    destroy() {
+        this._obs?.disconnect();
+        this._obs = null;
+        this._styleEl?.remove();
+        this._styleEl = null;
+        this._btn?.remove();
+        this._btn = null;
+    }
+};
+
 const ChannelArchiveButton = {
     id: 'channelArchiveButton',
     name: 'Channel Archive Button',
@@ -11227,6 +11379,7 @@ const RX_CATEGORIES = [
             { id: 'notifEnhance', label: 'Notif Enhance', desc: 'Themed notification dropdown + bell pulse' },
             { id: 'fullTitles', label: 'Full Titles', desc: 'Remove title truncation on video cards' },
             { id: 'titleFont', label: 'Title Font', desc: 'Unbold + normalize title typography' },
+            { id: 'rssExportEnabled', label: 'Channel RSS Export', desc: 'Build an RSS feed of a channel locally, with no server involved' },
             { id: 'perChannelVolumeMemory', label: 'Per-Channel Playback', desc: 'Remember volume, speed and a quality ceiling for each channel' },
             { id: 'titleNormalizer', label: 'Title Normalizer', desc: 'Calm ALL-CAPS, emoji spray and repeated !!! in video titles; original stays on hover' },
             // v2.1.0 — Premium UI and Layout Superset
@@ -17321,7 +17474,7 @@ const features = [
     RantHighlight, RelatedFilter, ExactCounts, ShareTimestamp, TimeRemaining, ShortsFilter,
     ChatAutoScroll, AutoExpand, NotifEnhance, PlaylistQuickSave,
     // v1.8.0 additions
-    FullTitles, PerChannelPrefs, TitleNormalizer, TitleFont, UniqueChatters, ChatUserBlock, ChatSpamDedup,
+    FullTitles, PerChannelPrefs, ChannelRss, TitleNormalizer, TitleFont, UniqueChatters, ChatUserBlock, ChatSpamDedup,
     ChatExport, RantPersist, CommentSort, CommentExport, PopoutChat, KeywordFilter,
     AutoplayScheduler, Chapters, SponsorBlockRX, VideoClips, LiveDVR,
     SubtitleSidecar, Transcripts, AudioOnly, BatchDownload,

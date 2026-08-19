@@ -1364,3 +1364,61 @@ test('PerChannelPrefs scopes playback settings to a channel and bounds the quali
 
     expect(result.size).toBeLessThanOrEqual(result.max);
 });
+
+test('ChannelRss builds a valid feed locally and escapes hostile titles', async () => {
+    const result = await inHarness(() => {
+        const harness = globalThis.__RumbleXFeatureHarness;
+        harness.enable('rssExportEnabled');
+        const rss = harness.features.find((f) => f.id === 'rssExportEnabled');
+
+        const xml = rss.buildFeed(
+            { title: 'Bob & Alice <Live>', url: 'https://rumble.com/c/BobAlice' },
+            [
+                { title: 'Episode 1 & 2', url: 'https://rumble.com/v1abc-ep-one.html' },
+                { title: '<script>alert(1)</script>', url: 'https://rumble.com/v2def-ep-two.html' },
+                // No URL: cannot be addressed, so it is not an item.
+                { title: 'Broken', url: '' },
+            ],
+        );
+
+        // Parsed by the browser's own XML parser: if it is not well-formed,
+        // this is where that shows up rather than in a reader later.
+        const doc = new DOMParser().parseFromString(xml, 'application/xml');
+        const parseError = doc.querySelector('parsererror') ? 'yes' : 'no';
+        const items = [...doc.querySelectorAll('item')].map((n) => ({
+            title: n.querySelector('title')?.textContent,
+            link: n.querySelector('link')?.textContent,
+            guid: n.querySelector('guid')?.textContent,
+        }));
+
+        const emptyFeed = rss.buildFeed({ title: 'Nobody', url: 'https://rumble.com/c/Nobody' }, []);
+        const emptyDoc = new DOMParser().parseFromString(emptyFeed, 'application/xml');
+
+        return {
+            parseError,
+            channelTitle: doc.querySelector('channel > title')?.textContent,
+            items,
+            // The raw text must not contain an unescaped tag.
+            hasRawScriptTag: xml.includes('<script>'),
+            emptyOk: !emptyDoc.querySelector('parsererror'),
+            emptyItems: emptyDoc.querySelectorAll('item').length,
+        };
+    });
+
+    expect(result.parseError).toBe('no');
+    // Escaped on the wire, decoded back by the parser.
+    expect(result.channelTitle).toBe('Bob & Alice <Live>');
+    expect(result.hasRawScriptTag).toBe(false);
+
+    expect(result.items).toHaveLength(2);
+    expect(result.items[0]).toEqual({
+        title: 'Episode 1 & 2',
+        link: 'https://rumble.com/v1abc-ep-one.html',
+        guid: 'https://rumble.com/v1abc-ep-one.html',
+    });
+    expect(result.items[1].title).toBe('<script>alert(1)</script>');
+
+    // A channel with nothing on the page still produces a well-formed feed.
+    expect(result.emptyOk).toBe(true);
+    expect(result.emptyItems).toBe(0);
+});

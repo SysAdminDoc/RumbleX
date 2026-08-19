@@ -49,6 +49,7 @@ const GROUPS = [
             { id: 'titleFont', label: 'Title Font' },
             { id: 'titleNormalizer', label: 'Title Normalizer' },
             { id: 'perChannelVolumeMemory', label: 'Per-Channel Playback' },
+            { id: 'rssExportEnabled', label: 'Channel RSS' },
         ],
     },
     {
