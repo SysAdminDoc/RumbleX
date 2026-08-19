@@ -1858,5 +1858,57 @@
   "chatMentionListLabel": {
     "message": "Suggerimenti di nomi per la chat",
     "description": "In-page UI string (shared core)."
+  },
+  "feat_chatParticipantsList_label": {
+    "message": "Schede utente della chat",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_chatParticipantsList_desc": {
+    "message": "Clicca un nome nella chat per vedere i suoi messaggi di questa sessione, con menzione, blocco e soprannome locale",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_chatClickToMention_label": {
+    "message": "Clic sul nome per menzionare",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_chatClickToMention_desc": {
+    "message": "Cliccare un nome nella chat inserisce una @menzione (quando le schede sono disattivate)",
+    "description": "In-page UI string (shared core)."
+  },
+  "chatCardCount": {
+    "message": "{count} messaggi in questa sessione",
+    "description": "In-page UI string (shared core)."
+  },
+  "chatCardMention": {
+    "message": "Menziona",
+    "description": "In-page UI string (shared core)."
+  },
+  "chatCardBlock": {
+    "message": "Blocca",
+    "description": "In-page UI string (shared core)."
+  },
+  "chatCardBlocked": {
+    "message": "{name} bloccato",
+    "description": "In-page UI string (shared core)."
+  },
+  "chatCardNickPlaceholder": {
+    "message": "Soprannome locale",
+    "description": "In-page UI string (shared core)."
+  },
+  "chatCardNickLabel": {
+    "message": "Soprannome locale per questa persona",
+    "description": "In-page UI string (shared core)."
+  },
+  "chatCardSave": {
+    "message": "Salva",
+    "description": "In-page UI string (shared core)."
+  },
+  "chatCardNoMessages": {
+    "message": "Ancora nulla registrato in questa sessione",
+    "description": "In-page UI string (shared core)."
+  },
+  "chatCardLabel": {
+    "message": "Partecipante della chat",
+    "description": "In-page UI string (shared core)."
   }
 }

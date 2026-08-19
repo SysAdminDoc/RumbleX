@@ -1858,5 +1858,57 @@
   "chatMentionListLabel": {
     "message": "Sugerencias de nombres del chat",
     "description": "In-page UI string (shared core)."
+  },
+  "feat_chatParticipantsList_label": {
+    "message": "Fichas de usuario del chat",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_chatParticipantsList_desc": {
+    "message": "Haz clic en un nombre del chat para ver sus mensajes de esta sesion, con mencionar, bloquear y apodo local",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_chatClickToMention_label": {
+    "message": "Clic en el nombre para mencionar",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_chatClickToMention_desc": {
+    "message": "Al hacer clic en un nombre del chat se inserta una @mencion (cuando las fichas estan desactivadas)",
+    "description": "In-page UI string (shared core)."
+  },
+  "chatCardCount": {
+    "message": "{count} mensajes en esta sesion",
+    "description": "In-page UI string (shared core)."
+  },
+  "chatCardMention": {
+    "message": "Mencionar",
+    "description": "In-page UI string (shared core)."
+  },
+  "chatCardBlock": {
+    "message": "Bloquear",
+    "description": "In-page UI string (shared core)."
+  },
+  "chatCardBlocked": {
+    "message": "{name} bloqueado",
+    "description": "In-page UI string (shared core)."
+  },
+  "chatCardNickPlaceholder": {
+    "message": "Apodo local",
+    "description": "In-page UI string (shared core)."
+  },
+  "chatCardNickLabel": {
+    "message": "Apodo local para esta persona",
+    "description": "In-page UI string (shared core)."
+  },
+  "chatCardSave": {
+    "message": "Guardar",
+    "description": "In-page UI string (shared core)."
+  },
+  "chatCardNoMessages": {
+    "message": "Todavia no hay nada registrado en esta sesion",
+    "description": "In-page UI string (shared core)."
+  },
+  "chatCardLabel": {
+    "message": "Participante del chat",
+    "description": "In-page UI string (shared core)."
   }
 }

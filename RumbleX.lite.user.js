@@ -23,7 +23,7 @@
 // @updateURL    https://github.com/SysAdminDoc/RumbleX/raw/main/RumbleX.lite.user.js
 // ==/UserScript==
 
-// Generated from extension/settings-schema.js + extension/content.js. Shared runtime SHA-256: f662b77d9963fb3d7f013500a751b95d0e61b82d80e43c618d3a03adfaf0e3f6
+// Generated from extension/settings-schema.js + extension/content.js. Shared runtime SHA-256: 21886e25fe86088b236e505e9a0a4403b6a7639dbd95b0f536f7ada486699e2c
 // RumbleX shared settings schema. This file is the canonical source for
 // defaults and trust-boundary normalization across content, options, popup,
 // background profile/Gist restores, and the generated userscript.
@@ -245,6 +245,7 @@
         chatHighlightKeywords: [],
         chatHighlightSound: false,
         chatMentionAutocomplete: true,
+        chatNicknames: {},
         chatReadability: false,
         chatFontScale: 100,
         chatShowDeleted: false,
@@ -528,6 +529,19 @@
             }
             // A restored profile must not be able to invent categories or
             // behaviors; anything unrecognized is dropped rather than carried.
+            // Local aliases for chat names. Bounded on both sides so a crafted
+            // restore cannot smuggle in a huge map or unprintable text.
+            if (key === 'chatNicknames') {
+                if (!isPlainObject(value)) continue;
+                const nicks = {};
+                for (const [who, alias] of Object.entries(value).slice(0, 500)) {
+                    const name = safeString(who, 80);
+                    const label = safeString(alias, 40);
+                    if (name && label) nicks[name.toLowerCase()] = label;
+                }
+                out[key] = nicks;
+                continue;
+            }
             if (key === 'sponsorCategoryBehavior') {
                 if (!isPlainObject(value)) continue;
                 const behavior = {};
@@ -626,8 +640,6 @@
         remoteCosmeticRulesChannel: 'Remote cosmetic rules use a single channel.',
 
         // Chat features that were never built.
-        chatClickToMention: 'Not built.',
-        chatParticipantsList: 'Not built.',
         chatTimedMutes: 'Not built.',
         chatMuteDurations: 'Configures the unbuilt timed-mute feature.',
 
@@ -1141,7 +1153,20 @@
   "feat_chatReadability_desc": "Alternating row shading and adjustable chat text size",
   "feat_chatShowDeleted_label": "Show Deleted Messages",
   "feat_chatShowDeleted_desc": "Keep removed chat messages visible, struck through",
-  "chatMentionListLabel": "Chat name suggestions"
+  "chatMentionListLabel": "Chat name suggestions",
+  "feat_chatParticipantsList_label": "Chat User Cards",
+  "feat_chatParticipantsList_desc": "Click a chat name for their messages this session, plus mention, block and a local nickname",
+  "feat_chatClickToMention_label": "Click Name To Mention",
+  "feat_chatClickToMention_desc": "Clicking a chat name drops an @mention into the box (when user cards are off)",
+  "chatCardCount": "{count} messages this session",
+  "chatCardMention": "Mention",
+  "chatCardBlock": "Block",
+  "chatCardBlocked": "Blocked {name}",
+  "chatCardNickPlaceholder": "Local nickname",
+  "chatCardNickLabel": "Local nickname for this person",
+  "chatCardSave": "Save",
+  "chatCardNoMessages": "Nothing recorded yet this session",
+  "chatCardLabel": "Chat participant"
 });
     const STORAGE_KEYS_WITH_CHANGE_EVENTS = ['rx_settings'];
     const ALLOWED_REQUEST_HOSTS = ['rumble.com', 'rumble.cloud', '1a-1791.com'];
@@ -8259,6 +8284,304 @@ const ChatHighlights = {
 };
 
 // ═══════════════════════════════════════════
+//  FEATURE: Chat User Cards
+// ═══════════════════════════════════════════
+// Clicking a name in Twitch chat opens a card with what that person has said,
+// and it is the feature people miss most when it is absent. Rumble has nothing
+// like it: a name in chat is just text, so working out whether someone has been
+// here all stream or just arrived means scrolling back by eye.
+//
+// Everything here is session-scoped and in memory. Nicknames are the one thing
+// that persists, because renaming someone is only useful if it sticks.
+const ChatUserCards = {
+    id: 'chatParticipantsList',
+    name: 'Chat User Cards',
+    _styleEl: null,
+    _obs: null,
+    _card: null,
+    _log: null,
+    _onDocClick: null,
+    _MAX_USERS: 300,
+    _MAX_PER_USER: 50,
+
+    _css: `
+        .rx-chat-card {
+            position: absolute; z-index: 10035;
+            width: 260px; max-height: 320px; overflow-y: auto;
+            background: rgba(30,30,46,0.98);
+            border: 1px solid rgba(255,255,255,0.10);
+            border-radius: 10px; padding: 10px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.6);
+            color: #cdd6f4; font: 12px/1.45 system-ui, sans-serif;
+        }
+        .rx-chat-card[hidden] { display: none; }
+        .rx-chat-card__name { font-weight: 700; font-size: 13px; margin-bottom: 2px; word-break: break-word; }
+        .rx-chat-card__meta { color: #a6adc8; font-size: 11px; margin-bottom: 8px; }
+        .rx-chat-card__actions { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+        .rx-chat-card__actions button {
+            background: rgba(49,50,68,0.6); border: 1px solid rgba(255,255,255,0.08);
+            color: #cdd6f4; border-radius: 5px; padding: 5px 10px; cursor: pointer;
+            font: 600 11px/1 system-ui, sans-serif; min-height: 24px;
+        }
+        .rx-chat-card__actions button:hover { background: rgba(49,50,68,0.9); }
+        .rx-chat-card__nick { display: flex; gap: 6px; margin-bottom: 8px; }
+        .rx-chat-card__nick input {
+            flex: 1; min-width: 0; background: rgba(49,50,68,0.5);
+            border: 1px solid rgba(255,255,255,0.08); border-radius: 5px;
+            color: #cdd6f4; padding: 4px 8px; font-size: 11px; min-height: 24px;
+        }
+        .rx-chat-card__log { display: flex; flex-direction: column; gap: 4px; }
+        .rx-chat-card__log div {
+            background: rgba(49,50,68,0.35); border-radius: 4px; padding: 4px 6px;
+            font-size: 11px; word-break: break-word;
+        }
+        .rx-chat-card__empty { color: #6c7086; font-size: 11px; }
+    `,
+
+    _nicknames() {
+        const map = Settings.get('chatNicknames');
+        return (map && typeof map === 'object' && !Array.isArray(map)) ? map : {};
+    },
+
+    _record(name, text) {
+        if (!name) return;
+        if (!this._log.has(name)) {
+            if (this._log.size >= this._MAX_USERS) {
+                // Drop the least recently seen rather than growing unbounded.
+                const oldest = this._log.keys().next().value;
+                this._log.delete(oldest);
+            }
+            this._log.set(name, []);
+        }
+        const entries = this._log.get(name);
+        if (text) entries.push(text);
+        if (entries.length > this._MAX_PER_USER) entries.splice(0, entries.length - this._MAX_PER_USER);
+    },
+
+    _index() {
+        for (const row of ChatDom.rows()) {
+            if (row.dataset.rxCard) continue;
+            row.dataset.rxCard = '1';
+            this._record(ChatDom.username(row), ChatDom.message(row));
+        }
+    },
+
+    _applyNicknames() {
+        const nicks = this._nicknames();
+        for (const row of ChatDom.rows()) {
+            const el = ChatDom.usernameEl(row);
+            if (!el) continue;
+            const real = el.dataset.rxRealName || el.textContent.trim();
+            const alias = nicks[real.toLowerCase()];
+            if (alias) {
+                if (!el.dataset.rxRealName) el.dataset.rxRealName = real;
+                if (el.textContent !== alias) el.textContent = alias;
+            } else if (el.dataset.rxRealName) {
+                el.textContent = el.dataset.rxRealName;
+                delete el.dataset.rxRealName;
+            }
+        }
+    },
+
+    _insertMention(name) {
+        const input = ChatDom.composer();
+        if (!input) return;
+        const value = input.value || '';
+        const sep = value && !/\s$/.test(value) ? ' ' : '';
+        input.value = `${value}${sep}@${name} `;
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+        input.focus();
+    },
+
+    _close() {
+        if (this._card) this._card.hidden = true;
+    },
+
+    _open(name, anchor) {
+        const card = this._card;
+        if (!card) return;
+        const nicks = this._nicknames();
+        const alias = nicks[name.toLowerCase()] || '';
+        const messages = this._log.get(name) || [];
+
+        card.textContent = '';
+        const title = document.createElement('div');
+        title.className = 'rx-chat-card__name';
+        title.textContent = alias ? `${alias} (${name})` : name;
+        card.appendChild(title);
+
+        const meta = document.createElement('div');
+        meta.className = 'rx-chat-card__meta';
+        meta.textContent = rxT('chatCardCount', '{count} messages this session', { count: messages.length });
+        card.appendChild(meta);
+
+        const actions = document.createElement('div');
+        actions.className = 'rx-chat-card__actions';
+        const mention = document.createElement('button');
+        mention.type = 'button';
+        mention.textContent = rxT('chatCardMention', 'Mention');
+        mention.addEventListener('click', () => { this._insertMention(name); this._close(); });
+        const block = document.createElement('button');
+        block.type = 'button';
+        block.textContent = rxT('chatCardBlock', 'Block');
+        block.addEventListener('click', () => {
+            const list = Settings.get('blockedChatters');
+            const next = Array.isArray(list) ? [...list] : [];
+            const lower = name.toLowerCase();
+            if (!next.includes(lower)) next.push(lower);
+            void Settings.set('blockedChatters', next);
+            RxToast.show(rxT('chatCardBlocked', 'Blocked {name}', { name }));
+            this._close();
+        });
+        actions.append(mention, block);
+        card.appendChild(actions);
+
+        const nickRow = document.createElement('div');
+        nickRow.className = 'rx-chat-card__nick';
+        const nickInput = document.createElement('input');
+        nickInput.type = 'text';
+        nickInput.value = alias;
+        nickInput.placeholder = rxT('chatCardNickPlaceholder', 'Local nickname');
+        nickInput.setAttribute('aria-label', rxT('chatCardNickLabel', 'Local nickname for this person'));
+        const save = document.createElement('button');
+        save.type = 'button';
+        save.textContent = rxT('chatCardSave', 'Save');
+        save.addEventListener('click', () => {
+            const next = { ...this._nicknames() };
+            const value = nickInput.value.trim();
+            // An empty box clears the alias rather than storing an empty string.
+            if (value) next[name.toLowerCase()] = value.slice(0, 40);
+            else delete next[name.toLowerCase()];
+            void Settings.set('chatNicknames', next);
+            this._applyNicknames();
+            this._close();
+        });
+        nickRow.append(nickInput, save);
+        card.appendChild(nickRow);
+
+        const log = document.createElement('div');
+        log.className = 'rx-chat-card__log';
+        if (!messages.length) {
+            const empty = document.createElement('div');
+            empty.className = 'rx-chat-card__empty';
+            empty.textContent = rxT('chatCardNoMessages', 'Nothing recorded yet this session');
+            log.appendChild(empty);
+        } else {
+            for (const text of messages.slice(-12).reverse()) {
+                const line = document.createElement('div');
+                line.textContent = text;
+                log.appendChild(line);
+            }
+        }
+        card.appendChild(log);
+
+        card.hidden = false;
+        const rect = anchor.getBoundingClientRect();
+        card.style.left = `${Math.round(Math.min(rect.left, window.innerWidth - 280))}px`;
+        card.style.top = `${Math.round(rect.bottom + window.scrollY + 4)}px`;
+    },
+
+    _onClick(event) {
+        const el = event.target.closest?.('.chat-history--username, .chat-history--rant-username, .js-chat-username');
+        if (!el) return;
+        const name = el.dataset.rxRealName || el.textContent.trim();
+        if (!name) return;
+        event.preventDefault();
+        event.stopPropagation();
+        this._index();
+        this._open(name, el);
+    },
+
+    init() {
+        if (!Settings.get(this.id)) return;
+        if (!Page.isWatch() && !Page.isLive()) return;
+        this._styleEl = injectStyle(this._css, 'rx-chat-card-css');
+        this._log = new Map();
+
+        const card = document.createElement('div');
+        card.className = 'rx-chat-card';
+        card.setAttribute('role', 'dialog');
+        card.setAttribute('aria-label', rxT('chatCardLabel', 'Chat participant'));
+        card.hidden = true;
+        // No click handler here on purpose: the document-level listener below
+        // already ignores clicks landing inside the card, and a click-only
+        // container would be an unreachable control to assistive tech.
+        document.body.appendChild(card);
+        this._card = card;
+
+        this._index();
+        this._applyNicknames();
+
+        this._onDocClick = (event) => {
+            if (event.target.closest?.('.chat-history--username, .chat-history--rant-username, .js-chat-username')) {
+                this._onClick(event);
+            } else if (!event.target.closest?.('.rx-chat-card')) {
+                this._close();
+            }
+        };
+        document.addEventListener('click', this._onDocClick, true);
+
+        this._obs = new MutationObserver(() => {
+            scheduleFeatureFrame(this, 'chat-cards', () => { this._index(); this._applyNicknames(); });
+        });
+        this._obs.observe(document.documentElement, { childList: true, subtree: true });
+    },
+
+    destroy() {
+        this._obs?.disconnect();
+        this._obs = null;
+        if (this._onDocClick) document.removeEventListener('click', this._onDocClick, true);
+        this._onDocClick = null;
+        this._styleEl?.remove();
+        this._styleEl = null;
+        this._card?.remove();
+        this._card = null;
+        // Put every renamed username back before letting go of the mapping.
+        for (const row of ChatDom.rows()) {
+            const el = ChatDom.usernameEl(row);
+            if (el?.dataset.rxRealName) {
+                el.textContent = el.dataset.rxRealName;
+                delete el.dataset.rxRealName;
+            }
+            delete row.dataset.rxCard;
+        }
+        this._log = null;
+    }
+};
+
+// ═══════════════════════════════════════════
+//  FEATURE: Chat Click To Mention
+// ═══════════════════════════════════════════
+// The lighter alternative to the user card: clicking a name just drops an
+// @mention into the composer. Only active when the card feature is off, so the
+// two never fight over the same click.
+const ChatClickToMention = {
+    id: 'chatClickToMention',
+    name: 'Chat Click To Mention',
+    _handler: null,
+
+    init() {
+        if (!Settings.get(this.id)) return;
+        if (Settings.get('chatParticipantsList')) return;
+        if (!Page.isWatch() && !Page.isLive()) return;
+        this._handler = (event) => {
+            const el = event.target.closest?.('.chat-history--username, .chat-history--rant-username, .js-chat-username');
+            if (!el) return;
+            const name = el.textContent.trim();
+            if (!name) return;
+            event.preventDefault();
+            ChatUserCards._insertMention.call(ChatUserCards, name);
+        };
+        document.addEventListener('click', this._handler, true);
+    },
+
+    destroy() {
+        if (this._handler) document.removeEventListener('click', this._handler, true);
+        this._handler = null;
+    }
+};
+
+// ═══════════════════════════════════════════
 //  FEATURE: Chat Readability
 // ═══════════════════════════════════════════
 // Alternating row shading, an adjustable font size, and keeping deleted
@@ -11857,6 +12180,8 @@ const RX_CATEGORIES = [
             { id: 'chatMentionAutocomplete', label: 'Mention Autocomplete', desc: 'Offer names from this session after typing @ in the chat box' },
             { id: 'chatMentionHighlight', label: 'Keyword Highlight', desc: 'Highlight chat messages containing your chosen terms' },
             { id: 'chatHighlightSound', label: 'Highlight Sound', desc: 'Play a short tone when a highlighted message arrives', parent: 'chatMentionHighlight' },
+            { id: 'chatParticipantsList', label: 'Chat User Cards', desc: 'Click a chat name for their messages this session, plus mention, block and a local nickname' },
+            { id: 'chatClickToMention', label: 'Click Name To Mention', desc: 'Clicking a chat name drops an @mention into the box (when user cards are off)' },
             { id: 'chatReadability', label: 'Chat Readability', desc: 'Alternating row shading and adjustable chat text size' },
             { id: 'chatShowDeleted', label: 'Show Deleted Messages', desc: 'Keep removed chat messages visible, struck through', parent: 'chatReadability' },
             { id: 'chatAutoScroll', label: 'Chat Scroll', desc: 'Smart auto-scroll with pause on scroll-up' },
@@ -17904,7 +18229,7 @@ const features = [
     AdNuker, FeedCleanup, HidePremium, CategoryFilter, DarkEnhance, TheaterSplit,
     VideoDownloader, LogoToFeed, SpeedController, ScrollVolume, AutoMaxQuality,
     WatchProgress, ChannelBlocker, KeyboardNav, AutoTheater, LiveChatEnhance,
-    ChatComposerAssist, ChatHighlights, ChatReadability,
+    ChatComposerAssist, ChatHighlights, ChatUserCards, ChatClickToMention, ChatReadability,
     VideoTimestamps, ScreenshotBtn, WatchHistoryFeature, AutoplayBlock,
     SearchHistory, MiniPlayer, VideoStats, LoopControl, QuickBookmark, CommentNav,
     RantHighlight, RelatedFilter, ExactCounts, ShareTimestamp, TimeRemaining, ShortsFilter,

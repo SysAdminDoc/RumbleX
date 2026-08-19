@@ -219,6 +219,7 @@
         chatHighlightKeywords: [],
         chatHighlightSound: false,
         chatMentionAutocomplete: true,
+        chatNicknames: {},
         chatReadability: false,
         chatFontScale: 100,
         chatShowDeleted: false,
@@ -502,6 +503,19 @@
             }
             // A restored profile must not be able to invent categories or
             // behaviors; anything unrecognized is dropped rather than carried.
+            // Local aliases for chat names. Bounded on both sides so a crafted
+            // restore cannot smuggle in a huge map or unprintable text.
+            if (key === 'chatNicknames') {
+                if (!isPlainObject(value)) continue;
+                const nicks = {};
+                for (const [who, alias] of Object.entries(value).slice(0, 500)) {
+                    const name = safeString(who, 80);
+                    const label = safeString(alias, 40);
+                    if (name && label) nicks[name.toLowerCase()] = label;
+                }
+                out[key] = nicks;
+                continue;
+            }
             if (key === 'sponsorCategoryBehavior') {
                 if (!isPlainObject(value)) continue;
                 const behavior = {};
@@ -600,8 +614,6 @@
         remoteCosmeticRulesChannel: 'Remote cosmetic rules use a single channel.',
 
         // Chat features that were never built.
-        chatClickToMention: 'Not built.',
-        chatParticipantsList: 'Not built.',
         chatTimedMutes: 'Not built.',
         chatMuteDurations: 'Configures the unbuilt timed-mute feature.',
 

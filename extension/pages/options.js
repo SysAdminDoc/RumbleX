@@ -283,6 +283,7 @@
         chatUsernameColors: { group: 'comments-chat', label: 'Username Colors', desc: 'off | deterministic | tiered.' },
         chatHighlightKeywords: { group: 'comments-chat', label: 'Chat Highlight Keywords', desc: 'One term per line. Messages containing any of them are highlighted.' },
         chatHighlightSound: { group: 'comments-chat', label: 'Chat Highlight Sound', desc: 'Play a short tone when a highlighted message arrives.' },
+        chatNicknames: { group: 'comments-chat', label: 'Chat Nicknames', desc: 'JSON map of chat name to a local alias. Edited from the user card.' },
         chatMentionAutocomplete: { group: 'comments-chat', label: 'Chat Mention Autocomplete', desc: 'Offer names from this session after typing @ in the chat box.' },
         chatReadability: { group: 'comments-chat', label: 'Chat Readability', desc: 'Alternating row shading, adjustable text size, and keep deleted messages visible.' },
         chatFontScale: { group: 'comments-chat', label: 'Chat Text Size (%)', desc: '70-160. 100 leaves the site text size alone.' },

@@ -1648,3 +1648,185 @@ test('ChatReadability clamps the font scale and keeps deleted messages visible',
     expect(result.struck).toBe(true);
     expect(result.classesAfter).toBe(false);
 });
+
+test('ChatUserCards logs per person, renames locally, and reverts everything on destroy', async () => {
+    const result = await inHarness(({ body }) => {
+        document.body.innerHTML = body;
+        const harness = globalThis.__RumbleXFeatureHarness;
+        harness.enable('chatParticipantsList');
+        const cards = harness.features.find((f) => f.id === 'chatParticipantsList');
+
+        const history = document.querySelector('#chat-history-list');
+        history.textContent = '';
+        const add = (user, text) => {
+            const row = document.createElement('div');
+            row.className = 'chat-history--row';
+            const u = document.createElement('button');
+            u.className = 'chat-history--username';
+            u.textContent = user;
+            const m = document.createElement('span');
+            m.className = 'chat-history--message';
+            m.textContent = text;
+            row.append(u, m);
+            history.appendChild(row);
+            return row;
+        };
+        add('Alice', 'first');
+        add('Bob', 'only one');
+        add('Alice', 'second');
+
+        const nickStore = { chatNicknames: {}, blockedChatters: [] };
+        const realGet = Settings.get.bind(Settings);
+        const realSet = Settings.set.bind(Settings);
+        Settings.get = (key) => (Object.hasOwn(nickStore, key) ? nickStore[key] : realGet(key));
+        Settings.set = (key, value) => { nickStore[key] = value; return Promise.resolve(); };
+
+        cards.init();
+
+        const perUser = {
+            alice: (cards._log.get('Alice') || []).slice(),
+            bob: (cards._log.get('Bob') || []).slice(),
+        };
+
+        // Re-indexing must not double-count messages already seen.
+        cards._index();
+        const aliceAfterReindex = (cards._log.get('Alice') || []).length;
+
+        // Open the card for Alice.
+        const aliceBtn = history.querySelector('.chat-history--username');
+        cards._open('Alice', aliceBtn);
+        const cardVisible = !cards._card.hidden;
+        const cardName = cards._card.querySelector('.rx-chat-card__name').textContent;
+        const cardMeta = cards._card.querySelector('.rx-chat-card__meta').textContent;
+        const logLines = [...cards._card.querySelectorAll('.rx-chat-card__log div')].map((d) => d.textContent);
+
+        // Mention writes into the composer.
+        const composer = document.querySelector('form.chat-message-form textarea');
+        composer.value = 'hi';
+        cards._card.querySelector('.rx-chat-card__actions button').click();
+        const composerValue = composer.value;
+
+        // Nickname round trip.
+        cards._open('Alice', aliceBtn);
+        const nickInput = cards._card.querySelector('.rx-chat-card__nick input');
+        nickInput.value = 'Ally';
+        cards._card.querySelector('.rx-chat-card__nick button').click();
+        const storedNick = JSON.parse(JSON.stringify(nickStore.chatNicknames));
+        const renamed = aliceBtn.textContent;
+        const keptRealName = aliceBtn.dataset.rxRealName;
+
+        // Clearing the box removes the alias rather than storing an empty one.
+        cards._open('Alice', aliceBtn);
+        const nickInput2 = cards._card.querySelector('.rx-chat-card__nick input');
+        nickInput2.value = '   ';
+        cards._card.querySelector('.rx-chat-card__nick button').click();
+        const clearedNick = JSON.parse(JSON.stringify(nickStore.chatNicknames));
+        const restoredName = aliceBtn.textContent;
+
+        // Block appends lowercase and does not duplicate.
+        cards._open('Bob', history.querySelectorAll('.chat-history--username')[1]);
+        cards._card.querySelectorAll('.rx-chat-card__actions button')[1].click();
+        cards._open('Bob', history.querySelectorAll('.chat-history--username')[1]);
+        cards._card.querySelectorAll('.rx-chat-card__actions button')[1].click();
+        const blocked = nickStore.blockedChatters.slice();
+
+        // Re-apply a nickname so destroy has something to undo.
+        nickStore.chatNicknames = { alice: 'Ally' };
+        cards._applyNicknames();
+        const renamedAgain = aliceBtn.textContent;
+
+        Settings.get = realGet;
+        Settings.set = realSet;
+        cards.destroy();
+        const afterDestroy = {
+            name: aliceBtn.textContent,
+            realNameAttr: aliceBtn.dataset.rxRealName,
+            cardGone: !document.querySelector('.rx-chat-card'),
+        };
+
+        return {
+            perUser, aliceAfterReindex, cardVisible, cardName, cardMeta, logLines,
+            composerValue, storedNick, renamed, keptRealName, clearedNick, restoredName,
+            blocked, renamedAgain, afterDestroy,
+        };
+    });
+
+    // Messages are grouped by who said them.
+    expect(result.perUser.alice).toEqual(['first', 'second']);
+    expect(result.perUser.bob).toEqual(['only one']);
+    // Already-indexed rows are skipped, so a re-scan does not duplicate.
+    expect(result.aliceAfterReindex).toBe(2);
+
+    expect(result.cardVisible).toBe(true);
+    expect(result.cardName).toBe('Alice');
+    expect(result.cardMeta).toBe('2 messages this session');
+    // Newest first.
+    expect(result.logLines).toEqual(['second', 'first']);
+
+    expect(result.composerValue).toBe('hi @Alice ');
+
+    expect(result.storedNick).toEqual({ alice: 'Ally' });
+    expect(result.renamed).toBe('Ally');
+    // The real name is kept so the rename is reversible.
+    expect(result.keptRealName).toBe('Alice');
+
+    expect(result.clearedNick).toEqual({});
+    expect(result.restoredName).toBe('Alice');
+
+    // Lowercased, and blocking twice does not add a second entry.
+    expect(result.blocked).toEqual(['bob']);
+
+    expect(result.renamedAgain).toBe('Ally');
+    // Turning the feature off puts the host chat back exactly as it was.
+    expect(result.afterDestroy.name).toBe('Alice');
+    expect(result.afterDestroy.realNameAttr).toBeUndefined();
+    expect(result.afterDestroy.cardGone).toBe(true);
+});
+
+test('ChatClickToMention stands down when user cards are handling the same click', async () => {
+    const result = await inHarness(({ body }) => {
+        document.body.innerHTML = body;
+        const harness = globalThis.__RumbleXFeatureHarness;
+        harness.enable('chatClickToMention');
+        const ctm = harness.features.find((f) => f.id === 'chatClickToMention');
+
+        const realGet = Settings.get.bind(Settings);
+        const store = { chatClickToMention: true, chatParticipantsList: true };
+        Settings.get = (key) => (Object.hasOwn(store, key) ? store[key] : realGet(key));
+
+        // Cards on: this feature must not bind at all, or both would fire.
+        ctm.init();
+        const boundWithCards = ctm._handler !== null;
+        ctm.destroy();
+
+        // Cards off: it binds and inserts the mention.
+        store.chatParticipantsList = false;
+        ctm.init();
+        const boundWithoutCards = ctm._handler !== null;
+
+        const composer = document.querySelector('form.chat-message-form textarea');
+        composer.value = '';
+        document.querySelector('.chat-history--username').click();
+        const firstInsert = composer.value;
+        // A second click appends with exactly one separating space.
+        document.querySelector('.chat-history--username').click();
+        const secondInsert = composer.value;
+
+        Settings.get = realGet;
+        ctm.destroy();
+        const unbound = ctm._handler === null;
+        composer.value = '';
+        document.querySelector('.chat-history--username').click();
+        const afterDestroy = composer.value;
+
+        return { boundWithCards, boundWithoutCards, firstInsert, secondInsert, unbound, afterDestroy };
+    });
+
+    expect(result.boundWithCards).toBe(false);
+    expect(result.boundWithoutCards).toBe(true);
+    expect(result.firstInsert).toBe('@Alice ');
+    expect(result.secondInsert).toBe('@Alice @Alice ');
+    expect(result.unbound).toBe(true);
+    // Listener removed, so the click does nothing.
+    expect(result.afterDestroy).toBe('');
+});

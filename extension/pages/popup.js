@@ -83,6 +83,7 @@ const GROUPS = [
             { id: 'chatMentionAutocomplete', label: 'Mention Autocomplete' },
             { id: 'chatMentionHighlight', label: 'Keyword Highlight' },
             { id: 'chatReadability', label: 'Chat Readability' },
+            { id: 'chatParticipantsList', label: 'Chat User Cards' },
             { id: 'chatAutoScroll', label: 'Chat Scroll' },
             { id: 'uniqueChatters', label: 'Unique Chatters' },
             { id: 'chatUserBlock', label: 'User Block' },

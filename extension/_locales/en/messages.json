@@ -1858,5 +1858,57 @@
   "chatMentionListLabel": {
     "message": "Chat name suggestions",
     "description": "In-page UI string (shared core)."
+  },
+  "feat_chatParticipantsList_label": {
+    "message": "Chat User Cards",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_chatParticipantsList_desc": {
+    "message": "Click a chat name for their messages this session, plus mention, block and a local nickname",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_chatClickToMention_label": {
+    "message": "Click Name To Mention",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_chatClickToMention_desc": {
+    "message": "Clicking a chat name drops an @mention into the box (when user cards are off)",
+    "description": "In-page UI string (shared core)."
+  },
+  "chatCardCount": {
+    "message": "{count} messages this session",
+    "description": "In-page UI string (shared core)."
+  },
+  "chatCardMention": {
+    "message": "Mention",
+    "description": "In-page UI string (shared core)."
+  },
+  "chatCardBlock": {
+    "message": "Block",
+    "description": "In-page UI string (shared core)."
+  },
+  "chatCardBlocked": {
+    "message": "Blocked {name}",
+    "description": "In-page UI string (shared core)."
+  },
+  "chatCardNickPlaceholder": {
+    "message": "Local nickname",
+    "description": "In-page UI string (shared core)."
+  },
+  "chatCardNickLabel": {
+    "message": "Local nickname for this person",
+    "description": "In-page UI string (shared core)."
+  },
+  "chatCardSave": {
+    "message": "Save",
+    "description": "In-page UI string (shared core)."
+  },
+  "chatCardNoMessages": {
+    "message": "Nothing recorded yet this session",
+    "description": "In-page UI string (shared core)."
+  },
+  "chatCardLabel": {
+    "message": "Chat participant",
+    "description": "In-page UI string (shared core)."
   }
 }
