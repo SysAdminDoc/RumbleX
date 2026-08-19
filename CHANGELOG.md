@@ -5,6 +5,7 @@ All notable changes to RumbleX will be documented in this file.
 ## [Unreleased]
 
 ### Added
+- **Downloads can bring their metadata with them.** `downloadIncludeMetadata` and `downloadIncludeThumbnail` were two of the settings labelled "not implemented yet"; both are real now. A completed download can be accompanied by an `.info.json` following yt-dlp's field conventions, a Kodi/Jellyfin `.nfo`, and the thumbnail, all sharing the media file's base name so a media server pairs them automatically. Everything except the thumbnail comes from the page itself with no network request, and the thumbnail is served from a host the extension already had permission for, so this adds no new network surface.
 - **Title Normalizer**, off by default. Calms the house style of engagement-bait: ALL CAPS, emoji spray and repeated `!!!`. It is deliberately conservative and only touches a title showing one of those traits, so an ordinary headline is left exactly as its author wrote it. Choose sentence case or Title Case, hover to see the original, and turning the feature off puts every title back. Acronyms survive: a short run of capitals inside an otherwise mixed-case title is treated as meaning rather than volume, so "CPU vs GPU" stays as it is instead of becoming "Cpu vs gpu".
 
 ## [3.47.0] - 2026-08-19

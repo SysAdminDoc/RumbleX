@@ -550,8 +550,6 @@
         clipExportFormat: 'Clip export always writes MP4.',
         segmentSkipMode: 'SponsorBlock segments are always local-only.',
         downloadQualityPreference: 'Downloader always offers every rendition.',
-        downloadIncludeMetadata: 'Metadata sidecar is written per download-panel choice.',
-        downloadIncludeThumbnail: 'Thumbnail sidecar is written per download-panel choice.',
         downloadLiveStreams: 'Live-stream downloads are gated by page state, not this key.',
         downloadShorts: 'Shorts downloads are gated by page state, not this key.',
         audioExtractionMode: 'Audio extraction always prefers the browser encoder.',

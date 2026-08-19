@@ -23,7 +23,7 @@
 // @updateURL    https://github.com/SysAdminDoc/RumbleX/raw/main/RumbleX.lite.user.js
 // ==/UserScript==
 
-// Generated from extension/settings-schema.js + extension/content.js. Shared runtime SHA-256: bde0bd7ba7de39fd2513bc053605180e603f59efd907c18b8b47819887d22794
+// Generated from extension/settings-schema.js + extension/content.js. Shared runtime SHA-256: 7c673e37e0fe76788ffa2d160fe862a342128730e195491c8f74c9e5dffd172a
 // RumbleX shared settings schema. This file is the canonical source for
 // defaults and trust-boundary normalization across content, options, popup,
 // background profile/Gist restores, and the generated userscript.
@@ -576,8 +576,6 @@
         clipExportFormat: 'Clip export always writes MP4.',
         segmentSkipMode: 'SponsorBlock segments are always local-only.',
         downloadQualityPreference: 'Downloader always offers every rendition.',
-        downloadIncludeMetadata: 'Metadata sidecar is written per download-panel choice.',
-        downloadIncludeThumbnail: 'Thumbnail sidecar is written per download-panel choice.',
         downloadLiveStreams: 'Live-stream downloads are gated by page state, not this key.',
         downloadShorts: 'Shorts downloads are gated by page state, not this key.',
         audioExtractionMode: 'Audio extraction always prefers the browser encoder.',
@@ -4895,6 +4893,105 @@ const VideoDownloader = {
         }
     },
 
+    // ── Metadata sidecars ────────────────────────────────────────────────
+    // Media servers and archive tools expect a downloaded video to arrive with
+    // its metadata beside it: yt-dlp writes `.info.json`, Jellyfin and Kodi read
+    // `.nfo`. Without them a saved file is just a filename, and everything the
+    // page knew about it is gone.
+    //
+    // All of this comes from the page RumbleX is already on. The only network
+    // request is the thumbnail, which lives on `1a-1791.com` and so is already
+    // covered by the existing host permissions and download allowlist.
+
+    _videoIdFromUrl() {
+        try { return location.pathname.match(/\/(v[a-z0-9]+)-/i)?.[1] || null; } catch { return null; }
+    },
+
+    _channelInfo() {
+        const anchor = qs('.media-by--a, .media-heading-name a, a[rel="author"]');
+        const nameEl = qs('.media-heading-name') || anchor;
+        let url = '';
+        try { if (anchor?.getAttribute('href')) url = new URL(anchor.getAttribute('href'), location.origin).href; } catch { url = ''; }
+        return { name: (nameEl?.textContent || '').trim(), url };
+    },
+
+    _sidecarMetadata() {
+        const channel = this._channelInfo();
+        const uploadDate = PageData.uploadDate();
+        const description = PageData.description()
+            || (qs('.media-description')?.textContent || '').trim();
+        return {
+            id: this._videoIdFromUrl(),
+            title: PageData.title() || (qs('.video-header-container__title')?.textContent || '').trim(),
+            description,
+            channel: channel.name,
+            channel_url: channel.url || undefined,
+            webpage_url: location.href.split('?')[0],
+            // yt-dlp's convention is a bare YYYYMMDD alongside the full stamp.
+            upload_date: uploadDate ? uploadDate.slice(0, 10).replace(/-/g, '') : undefined,
+            timestamp: uploadDate || undefined,
+            duration: PageData.durationSeconds() || undefined,
+            view_count: PageData.viewCount() ?? undefined,
+            thumbnail: PageData.thumbnailUrl() || undefined,
+            extractor: 'rumblex',
+            extractor_version: VERSION,
+        };
+    },
+
+    _nfoXml(meta) {
+        const esc = (value) => String(value ?? '')
+            .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        const lines = ['<?xml version="1.0" encoding="UTF-8" standalone="yes"?>', '<movie>'];
+        const push = (tag, value) => { if (value !== undefined && value !== null && value !== '') lines.push(`  <${tag}>${esc(value)}</${tag}>`); };
+        push('title', meta.title);
+        push('plot', meta.description);
+        push('studio', meta.channel);
+        // Kodi wants a plain date; runtime is in whole minutes.
+        if (meta.timestamp) push('premiered', meta.timestamp.slice(0, 10));
+        if (meta.duration) push('runtime', Math.round(meta.duration / 60));
+        push('thumb', meta.thumbnail);
+        if (meta.id) lines.push(`  <uniqueid type="rumble" default="true">${esc(meta.id)}</uniqueid>`);
+        push('source', meta.webpage_url);
+        lines.push('</movie>', '');
+        return lines.join('\n');
+    },
+
+    // `base` is the media filename without its extension, so the sidecars sort
+    // next to the video and media servers pair them automatically.
+    _writeSidecars(base) {
+        const wantMetadata = Settings.get('downloadIncludeMetadata');
+        const wantThumbnail = Settings.get('downloadIncludeThumbnail');
+        if (!wantMetadata && !wantThumbnail) return;
+
+        let meta = null;
+        try { meta = this._sidecarMetadata(); } catch { meta = null; }
+        if (!meta) return;
+
+        if (wantMetadata) {
+            try {
+                const json = JSON.stringify(meta, null, 2);
+                this._triggerSave(new Blob([json], { type: 'application/json' }), `${base}.info.json`, 'application/json');
+                this._triggerSave(new Blob([this._nfoXml(meta)], { type: 'application/xml' }), `${base}.nfo`, 'application/xml');
+            } catch (err) {
+                RxErrorLog.record('sidecar-metadata', err);
+            }
+        }
+
+        if (wantThumbnail && meta.thumbnail) {
+            const ext = (meta.thumbnail.split('?')[0].match(/\.(jpe?g|png|webp)$/i)?.[1] || 'jpg').toLowerCase();
+            Promise.resolve(this._requestThumbnail(meta.thumbnail, `${base}.${ext}`))
+                .catch((err) => RxErrorLog.record('sidecar-thumbnail', err));
+        }
+    },
+
+    // Its own method so tests have a seam: `RXPlatform` is frozen and cannot be
+    // stubbed. Routed through the background downloader rather than fetched
+    // here because it is a cross-origin CDN response, and the background
+    // already allowlists this host.
+    _requestThumbnail(url, filename) {
+        return RXPlatform.sendMessage({ action: 'download', data: { url, filename } });
+    },
+
     _triggerSave(data, filename, mimeType) {
         const blob = data instanceof Blob ? data : new Blob([data], { type: mimeType });
         const url = URL.createObjectURL(blob);
@@ -5739,6 +5836,7 @@ const VideoDownloader = {
                 }
             } else if (resp?.downloadId) {
                 this._setBodyText('rx-dl-done', 'Download started! Check your browser downloads.');
+                this._writeSidecars(`${title} - ${quality.label}`);
             } else {
                 const error = new Error('Download failed to start');
                 error.code = 'missing-download-id';
@@ -5985,6 +6083,7 @@ const VideoDownloader = {
                 stage = 'save';
                 setProgress(100, 'Starting download...');
                 this._triggerSave(mp4Blob, `${title} - ${quality.label}.mp4`, 'video/mp4');
+                this._writeSidecars(`${title} - ${quality.label}`);
                 this._setBody('<div class="rx-dl-done">Download complete!</div>');
             } else {
                 // TS: download in chunks, build Blob
@@ -6007,6 +6106,7 @@ const VideoDownloader = {
                 tsParts.length = 0;
                 setProgress(100, 'Starting download...');
                 this._triggerSave(blob, `${title} - ${quality.label}.ts`, 'video/mp2t');
+                this._writeSidecars(`${title} - ${quality.label}`);
                 this._setBody('<div class="rx-dl-done">Download complete!</div>');
             }
         } catch (e) {

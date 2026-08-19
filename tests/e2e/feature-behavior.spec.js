@@ -1077,3 +1077,90 @@ test('TitleNormalizer only rewrites bait-shaped titles and restores originals', 
     expect(result.restored.tooltip).toBe('pre-existing tooltip');
     expect(result.restored.marked).toBeUndefined();
 });
+
+test('VideoDownloader writes info.json and NFO sidecars from page metadata', async () => {
+    const result = await inHarness(({ body }) => {
+        document.body.innerHTML = body;
+        const harness = globalThis.__RumbleXFeatureHarness;
+        harness.enable('videoDownload');
+        const dl = harness.features.find((f) => f.id === 'videoDownload');
+
+        // Stand in for a watch page carrying structured data. An ampersand and
+        // an angle bracket are deliberate: the NFO is XML and must escape them.
+        const realPageData = {
+            title: PageData.title, description: PageData.description,
+            durationSeconds: PageData.durationSeconds, uploadDate: PageData.uploadDate,
+            viewCount: PageData.viewCount, thumbnailUrl: PageData.thumbnailUrl,
+        };
+        PageData.title = () => 'Rock & Roll <Live>';
+        PageData.description = () => 'A & B < C';
+        PageData.durationSeconds = () => 5772;
+        PageData.uploadDate = () => '2026-08-18T12:26:21+00:00';
+        PageData.viewCount = () => 535349;
+        PageData.thumbnailUrl = () => 'https://1a-1791.com/video/fww1/9f/thumb.jpg';
+
+        const meta = dl._sidecarMetadata();
+        const nfo = dl._nfoXml(meta);
+
+        // Capture what would be written instead of touching the filesystem.
+        const saved = [];
+        const sent = [];
+        const realSave = dl._triggerSave;
+        // RXPlatform is frozen, so the seam under test is _requestThumbnail.
+        const realThumb = dl._requestThumbnail;
+        dl._triggerSave = (data, filename) => { saved.push(filename); };
+        dl._requestThumbnail = async (url, filename) => { sent.push({ url, filename }); return {}; };
+
+        const settings = harness.enable('videoDownload');
+        const realGet = Settings.get.bind(Settings);
+        const withToggles = (metaOn, thumbOn) => {
+            Settings.get = (key) => {
+                if (key === 'downloadIncludeMetadata') return metaOn;
+                if (key === 'downloadIncludeThumbnail') return thumbOn;
+                return realGet(key);
+            };
+            saved.length = 0; sent.length = 0;
+            dl._writeSidecars('Some Video - 1080p');
+            return { saved: [...saved], sent: sent.map((m) => m.filename), urls: sent.map((m) => m.url) };
+        };
+
+        const bothOff = withToggles(false, false);
+        const metaOnly = withToggles(true, false);
+        const withThumb = withToggles(true, true);
+
+        Settings.get = realGet;
+        dl._triggerSave = realSave;
+        dl._requestThumbnail = realThumb;
+        Object.assign(PageData, realPageData);
+        void settings;
+
+        return { meta, nfo, bothOff, metaOnly, withThumb };
+    });
+
+    // yt-dlp's convention: bare YYYYMMDD plus the full stamp.
+    expect(result.meta.upload_date).toBe('20260818');
+    expect(result.meta.timestamp).toBe('2026-08-18T12:26:21+00:00');
+    expect(result.meta.duration).toBe(5772);
+    expect(result.meta.view_count).toBe(535349);
+    expect(result.meta.extractor).toBe('rumblex');
+
+    // The NFO is XML, so the metadata characters that would break it are escaped.
+    expect(result.nfo).toContain('<?xml version="1.0"');
+    expect(result.nfo).toContain('<title>Rock &amp; Roll &lt;Live&gt;</title>');
+    expect(result.nfo).toContain('<plot>A &amp; B &lt; C</plot>');
+    expect(result.nfo).not.toContain('<Live>');
+    // Kodi wants a plain date and whole minutes.
+    expect(result.nfo).toContain('<premiered>2026-08-18</premiered>');
+    expect(result.nfo).toContain('<runtime>96</runtime>');
+
+    // Off means nothing is written at all.
+    expect(result.bothOff.saved).toEqual([]);
+    expect(result.bothOff.sent).toEqual([]);
+
+    // Sidecars share the media file's base name so media servers pair them.
+    expect(result.metaOnly.saved).toEqual(['Some Video - 1080p.info.json', 'Some Video - 1080p.nfo']);
+    expect(result.metaOnly.sent).toEqual([]);
+
+    expect(result.withThumb.sent).toEqual(['Some Video - 1080p.jpg']);
+    expect(result.withThumb.urls).toEqual(['https://1a-1791.com/video/fww1/9f/thumb.jpg']);
+});
