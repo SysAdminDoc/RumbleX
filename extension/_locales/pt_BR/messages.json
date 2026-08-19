@@ -1970,5 +1970,23 @@
   "feat_sponsorTrimDownloads_desc": {
     "message": "Descartar os segmentos do stream que ficam inteiramente dentro de um intervalo marcado",
     "description": "In-page UI string (shared core)."
+  },
+  "subLoadingNative": {
+    "message": "Carregando as legendas em {label}…",
+    "description": "In-page UI string (shared core)."
+  },
+  "subNativeLoaded": {
+    "message": "{count} linhas do Rumble ({label})",
+    "description": "In-page UI string (shared core)."
+  },
+  "subNativeAvailable": {
+    "message": "Do Rumble:",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_subtitleNativeTracks_label": {
+    "message": "Legendas do próprio Rumble"
+  },
+  "feat_subtitleNativeTracks_desc": {
+    "message": "Carregar a faixa de legendas enviada pelo canal, quando houver"
   }
 }

@@ -117,6 +117,7 @@
         screenshotBtn: { group: 'downloads', label: 'Screenshot', desc: 'Capture current video frame as PNG' },
         shareTimestamp: { group: 'downloads', label: 'Share @ Time', desc: 'Copy video URL at current playback time' },
         subtitleSidecar: { group: 'downloads', label: 'Subtitle Sidecar', desc: 'Load local SRT/VTT and overlay captions' },
+        subtitleNativeTracks: { group: 'downloads', label: "Rumble's Own Captions", desc: 'Load the creator-uploaded caption track when the video has one.' },
         transcripts: { group: 'downloads', label: 'Transcripts', desc: 'Clickable transcript panel synced to player' },
 
         watchProgress: { group: 'history', label: 'Watch Progress', desc: 'Save/resume position + red progress bars' },

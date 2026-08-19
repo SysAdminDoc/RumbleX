@@ -1970,5 +1970,23 @@
   "feat_sponsorTrimDownloads_desc": {
     "message": "Scarta i segmenti dello stream interamente compresi in un intervallo contrassegnato",
     "description": "In-page UI string (shared core)."
+  },
+  "subLoadingNative": {
+    "message": "Caricamento dei sottotitoli {label}…",
+    "description": "In-page UI string (shared core)."
+  },
+  "subNativeLoaded": {
+    "message": "{count} righe da Rumble ({label})",
+    "description": "In-page UI string (shared core)."
+  },
+  "subNativeAvailable": {
+    "message": "Da Rumble:",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_subtitleNativeTracks_label": {
+    "message": "Sottotitoli di Rumble"
+  },
+  "feat_subtitleNativeTracks_desc": {
+    "message": "Carica la traccia di sottotitoli caricata dal canale, se esiste"
   }
 }

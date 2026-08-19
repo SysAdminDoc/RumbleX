@@ -115,7 +115,7 @@ Live chat got the things every other chat platform already has, and rants became
 - **Hide Premium** — Hide premium/PPV videos via CSS `:has()`
 - **Shorts Filter** — Hide Shorts cards from all feeds
 - **Platform Cleanup** — Optionally redirect the dedicated Shorts feed, hide Rumble Wallet tip controls, and remove Premium/Perplexity promos
-- **SponsorBlock** — Per-video local segments with auto-skip (sponsor / intro / outro / selfpromo / interaction), progress-bar markers, JSON import + export
+- **SponsorBlock** — Per-video local segments with auto-skip (sponsor / intro / outro / selfpromo / interaction), progress-bar markers, JSON import + export, and an opt-in trim that keeps marked segments out of downloads
 
 ### Video Player
 - **Theater Split** — Fullscreen video with scroll-to-reveal side panel (chat/comments/download)
@@ -161,7 +161,7 @@ Live chat got the things every other chat platform already has, and rants became
 - **Channel Archive Queue** — Queue a channel for persistent background downloads, preflight selected quality and known size, pause/resume or retry failures, round-trip the queue as local JSON, and optionally stream into a persisted Chrome/Edge folder with browser Downloads as the fallback. Connectivity loss aborts selected-folder streams safely, pauses resumable browser transfers, and leaves restartable archive jobs waiting for the online event/alarm recovery pass.
 - **Screenshot** — Capture current video frame as PNG
 - **Share@Time** — Copy video URL at current playback timestamp
-- **Subtitle Sidecar** — Load local SRT/VTT and overlay captions on the player
+- **Subtitle Sidecar** — Load Rumble's own caption track when the video has one, or a local SRT/VTT, and overlay it on the player
 - **Transcripts** — Clickable, searchable transcript panel synced to the player
 
 ### History & Bookmarks

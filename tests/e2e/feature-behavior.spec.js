@@ -2114,3 +2114,163 @@ test('VideoDownloader trims only the stream segments a mark fully covers', async
     expect(result.written.removed.segments).toBe(2);
     expect(result.written.title).toBe('Feature Fixture Video');
 });
+
+test('SubtitleSidecar reads Rumble\'s own caption tracks off the embed payload', async () => {
+    const result = await inHarness(async ({ body }) => {
+        document.body.innerHTML = body;
+        const harness = globalThis.__RumbleXFeatureHarness;
+        harness.enable('subtitleSidecar');
+        const sub = harness.features.find((f) => f.id === 'subtitleSidecar');
+
+        // An uncaptioned video serializes `cc` as an empty array, not an empty
+        // object, and a live stream omits it entirely.
+        const shapes = {
+            populated: sub._nativeTracks({
+                cc: {
+                    en: { path: 'https://rumble.com/caption/en.vtt', language: 'English' },
+                    de: { path: 'https://rumble.com/caption/de.vtt', language: 'Deutsch' },
+                },
+            }),
+            // A bare string value is accepted, and the code falls back to the
+            // language key when no display name came with it.
+            bareString: sub._nativeTracks({ cc: { fr: 'https://rumble.com/caption/fr.vtt' } }),
+            emptyArray: sub._nativeTracks({ cc: [] }),
+            emptyObject: sub._nativeTracks({ cc: {} }),
+            missing: sub._nativeTracks({}),
+            nullData: sub._nativeTracks(null),
+            // An entry with no path is dropped rather than becoming a dead button.
+            pathless: sub._nativeTracks({ cc: { en: { language: 'English' } } }),
+        };
+
+        // Only Rumble's own media hosts are permitted by the manifest.
+        const urls = {
+            rumble: sub._captionUrl('https://rumble.com/caption/en.vtt'),
+            cdn: sub._captionUrl('https://1a-1791.com/caption/en.vtt'),
+            cloud: sub._captionUrl('https://hugh.cdn.rumble.cloud/caption/en.vtt'),
+            relative: sub._captionUrl('/caption/en.vtt'),
+            offsite: sub._captionUrl('https://evil.example.com/caption/en.vtt'),
+            javascript: sub._captionUrl('javascript:alert(1)'),
+            empty: sub._captionUrl(''),
+        };
+
+        // The parser already handles both formats; prove it against the two
+        // shapes Rumble accepts from creators.
+        const vtt = sub._parse([
+            'WEBVTT',
+            '',
+            '1',
+            '00:00:01.000 --> 00:00:03.500',
+            'First line',
+            '',
+            '2',
+            '00:00:04.000 --> 00:00:06.000',
+            'Second line',
+        ].join('\n'));
+        const srt = sub._parse([
+            '1',
+            '00:00:01,000 --> 00:00:03,500',
+            'First line',
+            '',
+            '2',
+            '00:00:04,000 --> 00:00:06,000',
+            'Second line',
+        ].join('\n'));
+
+        sub._mount();
+        const track = { lang: 'en', label: 'English', url: 'https://rumble.com/caption/en.vtt' };
+
+        // Stand in for the network. RXPlatform is frozen, so _fetchNative is
+        // the seam.
+        const realFetch = sub._fetchNative;
+        sub._fetchNative = async () => 'WEBVTT\n\n00:00:02.000 --> 00:00:04.000\nHello from Rumble';
+        await sub._loadNativeTrack(track);
+        const loaded = {
+            cues: sub._cues.length,
+            text: sub._cues[0]?.text,
+            active: sub._activeNative,
+            status: sub._panel.querySelector('.rx-sub-status').textContent,
+            // The transcript panel is the point of the exercise.
+            transcript: Transcripts._cues.length,
+        };
+
+        sub._native = [track, { lang: 'de', label: 'Deutsch', url: 'https://rumble.com/caption/de.vtt' }];
+        sub._renderNative();
+        const buttons = [...sub._panel.querySelectorAll('.rx-sub-native-btn')]
+            .map((b) => ({ lang: b.dataset.lang, label: b.textContent, pressed: b.getAttribute('aria-pressed') }));
+
+        // A failed fetch reports rather than leaving the old status up.
+        sub._fetchNative = async () => { throw new Error('Rumble returned HTTP 404 for the caption file.'); };
+        await sub._loadNativeTrack(track);
+        const failedStatus = sub._panel.querySelector('.rx-sub-status').textContent;
+
+        // Clearing drops the pressed state along with the cues.
+        sub._panel.querySelector('.rx-sub-clear').click();
+        const cleared = {
+            cues: sub._cues.length,
+            active: sub._activeNative,
+            pressed: [...sub._panel.querySelectorAll('.rx-sub-native-btn')].map((b) => b.getAttribute('aria-pressed')),
+        };
+
+        // The toggle gates discovery entirely.
+        const realGet = Settings.get.bind(Settings);
+        const store = { subtitleNativeTracks: false };
+        Settings.get = (key) => (Object.hasOwn(store, key) ? store[key] : realGet(key));
+        let embedCalls = 0;
+        const realEmbed = VideoDownloader._fetchEmbedData;
+        VideoDownloader._fetchEmbedData = async () => { embedCalls++; return { cc: {} }; };
+        await sub._discoverNative();
+        const callsWhenOff = embedCalls;
+        Settings.get = realGet;
+        VideoDownloader._fetchEmbedData = realEmbed;
+        sub._fetchNative = realFetch;
+
+        return { shapes, urls, vtt, srt, loaded, buttons, failedStatus, cleared, callsWhenOff };
+    });
+
+    expect(result.shapes.populated).toEqual([
+        { lang: 'en', label: 'English', url: 'https://rumble.com/caption/en.vtt' },
+        { lang: 'de', label: 'Deutsch', url: 'https://rumble.com/caption/de.vtt' },
+    ]);
+    expect(result.shapes.bareString).toEqual([
+        { lang: 'fr', label: 'fr', url: 'https://rumble.com/caption/fr.vtt' },
+    ]);
+    // Every "no captions" shape resolves to the same empty answer.
+    expect(result.shapes.emptyArray).toEqual([]);
+    expect(result.shapes.emptyObject).toEqual([]);
+    expect(result.shapes.missing).toEqual([]);
+    expect(result.shapes.nullData).toEqual([]);
+    expect(result.shapes.pathless).toEqual([]);
+
+    expect(result.urls.rumble).toBe('https://rumble.com/caption/en.vtt');
+    expect(result.urls.cdn).toBe('https://1a-1791.com/caption/en.vtt');
+    expect(result.urls.cloud).toBe('https://hugh.cdn.rumble.cloud/caption/en.vtt');
+    expect(result.urls.relative).toBe('https://rumble.com/caption/en.vtt');
+    // A host the manifest does not permit is refused here, not at fetch time.
+    expect(result.urls.offsite).toBeNull();
+    expect(result.urls.javascript).toBeNull();
+    expect(result.urls.empty).toBeNull();
+
+    // Both caption formats parse to the same cues.
+    expect(result.vtt).toEqual([
+        { start: 1, end: 3.5, text: 'First line' },
+        { start: 4, end: 6, text: 'Second line' },
+    ]);
+    expect(result.srt).toEqual(result.vtt);
+
+    expect(result.loaded.cues).toBe(1);
+    expect(result.loaded.text).toBe('Hello from Rumble');
+    expect(result.loaded.active).toBe('en');
+    expect(result.loaded.status).toContain('1 cues from Rumble (English)');
+    // Loading a native track fills the transcript, which is the whole point.
+    expect(result.loaded.transcript).toBe(1);
+
+    expect(result.buttons).toEqual([
+        { lang: 'en', label: 'English', pressed: 'true' },
+        { lang: 'de', label: 'Deutsch', pressed: 'false' },
+    ]);
+
+    expect(result.failedStatus).toContain('HTTP 404');
+    expect(result.cleared).toEqual({ cues: 0, active: null, pressed: ['false', 'false'] });
+    // Off means the embed endpoint is never called.
+    expect(result.callsWhenOff).toBe(0);
+});

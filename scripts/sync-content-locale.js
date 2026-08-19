@@ -57,6 +57,18 @@ function extractCategories(source) {
         out.set('feat_' + m[1] + '_label', unquote("'" + m[2] + "'"));
         out.set('feat_' + m[1] + '_desc', unquote("'" + m[3] + "'"));
     }
+    // Both patterns above read single-quoted literals only, which is the
+    // repo's convention. A double-quoted label would simply not match, and the
+    // row would ship untranslated with every guard still green — so say so
+    // rather than skipping it silently. Escape the apostrophe instead.
+    const DOUBLE_QUOTED = /\{\s*id:\s*'[\w-]+',\s*label:\s*"/g;
+    const offenders = [...block[1].matchAll(DOUBLE_QUOTED)].map((m) => m[0].trim());
+    if (offenders.length) {
+        throw new Error(
+            'RX_CATEGORIES entries must use single-quoted labels or they are invisible to this '
+            + `extractor: ${offenders.join(' ')}`
+        );
+    }
     return out;
 }
 

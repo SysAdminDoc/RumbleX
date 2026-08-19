@@ -23,7 +23,7 @@
 // @updateURL    https://github.com/SysAdminDoc/RumbleX/raw/main/RumbleX.lite.user.js
 // ==/UserScript==
 
-// Generated from extension/settings-schema.js + extension/content.js. Shared runtime SHA-256: 37249884294e9821121c3bf49de7b49f3992ed44df8b049126d517e4efc14942
+// Generated from extension/settings-schema.js + extension/content.js. Shared runtime SHA-256: c290e5a9da9815ef69c5ea56ab0940c63599b1b5526a078bf6a700c7c0a330a1
 // RumbleX shared settings schema. This file is the canonical source for
 // defaults and trust-boundary normalization across content, options, popup,
 // background profile/Gist restores, and the generated userscript.
@@ -95,6 +95,9 @@
         videoClips: true,
         liveDVR: false,
         subtitleSidecar: true,
+        // Read Rumble's own caption tracks off the embed payload. One extra
+        // request per watch page, on an endpoint the downloader already calls.
+        subtitleNativeTracks: true,
         transcripts: true,
         audioOnly: true,
         batchDownload: false,
@@ -1182,7 +1185,12 @@
   "dlSponsorRemoved": "{count} marked segments removed ({time}).",
   "dlSponsorTrimmed": "Skipping {count} marked segments ({time} removed)…",
   "feat_sponsorTrimDownloads_label": "Trim Downloads",
-  "feat_sponsorTrimDownloads_desc": "Drop stream segments that fall entirely inside a marked range"
+  "feat_sponsorTrimDownloads_desc": "Drop stream segments that fall entirely inside a marked range",
+  "subLoadingNative": "Loading {label} captions…",
+  "subNativeLoaded": "{count} cues from Rumble ({label})",
+  "subNativeAvailable": "From Rumble:",
+  "feat_subtitleNativeTracks_label": "Rumble's Own Captions",
+  "feat_subtitleNativeTracks_desc": "Load the creator-uploaded caption track when there is one"
 });
     const STORAGE_KEYS_WITH_CHANGE_EVENTS = ['rx_settings'];
     const ALLOWED_REQUEST_HOSTS = ['rumble.com', 'rumble.cloud', '1a-1791.com'];
@@ -12391,6 +12399,7 @@ const RX_CATEGORIES = [
             { id: 'screenshotBtn', label: 'Screenshot', desc: 'Capture current video frame as PNG' },
             { id: 'shareTimestamp', label: 'Share@Time', desc: 'Copy video URL at current playback time' },
             { id: 'subtitleSidecar', label: 'Subtitle Sidecar', desc: 'Load local SRT/VTT and overlay captions' },
+            { id: 'subtitleNativeTracks', label: 'Rumble\'s Own Captions', desc: 'Load the creator-uploaded caption track when there is one', parent: 'subtitleSidecar' },
             { id: 'transcripts', label: 'Transcripts', desc: 'Clickable transcript panel synced to player' },
             // v2.2.0 — Download Manager 2.0
             { id: 'externalPlayerEnabled', label: 'External Player', desc: 'Open videos in MPV / PotPlayer / custom URI (template configurable in options)' },
@@ -16329,8 +16338,17 @@ const SubtitleSidecar = {
     _cues: [],
     _overlayEl: null,
     _timeHandler: null,
+    _native: [],
+    _activeNative: null,
+    _controller: null,
+    _MAX_CAPTION_BYTES: 5 * 1024 * 1024,
 
     _css: `
+        .rx-sub-native { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; margin-top: 6px; }
+        .rx-sub-native:empty { display: none; }
+        .rx-sub-native-btn[aria-pressed="true"] {
+            border-color: rgba(137,180,250,0.6); background: rgba(137,180,250,0.18); color: #89b4fa;
+        }
         .rx-sub-panel {
             margin: 8px 0; padding: 10px;
             background: rgba(137,180,250,0.06); border: 1px solid rgba(137,180,250,0.2);
@@ -16376,6 +16394,128 @@ const SubtitleSidecar = {
             if (content) cues.push({ start: this._tsToSec(a), end: this._tsToSec(c), text: content });
         }
         return cues.sort((a, b) => a.start - b.start);
+    },
+
+    // Rumble's embed payload carries creator-uploaded captions under `cc`,
+    // keyed by language code with a `path` to the file. An uncaptioned video
+    // serializes the field as an empty array rather than an empty object, so
+    // both shapes have to be accepted. Verified on a live watch page on
+    // 2026-08-19, and against yt-dlp's Rumble extractor, which reads the same
+    // field the same way.
+    _nativeTracks(data) {
+        const cc = data?.cc;
+        if (!cc || typeof cc !== 'object' || Array.isArray(cc)) return [];
+        return Object.entries(cc)
+            .map(([lang, info]) => {
+                const url = typeof info === 'string' ? info : info?.path;
+                const label = (typeof info === 'object' && info?.language) || lang;
+                return { lang, label: String(label), url: typeof url === 'string' ? url : '' };
+            })
+            .filter((track) => track.url);
+    },
+
+    // Rumble serves media from three hosts and the manifest permits exactly
+    // those three. A caption path anywhere else is reported rather than
+    // fetched, because the fetch would fail as an opaque network error and
+    // look like a broken feature instead of a missing permission.
+    _captionUrl(raw) {
+        return VideoDownloader._safeMediaUrl(raw, 'https://rumble.com/');
+    },
+
+    async _fetchNative(track, signal) {
+        const url = this._captionUrl(track?.url);
+        if (!url) {
+            const error = new Error('Caption file is hosted somewhere RumbleX is not allowed to read.');
+            error.code = 'unsupported-host';
+            throw error;
+        }
+        const resp = await RXPlatform.fetch(url, { signal });
+        if (!resp.ok) {
+            const error = new Error(`Rumble returned HTTP ${resp.status} for the caption file.`);
+            error.code = 'http';
+            throw error;
+        }
+        const text = await resp.text();
+        if (text.length > this._MAX_CAPTION_BYTES) {
+            const error = new Error('Caption file exceeds the 5 MB limit.');
+            error.code = 'too-large';
+            throw error;
+        }
+        return text;
+    },
+
+    async _loadNativeTrack(track) {
+        const status = this._panel?.querySelector('.rx-sub-status');
+        if (status) status.textContent = rxT('subLoadingNative', 'Loading {label} captions…', { label: track.label });
+        try {
+            const text = await this._fetchNative(track, this._controller?.signal);
+            this._load(text);
+            this._activeNative = track.lang;
+            this._markNativeActive();
+            const loaded = this._panel?.querySelector('.rx-sub-status');
+            if (loaded) {
+                loaded.textContent = rxT(
+                    'subNativeLoaded',
+                    '{count} cues from Rumble ({label})',
+                    { count: this._cues.length, label: track.label },
+                );
+            }
+        } catch (err) {
+            RxErrorLog.record('subtitle-native-load', err);
+            const failed = this._panel?.querySelector('.rx-sub-status');
+            if (failed) failed.textContent = err?.message || 'Could not load Rumble captions.';
+        }
+    },
+
+    _markNativeActive() {
+        for (const btn of this._panel?.querySelectorAll('.rx-sub-native-btn') || []) {
+            btn.setAttribute('aria-pressed', btn.dataset.lang === this._activeNative ? 'true' : 'false');
+        }
+    },
+
+    _renderNative() {
+        const row = this._panel?.querySelector('.rx-sub-native');
+        if (!row) return;
+        row.textContent = '';
+        if (!this._native?.length) return;
+        const label = document.createElement('span');
+        label.className = 'rx-sub-status';
+        label.textContent = rxT('subNativeAvailable', 'From Rumble:');
+        row.appendChild(label);
+        for (const track of this._native) {
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'rx-sub-btn rx-sub-native-btn';
+            btn.dataset.lang = track.lang;
+            btn.textContent = track.label;
+            btn.setAttribute('aria-pressed', 'false');
+            btn.addEventListener('click', () => { void this._loadNativeTrack(track); });
+            row.appendChild(btn);
+        }
+        this._markNativeActive();
+    },
+
+    // One embed-API call per captioned watch page, on the endpoint the
+    // downloader already uses. Silent when the video has no captions, because
+    // an empty `cc` is the common case and not worth a message.
+    async _discoverNative() {
+        if (!Settings.get('subtitleNativeTracks')) return;
+        let data = null;
+        try {
+            const embedId = VideoDownloader._getEmbedId();
+            if (!embedId) return;
+            data = await VideoDownloader._fetchEmbedData(embedId, this._controller?.signal);
+        } catch (err) {
+            RxErrorLog.record('subtitle-native-discover', err);
+            return;
+        }
+        if (!this._panel) return;
+        this._native = this._nativeTracks(data);
+        this._renderNative();
+        // The first track is loaded outright: a captioned video whose panel
+        // still says "load a file" has not answered the question the feature
+        // exists to answer.
+        if (this._native.length) await this._loadNativeTrack(this._native[0]);
     },
 
     _attach() {
@@ -16426,7 +16566,8 @@ const SubtitleSidecar = {
                 <button class="rx-sub-btn rx-sub-upload">Load SRT/VTT...</button>
                 <button class="rx-sub-btn rx-sub-clear">Clear</button>
                 <span class="rx-sub-status"></span>
-            </div>`;
+            </div>
+            <div class="rx-sub-native"></div>`;
         host.prepend(panel);
         this._panel = panel;
         panel.querySelector('.rx-sub-upload').addEventListener('click', () => {
@@ -16451,6 +16592,8 @@ const SubtitleSidecar = {
         });
         panel.querySelector('.rx-sub-clear').addEventListener('click', () => {
             this._cues = [];
+            this._activeNative = null;
+            this._markNativeActive();
             if (this._overlayEl) this._overlayEl.style.display = 'none';
             const s = panel.querySelector('.rx-sub-status'); if (s) s.textContent = '';
             Transcripts?._loadExternalCues?.([]);
@@ -16460,12 +16603,21 @@ const SubtitleSidecar = {
     init() {
         if (!Settings.get(this.id) || !Page.isWatch()) return;
         this._styleEl = injectStyle(this._css, 'rx-subsidecar-css');
+        this._controller = new AbortController();
         waitForFeature(this, '.media-description, .media-description-section', 12000).then(() => {
-            setFeatureTimeout(this, () => this._mount(), 900);
+            setFeatureTimeout(this, () => {
+                this._mount();
+                void this._discoverNative();
+            }, 900);
         }).catch(() => {});
     },
 
     destroy() {
+        // Stops an in-flight caption fetch resolving into a panel that is gone.
+        this._controller?.abort();
+        this._controller = null;
+        this._native = [];
+        this._activeNative = null;
         this._styleEl?.remove();
         this._panel?.remove();
         this._panel = null;
@@ -19082,6 +19234,9 @@ function rxBuildPrivacyReport() {
             'Error log ring buffer is captured locally on every page (200-entry rolling window, no upload)'
                 + (settings.debugErrorLog ? ' and is visible on the options page' : ' and stays hidden until the Error Log Ring Buffer setting is enabled'),
             settings.remoteCosmeticRules ? 'Remote cosmetic rules enabled — signed payloads only' : 'Remote cosmetic rules disabled',
+            (settings.subtitleSidecar && settings.subtitleNativeTracks)
+                ? "Rumble's own captions are read on watch pages — one request to rumble.com/embedJS for the track list, then the caption file itself from a Rumble media host; nothing is sent anywhere"
+                : "Rumble's own captions are not requested — the Subtitles panel only reads files you pick",
             settings.discordWebhookUrl
                 ? 'Channel notifier posts to a user-configured Discord webhook — followed-channel name and URL leave the browser when a watched channel goes live or uploads'
                 : 'No outbound notifier webhook is configured',

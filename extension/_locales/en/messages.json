@@ -1970,5 +1970,25 @@
   "feat_sponsorTrimDownloads_desc": {
     "message": "Drop stream segments that fall entirely inside a marked range",
     "description": "In-page UI string (shared core)."
+  },
+  "subLoadingNative": {
+    "message": "Loading {label} captions…",
+    "description": "In-page UI string (shared core)."
+  },
+  "subNativeLoaded": {
+    "message": "{count} cues from Rumble ({label})",
+    "description": "In-page UI string (shared core)."
+  },
+  "subNativeAvailable": {
+    "message": "From Rumble:",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_subtitleNativeTracks_label": {
+    "message": "Rumble's Own Captions",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_subtitleNativeTracks_desc": {
+    "message": "Load the creator-uploaded caption track when there is one",
+    "description": "In-page UI string (shared core)."
   }
 }

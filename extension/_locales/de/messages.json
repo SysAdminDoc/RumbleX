@@ -1970,5 +1970,23 @@
   "feat_sponsorTrimDownloads_desc": {
     "message": "Streamsegmente verwerfen, die vollständig in einem markierten Bereich liegen",
     "description": "In-page UI string (shared core)."
+  },
+  "subLoadingNative": {
+    "message": "{label}-Untertitel werden geladen…",
+    "description": "In-page UI string (shared core)."
+  },
+  "subNativeLoaded": {
+    "message": "{count} Zeilen von Rumble ({label})",
+    "description": "In-page UI string (shared core)."
+  },
+  "subNativeAvailable": {
+    "message": "Von Rumble:",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_subtitleNativeTracks_label": {
+    "message": "Rumbles eigene Untertitel"
+  },
+  "feat_subtitleNativeTracks_desc": {
+    "message": "Die vom Kanal hochgeladene Untertitelspur laden, sofern vorhanden"
   }
 }

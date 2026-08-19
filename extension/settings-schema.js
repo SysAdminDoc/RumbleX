@@ -69,6 +69,9 @@
         videoClips: true,
         liveDVR: false,
         subtitleSidecar: true,
+        // Read Rumble's own caption tracks off the embed payload. One extra
+        // request per watch page, on an endpoint the downloader already calls.
+        subtitleNativeTracks: true,
         transcripts: true,
         audioOnly: true,
         batchDownload: false,
