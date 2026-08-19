@@ -1988,5 +1988,37 @@
   },
   "feat_subtitleNativeTracks_desc": {
     "message": "Carregar a faixa de legendas enviada pelo canal, quando houver"
+  },
+  "feat_creatorMode_label": {
+    "message": "Painel do Programa de Criadores",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_creatorMode_desc": {
+    "message": "Conta os shorts deste mês em uma página de canal em relação à meta do programa",
+    "description": "In-page UI string (shared core)."
+  },
+  "creatorPanelLabel": {
+    "message": "Progresso no Programa de Criadores",
+    "description": "In-page UI string (shared core)."
+  },
+  "creatorPanelTitle": {
+    "message": "Programa de Criadores · {month}",
+    "description": "In-page UI string (shared core)."
+  },
+  "creatorShorts": {
+    "message": "Shorts neste mês",
+    "description": "In-page UI string (shared core)."
+  },
+  "creatorVideos": {
+    "message": "Outros vídeos",
+    "description": "In-page UI string (shared core)."
+  },
+  "creatorStreams": {
+    "message": "Transmissões",
+    "description": "In-page UI string (shared core)."
+  },
+  "creatorPanelNote": {
+    "message": "Conta o que esta página lista, então só alcança o que a página carregar. Raids não entram na conta: só aparecem como aviso no chat enquanto acontecem.",
+    "description": "In-page UI string (shared core)."
   }
 }

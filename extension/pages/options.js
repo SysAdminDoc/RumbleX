@@ -310,7 +310,7 @@
         channelNotifierUploads: { group: 'automation', label: 'Notify On New Video', desc: 'Raise a desktop notification when a watched channel posts a video.' },
         discordWebhookUrl: { group: 'integrations', label: 'Discord Webhook URL', desc: 'Optional user-provided webhook for notifications.' },
         rssExportEnabled: { group: 'integrations', label: 'RSS / OPML Export', desc: 'Export channels to RSS or OPML.' },
-        creatorMode: { group: 'creator', label: 'Creator Mode', desc: 'Unlocks Studio + uploader helpers.' },
+        creatorMode: { group: 'creator', label: 'Creator Program Panel', desc: 'On a channel page, count this month\'s shorts against the program threshold. Reads the page only.' },
         uploaderMetadataFill: { group: 'creator', label: 'Uploader Metadata Fill', desc: 'Auto-fill uploader fields from clipboard URL.' },
         studioSceneTools: { group: 'creator', label: 'Studio Scene Tools', desc: 'Rumble Studio scene/layout helpers.' },
         obsAlertExport: { group: 'creator', label: 'OBS Alert Export', desc: 'Rant/sub/follow alert output for OBS.' },

@@ -635,7 +635,6 @@
 
         // Creator and multi-view features that were never built.
         multiStreamViewer: 'Not built.',
-        creatorMode: 'Not built.',
         uploaderMetadataFill: 'Not built.',
         studioSceneTools: 'Not built.',
         obsAlertExport: 'Not built.',

@@ -16,8 +16,8 @@ test('every feature initializes and destroys through the canonical registry', as
             hasInit: typeof feature.init === 'function',
             hasDestroy: typeof feature.destroy === 'function',
         })));
-        expect(catalog).toHaveLength(136);
-        expect(new Set(catalog.map(({ id }) => id)).size).toBe(136);
+        expect(catalog).toHaveLength(137);
+        expect(new Set(catalog.map(({ id }) => id)).size).toBe(137);
         expect(catalog.every(({ id, name, hasInit, hasDestroy }) => id && name && hasInit && hasDestroy)).toBe(true);
 
         const excluded = new Set(['autoTheater', 'disableShortsFeed']);

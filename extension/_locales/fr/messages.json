@@ -1988,5 +1988,37 @@
   },
   "feat_subtitleNativeTracks_desc": {
     "message": "Charger la piste de sous-titres déposée par la chaîne, quand elle existe"
+  },
+  "feat_creatorMode_label": {
+    "message": "Panneau du programme créateur",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_creatorMode_desc": {
+    "message": "Compte les shorts du mois sur une page de chaîne par rapport au seuil du programme",
+    "description": "In-page UI string (shared core)."
+  },
+  "creatorPanelLabel": {
+    "message": "Progression dans le programme créateur",
+    "description": "In-page UI string (shared core)."
+  },
+  "creatorPanelTitle": {
+    "message": "Programme créateur · {month}",
+    "description": "In-page UI string (shared core)."
+  },
+  "creatorShorts": {
+    "message": "Shorts ce mois-ci",
+    "description": "In-page UI string (shared core)."
+  },
+  "creatorVideos": {
+    "message": "Autres vidéos",
+    "description": "In-page UI string (shared core)."
+  },
+  "creatorStreams": {
+    "message": "Directs",
+    "description": "In-page UI string (shared core)."
+  },
+  "creatorPanelNote": {
+    "message": "Le compte porte sur ce que cette page liste, donc il ne remonte pas plus loin que ce qu’elle charge. Les raids ne sont pas comptés : ils n’apparaissent que comme un avis dans le chat, au moment où ils arrivent.",
+    "description": "In-page UI string (shared core)."
   }
 }

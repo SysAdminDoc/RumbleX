@@ -1988,5 +1988,37 @@
   },
   "feat_subtitleNativeTracks_desc": {
     "message": "Die vom Kanal hochgeladene Untertitelspur laden, sofern vorhanden"
+  },
+  "feat_creatorMode_label": {
+    "message": "Creator-Programm-Panel",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_creatorMode_desc": {
+    "message": "Zählt die Shorts dieses Monats auf einer Kanalseite gegen die Programmvorgabe",
+    "description": "In-page UI string (shared core)."
+  },
+  "creatorPanelLabel": {
+    "message": "Fortschritt im Creator-Programm",
+    "description": "In-page UI string (shared core)."
+  },
+  "creatorPanelTitle": {
+    "message": "Creator-Programm · {month}",
+    "description": "In-page UI string (shared core)."
+  },
+  "creatorShorts": {
+    "message": "Shorts diesen Monat",
+    "description": "In-page UI string (shared core)."
+  },
+  "creatorVideos": {
+    "message": "Andere Videos",
+    "description": "In-page UI string (shared core)."
+  },
+  "creatorStreams": {
+    "message": "Streams",
+    "description": "In-page UI string (shared core)."
+  },
+  "creatorPanelNote": {
+    "message": "Gezählt wird, was auf dieser Seite gelistet ist, also nur so weit zurück, wie die Seite lädt. Raids werden nicht gezählt: die sind nur als Chat-Hinweis sichtbar, während sie passieren.",
+    "description": "In-page UI string (shared core)."
   }
 }

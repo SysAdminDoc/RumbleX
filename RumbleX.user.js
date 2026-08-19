@@ -23,7 +23,7 @@
 // @updateURL    https://github.com/SysAdminDoc/RumbleX/raw/main/RumbleX.user.js
 // ==/UserScript==
 
-// Generated from extension/settings-schema.js + extension/content.js. Shared runtime SHA-256: 3a390fdbd86bd9d067dcf061cc36a9288370fd30c21adf0fb58c77c560185c79
+// Generated from extension/settings-schema.js + extension/content.js. Shared runtime SHA-256: 89819ce1f3ef9d92bd71e605106861461e4440920239dd8fafaf12e0107f7292
 // RumbleX shared settings schema. This file is the canonical source for
 // defaults and trust-boundary normalization across content, options, popup,
 // background profile/Gist restores, and the generated userscript.
@@ -661,7 +661,6 @@
 
         // Creator and multi-view features that were never built.
         multiStreamViewer: 'Not built.',
-        creatorMode: 'Not built.',
         uploaderMetadataFill: 'Not built.',
         studioSceneTools: 'Not built.',
         obsAlertExport: 'Not built.',
@@ -1193,7 +1192,15 @@
   "subNativeLoaded": "{count} cues from Rumble ({label})",
   "subNativeAvailable": "From Rumble:",
   "feat_subtitleNativeTracks_label": "Rumble's Own Captions",
-  "feat_subtitleNativeTracks_desc": "Load the creator-uploaded caption track when there is one"
+  "feat_subtitleNativeTracks_desc": "Load the creator-uploaded caption track when there is one",
+  "feat_creatorMode_label": "Creator Program Panel",
+  "feat_creatorMode_desc": "Count this month's shorts on a channel page against the program threshold",
+  "creatorPanelLabel": "Creator Program progress",
+  "creatorPanelTitle": "Creator Program · {month}",
+  "creatorShorts": "Shorts this month",
+  "creatorVideos": "Other videos",
+  "creatorStreams": "Streams",
+  "creatorPanelNote": "Counted from the videos listed on this page, so it only sees as far back as the page loads. Raids are not counted: they are only visible as a chat notice while one happens."
 });
     const STORAGE_KEYS_WITH_CHANGE_EVENTS = ['rx_settings'];
     const ALLOWED_REQUEST_HOSTS = ['rumble.com', 'rumble.cloud', '1a-1791.com'];
@@ -7732,6 +7739,46 @@ const ChannelBlocker = {
 // Building the feed in the page sidesteps both problems: the cards are already
 // rendered and already authenticated, so no request is made at all. The result
 // is a plain RSS 2.0 document on the clipboard.
+// ═══════════════════════════════════════════
+//  HELPER: Embedded channel/feed listing (v3.50.0)
+// ═══════════════════════════════════════════
+// Around 2026-06 Rumble moved listing data out of `videostream__*` markup and
+// into embedded `{"items":[...]}` script blocks — the change that broke
+// yt-dlp's channel extractor (yt-dlp #16904). The blocks are richer than the
+// DOM cards: `id`, `title`, `relative_url`, `upload_date`, `duration`,
+// `is_short`, `live`, `watching_now`, and a `by` block naming the owning
+// channel. Reading them costs nothing, because they are already in the page.
+//
+// This is a supplement to the card adapter, never a replacement: the DOM
+// remains the source of truth for anything RumbleX modifies on screen.
+const ChannelListing = {
+    parse(root = document) {
+        const items = [];
+        for (const script of root.querySelectorAll('script')) {
+            const text = script.textContent || '';
+            if (!text.includes('"items"')) continue;
+            try {
+                const parsed = JSON.parse(text.trim());
+                if (Array.isArray(parsed?.items)) items.push(...parsed.items);
+            } catch { /* not every script carrying the word is JSON */ }
+        }
+        return items.filter((item) => item?.object_type === 'video' && item?.relative_url);
+    },
+
+    // A channel page also embeds unrelated rails, so keep only what this
+    // channel published. An empty result means the page shape is one we have
+    // not seen, and the caller gets everything rather than nothing.
+    forPath(items, path) {
+        const wanted = String(path || '').toLowerCase().replace(/\/+$/, '');
+        if (!wanted) return items;
+        const owned = items.filter((item) => {
+            const by = String(item?.by?.relative_url || '').toLowerCase().replace(/\/+$/, '');
+            return by && (by === wanted || wanted.startsWith(by + '/'));
+        });
+        return owned.length ? owned : items;
+    },
+};
+
 const ChannelRss = {
     id: 'rssExportEnabled',
     name: 'Channel RSS Export',
@@ -12379,6 +12426,7 @@ const RX_CATEGORIES = [
             { id: 'fullTitles', label: 'Full Titles', desc: 'Remove title truncation on video cards' },
             { id: 'titleFont', label: 'Title Font', desc: 'Unbold + normalize title typography' },
             { id: 'rssExportEnabled', label: 'Channel RSS Export', desc: 'Build an RSS feed of a channel locally, with no server involved' },
+            { id: 'creatorMode', label: 'Creator Program Panel', desc: 'Count this month\'s shorts on a channel page against the program threshold' },
             { id: 'perChannelVolumeMemory', label: 'Per-Channel Playback', desc: 'Remember volume, speed and a quality ceiling for each channel' },
             { id: 'titleNormalizer', label: 'Title Normalizer', desc: 'Calm ALL-CAPS, emoji spray and repeated !!! in video titles; original stays on hover' },
             // v2.1.0 — Premium UI and Layout Superset
@@ -18860,6 +18908,158 @@ const RxDownloadDiagnostics = {
 // ═══════════════════════════════════════════
 //  FEATURE REGISTRY & INIT
 // ═══════════════════════════════════════════
+// ═══════════════════════════════════════════
+//  FEATURE: Creator Program panel (v3.50.0)
+// ═══════════════════════════════════════════
+// Rumble's Creator Program (2026-07-01) scores creators against monthly
+// thresholds. This counts the ones that are visible from a channel page you
+// are already looking at, with no request of any kind: the listing Rumble
+// embeds in the page carries `is_short` and `upload_date` per video.
+//
+// Raid counting is deliberately absent. The program counts raids across five
+// separate streams, and a raid is only observable as a chat notice while it
+// happens; the markup for that notice is not in any fixture, and inventing a
+// selector produces a counter that silently stays at zero. See
+// Roadmap_Blocked.md.
+const CreatorProgram = {
+    id: 'creatorMode',
+    name: 'Creator Program Panel',
+    _styleEl: null,
+    _panel: null,
+    _obs: null,
+
+    // Published thresholds, 2026-07-01 program terms.
+    _SHORTS_TARGET: 20,
+    _CHATTERS_TARGET: 75,
+
+    _css: `
+        .rx-cp-panel {
+            margin: 10px 0; padding: 12px 14px;
+            background: rgba(166,227,161,0.07);
+            border: 1px solid rgba(166,227,161,0.25);
+            border-radius: 10px;
+            font: 12px/1.5 system-ui, sans-serif; color: #cdd6f4;
+        }
+        .rx-cp-title {
+            font: 700 11px/1 system-ui, sans-serif; color: #a6e3a1;
+            text-transform: uppercase; letter-spacing: .04em; margin-bottom: 10px;
+        }
+        .rx-cp-rows { display: flex; flex-direction: column; gap: 8px; }
+        .rx-cp-row { display: flex; align-items: center; gap: 10px; }
+        .rx-cp-name { min-width: 150px; color: #a6adc8; }
+        .rx-cp-track { flex: 1; height: 6px; border-radius: 3px; background: rgba(49,50,68,0.7); overflow: hidden; }
+        .rx-cp-fill { height: 100%; background: linear-gradient(90deg, #a6e3a1, #94e2d5); border-radius: 3px; }
+        .rx-cp-fill.is-short { background: linear-gradient(90deg, #f9e2af, #fab387); }
+        .rx-cp-count { font-variant-numeric: tabular-nums; font-weight: 700; min-width: 62px; text-align: right; }
+        .rx-cp-note { margin-top: 10px; color: #a6adc8; font-size: 11px; }
+    `,
+
+    _monthKey(value) {
+        const stamp = Date.parse(value || '');
+        if (!Number.isFinite(stamp)) return null;
+        const d = new Date(stamp);
+        return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
+    },
+
+    // `now` is injectable so the month boundary is testable without waiting
+    // for one.
+    _tally(items, now = Date.now()) {
+        const month = this._monthKey(new Date(now).toISOString());
+        let shorts = 0;
+        let videos = 0;
+        let streams = 0;
+        for (const item of Array.isArray(items) ? items : []) {
+            if (this._monthKey(item?.upload_date) !== month) continue;
+            if (item?.is_short === true) shorts++;
+            else videos++;
+            // A finished stream keeps its live_streamed_on stamp; a stream in
+            // progress reports live instead.
+            if (item?.live === true || item?.live_streamed_on) streams++;
+        }
+        return { month, shorts, videos, streams };
+    },
+
+    _row(name, count, target, extraClass) {
+        const row = document.createElement('div');
+        row.className = 'rx-cp-row';
+        const label = document.createElement('span');
+        label.className = 'rx-cp-name';
+        label.textContent = name;
+        const track = document.createElement('div');
+        track.className = 'rx-cp-track';
+        const fill = document.createElement('div');
+        fill.className = 'rx-cp-fill' + (extraClass ? ' ' + extraClass : '');
+        const pct = target > 0 ? Math.min(100, (count / target) * 100) : 0;
+        fill.style.width = pct + '%';
+        track.appendChild(fill);
+        const value = document.createElement('span');
+        value.className = 'rx-cp-count';
+        value.textContent = target > 0 ? `${count} / ${target}` : String(count);
+        row.append(label, track, value);
+        return row;
+    },
+
+    _render(tally) {
+        const panel = document.createElement('div');
+        panel.className = 'rx-cp-panel';
+        panel.setAttribute('role', 'region');
+        panel.setAttribute('aria-label', rxT('creatorPanelLabel', 'Creator Program progress'));
+
+        const title = document.createElement('div');
+        title.className = 'rx-cp-title';
+        title.textContent = rxT('creatorPanelTitle', 'Creator Program · {month}', { month: tally.month });
+        panel.appendChild(title);
+
+        const rows = document.createElement('div');
+        rows.className = 'rx-cp-rows';
+        rows.appendChild(this._row(rxT('creatorShorts', 'Shorts this month'), tally.shorts, this._SHORTS_TARGET, 'is-short'));
+        rows.appendChild(this._row(rxT('creatorVideos', 'Other videos'), tally.videos, 0));
+        rows.appendChild(this._row(rxT('creatorStreams', 'Streams'), tally.streams, 0));
+        panel.appendChild(rows);
+
+        const note = document.createElement('div');
+        note.className = 'rx-cp-note';
+        note.textContent = rxT(
+            'creatorPanelNote',
+            'Counted from the videos listed on this page, so it only sees as far back as the page loads. Raids are not counted: they are only visible as a chat notice while one happens.',
+        );
+        panel.appendChild(note);
+        return panel;
+    },
+
+    _mount() {
+        if (this._panel?.isConnected) return;
+        const items = ChannelListing.forPath(ChannelListing.parse(), location.pathname);
+        if (!items.length) return;
+        const host = qs('.channel-header--content, .channel-header, main');
+        if (!host) return;
+        const panel = this._render(this._tally(items));
+        host.prepend(panel);
+        this._panel = panel;
+    },
+
+    init() {
+        if (!Settings.get(this.id) || !Page.isChannel()) return;
+        this._styleEl = injectStyle(this._css, 'rx-creator-css');
+        this._mount();
+        // Rumble hydrates the channel header after first paint, so the mount
+        // point often does not exist yet on the first pass.
+        this._obs = new MutationObserver(() => {
+            scheduleFeatureFrame(this, 'creator-mount', () => this._mount());
+        });
+        this._obs.observe(document.documentElement, { childList: true, subtree: true });
+    },
+
+    destroy() {
+        this._obs?.disconnect();
+        this._obs = null;
+        this._panel?.remove();
+        this._panel = null;
+        this._styleEl?.remove();
+        this._styleEl = null;
+    }
+};
+
 const features = [
     AdNuker, FeedCleanup, HidePremium, CategoryFilter, DarkEnhance, TheaterSplit,
     VideoDownloader, LogoToFeed, SpeedController, ScrollVolume, AutoMaxQuality,
@@ -18871,7 +19071,7 @@ const features = [
     RantHighlight, RelatedFilter, ExactCounts, ShareTimestamp, TimeRemaining, ShortsFilter,
     ChatAutoScroll, AutoExpand, NotifEnhance, PlaylistQuickSave,
     // v1.8.0 additions
-    FullTitles, PerChannelPrefs, ChannelRss, TitleNormalizer, TitleFont, UniqueChatters, ChatUserBlock, ChatSpamDedup,
+    FullTitles, PerChannelPrefs, ChannelRss, CreatorProgram, TitleNormalizer, TitleFont, UniqueChatters, ChatUserBlock, ChatSpamDedup,
     ChatExport, RantPersist, CommentSort, CommentExport, PopoutChat, KeywordFilter,
     AutoplayScheduler, Chapters, SponsorBlockRX, VideoClips, LiveDVR,
     SubtitleSidecar, Transcripts, AudioOnly, BatchDownload,

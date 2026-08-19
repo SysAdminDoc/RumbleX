@@ -2274,3 +2274,116 @@ test('SubtitleSidecar reads Rumble\'s own caption tracks off the embed payload',
     // Off means the embed endpoint is never called.
     expect(result.callsWhenOff).toBe(0);
 });
+
+test('CreatorProgram counts this month from the embedded listing, not the DOM cards', async () => {
+    const result = await inHarness(() => {
+        const harness = globalThis.__RumbleXFeatureHarness;
+        harness.enable('creatorMode');
+        const cp = harness.features.find((f) => f.id === 'creatorMode');
+
+        const item = (over) => Object.assign({
+            object_type: 'video',
+            id: 1,
+            title: 'A video',
+            relative_url: '/v0000001-a.html',
+            upload_date: '2026-08-10T00:00:00+00:00',
+            is_short: false,
+            live: false,
+            by: { type: 'channel', relative_url: '/c/fixture' },
+        }, over);
+
+        // Two script blocks, exactly as a channel page ships them.
+        const block = (items) => {
+            const el = document.createElement('script');
+            el.type = 'application/json';
+            el.textContent = JSON.stringify({ items, analytics: {} });
+            return el;
+        };
+
+        const host = document.createElement('div');
+        host.appendChild(block([
+            item({ id: 1, is_short: true, upload_date: '2026-08-02T00:00:00+00:00' }),
+            item({ id: 2, is_short: true, upload_date: '2026-08-18T00:00:00+00:00' }),
+            item({ id: 3, upload_date: '2026-08-19T00:00:00+00:00' }),
+        ]));
+        host.appendChild(block([
+            // Last month: outside the window.
+            item({ id: 4, is_short: true, upload_date: '2026-07-30T00:00:00+00:00' }),
+            // A finished stream from this month.
+            item({ id: 5, upload_date: '2026-08-05T00:00:00+00:00', live_streamed_on: '2026-08-05T01:00:00+00:00' }),
+            // Someone else's video riding along in a sidebar rail.
+            item({ id: 6, is_short: true, upload_date: '2026-08-11T00:00:00+00:00', by: { type: 'channel', relative_url: '/c/someoneelse' } }),
+        ]));
+        // A script that mentions items but is not JSON must not take the rest down.
+        const junk = document.createElement('script');
+        junk.textContent = 'window.items = [1,2,3];';
+        host.appendChild(junk);
+
+        const all = ChannelListing.parse(host);
+        const mine = ChannelListing.forPath(all, '/c/fixture');
+        const byUserPath = ChannelListing.forPath(all, '/c/Fixture/videos');
+        // A path nobody owns falls back to everything rather than nothing.
+        const unknownPath = ChannelListing.forPath(all, '/c/nobody');
+
+        const august = cp._tally(mine, Date.parse('2026-08-19T12:00:00Z'));
+        const july = cp._tally(mine, Date.parse('2026-07-15T12:00:00Z'));
+        // Everything, including the foreign rail entry.
+        const unfiltered = cp._tally(all, Date.parse('2026-08-19T12:00:00Z'));
+        const empty = cp._tally([], Date.parse('2026-08-19T12:00:00Z'));
+        const junkInput = cp._tally(null, Date.parse('2026-08-19T12:00:00Z'));
+        // An unparseable upload_date is skipped, never counted into a month.
+        const undated = cp._tally([item({ upload_date: 'whenever' })], Date.parse('2026-08-19T12:00:00Z'));
+
+        const panel = cp._render(august);
+        const rows = [...panel.querySelectorAll('.rx-cp-row')].map((row) => ({
+            name: row.querySelector('.rx-cp-name').textContent,
+            count: row.querySelector('.rx-cp-count').textContent,
+            width: row.querySelector('.rx-cp-fill').style.width,
+        }));
+
+        // A month over target must not draw past the end of the track.
+        const over = cp._render(cp._tally(
+            Array.from({ length: 25 }, (_, i) => item({ id: 100 + i, is_short: true, upload_date: '2026-08-03T00:00:00+00:00' })),
+            Date.parse('2026-08-19T12:00:00Z'),
+        ));
+        const overWidth = over.querySelector('.rx-cp-fill').style.width;
+
+        return {
+            parsed: all.length,
+            mine: mine.length,
+            byUserPathIds: byUserPath.map((i) => i.id),
+            unknownPath: unknownPath.length,
+            august, july, unfiltered, empty, junkInput, undated,
+            rows, overWidth,
+            role: panel.getAttribute('role'),
+            label: panel.getAttribute('aria-label'),
+        };
+    });
+
+    // The malformed script contributed nothing; the six real entries survived.
+    expect(result.parsed).toBe(6);
+    expect(result.mine).toBe(5);
+    // A deeper path under the same channel still matches, case-insensitively.
+    expect(result.byUserPathIds).toEqual([1, 2, 3, 4, 5]);
+    expect(result.unknownPath).toBe(6);
+
+    expect(result.august).toEqual({ month: '2026-08', shorts: 2, videos: 2, streams: 1 });
+    // A different month sees none of it.
+    expect(result.july).toEqual({ month: '2026-07', shorts: 1, videos: 0, streams: 0 });
+    // Without the channel filter, the rail entry inflates the shorts count.
+    expect(result.unfiltered.shorts).toBe(3);
+    expect(result.empty).toEqual({ month: '2026-08', shorts: 0, videos: 0, streams: 0 });
+    expect(result.junkInput.shorts).toBe(0);
+    expect(result.undated).toEqual({ month: '2026-08', shorts: 0, videos: 0, streams: 0 });
+
+    expect(result.rows).toEqual([
+        { name: 'Shorts this month', count: '2 / 20', width: '10%' },
+        { name: 'Other videos', count: '2', width: '0%' },
+        { name: 'Streams', count: '1', width: '0%' },
+    ]);
+    // 25 of 20 clamps rather than overflowing the track.
+    expect(result.overWidth).toBe('100%');
+
+    expect(result.role).toBe('region');
+    expect(result.label).toBe('Creator Program progress');
+});

@@ -1988,5 +1988,37 @@
   },
   "feat_subtitleNativeTracks_desc": {
     "message": "Carica la traccia di sottotitoli caricata dal canale, se esiste"
+  },
+  "feat_creatorMode_label": {
+    "message": "Pannello del programma creator",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_creatorMode_desc": {
+    "message": "Conta gli short di questo mese su una pagina canale rispetto alla soglia del programma",
+    "description": "In-page UI string (shared core)."
+  },
+  "creatorPanelLabel": {
+    "message": "Avanzamento nel programma creator",
+    "description": "In-page UI string (shared core)."
+  },
+  "creatorPanelTitle": {
+    "message": "Programma creator · {month}",
+    "description": "In-page UI string (shared core)."
+  },
+  "creatorShorts": {
+    "message": "Short questo mese",
+    "description": "In-page UI string (shared core)."
+  },
+  "creatorVideos": {
+    "message": "Altri video",
+    "description": "In-page UI string (shared core)."
+  },
+  "creatorStreams": {
+    "message": "Dirette",
+    "description": "In-page UI string (shared core)."
+  },
+  "creatorPanelNote": {
+    "message": "Conta ciò che questa pagina elenca, quindi arriva indietro solo quanto la pagina carica. I raid non vengono contati: si vedono solo come avviso in chat, mentre accadono.",
+    "description": "In-page UI string (shared core)."
   }
 }

@@ -1990,5 +1990,37 @@
   "feat_subtitleNativeTracks_desc": {
     "message": "Load the creator-uploaded caption track when there is one",
     "description": "In-page UI string (shared core)."
+  },
+  "feat_creatorMode_label": {
+    "message": "Creator Program Panel",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_creatorMode_desc": {
+    "message": "Count this month's shorts on a channel page against the program threshold",
+    "description": "In-page UI string (shared core)."
+  },
+  "creatorPanelLabel": {
+    "message": "Creator Program progress",
+    "description": "In-page UI string (shared core)."
+  },
+  "creatorPanelTitle": {
+    "message": "Creator Program · {month}",
+    "description": "In-page UI string (shared core)."
+  },
+  "creatorShorts": {
+    "message": "Shorts this month",
+    "description": "In-page UI string (shared core)."
+  },
+  "creatorVideos": {
+    "message": "Other videos",
+    "description": "In-page UI string (shared core)."
+  },
+  "creatorStreams": {
+    "message": "Streams",
+    "description": "In-page UI string (shared core)."
+  },
+  "creatorPanelNote": {
+    "message": "Counted from the videos listed on this page, so it only sees as far back as the page loads. Raids are not counted: they are only visible as a chat notice while one happens.",
+    "description": "In-page UI string (shared core)."
   }
 }
