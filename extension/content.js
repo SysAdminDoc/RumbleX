@@ -3301,7 +3301,7 @@ const VideoDownloader = {
     },
 
     async _transmuxWithWorker(tsBuffers, signal) {
-        const requested = Settings.get('downloadMuxerEngine') || 'muxjs';
+        const requested = Settings.get('downloadMuxerEngine') || 'mediabunnyWebCodecs';
         this._lastMuxerContext = {
             requested,
             used: requested === 'mediabunnyWebCodecs' ? 'mediabunnyWebCodecs' : 'muxjs',
@@ -4112,7 +4112,7 @@ const VideoDownloader = {
             },
             quality: this._qualityDiagnostic(quality, format),
             muxer: error?.rxMuxerContext || this._lastMuxerContext || {
-                requested: Settings.get('downloadMuxerEngine') || 'muxjs',
+                requested: Settings.get('downloadMuxerEngine') || 'mediabunnyWebCodecs',
                 used: null,
                 fallback: false,
             },

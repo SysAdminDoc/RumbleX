@@ -4,6 +4,10 @@ All notable changes to RumbleX will be documented in this file.
 
 ## [Unreleased]
 
+### Changed
+- **Mediabunny is the default HLS-to-MP4 muxer; mux.js is now the fallback.** mux.js has had no commit since 2024-10-11 and no maintained fork exists, while Mediabunny shipped three fixes to the MPEG-TS demux path RumbleX actually uses between June and August 2026. Both engines already passed golden-file parity, so this promotes the better-maintained one rather than changing what a converted file looks like. Nothing is lost where WebCodecs is missing (Firefox below 130, the transmuxer-free lite userscript): the engine dispatch falls back to mux.js automatically and records why in the download diagnostics.
+- **Schema v4 migrates existing installs onto the new default.** Every settings save persists the whole cache, so an install that predates this release carries `downloadMuxerEngine: "muxjs"` explicitly and a default change alone would have reached only brand-new installs. The migration rewrites the old default once; choosing mux.js after upgrading is respected and not rewritten again.
+
 ### Added
 - **Release checksums can now be signed, and a bad signature stops the build.** `SHA256SUMS.txt` has always proved a download arrived intact; it never proved who produced it, which is the half that matters when 2026's live threat to extension users is lookalike repositories serving their own ZIPs. Setting `RUMBLEX_SIGNING_KEY` makes `extension/build.sh` write `SHA256SUMS.txt.sig` and then verify it against the public key published in `allowed_signers` — if the signing key and the published identity disagree, the build refuses to finish rather than shipping an unverifiable release. Builds without the variable are unsigned and say so. README documents the one-command `ssh-keygen -Y verify` check for users. The signing key itself is a trust-root decision left to the maintainer; until it exists the path is inert by design.
 - Private Vulnerability Reporting is enabled on the repository, and a `refs/tags/v*` ruleset blocks tag deletion and non-fast-forward updates so a published release tag cannot be quietly repointed.

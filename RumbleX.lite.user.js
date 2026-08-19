@@ -23,7 +23,7 @@
 // @updateURL    https://raw.githubusercontent.com/SysAdminDoc/RumbleX/main/RumbleX.lite.user.js
 // ==/UserScript==
 
-// Generated from extension/settings-schema.js + extension/content.js. Shared runtime SHA-256: 0f2eb1ea50e8276cd4b92f40c474337f3ebd1a129c4bd5074836d4111ed4d08c
+// Generated from extension/settings-schema.js + extension/content.js. Shared runtime SHA-256: 2ad737e7705c4c59d9ef0cb673976d120b0bfe856fd2b164b1298629ee4a80d9
 // RumbleX shared settings schema. This file is the canonical source for
 // defaults and trust-boundary normalization across content, options, popup,
 // background profile/Gist restores, and the generated userscript.
@@ -32,7 +32,7 @@
 (() => {
     if (globalThis.RumbleXSettingsSchema) return;
 
-    const SCHEMA_VERSION = 3;
+    const SCHEMA_VERSION = 4;
     const DEFAULTS = Object.freeze({
         adNuker: true,
         theaterSplit: true,
@@ -207,7 +207,7 @@
         downloadShorts: true,
         downloadConcurrency: 2,
         downloadProbeCacheTtlHours: 24,
-        downloadMuxerEngine: 'muxjs',
+        downloadMuxerEngine: 'mediabunnyWebCodecs',
         audioExtractionMode: 'browserIfSupported',
         externalPlayerEnabled: false,
         externalPlayerTemplate: '',
@@ -437,6 +437,17 @@
         // upgraded profile is cleaned deterministically.
         delete out.bookmarks;
         delete out.settingsProfiles;
+        // v4 - the default muxer engine moved from mux.js to Mediabunny. Every
+        // save persists the whole cache, so an existing install carries
+        // `muxjs` explicitly and a default change alone would never reach it.
+        // Rewrite the old default; a deliberate choice is indistinguishable
+        // from a persisted default here, and the engine dispatch still falls
+        // back to mux.js automatically wherever WebCodecs is unavailable, so
+        // the worst case for someone who did choose mux.js is that the
+        // fallback returns them to it.
+        if (current < 4 && out.downloadMuxerEngine === 'muxjs') {
+            out.downloadMuxerEngine = 'mediabunnyWebCodecs';
+        }
         out.schemaVersion = SCHEMA_VERSION;
         return out;
     }
@@ -4694,7 +4705,7 @@ const VideoDownloader = {
     },
 
     async _transmuxWithWorker(tsBuffers, signal) {
-        const requested = Settings.get('downloadMuxerEngine') || 'muxjs';
+        const requested = Settings.get('downloadMuxerEngine') || 'mediabunnyWebCodecs';
         this._lastMuxerContext = {
             requested,
             used: requested === 'mediabunnyWebCodecs' ? 'mediabunnyWebCodecs' : 'muxjs',
@@ -5505,7 +5516,7 @@ const VideoDownloader = {
             },
             quality: this._qualityDiagnostic(quality, format),
             muxer: error?.rxMuxerContext || this._lastMuxerContext || {
-                requested: Settings.get('downloadMuxerEngine') || 'muxjs',
+                requested: Settings.get('downloadMuxerEngine') || 'mediabunnyWebCodecs',
                 used: null,
                 fallback: false,
             },

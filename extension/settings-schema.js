@@ -6,7 +6,7 @@
 (() => {
     if (globalThis.RumbleXSettingsSchema) return;
 
-    const SCHEMA_VERSION = 3;
+    const SCHEMA_VERSION = 4;
     const DEFAULTS = Object.freeze({
         adNuker: true,
         theaterSplit: true,
@@ -181,7 +181,7 @@
         downloadShorts: true,
         downloadConcurrency: 2,
         downloadProbeCacheTtlHours: 24,
-        downloadMuxerEngine: 'muxjs',
+        downloadMuxerEngine: 'mediabunnyWebCodecs',
         audioExtractionMode: 'browserIfSupported',
         externalPlayerEnabled: false,
         externalPlayerTemplate: '',
@@ -411,6 +411,17 @@
         // upgraded profile is cleaned deterministically.
         delete out.bookmarks;
         delete out.settingsProfiles;
+        // v4 - the default muxer engine moved from mux.js to Mediabunny. Every
+        // save persists the whole cache, so an existing install carries
+        // `muxjs` explicitly and a default change alone would never reach it.
+        // Rewrite the old default; a deliberate choice is indistinguishable
+        // from a persisted default here, and the engine dispatch still falls
+        // back to mux.js automatically wherever WebCodecs is unavailable, so
+        // the worst case for someone who did choose mux.js is that the
+        // fallback returns them to it.
+        if (current < 4 && out.downloadMuxerEngine === 'muxjs') {
+            out.downloadMuxerEngine = 'mediabunnyWebCodecs';
+        }
         out.schemaVersion = SCHEMA_VERSION;
         return out;
     }

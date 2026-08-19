@@ -255,7 +255,7 @@
         downloadShorts: { group: 'downloads', label: 'Download Shorts', desc: 'Treat Shorts as normal downloadable videos.' },
         downloadConcurrency: { group: 'downloads', label: 'Download Concurrency', desc: 'Max parallel downloads (host-safe default: 2).' },
         downloadProbeCacheTtlHours: { group: 'downloads', label: 'Probe Cache TTL (hours)', desc: 'Prevents repeated CDN probes.' },
-        downloadMuxerEngine: { group: 'downloads', label: 'HLS MP4 Muxer Engine', desc: 'muxjs | mediabunnyWebCodecs. Default muxjs; Mediabunny is experimental and falls back to mux.js on failure.' },
+        downloadMuxerEngine: { group: 'downloads', label: 'HLS MP4 Muxer Engine', desc: 'mediabunnyWebCodecs | muxjs. Default Mediabunny; falls back to mux.js automatically where WebCodecs is unavailable or conversion fails.' },
         audioExtractionMode: { group: 'downloads', label: 'Audio Extraction', desc: 'off | browserIfSupported | companion | external.' },
         externalPlayerEnabled: { group: 'integrations', label: 'External Player Handoff', desc: 'MPV / PotPlayer / custom URI scheme.' },
         externalPlayerTemplate: { group: 'integrations', label: 'External Player Template', desc: 'Command/URI template, e.g. "mpv://{url}".' },
@@ -1197,8 +1197,8 @@
             { value: 'light', label: 'Light' },
         ],
         downloadMuxerEngine: [
-            { value: 'muxjs', label: 'mux.js (default)' },
-            { value: 'mediabunnyWebCodecs', label: 'Mediabunny + WebCodecs (experimental)' },
+            { value: 'mediabunnyWebCodecs', label: 'Mediabunny + WebCodecs (default)' },
+            { value: 'muxjs', label: 'mux.js (legacy fallback)' },
         ],
     };
 

@@ -77,10 +77,10 @@ test('download muxer engine renders as a guarded choice', async ({ context, exte
     const card = page.locator('.settings-item').filter({ hasText: 'HLS MP4 Muxer Engine' });
     await expect(card).toBeVisible();
     const select = card.locator('select[name="downloadMuxerEngine"]');
-    await expect(select).toHaveValue('muxjs');
+    await expect(select).toHaveValue('mediabunnyWebCodecs');
     await expect(select.locator('option')).toHaveText([
-        'mux.js (default)',
-        'Mediabunny + WebCodecs (experimental)',
+        'Mediabunny + WebCodecs (default)',
+        'mux.js (legacy fallback)',
     ]);
 });
 

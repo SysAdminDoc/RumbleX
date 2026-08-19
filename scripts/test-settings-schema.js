@@ -16,14 +16,14 @@ const plain = (value) => JSON.parse(JSON.stringify(value));
 const schema = context.RumbleXSettingsSchema;
 
 assert.ok(schema, 'schema global was not installed');
-assert.equal(schema.SCHEMA_VERSION, 3);
+assert.equal(schema.SCHEMA_VERSION, 4);
 assert.ok(Object.keys(schema.DEFAULTS).length >= 208, 'canonical defaults catalog unexpectedly shrank');
 
 const migrated = plain(evaluate(`RumbleXSettingsSchema.normalizeStored({
     keyboardNav: true,
     theme: 'oledGreen',
 })`));
-assert.equal(migrated.schemaVersion, 3);
+assert.equal(migrated.schemaVersion, 4);
 assert.equal(migrated.legacyKeyboardNav, true);
 assert.equal(migrated.theme, 'oledGreen');
 assert.ok(!Object.hasOwn(migrated, 'keyboardNav'));
@@ -36,9 +36,30 @@ const droppedLegacy = plain(evaluate(`RumbleXSettingsSchema.normalizeStored({
     bookmarks: [{ id: 'b1', label: 'kept nowhere' }],
     settingsProfiles: [{ id: 'p1', name: 'stale' }],
 })`));
-assert.equal(droppedLegacy.schemaVersion, 3);
+assert.equal(droppedLegacy.schemaVersion, 4);
 assert.ok(!Object.hasOwn(droppedLegacy, 'bookmarks'));
 assert.ok(!Object.hasOwn(droppedLegacy, 'settingsProfiles'));
+
+// v4 moved the default muxer engine to Mediabunny. Because every save persists
+// the whole cache, an existing install carries `muxjs` explicitly, so changing
+// the default alone would never reach anyone already using RumbleX. The
+// migration has to rewrite it.
+const muxerMigrated = plain(evaluate(`RumbleXSettingsSchema.normalizeStored({
+    schemaVersion: 3,
+    downloadMuxerEngine: 'muxjs',
+})`));
+assert.equal(muxerMigrated.schemaVersion, 4);
+assert.equal(muxerMigrated.downloadMuxerEngine, 'mediabunnyWebCodecs',
+    'an install stored at v3 must move to the Mediabunny default');
+
+// Once migrated, a deliberate choice of mux.js must survive. Re-running the
+// migration on an already-current profile must not rewrite it again.
+const muxerRespected = plain(evaluate(`RumbleXSettingsSchema.normalizeStored({
+    schemaVersion: 4,
+    downloadMuxerEngine: 'muxjs',
+})`));
+assert.equal(muxerRespected.downloadMuxerEngine, 'muxjs',
+    'a current profile that chooses mux.js must keep it');
 
 const sanitized = plain(evaluate(`RumbleXSettingsSchema.normalizeStored(JSON.parse(${JSON.stringify(JSON.stringify({
     schemaVersion: 99,
@@ -69,7 +90,7 @@ const sanitized = plain(evaluate(`RumbleXSettingsSchema.normalizeStored(JSON.par
     __proto__: { polluted: true },
 }))}))`));
 
-assert.equal(sanitized.schemaVersion, 3);
+assert.equal(sanitized.schemaVersion, 4);
 assert.equal(sanitized.splitRatio, 95);
 assert.ok(!Object.hasOwn(sanitized, 'adNuker'));
 assert.ok(!Object.hasOwn(sanitized, 'theme'));
