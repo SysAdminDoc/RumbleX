@@ -1,8 +1,15 @@
 # RumbleX
 
-![Version](https://img.shields.io/badge/version-v3.46.0-blue) ![License](https://img.shields.io/badge/license-MIT-green) ![Platform](https://img.shields.io/badge/platform-Extension%20%2B%20Userscript-lightgrey) ![Firefox](https://img.shields.io/badge/firefox-109%2B-orange)
+![Version](https://img.shields.io/badge/version-v3.47.0-blue) ![License](https://img.shields.io/badge/license-MIT-green) ![Platform](https://img.shields.io/badge/platform-Extension%20%2B%20Userscript-lightgrey) ![Firefox](https://img.shields.io/badge/firefox-109%2B-orange)
 
 **The ultimate Rumble enhancement suite.** 130+ feature modules across 14 categories — ad blocking, theater mode, video downloads with CDN deep-scan probing and an opt-in Mediabunny muxer path, five-theme engine (now including OLED Green), playback controls, chat enhancements with deterministic username colors and tier-filtered rants, chapters, SponsorBlock, clips, live DVR, transcripts, auto-hide chrome, 50+ granular hide-X toggles for every Rumble row/button/player control, thumbnail hider, dense mode, reduced-motion path, tracking-param stripping, external player handoff (MPV/PotPlayer), and full-round-trip backup/restore with snapshot history. Chrome MV3 + Firefox MV2 + userscript.
+
+### What's new in v3.47
+
+- **A project page, and a way to check what you downloaded.** Install instructions for every browser now live at <https://sysadmindoc.github.io/RumbleX/>, along with the commands to verify a release. Release checksums can be signed, and a signature that doesn't match the published key stops the build instead of shipping.
+- **Mediabunny is the default converter.** mux.js hasn't had a commit since October 2024; Mediabunny fixed three bugs in the exact conversion path RumbleX uses this summer. mux.js stays as the automatic fallback wherever WebCodecs isn't available, so nothing is lost.
+- **Exact view counts on watch pages.** Rumble publishes structured data for search engines that includes the real numbers, the true duration and the upload date. RumbleX reads it now, and the local health report tracks it as its own layer.
+- **Time Remaining**, off by default: how much is left at the speed you're actually watching, and the clock time you'll finish.
 
 ### What's new in v3.41
 

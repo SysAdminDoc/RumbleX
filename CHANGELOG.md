@@ -2,7 +2,7 @@
 
 All notable changes to RumbleX will be documented in this file.
 
-## [Unreleased]
+## [3.47.0] - 2026-08-19
 
 ### Added
 - **A project page at <https://sysadmindoc.github.io/RumbleX/>.** Install steps for every browser, the checksum and signature commands, an honest account of what the ad shield can and cannot do per runtime, and a plain statement of what RumbleX does with your data. It exists mostly as an anchor: fake repositories serving malicious release assets were one of 2026's most common attacks on people installing software from GitHub, so there is now one page that says which two sources are real.
