@@ -23,7 +23,7 @@
 // @updateURL    https://github.com/SysAdminDoc/RumbleX/raw/main/RumbleX.user.js
 // ==/UserScript==
 
-// Generated from extension/settings-schema.js + extension/content.js. Shared runtime SHA-256: 2ad737e7705c4c59d9ef0cb673976d120b0bfe856fd2b164b1298629ee4a80d9
+// Generated from extension/settings-schema.js + extension/content.js. Shared runtime SHA-256: 0fd3fc3cf96163d1b3e62df6718e872b0d6775ad2852de626876464c2575bc06
 // RumbleX shared settings schema. This file is the canonical source for
 // defaults and trust-boundary normalization across content, options, popup,
 // background profile/Gist restores, and the generated userscript.
@@ -1907,6 +1907,15 @@ const Selectors = {
         });
         const missing = checks.filter((check) => check.state === 'missing').map((check) => check.key);
         const fallback = checks.filter((check) => check.state === 'fallback').map((check) => check.key);
+        // Structured data is reported separately from the CSS-selector checks.
+        // It is a different layer with a different failure mode: selectors break
+        // when Rumble restyles, JSON-LD breaks when Rumble changes what it tells
+        // search engines. Neither state affects `status`, which stays a
+        // statement about the selectors features actually depend on.
+        let structuredData = 'not-applicable';
+        if (page === 'watch' || page === 'live') {
+            structuredData = PageData.available() ? 'present' : 'absent';
+        }
         return {
             checkedAt: new Date().toISOString(),
             page,
@@ -1914,6 +1923,7 @@ const Selectors = {
             checked: checks.length,
             missing,
             fallback,
+            structuredData,
             checks,
         };
     },
@@ -2440,6 +2450,144 @@ const VideoCards = {
     },
     thumbnail(card) {
         return card.querySelector('.rum-video-thumbnail__image, .videostream__image, .thumbnail__image, .videostream__thumbnail, .video-item--img-wrapper, [class*="thumbnail"]');
+    },
+};
+
+// ═══════════════════════════════════════════
+//  Structured page data (schema.org JSON-LD)
+// ═══════════════════════════════════════════
+// Rumble emits a schema.org VideoObject on watch pages for search engines. That
+// makes it the most stable description of a video on the page: it carries the
+// exact view count, an ISO 8601 duration, the upload date and the embed id,
+// none of which have to be scraped out of presentation markup that Rumble is
+// free to restyle.
+//
+// This is deliberately a *supplement*, not a replacement. Channel and feed
+// listings were checked against live Rumble on 2026-08-19 and still render real
+// DOM cards, so `VideoCards` stays the card layer and every reader here falls
+// back to the DOM when the JSON-LD is absent, malformed, or for a different
+// video.
+const PageData = {
+    _url: null,
+    _video: null,
+
+    // ISO 8601 durations, e.g. "PT01H36M12S". Rumble has also been seen to emit
+    // bare second counts, so accept a plain number too.
+    _isoDuration(value) {
+        if (typeof value === 'number' && Number.isFinite(value)) return value > 0 ? value : null;
+        if (typeof value !== 'string') return null;
+        const trimmed = value.trim();
+        if (/^\d+(\.\d+)?$/.test(trimmed)) {
+            const plain = Number(trimmed);
+            return plain > 0 ? plain : null;
+        }
+        const match = /^P(?:([\d.]+)D)?(?:T(?:([\d.]+)H)?(?:([\d.]+)M)?(?:([\d.]+)S)?)?$/.exec(trimmed);
+        if (!match) return null;
+        const [, d, h, m, s] = match;
+        if (!d && !h && !m && !s) return null;
+        const total = (Number(d || 0) * 86400) + (Number(h || 0) * 3600) + (Number(m || 0) * 60) + Number(s || 0);
+        return Number.isFinite(total) && total > 0 ? total : null;
+    },
+
+    _parse(root = document) {
+        const nodes = qsa('script[type="application/ld+json"]', root);
+        for (const node of nodes) {
+            let parsed;
+            // A single malformed block must not hide a valid one later in the
+            // document, so failures are skipped rather than aborting the scan.
+            try { parsed = JSON.parse(node.textContent || ''); } catch { continue; }
+            const queue = Array.isArray(parsed) ? [...parsed] : [parsed];
+            while (queue.length) {
+                const item = queue.shift();
+                if (!item || typeof item !== 'object') continue;
+                if (Array.isArray(item['@graph'])) queue.push(...item['@graph']);
+                const type = item['@type'];
+                const isVideo = type === 'VideoObject'
+                    || (Array.isArray(type) && type.includes('VideoObject'));
+                if (isVideo) return item;
+            }
+        }
+        return null;
+    },
+
+    // Cached per URL. Rumble is an SPA, so a stale object from the previous
+    // watch page would silently describe the wrong video.
+    videoObject(root = document) {
+        const href = typeof location !== 'undefined' ? location.href : '';
+        if (this._url === href && this._video) return this._video;
+        let found = null;
+        try { found = this._parse(root); } catch { found = null; }
+        // Only a hit is cached. On an SPA route change the URL updates before
+        // the new markup lands, so caching the miss would pin "no data" for the
+        // rest of the visit to a page that does have it.
+        this._url = found ? href : null;
+        this._video = found;
+        return found;
+    },
+
+    invalidate() {
+        this._url = null;
+        this._video = null;
+    },
+
+    title() {
+        const value = this.videoObject()?.name;
+        return typeof value === 'string' ? value.trim() : '';
+    },
+
+    description() {
+        const value = this.videoObject()?.description;
+        return typeof value === 'string' ? value.trim() : '';
+    },
+
+    durationSeconds() {
+        return this._isoDuration(this.videoObject()?.duration);
+    },
+
+    uploadDate() {
+        const value = this.videoObject()?.uploadDate;
+        if (typeof value !== 'string' || !value.trim()) return null;
+        const parsed = new Date(value);
+        return Number.isNaN(parsed.getTime()) ? null : value.trim();
+    },
+
+    thumbnailUrl() {
+        const raw = this.videoObject()?.thumbnailUrl;
+        const value = Array.isArray(raw) ? raw[0] : raw;
+        if (typeof value !== 'string') return '';
+        try { return new URL(value, location.origin).href; } catch { return ''; }
+    },
+
+    // schema.org allows one object or an array of them; only the watch counter
+    // is meaningful here.
+    viewCount() {
+        const raw = this.videoObject()?.interactionStatistic;
+        if (!raw) return null;
+        const entries = Array.isArray(raw) ? raw : [raw];
+        for (const entry of entries) {
+            if (!entry || typeof entry !== 'object') continue;
+            const type = entry.interactionType;
+            const name = typeof type === 'string' ? type : (type && typeof type === 'object' ? type['@type'] || type.name : '');
+            if (name && !/WatchAction/i.test(String(name))) continue;
+            const count = Number(entry.userInteractionCount);
+            if (Number.isFinite(count) && count >= 0) return count;
+        }
+        return null;
+    },
+
+    // The embed id is not always the id in the page URL, and the download path
+    // needs the embed one. Taking it from here avoids re-deriving it from
+    // markup.
+    embedId() {
+        const value = this.videoObject()?.embedUrl;
+        if (typeof value !== 'string') return null;
+        return value.match(/\/embed\/([a-z0-9]+)/i)?.[1] || null;
+    },
+
+    // Reported in the privacy/selector-health surface so a reader can tell
+    // structured data from scraped markup.
+    available() {
+        return !!this.videoObject();
     },
 };
 
@@ -10151,6 +10299,21 @@ const ExactCounts = {
             const title = item.getAttribute('title');
             if (title && /\d/.test(title)) {
                 this._setExactText(item, title);
+            }
+        }
+
+        // Watch page view counter. Rumble abbreviates it in the markup and,
+        // unlike a feed card, exposes no data-views attribute to expand, so the
+        // schema.org VideoObject is the only exact figure on the page.
+        if (Page.isWatch()) {
+            const exactViews = PageData.viewCount();
+            if (exactViews !== null) {
+                for (const viewEl of qsa('.media-heading-info, .video-counters--item')) {
+                    if (viewEl.dataset.rxExact) continue;
+                    if (!/view|watching/i.test(viewEl.textContent || '')) continue;
+                    this._setExactText(viewEl, `${this._formatNumber(exactViews)} views`, viewEl);
+                    break;
+                }
             }
         }
 

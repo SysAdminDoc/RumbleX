@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Structured data watch fixture</title>
+  <!--
+    Mirrors the schema.org JSON-LD Rumble serves on a watch page, confirmed
+    against live rumble.com on 2026-08-19. Every value here is synthetic.
+
+    Three things this fixture deliberately reproduces from the real page:
+      - the VideoObject arrives alongside WebSite and Organization blocks, so a
+        reader has to search rather than take the first block
+      - the embed id in embedUrl differs from the id in the page URL
+      - duration is ISO 8601, not seconds
+
+    It also carries one malformed block, because a single bad script must not
+    stop the parser from finding a good one later in the document.
+  -->
+  <script type="application/ld+json">{ "@context": "https://schema.org", "@type": "WebSite", "url": "https://rumble.com/" }</script>
+  <script type="application/ld+json">{ this is not valid json at all </script>
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "VideoObject",
+    "name": "Structured Fixture Episode 12",
+    "playerType": "HTML5 Flash",
+    "description": "A synthetic watch page used to prove structured-data extraction.",
+    "thumbnailUrl": "https://sp.rmbl.ws/s8/6/fixture-thumb.jpg",
+    "uploadDate": "2026-08-18T12:26:21+00:00",
+    "duration": "PT01H36M12S",
+    "embedUrl": "https://rumble.com/embed/vembed99/",
+    "url": "https://rumble.com/vstruct01-structured-fixture-episode-12.html",
+    "interactionStatistic": {
+      "@type": "InteractionCounter",
+      "interactionType": { "@type": "http://schema.org/WatchAction" },
+      "userInteractionCount": 535349
+    },
+    "width": 1920,
+    "height": 1080,
+    "videoQuality": "1080p"
+  }
+  </script>
+  <script type="application/ld+json">{ "@context": "https://schema.org", "@type": "Organization", "name": "Rumble", "url": "https://rumble.com/" }</script>
+  <style>
+    body { margin: 0; background: #111; color: #eee; font-family: sans-serif; }
+    #videoPlayer { width: 720px; max-width: 100%; height: 405px; background: #000; }
+    #videoPlayer video { display: block; width: 100%; height: 100%; }
+  </style>
+</head>
+<body>
+  <header class="header"><a class="header-logo" href="/">Rumble</a></header>
+  <main>
+    <div id="videoPlayer" class="videoPlayer-Rumble-cls">
+      <video src="data:video/mp4;base64,AAAAHGZ0eXBpc29tAAACAGlzb21pc28ybXA0MQ==" controls></video>
+    </div>
+    <h1 class="video-header-container__title">Structured Fixture Episode 12</h1>
+    <div class="media-heading-info">1.2K views</div>
+    <div class="media-by">
+      <a class="media-by--a" rel="author" href="/c/StructuredFixtureChannel">
+        <span class="media-heading-name">Structured Fixture Channel</span>
+      </a>
+    </div>
+    <div class="media-description">Synthetic description body.</div>
+  </main>
+</body>
+</html>
