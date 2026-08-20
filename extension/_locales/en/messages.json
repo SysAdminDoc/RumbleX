@@ -2022,5 +2022,57 @@
   "creatorPanelNote": {
     "message": "Counted from the videos this page lists, so it only sees as far back as the page goes. Raids are not counted: they are only visible as a chat notice while one happens.",
     "description": "In-page UI string (shared core)."
+  },
+  "theaterOpenPanelLabel": {
+    "message": "Open panel",
+    "description": "In-page UI string (shared core)."
+  },
+  "theaterOpenPanel": {
+    "message": "Open theater side panel",
+    "description": "In-page UI string (shared core)."
+  },
+  "theaterHidePanelLabel": {
+    "message": "Hide side panel",
+    "description": "In-page UI string (shared core)."
+  },
+  "theaterCollapsePanel": {
+    "message": "Collapse theater side panel",
+    "description": "In-page UI string (shared core)."
+  },
+  "playerToolsButton": {
+    "message": "Tools",
+    "description": "In-page UI string (shared core)."
+  },
+  "playerToolsTitle": {
+    "message": "RumbleX player tools",
+    "description": "In-page UI string (shared core)."
+  },
+  "playerToolsOpen": {
+    "message": "Open RumbleX player tools",
+    "description": "In-page UI string (shared core)."
+  },
+  "playerToolsHeading": {
+    "message": "Player tools",
+    "description": "In-page UI string (shared core)."
+  },
+  "screenshotCaptureAria": {
+    "message": "Capture screenshot frame",
+    "description": "In-page UI string (shared core)."
+  },
+  "videoStatsShow": {
+    "message": "Show video statistics",
+    "description": "In-page UI string (shared core)."
+  },
+  "bookmarkVideoAria": {
+    "message": "Bookmark this video",
+    "description": "In-page UI string (shared core)."
+  },
+  "shareTimestampAria": {
+    "message": "Copy video URL at current time",
+    "description": "In-page UI string (shared core)."
+  },
+  "shareTimestampLabel": {
+    "message": "Share at time",
+    "description": "In-page UI string (shared core)."
   }
 }

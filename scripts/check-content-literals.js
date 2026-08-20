@@ -26,8 +26,8 @@ const CORE = path.join(ROOT, 'extension', 'content.js');
  * string is the thing this guard exists to reject.
  */
 const BASELINE = {
-    assignments: 69, // .textContent / .placeholder / .title = 'literal'
-    ariaLabels: 41,   // setAttribute('aria-label', 'literal')
+    assignments: 68, // .textContent / .placeholder / .title = 'literal'
+    ariaLabels: 40,   // setAttribute('aria-label', 'literal')
     // RX_CATEGORIES is no longer counted: the modal renders it through
     // rxFeatLabel/rxFeatDesc/rxCatLabel, and sync-content-locale.js derives the
     // catalog keys straight from the array, so those literals ARE the English

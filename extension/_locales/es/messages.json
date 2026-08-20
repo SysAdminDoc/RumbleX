@@ -2020,5 +2020,57 @@
   "creatorPanelNote": {
     "message": "Se cuenta lo que aparece en esta página, así que solo llega tan atrás como la página cargue. Los raids no se cuentan: solo se ven como un aviso en el chat mientras ocurren.",
     "description": "In-page UI string (shared core)."
+  },
+  "theaterOpenPanelLabel": {
+    "message": "Abrir panel",
+    "description": "In-page UI string (shared core)."
+  },
+  "theaterOpenPanel": {
+    "message": "Abrir panel lateral del modo cine",
+    "description": "In-page UI string (shared core)."
+  },
+  "theaterHidePanelLabel": {
+    "message": "Ocultar panel lateral",
+    "description": "In-page UI string (shared core)."
+  },
+  "theaterCollapsePanel": {
+    "message": "Contraer panel lateral del modo cine",
+    "description": "In-page UI string (shared core)."
+  },
+  "playerToolsButton": {
+    "message": "Herramientas",
+    "description": "In-page UI string (shared core)."
+  },
+  "playerToolsTitle": {
+    "message": "Herramientas del reproductor RumbleX",
+    "description": "In-page UI string (shared core)."
+  },
+  "playerToolsOpen": {
+    "message": "Abrir herramientas del reproductor RumbleX",
+    "description": "In-page UI string (shared core)."
+  },
+  "playerToolsHeading": {
+    "message": "Herramientas del reproductor",
+    "description": "In-page UI string (shared core)."
+  },
+  "screenshotCaptureAria": {
+    "message": "Capturar fotograma del video",
+    "description": "In-page UI string (shared core)."
+  },
+  "videoStatsShow": {
+    "message": "Mostrar estadísticas del video",
+    "description": "In-page UI string (shared core)."
+  },
+  "bookmarkVideoAria": {
+    "message": "Guardar este video en marcadores",
+    "description": "In-page UI string (shared core)."
+  },
+  "shareTimestampAria": {
+    "message": "Copiar URL del video en el momento actual",
+    "description": "In-page UI string (shared core)."
+  },
+  "shareTimestampLabel": {
+    "message": "Compartir desde aquí",
+    "description": "In-page UI string (shared core)."
   }
 }

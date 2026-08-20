@@ -1,4 +1,4 @@
-// RumbleX v3.50.0 - Shared Content Core
+// RumbleX v3.51.0 - Shared Content Core
 // Rumble enhancement suite - Chrome/Firefox extension
 'use strict';
 
@@ -8,7 +8,7 @@
 // DOM feature ship from one canonical source.
 const RXPlatform = globalThis.RumbleXPlatform;
 if (!RXPlatform) throw new Error('RumbleX platform adapter is missing');
-const VERSION = RXPlatform.version || '3.50.0';
+const VERSION = RXPlatform.version || '3.51.0';
 /**
  * In-page translation lookup.
  *
@@ -1739,6 +1739,277 @@ const DarkEnhance = {
         html.rumblex-active rum-button[state="ghost"] {
             border-color: ${t.brand} !important;
         }
+
+        /* Premium site shell. These selectors stay structural so the visual
+           system survives Rumble's generated utility-class churn. */
+        html.rumblex-active {
+            --rx-site-canvas: ${t.crust};
+            --rx-site-shell: ${t.mantle};
+            --rx-site-panel: ${t.base};
+            --rx-site-raised: ${t.surface0};
+            --rx-site-hover: ${t.surface1};
+            --rx-site-border: ${t.surface0};
+            --rx-site-border-strong: ${t.surface1};
+            --rx-site-shadow: 0 14px 36px rgba(0,0,0,0.26);
+            --rx-site-shadow-soft: 0 8px 24px rgba(0,0,0,0.18);
+            --rx-site-radius-sm: 6px;
+            --rx-site-radius-md: 8px;
+            --rx-site-radius-lg: 12px;
+            --rx-site-focus: 0 0 0 2px ${t.crust}, 0 0 0 4px ${t.accent};
+            color-scheme: dark;
+        }
+        html.rumblex-active body {
+            background: var(--rx-site-canvas) !important;
+            color: var(--rx-text) !important;
+            font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif !important;
+            text-rendering: optimizeLegibility;
+        }
+
+        /* Header and global navigation */
+        html.rumblex-active .header {
+            background: var(--rx-site-shell) !important;
+            border-bottom: 1px solid var(--rx-site-border) !important;
+            box-shadow: 0 8px 30px rgba(0,0,0,0.18) !important;
+        }
+        html.rumblex-active .header-search-field,
+        html.rumblex-active .header-search input {
+            min-height: 42px !important;
+            background: var(--rx-site-panel) !important;
+            border: 1px solid var(--rx-site-border-strong) !important;
+            border-radius: var(--rx-site-radius-md) !important;
+            box-shadow: inset 0 1px 0 rgba(255,255,255,0.025) !important;
+        }
+        html.rumblex-active .header-search-field:hover,
+        html.rumblex-active .header-search input:hover {
+            border-color: var(--rx-surface2) !important;
+        }
+        html.rumblex-active .header-search-field:focus,
+        html.rumblex-active .header-search input:focus {
+            border-color: var(--rx-accent) !important;
+            box-shadow: var(--rx-site-focus) !important;
+            outline: 0 !important;
+        }
+        html.rumblex-active #main-menu,
+        html.rumblex-active .hover-menu,
+        html.rumblex-active .sidenav {
+            background: var(--rx-site-shell) !important;
+            border-color: var(--rx-site-border) !important;
+        }
+        html.rumblex-active .main-menu-item__nav,
+        html.rumblex-active .main-menu-item-channel {
+            min-height: 44px;
+            margin: 2px 8px !important;
+            border: 1px solid transparent !important;
+            border-radius: var(--rx-site-radius-md) !important;
+            color: var(--rx-subtext) !important;
+            transition: color 160ms ease, background-color 160ms ease, border-color 160ms ease !important;
+        }
+        html.rumblex-active .main-menu-item__nav:hover,
+        html.rumblex-active .main-menu-item-channel:hover {
+            background: var(--rx-site-raised) !important;
+            border-color: var(--rx-site-border-strong) !important;
+            color: var(--rx-text) !important;
+        }
+        html.rumblex-active .main-menu-item__nav.active {
+            background: ${t.selectionBg} !important;
+            border-color: ${t.accent} !important;
+            color: var(--rx-text) !important;
+            box-shadow: inset 3px 0 0 ${t.accent} !important;
+        }
+
+        /* Featured row and feed sections */
+        html.rumblex-active .rum-featured-pills-row__pill {
+            min-height: 38px !important;
+            padding: 8px 14px !important;
+            background: var(--rx-site-panel) !important;
+            border: 1px solid var(--rx-site-border) !important;
+            border-radius: var(--rx-site-radius-md) !important;
+            color: var(--rx-subtext) !important;
+            box-shadow: none !important;
+            transition: color 160ms ease, background-color 160ms ease, border-color 160ms ease, transform 160ms ease !important;
+        }
+        html.rumblex-active .rum-featured-pills-row__pill:hover {
+            color: var(--rx-text) !important;
+            background: var(--rx-site-raised) !important;
+            border-color: var(--rx-site-border-strong) !important;
+            transform: translateY(-1px);
+        }
+        html.rumblex-active .rum-featured-pills-row__pill[aria-current="true"] {
+            color: var(--rx-crust) !important;
+            background: var(--rx-accent) !important;
+            border-color: var(--rx-accent) !important;
+            font-weight: 750 !important;
+        }
+        html.rumblex-active .homepage-heading,
+        html.rumblex-active .homepage-heading__title {
+            color: var(--rx-text) !important;
+            letter-spacing: -0.018em !important;
+        }
+        html.rumblex-active .homepage-content > section,
+        html.rumblex-active [id^="section-"] {
+            border-color: var(--rx-site-border) !important;
+        }
+
+        /* Video cards */
+        html.rumblex-active rum-video-thumbnail[role="listitem"],
+        html.rumblex-active .videostream {
+            border-radius: var(--rx-site-radius-lg) !important;
+            transition: transform 180ms ease, background-color 180ms ease, box-shadow 180ms ease !important;
+        }
+        html.rumblex-active rum-video-thumbnail[role="listitem"]:hover,
+        html.rumblex-active .videostream:hover {
+            background: var(--rx-site-raised) !important;
+            box-shadow: var(--rx-site-shadow-soft) !important;
+            transform: translateY(-2px);
+        }
+        html.rumblex-active rum-video-thumbnail[role="listitem"] img.rum-video-thumbnail__image,
+        html.rumblex-active rum-video-thumbnail[role="listitem"] .rum-video-thumbnail__image,
+        html.rumblex-active rum-video-thumbnail[role="listitem"] .rum-video-thumbnail__image img,
+        html.rumblex-active .videostream img,
+        html.rumblex-active .thumbnail__image {
+            border-radius: var(--rx-site-radius-lg) !important;
+        }
+        html.rumblex-active rum-video-thumbnail[role="listitem"] h3,
+        html.rumblex-active rum-video-thumbnail[role="listitem"] rum-text[role="heading"],
+        html.rumblex-active rum-video-thumbnail[role="listitem"] [role="heading"],
+        html.rumblex-active .thumbnail__title,
+        html.rumblex-active .videostream__link {
+            color: var(--rx-text) !important;
+            font-weight: 650 !important;
+            line-height: 1.3 !important;
+            letter-spacing: -0.01em !important;
+        }
+        html.rumblex-active rum-video-thumbnail[role="listitem"] a:not(.btn),
+        html.rumblex-active rum-video-thumbnail[role="listitem"] .channel__link,
+        html.rumblex-active rum-video-thumbnail[role="listitem"] [class*="channel"] {
+            color: var(--rx-subtext) !important;
+        }
+        html.rumblex-active .media-page-related-media-desktop-sidebar,
+        html.rumblex-active .media-page-related-media-mobile {
+            background: var(--rx-site-canvas) !important;
+            color: var(--rx-text) !important;
+            border-color: var(--rx-site-border) !important;
+        }
+        html.rumblex-active rum-video-thumbnail[role="listitem"]:focus-within {
+            outline: 2px solid var(--rx-accent) !important;
+            outline-offset: 3px !important;
+        }
+
+        /* Watch-page hierarchy */
+        html.rumblex-active .video-header-container__title h1,
+        html.rumblex-active .video-header-container__title {
+            color: var(--rx-text) !important;
+            font-size: clamp(22px, 2vw, 30px) !important;
+            font-weight: 760 !important;
+            line-height: 1.18 !important;
+            letter-spacing: -0.025em !important;
+            text-shadow: none !important;
+            -webkit-text-stroke: 0 !important;
+            filter: none !important;
+        }
+        html.rumblex-active .media-by,
+        html.rumblex-active .media-description,
+        html.rumblex-active .media-description-section,
+        html.rumblex-active .media-page-comments-container,
+        html.rumblex-active #video-comments {
+            border-color: var(--rx-site-border) !important;
+        }
+        html.rumblex-active .media-description {
+            background: var(--rx-site-panel) !important;
+            border: 1px solid var(--rx-site-border) !important;
+            border-radius: var(--rx-site-radius-lg) !important;
+            box-shadow: inset 0 1px 0 rgba(255,255,255,0.025) !important;
+        }
+        html.rumblex-active .round-button.media-by-actions-button,
+        html.rumblex-active .btn,
+        html.rumblex-active .rumbles-vote-pill,
+        html.rumblex-active .rum-featured-pills-row__pill,
+        html.rumblex-active rum-button {
+            border-radius: var(--rx-site-radius-md) !important;
+        }
+        html.rumblex-active .round-button.media-by-actions-button,
+        html.rumblex-active .btn-grey,
+        html.rumblex-active .rumbles-vote-pill {
+            background: var(--rx-site-raised) !important;
+            border-color: var(--rx-site-border-strong) !important;
+            color: var(--rx-text) !important;
+            box-shadow: none !important;
+            transition: background-color 160ms ease, border-color 160ms ease, color 160ms ease, transform 160ms ease !important;
+        }
+        html.rumblex-active .round-button.media-by-actions-button:hover,
+        html.rumblex-active .btn-grey:hover,
+        html.rumblex-active .rumbles-vote-pill:hover {
+            background: var(--rx-site-hover) !important;
+            border-color: var(--rx-accent) !important;
+            transform: translateY(-1px);
+        }
+        html.rumblex-active .btn-green {
+            background: var(--rx-green) !important;
+            border-color: var(--rx-green) !important;
+            color: var(--rx-crust) !important;
+            box-shadow: 0 8px 20px color-mix(in srgb, var(--rx-green) 22%, transparent) !important;
+        }
+        html.rumblex-active .media-by-actions-sub-menu-button,
+        html.rumblex-active .popout__menu-button {
+            border-radius: var(--rx-site-radius-sm) !important;
+        }
+        html.rumblex-active .popout__menu-container {
+            background: var(--rx-site-panel) !important;
+            border: 1px solid var(--rx-site-border-strong) !important;
+            border-radius: var(--rx-site-radius-lg) !important;
+            box-shadow: var(--rx-site-shadow) !important;
+        }
+
+        /* Chat and comments */
+        html.rumblex-active .media-page-chat-aside-chat,
+        html.rumblex-active .chat--header,
+        html.rumblex-active .chat--input,
+        html.rumblex-active .chat-form-overflow-wrapper {
+            background: var(--rx-site-panel) !important;
+            border-color: var(--rx-site-border) !important;
+        }
+        html.rumblex-active .chat--input,
+        html.rumblex-active .comments-create-textarea,
+        html.rumblex-active #video-comments textarea,
+        html.rumblex-active #video-comments input,
+        html.rumblex-active #video-comments select,
+        html.rumblex-active .comments-sort-by {
+            background: var(--rx-site-panel) !important;
+            border-color: var(--rx-site-border-strong) !important;
+            color: var(--rx-text) !important;
+            border-radius: var(--rx-site-radius-md) !important;
+        }
+        html.rumblex-active .comment-item {
+            border-color: var(--rx-site-border) !important;
+            transition: background-color 150ms ease !important;
+        }
+        html.rumblex-active .comment-item:hover {
+            background: ${t.hoverBg} !important;
+        }
+
+        html.rumblex-active :where(a, button, input, select, textarea, [tabindex]):focus-visible {
+            outline: 0 !important;
+            box-shadow: var(--rx-site-focus) !important;
+        }
+
+        @media (max-width: 760px) {
+            html.rumblex-active .main-menu-item__nav,
+            html.rumblex-active .main-menu-item-channel { margin-inline: 4px !important; }
+            html.rumblex-active .rum-featured-pills-row__pill { min-height: 44px !important; }
+            html.rumblex-active rum-video-thumbnail[role="listitem"]:hover,
+            html.rumblex-active .videostream:hover { transform: none; }
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            html.rumblex-active *,
+            html.rumblex-active *::before,
+            html.rumblex-active *::after {
+                scroll-behavior: auto !important;
+                transition-duration: 0.01ms !important;
+                animation-duration: 0.01ms !important;
+                animation-iteration-count: 1 !important;
+            }
+        }
         `;
     },
 
@@ -1811,8 +2082,10 @@ const TheaterSplit = {
             z-index: 9999;
             display: flex;
             flex-direction: row;
-            background: #000;
+            background: var(--rx-theater-canvas, #020202);
+            color: var(--rx-theater-text, #f5f7fb);
             overflow: hidden;
+            font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
         }
         #rx-split-left {
             flex: 1;
@@ -1820,7 +2093,7 @@ const TheaterSplit = {
             display: flex;
             align-items: center;
             justify-content: center;
-            background: #000;
+            background: var(--rx-theater-canvas, #020202);
             position: relative;
             overflow: hidden;
         }
@@ -1852,7 +2125,7 @@ const TheaterSplit = {
             width: 0;
             min-height: 44px;
             cursor: col-resize;
-            background: rgba(255,255,255,0.06);
+            background: var(--rx-theater-border, rgba(255,255,255,0.1));
             transition: flex-basis 0.35s cubic-bezier(.4,0,.2,1),
                         width 0.35s cubic-bezier(.4,0,.2,1),
                         background 0.15s;
@@ -1861,7 +2134,7 @@ const TheaterSplit = {
         }
         #rx-split-divider:hover,
         #rx-split-divider.rx-dragging,
-        #rx-split-divider:focus-visible { background: rgba(137,180,250,0.35); outline: none; }
+        #rx-split-divider:focus-visible { background: var(--rx-theater-accent, #89b4fa); outline: none; }
         #rx-split-divider::after {
             content: '';
             position: absolute;
@@ -1880,7 +2153,8 @@ const TheaterSplit = {
             width: 0;
             overflow: hidden;
             opacity: 0;
-            background: var(--rx-base, #1e1e2e);
+            background: var(--rx-theater-panel, #111116);
+            border-left: 1px solid var(--rx-theater-border, rgba(255,255,255,0.1));
             transition: flex-basis 0.4s cubic-bezier(.4,0,.2,1),
                         opacity 0.35s ease;
             display: flex;
@@ -1908,16 +2182,76 @@ const TheaterSplit = {
             height: auto !important;
         }
         #rx-split-right .comment-item {
-            padding: 8px 12px !important;
-            border-bottom: 1px solid rgba(255,255,255,0.06) !important;
+            padding: 12px 14px !important;
+            border-bottom: 1px solid var(--rx-theater-border, rgba(255,255,255,0.08)) !important;
+        }
+        #rx-split-right textarea,
+        #rx-split-right input,
+        #rx-split-right select {
+            background: var(--rx-theater-raised, rgba(255,255,255,0.06)) !important;
+            border-color: var(--rx-theater-border-strong, rgba(255,255,255,0.14)) !important;
+            color: var(--rx-theater-text, #f5f7fb) !important;
+            border-radius: 8px !important;
         }
         #rx-split-right .comments-meta-author { font-size: 12px !important; }
         #rx-split-right .comment-text { font-size: 13px !important; line-height: 1.4 !important; }
+        #rx-split-right .rx-comment-sort-bar {
+            display: grid !important;
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+            gap: 4px !important;
+            margin: 0 !important;
+            padding: 9px 10px !important;
+            background: var(--rx-theater-shell, #0b0b0f) !important;
+            border-bottom: 1px solid var(--rx-theater-border, rgba(255,255,255,0.1)) !important;
+        }
+        #rx-split-right .rx-comment-sort-btn {
+            min-height: 32px;
+            padding: 0 6px !important;
+            border-radius: 6px !important;
+            background: transparent !important;
+            border-color: transparent !important;
+            color: var(--rx-theater-subtext, #a6adc8) !important;
+        }
+        #rx-split-right .rx-comment-sort-btn:hover,
+        #rx-split-right .rx-comment-sort-btn.active {
+            background: var(--rx-theater-raised, rgba(255,255,255,0.06)) !important;
+            border-color: var(--rx-theater-border-strong, rgba(255,255,255,0.14)) !important;
+            color: var(--rx-theater-text, #f5f7fb) !important;
+        }
+        #rx-split-right .rx-comment-nav {
+            position: sticky !important;
+            top: 0;
+            display: flex !important;
+            flex-wrap: wrap;
+            gap: 4px !important;
+            margin: 0 !important;
+            padding: 8px 10px !important;
+            background: var(--rx-theater-panel, #111116) !important;
+            border: 0 !important;
+            border-bottom: 1px solid var(--rx-theater-border, rgba(255,255,255,0.1)) !important;
+            border-radius: 0 !important;
+            box-shadow: 0 8px 18px rgba(0,0,0,0.14);
+        }
+        #rx-split-right .rx-comment-nav button {
+            flex: 1 1 58px;
+            min-height: 32px;
+            padding: 0 6px !important;
+            border-radius: 6px !important;
+            background: var(--rx-theater-raised, rgba(255,255,255,0.06)) !important;
+            border-color: var(--rx-theater-border, rgba(255,255,255,0.1)) !important;
+            color: var(--rx-theater-subtext, #a6adc8) !important;
+        }
+        #rx-split-right .rx-comment-nav button:hover {
+            border-color: var(--rx-theater-accent, #89b4fa) !important;
+            color: var(--rx-theater-text, #f5f7fb) !important;
+        }
+        #rx-split-right .rx-comment-nav .count { display: none !important; }
 
 
         #rx-split-right .rx-panel-header {
-            padding: 12px 12px 10px 16px;
-            border-bottom: 1px solid rgba(255,255,255,0.08);
+            padding: 14px 12px 12px 16px;
+            border-bottom: 1px solid var(--rx-theater-border, rgba(255,255,255,0.1));
+            background: var(--rx-theater-shell, #0b0b0f);
             flex-shrink: 0;
             display: flex;
             align-items: flex-start;
@@ -1927,8 +2261,8 @@ const TheaterSplit = {
         #rx-split-right .rx-panel-header h3 {
             margin: 0 0 4px;
             font-size: 15px;
-            font-weight: 600;
-            color: var(--rx-text, #cdd6f4);
+            font-weight: 750;
+            color: var(--rx-theater-text, #f5f7fb);
             line-height: 1.3;
             overflow: hidden;
             text-overflow: ellipsis;
@@ -1938,7 +2272,7 @@ const TheaterSplit = {
         }
         #rx-split-right .rx-panel-header .rx-channel {
             font-size: 12px;
-            color: var(--rx-subtext, #a6adc8);
+            color: var(--rx-theater-subtext, #a6adc8);
         }
         #rx-split-right .rx-panel-header .rx-header-actions {
             display: flex;
@@ -1947,23 +2281,23 @@ const TheaterSplit = {
             align-items: center;
         }
         #rx-split-right .rx-panel-header .rx-hdr-btn {
-            width: 44px; height: 44px;
-            border-radius: 50%;
-            background: rgba(255,255,255,0.06);
-            border: 1px solid rgba(255,255,255,0.1);
-            color: rgba(255,255,255,0.6);
+            width: 40px; height: 40px;
+            border-radius: 8px;
+            background: transparent;
+            border: 1px solid var(--rx-theater-border, rgba(255,255,255,0.1));
+            color: var(--rx-theater-subtext, rgba(255,255,255,0.68));
             cursor: pointer;
             display: flex;
             align-items: center;
             justify-content: center;
-            transition: background 0.15s, border-color 0.15s, transform 0.15s;
+            transition: background-color 0.15s, border-color 0.15s, color 0.15s;
             text-decoration: none;
             padding: 0;
         }
         #rx-split-right .rx-panel-header .rx-hdr-btn:hover {
-            background: rgba(255,255,255,0.12);
-            border-color: rgba(137,180,250,0.4);
-            transform: scale(1.1);
+            background: var(--rx-theater-raised, rgba(255,255,255,0.08));
+            border-color: var(--rx-theater-accent, #89b4fa);
+            color: var(--rx-theater-text, #fff);
         }
         #rx-split-right .rx-panel-header .rx-hdr-btn svg { width: 16px; height: 16px; }
         #rx-split-right .rx-panel-header #rx-hdr-home:hover { border-color: rgba(133,213,81,0.5); }
@@ -1974,8 +2308,8 @@ const TheaterSplit = {
         #rx-tab-bar {
             display: flex;
             flex-shrink: 0;
-            border-bottom: 1px solid rgba(255,255,255,0.08);
-            background: rgba(0,0,0,0.15);
+            border-bottom: 1px solid var(--rx-theater-border, rgba(255,255,255,0.1));
+            background: var(--rx-theater-shell, #0b0b0f);
         }
         .rx-tab {
             flex: 1;
@@ -1984,7 +2318,7 @@ const TheaterSplit = {
             text-align: center;
             font-size: 12px;
             font-weight: 600;
-            color: var(--rx-subtext, #a6adc8);
+            color: var(--rx-theater-subtext, #a6adc8);
             cursor: pointer;
             border: none;
             background: transparent;
@@ -1993,19 +2327,20 @@ const TheaterSplit = {
             letter-spacing: 0.3px;
         }
         .rx-tab:hover {
-            color: var(--rx-text, #cdd6f4);
-            background: rgba(255,255,255,0.03);
+            color: var(--rx-theater-text, #f5f7fb);
+            background: var(--rx-theater-raised, rgba(255,255,255,0.06));
         }
         .rx-tab.rx-tab-active {
-            color: var(--rx-accent, #89b4fa);
-            border-bottom-color: var(--rx-accent, #89b4fa);
+            color: var(--rx-theater-accent, #89b4fa);
+            border-bottom-color: var(--rx-theater-accent, #89b4fa);
         }
         .rx-tab:focus-visible,
         #rx-collapse-strip:focus-visible,
+        #rx-split-reveal:focus-visible,
         #rx-theater-close:focus-visible,
         #rx-split-right .rx-hdr-btn:focus-visible {
-            outline: 3px solid var(--rx-accent, #89b4fa);
-            outline-offset: -3px;
+            outline: 2px solid var(--rx-theater-accent, #89b4fa);
+            outline-offset: 2px;
         }
 
         #rx-tab-chat {
@@ -2023,12 +2358,19 @@ const TheaterSplit = {
             right: auto !important;
             display: flex !important;
             flex-direction: column !important;
+            background: var(--rx-theater-panel, #111116) !important;
+            color: var(--rx-theater-text, #f5f7fb) !important;
         }
         #rx-tab-chat .media-page-chat-container-toggle-btn { display: none !important; }
-        #rx-tab-chat .chat--header { flex-shrink: 0; }
+        #rx-tab-chat .chat--header {
+            flex-shrink: 0;
+            background: var(--rx-theater-shell, #0b0b0f) !important;
+            border-color: var(--rx-theater-border, rgba(255,255,255,0.1)) !important;
+        }
         #rx-tab-chat #chat-history-list {
             flex: 1;
             overflow-y: auto !important;
+            background: var(--rx-theater-panel, #111116) !important;
             scrollbar-width: thin;
             scrollbar-color: rgba(255,255,255,0.15) transparent;
         }
@@ -2037,7 +2379,18 @@ const TheaterSplit = {
             background: rgba(255,255,255,0.14);
             border-radius: 3px;
         }
-        #rx-tab-chat .chat-form-overflow-wrapper { flex-shrink: 0; }
+        #rx-tab-chat .chat-form-overflow-wrapper {
+            flex-shrink: 0;
+            background: var(--rx-theater-shell, #0b0b0f) !important;
+            border-color: var(--rx-theater-border, rgba(255,255,255,0.1)) !important;
+        }
+        #rx-tab-chat input,
+        #rx-tab-chat textarea {
+            background: var(--rx-theater-raised, rgba(255,255,255,0.06)) !important;
+            border-color: var(--rx-theater-border, rgba(255,255,255,0.1)) !important;
+            color: var(--rx-theater-text, #f5f7fb) !important;
+            border-radius: 8px !important;
+        }
 
         #rx-tab-comments {
             flex: 1;
@@ -2057,37 +2410,63 @@ const TheaterSplit = {
         #rx-tab-chat .media-page-chat-aside-chat { display: flex !important; }
 
         #rx-collapse-strip {
-            height: 44px;
+            height: 38px;
             width: 100%;
             border: 0;
-            border-bottom: 1px solid rgba(255,255,255,0.08);
-            background: rgba(255,255,255,0.025);
-            color: var(--rx-subtext, #a6adc8);
+            border-bottom: 1px solid var(--rx-theater-border, rgba(255,255,255,0.1));
+            background: var(--rx-theater-raised, rgba(255,255,255,0.04));
+            color: var(--rx-theater-subtext, #a6adc8);
             transition: background 0.2s, color 0.2s;
-            cursor: default;
+            cursor: pointer;
             flex-shrink: 0;
-            font: 600 12px/1 system-ui, sans-serif;
+            font: 700 11px/1 Inter, ui-sans-serif, system-ui, sans-serif;
+            letter-spacing: 0.02em;
         }
         #rx-collapse-strip:hover {
-            color: var(--rx-text, #cdd6f4);
-            background: rgba(137,180,250,0.12);
+            color: var(--rx-theater-text, #f5f7fb);
+            background: var(--rx-theater-selection, rgba(137,180,250,0.14));
         }
-        #rx-theater-close {
+        #rx-theater-close,
+        #rx-split-reveal {
             position: absolute;
             top: 12px;
-            left: 12px;
             z-index: 1000;
-            width: 44px;
-            height: 44px;
-            border: 1px solid rgba(255,255,255,0.24);
-            border-radius: 50%;
-            background: rgba(0,0,0,0.78);
-            color: #fff;
+            height: 40px;
+            border: 1px solid var(--rx-theater-border-strong, rgba(255,255,255,0.22));
+            border-radius: 8px;
+            background: rgba(7,9,13,0.82);
+            color: var(--rx-theater-text, #fff);
             cursor: pointer;
-            font: 700 24px/1 system-ui, sans-serif;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.28);
+            transition: background-color 150ms ease, border-color 150ms ease, transform 150ms ease;
         }
-        #rx-split-left .rx-screenshot-btn { top: 64px; }
-        @media (max-width: 700px), (pointer: coarse) {
+        #rx-theater-close {
+            left: 12px;
+            width: 40px;
+            display: grid;
+            place-items: center;
+            padding: 0;
+        }
+        #rx-theater-close svg { width: 16px; height: 16px; }
+        #rx-split-reveal {
+            right: 74px;
+            padding: 0 13px;
+            font: 700 12px/1 Inter, ui-sans-serif, system-ui, sans-serif;
+        }
+        html.rx-split #rx-split-reveal { display: none; }
+        #rx-theater-close:hover,
+        #rx-split-reveal:hover {
+            background: rgba(17,20,28,0.96);
+            border-color: var(--rx-theater-accent, #89b4fa);
+            transform: translateY(-1px);
+        }
+        .rx-empty-state {
+            padding: 32px 20px;
+            color: var(--rx-theater-subtext, #a6adc8);
+            text-align: center;
+            font-size: 13px;
+        }
+        @media (max-width: 860px), (pointer: coarse) {
             #rx-split-wrapper { flex-direction: column; }
             #rx-split-divider {
                 width: 100% !important;
@@ -2099,13 +2478,37 @@ const TheaterSplit = {
                 width: 32px;
                 height: 4px;
             }
-            #rx-split-right { width: 100% !important; }
+            #rx-split-right { width: 100% !important; min-width: 0 !important; }
+            #rx-split-right.rx-expanded { min-height: 280px; }
+            #rx-split-reveal { right: 74px; height: 44px; }
+            #rx-theater-close { width: 44px; height: 44px; }
+        }
+        @media (prefers-reduced-motion: reduce) {
+            #rx-split-right,
+            #rx-split-divider,
+            #rx-theater-close,
+            #rx-split-reveal { transition: none !important; }
         }
     `,
 
     _buildOverlay() {
         const wrapper = document.createElement('div');
         wrapper.id = 'rx-split-wrapper';
+        const theme = THEMES[Settings.get('theme')] || THEMES.catppuccin;
+        const theaterTokens = {
+            '--rx-theater-canvas': theme.crust,
+            '--rx-theater-shell': theme.mantle,
+            '--rx-theater-panel': theme.base,
+            '--rx-theater-raised': theme.surface0,
+            '--rx-theater-border': theme.surface0,
+            '--rx-theater-border-strong': theme.surface1,
+            '--rx-theater-text': theme.text,
+            '--rx-theater-subtext': theme.subtext,
+            '--rx-theater-accent': theme.accent,
+            '--rx-theater-selection': theme.selectionBg,
+        };
+        for (const [name, value] of Object.entries(theaterTokens)) wrapper.style.setProperty(name, value);
+        wrapper.dataset.theme = Settings.get('theme') || 'catppuccin';
 
         const left = document.createElement('div');
         left.id = 'rx-split-left';
@@ -2115,9 +2518,20 @@ const TheaterSplit = {
         close.type = 'button';
         close.setAttribute('aria-label', 'Exit theater mode');
         close.title = 'Exit theater mode';
-        close.textContent = '×';
+        close.innerHTML = '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="3" y1="3" x2="13" y2="13"/><line x1="13" y1="3" x2="3" y2="13"/></svg>';
         close.addEventListener('click', () => this._unmount({ restoreFocus: true }));
         left.appendChild(close);
+
+        const reveal = document.createElement('button');
+        reveal.id = 'rx-split-reveal';
+        reveal.type = 'button';
+        reveal.textContent = rxT('theaterOpenPanelLabel', 'Open panel');
+        reveal.title = rxT('theaterOpenPanel', 'Open theater side panel');
+        reveal.setAttribute('aria-label', rxT('theaterOpenPanel', 'Open theater side panel'));
+        reveal.setAttribute('aria-controls', 'rx-split-right');
+        reveal.setAttribute('aria-expanded', 'false');
+        reveal.addEventListener('click', () => this._expandSplit());
+        left.appendChild(reveal);
 
         const divider = document.createElement('div');
         divider.id = 'rx-split-divider';
@@ -2139,7 +2553,7 @@ const TheaterSplit = {
     },
 
     _isNarrow() {
-        return matchMedia('(max-width: 700px), (pointer: coarse)').matches;
+        return matchMedia('(max-width: 860px), (pointer: coarse)').matches;
     },
 
     _applySplitGeometry(leftPct, persist = false) {
@@ -2233,16 +2647,16 @@ const TheaterSplit = {
         if (!right || !divider) return;
 
         const leftPct = Settings.get('splitRatio') || 75;
-        const rightPct = 100 - leftPct;
 
         this._applySplitGeometry(leftPct);
         right.classList.add('rx-expanded');
+        qs('#rx-split-reveal')?.setAttribute('aria-expanded', 'true');
 
         this._populateRight(right);
         this._attachRightScrollHandlers(right);
     },
 
-    _collapseSplit() {
+    _collapseSplit({ restoreFocus = false } = {}) {
         if (!this._isSplit) return;
         this._isSplit = false;
         document.documentElement.classList.remove('rx-split');
@@ -2257,8 +2671,11 @@ const TheaterSplit = {
         divider.style.flex = '0 0 0';
         divider.style.width = '0';
         divider.style.height = '0';
+        const reveal = qs('#rx-split-reveal');
+        reveal?.setAttribute('aria-expanded', 'false');
 
         this._detachRightScrollHandlers();
+        if (restoreFocus) requestAnimationFrame(() => reveal?.focus({ preventScroll: true }));
     },
 
     _detectLive() {
@@ -2326,7 +2743,7 @@ const TheaterSplit = {
         gearBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 00-2 2v.18a2 2 0 01-1 1.73l-.43.25a2 2 0 01-2 0l-.15-.08a2 2 0 00-2.73.73l-.22.38a2 2 0 00.73 2.73l.15.1a2 2 0 011 1.72v.51a2 2 0 01-1 1.74l-.15.09a2 2 0 00-.73 2.73l.22.38a2 2 0 002.73.73l.15-.08a2 2 0 012 0l.43.25a2 2 0 011 1.73V20a2 2 0 002 2h.44a2 2 0 002-2v-.18a2 2 0 011-1.73l.43-.25a2 2 0 012 0l.15.08a2 2 0 002.73-.73l.22-.39a2 2 0 00-.73-2.73l-.15-.08a2 2 0 01-1-1.74v-.5a2 2 0 011-1.74l.15-.09a2 2 0 00.73-2.73l-.22-.38a2 2 0 00-2.73-.73l-.15.08a2 2 0 01-2 0l-.43-.25a2 2 0 01-1-1.73V4a2 2 0 00-2-2z"/><circle cx="12" cy="12" r="3"/></svg>';
 
         gearBtn.addEventListener('click', () => {
-            document.body.classList.toggle('rx-panel-open');
+            SettingsPanel._open();
         });
 
         actions.appendChild(homeBtn);
@@ -2359,9 +2776,9 @@ const TheaterSplit = {
         const strip = document.createElement('button');
         strip.id = 'rx-collapse-strip';
         strip.type = 'button';
-        strip.textContent = 'Collapse side panel';
-        strip.setAttribute('aria-label', 'Collapse theater side panel');
-        strip.addEventListener('click', () => this._collapseSplit());
+        strip.textContent = rxT('theaterHidePanelLabel', 'Hide side panel');
+        strip.setAttribute('aria-label', rxT('theaterCollapsePanel', 'Collapse theater side panel'));
+        strip.addEventListener('click', () => this._collapseSplit({ restoreFocus: true }));
         right.appendChild(strip);
 
         right.appendChild(this._buildHeader());
@@ -2552,6 +2969,7 @@ const TheaterSplit = {
 
         left.insertBefore(player, left.firstChild);
         document.body.appendChild(wrapper);
+        PlayerActionDock.repair();
 
         if (wasPlaying && video) {
             requestAnimationFrame(() => video.play().catch(() => {}));
@@ -2606,6 +3024,7 @@ const TheaterSplit = {
 
         this._keyHandler = (e) => {
             if (e.key === 'Escape' && this._isActive) {
+                if (qs('.rx-player-tools[data-open="true"]') || document.body.classList.contains('rx-panel-open')) return;
                 e.preventDefault();
                 this._unmount({ restoreFocus: true });
             }
@@ -2632,6 +3051,7 @@ const TheaterSplit = {
             } else {
                 this._origPlayerParent.appendChild(player);
             }
+            PlayerActionDock.repair();
         }
 
         const chatEl = this._chatEl;
@@ -7811,6 +8231,306 @@ const VideoTimestamps = {
 //  FEATURE: PiP Button
 // ═══════════════════════════════════════════
 
+// Shared disclosure for optional player utilities. The previous layout placed
+// Screenshot, Stats, Loop, and Share at four independent player coordinates.
+// One menu keeps every feature available without covering the video.
+const PlayerActionDock = {
+    _styleEl: null,
+    _outsideHandler: null,
+    _keyHandler: null,
+    _repairTimers: new Set(),
+
+    _css: `
+        .rx-player-tools {
+            position: absolute !important;
+            inset: 12px 12px auto auto !important;
+            width: auto !important;
+            height: auto !important;
+            z-index: 1200;
+            opacity: 0.64;
+            isolation: isolate;
+            transform: translate3d(0,0,0);
+            transition: opacity 160ms ease, transform 160ms ease;
+            font-family: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+        }
+        .videoPlayer-Rumble-cls:hover .rx-player-tools,
+        #videoPlayer:hover .rx-player-tools,
+        .rx-player-tools:focus-within,
+        .rx-player-tools[data-open="true"] {
+            opacity: 1 !important;
+        }
+        .rx-player-tools-trigger {
+            min-width: 54px;
+            height: 40px;
+            padding: 0 12px;
+            border: 1px solid rgba(255,255,255,0.22);
+            border-radius: 8px;
+            background: rgba(7,9,13,0.82);
+            color: #f5f7fb;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.28);
+            cursor: pointer;
+            font: 700 12px/1 Inter, ui-sans-serif, system-ui, sans-serif;
+            letter-spacing: 0.01em;
+            transition: background-color 150ms ease, border-color 150ms ease, transform 150ms ease;
+        }
+        .rx-player-tools-trigger:hover,
+        .rx-player-tools[data-open="true"] .rx-player-tools-trigger {
+            background: rgba(17,20,28,0.96);
+            border-color: var(--rx-accent, #89b4fa);
+            transform: translateY(-1px);
+        }
+        .rx-player-tools-trigger:focus-visible,
+        .rx-player-tool-action:focus-visible {
+            outline: 2px solid var(--rx-accent, #89b4fa);
+            outline-offset: 2px;
+        }
+        .rx-player-tools-menu {
+            position: absolute;
+            top: 48px;
+            right: 0;
+            width: 196px;
+            padding: 6px;
+            border: 1px solid rgba(255,255,255,0.14);
+            border-radius: 10px;
+            background: #090c11;
+            box-shadow: 0 18px 46px rgba(0,0,0,0.5);
+            transform: translateZ(0);
+            backface-visibility: hidden;
+        }
+        .rx-player-tools-menu[hidden] { display: none !important; }
+        .rx-player-tools-heading {
+            padding: 7px 10px 6px;
+            color: rgba(255,255,255,0.5);
+            font: 750 10px/1 Inter, ui-sans-serif, system-ui, sans-serif;
+            letter-spacing: 0.12em;
+            text-transform: uppercase;
+        }
+        .rx-player-tool-action {
+            position: static !important;
+            width: 100% !important;
+            min-height: 42px !important;
+            margin: 0 !important;
+            padding: 0 10px !important;
+            border: 1px solid transparent !important;
+            border-radius: 7px !important;
+            background: transparent !important;
+            color: rgba(255,255,255,0.78) !important;
+            box-shadow: none !important;
+            opacity: 1 !important;
+            transform: none !important;
+            display: flex !important;
+            align-items: center !important;
+            justify-content: flex-start !important;
+            gap: 9px !important;
+            cursor: pointer !important;
+            font: 650 12px/1 Inter, ui-sans-serif, system-ui, sans-serif !important;
+            text-align: left !important;
+            transition: color 140ms ease, background-color 140ms ease, border-color 140ms ease !important;
+        }
+        .rx-player-tool-action:hover {
+            background: rgba(255,255,255,0.07) !important;
+            border-color: rgba(255,255,255,0.09) !important;
+            color: #fff !important;
+        }
+        .rx-player-tool-action.active {
+            background: rgba(166,227,161,0.1) !important;
+            border-color: rgba(166,227,161,0.28) !important;
+            color: #a6e3a1 !important;
+        }
+        .rx-player-tool-action svg {
+            width: 16px !important;
+            height: 16px !important;
+            flex: 0 0 16px;
+        }
+        @media (max-width: 700px), (pointer: coarse) {
+            .rx-player-tools { top: 8px; right: 8px; opacity: 0.72; }
+            .rx-player-tools-trigger { min-width: 58px; height: 44px; }
+            .rx-player-tools-menu { top: 52px; width: min(210px, calc(100vw - 24px)); }
+            .rx-player-tool-action { min-height: 44px !important; }
+        }
+        @media (prefers-reduced-motion: reduce) {
+            .rx-player-tools,
+            .rx-player-tools-trigger,
+            .rx-player-tool-action { transition: none !important; }
+        }
+    `,
+
+    _ensureStyle() {
+        if (!this._styleEl?.isConnected) this._styleEl = injectStyle(this._css, 'rx-player-tools-css');
+    },
+
+    hostFor(container) {
+        const theaterLeft = container.closest?.('#rx-split-left') || qs('#rx-split-left');
+        if (theaterLeft?.contains(container)) return theaterLeft;
+        const candidates = [
+            ...(container.matches?.('.videoPlayer-Rumble-cls') ? [container] : []),
+            ...Array.from(container.querySelectorAll?.('.videoPlayer-Rumble-cls') || []),
+            container,
+        ];
+        return candidates.find((candidate) => {
+            const rect = candidate.getBoundingClientRect();
+            const style = getComputedStyle(candidate);
+            return style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 0 && rect.height > 0;
+        }) || container;
+    },
+
+    repair() {
+        const player = qs('#videoPlayer') || qs('.video-player');
+        if (!player) return;
+        const host = this.hostFor(player);
+        if (!host || !host.isConnected) return;
+        let targetDock = Array.from(host.children).find((child) => child.classList?.contains('rx-player-tools'));
+        for (const dock of qsa('.rx-player-tools')) {
+            if (dock === targetDock || dock.parentElement === host) continue;
+            if (targetDock) {
+                const targetMenu = targetDock.querySelector('.rx-player-tools-menu');
+                for (const action of qsa('.rx-player-tool-action', dock)) targetMenu?.appendChild(action);
+                dock.remove();
+            } else {
+                host.appendChild(dock);
+                targetDock = dock;
+            }
+        }
+        for (const overlay of qsa('.rx-stats-overlay, .rx-loop-ab-bar')) {
+            const rect = overlay.parentElement?.getBoundingClientRect();
+            if ((!rect || rect.width === 0 || rect.height === 0) && overlay.parentElement !== host) host.appendChild(overlay);
+        }
+    },
+
+    _scheduleRepair() {
+        for (const delay of [0, 250, 1000, 2500]) {
+            const timer = setTimeout(() => {
+                this._repairTimers.delete(timer);
+                this.repair();
+            }, delay);
+            this._repairTimers.add(timer);
+        }
+    },
+
+    _setOpen(dock, open) {
+        const trigger = dock.querySelector('.rx-player-tools-trigger');
+        const menu = dock.querySelector('.rx-player-tools-menu');
+        if (!trigger || !menu) return;
+        dock.dataset.open = String(open);
+        trigger.setAttribute('aria-expanded', String(open));
+        menu.hidden = !open;
+    },
+
+    _closeAll(except = null) {
+        for (const dock of qsa('.rx-player-tools')) {
+            if (dock !== except) this._setOpen(dock, false);
+        }
+    },
+
+    _ensureGlobalHandlers() {
+        if (!this._outsideHandler) {
+            this._outsideHandler = (event) => {
+                if (!event.target.closest?.('.rx-player-tools')) this._closeAll();
+            };
+            document.addEventListener('pointerdown', this._outsideHandler, true);
+        }
+        if (!this._keyHandler) {
+            this._keyHandler = (event) => {
+                if (event.key !== 'Escape') return;
+                const openDock = qs('.rx-player-tools[data-open="true"]');
+                if (!openDock) return;
+                this._setOpen(openDock, false);
+                openDock.querySelector('.rx-player-tools-trigger')?.focus();
+            };
+            document.addEventListener('keydown', this._keyHandler);
+        }
+    },
+
+    _create(container) {
+        this._ensureStyle();
+        this._ensureGlobalHandlers();
+
+        const dock = document.createElement('div');
+        dock.className = 'rx-player-tools';
+        dock.dataset.open = 'false';
+
+        const trigger = document.createElement('button');
+        trigger.type = 'button';
+        trigger.className = 'rx-player-tools-trigger';
+        trigger.textContent = rxT('playerToolsButton', 'Tools');
+        trigger.title = rxT('playerToolsTitle', 'RumbleX player tools');
+        trigger.setAttribute('aria-label', rxT('playerToolsOpen', 'Open RumbleX player tools'));
+        trigger.setAttribute('aria-haspopup', 'menu');
+        trigger.setAttribute('aria-expanded', 'false');
+
+        const menu = document.createElement('div');
+        menu.className = 'rx-player-tools-menu';
+        menu.hidden = true;
+        menu.setAttribute('tabindex', '-1');
+        menu.setAttribute('role', 'menu');
+        menu.setAttribute('aria-label', rxT('playerToolsTitle', 'RumbleX player tools'));
+
+        const heading = document.createElement('div');
+        heading.className = 'rx-player-tools-heading';
+        heading.textContent = rxT('playerToolsHeading', 'Player tools');
+        menu.appendChild(heading);
+
+        trigger.addEventListener('click', (event) => {
+            event.stopPropagation();
+            const open = dock.dataset.open !== 'true';
+            this._closeAll(dock);
+            this._setOpen(dock, open);
+            if (open) menu.querySelector('.rx-player-tool-action')?.focus();
+        });
+        menu.addEventListener('keydown', (event) => {
+            if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return;
+            const actions = Array.from(menu.querySelectorAll('.rx-player-tool-action'));
+            if (!actions.length) return;
+            event.preventDefault();
+            const current = Math.max(0, actions.indexOf(document.activeElement));
+            const index = event.key === 'Home' ? 0
+                : event.key === 'End' ? actions.length - 1
+                : event.key === 'ArrowDown' ? (current + 1) % actions.length
+                : (current - 1 + actions.length) % actions.length;
+            actions[index].focus({ preventScroll: true });
+        });
+
+        dock.append(trigger, menu);
+        container.appendChild(dock);
+        return dock;
+    },
+
+    add(container, button) {
+        const host = this.hostFor(container);
+        host.style.position = host.style.position || 'relative';
+        const dock = host.querySelector('.rx-player-tools') || this._create(host);
+        const menu = dock.querySelector('.rx-player-tools-menu');
+        button.classList.add('rx-player-tool-action');
+        button.setAttribute('role', 'menuitem');
+        button.addEventListener('click', () => {
+            requestAnimationFrame(() => {
+                this._setOpen(dock, false);
+                dock.querySelector('.rx-player-tools-trigger')?.focus({ preventScroll: true });
+            });
+        });
+        menu.appendChild(button);
+        this._scheduleRepair();
+        return button;
+    },
+
+    remove(button) {
+        if (!button) return;
+        const dock = button.closest('.rx-player-tools');
+        button.remove();
+        if (dock && !dock.querySelector('.rx-player-tool-action')) dock.remove();
+        if (!qs('.rx-player-tools')) {
+            if (this._outsideHandler) document.removeEventListener('pointerdown', this._outsideHandler, true);
+            if (this._keyHandler) document.removeEventListener('keydown', this._keyHandler);
+            this._outsideHandler = null;
+            this._keyHandler = null;
+            this._styleEl?.remove();
+            this._styleEl = null;
+            for (const timer of this._repairTimers) clearTimeout(timer);
+            this._repairTimers.clear();
+        }
+    }
+};
+
 // ═══════════════════════════════════════════
 //  FEATURE: Screenshot Button
 // ═══════════════════════════════════════════
@@ -7820,27 +8540,6 @@ const ScreenshotBtn = {
     _btn: null,
 
     _css: `
-        .rx-screenshot-btn {
-            position: absolute;
-            top: 10px; left: 10px;
-            z-index: 100;
-            background: rgba(17,17,27,0.75);
-            border: 1px solid rgba(205,214,244,0.2);
-            color: #cdd6f4;
-            border-radius: 6px;
-            padding: 6px 10px;
-            cursor: pointer;
-            font: 700 12px/1 system-ui, sans-serif;
-            opacity: 0;
-            transition: opacity 0.2s;
-            pointer-events: auto;
-            display: flex;
-            align-items: center;
-            gap: 5px;
-        }
-        .videoPlayer-Rumble-cls:hover .rx-screenshot-btn,
-        #videoPlayer:hover .rx-screenshot-btn { opacity: 1; }
-        .rx-screenshot-btn:hover { background: rgba(17,17,27,0.9); border-color: #89b4fa; }
         .rx-screenshot-btn svg { width: 14px; height: 14px; fill: currentColor; }
     `,
 
@@ -7881,18 +8580,20 @@ const ScreenshotBtn = {
         waitForFeature(this, '#videoPlayer, .videoPlayer-Rumble-cls').then(container => {
             const btn = document.createElement('button');
             btn.className = 'rx-screenshot-btn';
+            btn.type = 'button';
             btn.title = 'Screenshot frame';
+            btn.setAttribute('aria-label', rxT('screenshotCaptureAria', 'Capture screenshot frame'));
             btn.innerHTML = `<svg viewBox="0 0 24 24"><path d="M12 15.2a3.2 3.2 0 1 0 0-6.4 3.2 3.2 0 0 0 0 6.4z"/><path d="M9 2 7.17 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2h-3.17L15 2H9zm3 15c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5z"/></svg>Snap`;
             btn.addEventListener('click', (e) => { e.stopPropagation(); this._capture(); });
             container.style.position = container.style.position || 'relative';
-            container.appendChild(btn);
-            this._btn = btn;
+            this._btn = PlayerActionDock.add(container, btn);
         }).catch(() => {});
     },
 
     destroy() {
         this._styleEl?.remove();
-        this._btn?.remove();
+        PlayerActionDock.remove(this._btn);
+        this._btn = null;
     }
 };
 
@@ -9103,32 +9804,16 @@ const VideoStats = {
     _visible: false,
 
     _css: `
-        .rx-stats-btn {
-            position: absolute;
-            top: 10px; right: 10px;
-            z-index: 100;
-            background: rgba(17,17,27,0.75);
-            border: 1px solid rgba(205,214,244,0.2);
-            color: #cdd6f4;
-            border-radius: 6px;
-            padding: 6px 10px;
-            cursor: pointer;
-            font: 700 11px/1 system-ui, sans-serif;
-            opacity: 0; transition: opacity 0.2s;
-            pointer-events: auto;
-        }
-        .videoPlayer-Rumble-cls:hover .rx-stats-btn,
-        #videoPlayer:hover .rx-stats-btn { opacity: 1; }
-        .rx-stats-btn:hover { background: rgba(17,17,27,0.9); border-color: #89b4fa; }
         .rx-stats-overlay {
             position: absolute;
-            top: 44px; right: 10px;
-            z-index: 100;
-            background: rgba(17,17,27,0.88);
-            border: 1px solid #45475a;
-            border-radius: 8px;
-            padding: 12px 16px;
-            color: #cdd6f4;
+            top: 64px; right: 12px;
+            z-index: 150;
+            background: rgba(9,12,17,0.96);
+            border: 1px solid rgba(255,255,255,0.14);
+            border-radius: 10px;
+            padding: 14px 16px;
+            color: #f5f7fb;
+            box-shadow: 0 18px 46px rgba(0,0,0,0.46);
             font: 11px/1.6 'Courier New', monospace;
             pointer-events: none;
             min-width: 260px;
@@ -9201,6 +9886,7 @@ const VideoStats = {
 
     _toggle() {
         this._visible = !this._visible;
+        this._btn?.setAttribute('aria-pressed', String(this._visible));
         if (this._visible) {
             this._overlay.classList.add('show');
             this._interval = setInterval(() => this._update(), 500);
@@ -9217,26 +9903,30 @@ const VideoStats = {
         this._styleEl = injectStyle(this._css, 'rx-stats-css');
 
         waitForFeature(this, '#videoPlayer, .videoPlayer-Rumble-cls').then(container => {
-            container.style.position = container.style.position || 'relative';
+            const host = PlayerActionDock.hostFor(container);
+            host.style.position = host.style.position || 'relative';
 
             const btn = document.createElement('button');
             btn.className = 'rx-stats-btn';
+            btn.type = 'button';
             btn.textContent = 'Stats';
+            btn.title = rxT('videoStatsShow', 'Show video statistics');
+            btn.setAttribute('aria-label', rxT('videoStatsShow', 'Show video statistics'));
+            btn.setAttribute('aria-pressed', 'false');
             btn.addEventListener('click', (e) => { e.stopPropagation(); this._toggle(); });
-            container.appendChild(btn);
-            this._btn = btn;
+            this._btn = PlayerActionDock.add(host, btn);
 
             this._overlay = document.createElement('div');
             this._overlay.className = 'rx-stats-overlay';
             this._overlay.setAttribute('role', 'region');
             this._overlay.setAttribute('aria-label', 'Video statistics');
-            container.appendChild(this._overlay);
+            host.appendChild(this._overlay);
         }).catch(() => {});
     },
 
     destroy() {
         this._styleEl?.remove();
-        this._btn?.remove();
+        PlayerActionDock.remove(this._btn);
         this._btn = null;
         this._overlay?.remove();
         this._overlay = null;
@@ -9259,25 +9949,6 @@ const LoopControl = {
     _checkInterval: null,
 
     _css: `
-        .rx-loop-btn {
-            position: absolute;
-            bottom: 52px; right: 10px;
-            z-index: 100;
-            background: rgba(17,17,27,0.75);
-            border: 1px solid rgba(205,214,244,0.2);
-            color: #cdd6f4;
-            border-radius: 6px;
-            padding: 5px 10px;
-            cursor: pointer;
-            font: 700 11px/1 system-ui, sans-serif;
-            opacity: 0; transition: opacity 0.2s;
-            pointer-events: auto;
-            display: flex; align-items: center; gap: 6px;
-        }
-        .videoPlayer-Rumble-cls:hover .rx-loop-btn,
-        #videoPlayer:hover .rx-loop-btn { opacity: 1; }
-        .rx-loop-btn:hover { background: rgba(17,17,27,0.9); border-color: #89b4fa; }
-        .rx-loop-btn.active { border-color: #a6e3a1; color: #a6e3a1; }
         .rx-loop-btn svg { width: 14px; height: 14px; fill: currentColor; }
         .rx-loop-ab-bar {
             position: absolute;
@@ -9420,7 +10091,8 @@ const LoopControl = {
         this._styleEl = injectStyle(this._css, 'rx-loop-css');
 
         waitForFeature(this, '#videoPlayer, .videoPlayer-Rumble-cls').then(container => {
-            container.style.position = container.style.position || 'relative';
+            const host = PlayerActionDock.hostFor(container);
+            host.style.position = host.style.position || 'relative';
 
             // Main loop button
             const btn = document.createElement('button');
@@ -9435,8 +10107,7 @@ const LoopControl = {
                 e.preventDefault(); e.stopPropagation();
                 this._startABMode();
             });
-            container.appendChild(btn);
-            this._btn = btn;
+            this._btn = PlayerActionDock.add(host, btn);
 
             // AB loop bar
             const abBar = document.createElement('div');
@@ -9469,14 +10140,14 @@ const LoopControl = {
             abBar.appendChild(bBtn);
             abBar.appendChild(info);
             abBar.appendChild(clearBtn);
-            container.appendChild(abBar);
+            host.appendChild(abBar);
             this._abBar = abBar;
         }).catch(() => {});
     },
 
     destroy() {
         this._styleEl?.remove();
-        this._btn?.remove();
+        PlayerActionDock.remove(this._btn);
         this._btn = null;
         this._abBar?.remove();
         this._abBar = null;
@@ -9500,18 +10171,8 @@ const QuickBookmark = {
     _viewWrapper: null,
 
     _css: `
-        .rx-bookmark-btn {
-            display: inline-flex; align-items: center; gap: 4px;
-            background: #313244; border: 1px solid #45475a;
-            color: #cdd6f4; border-radius: 6px;
-            padding: 5px 12px; cursor: pointer;
-            font: 600 12px/1.4 system-ui, sans-serif;
-            transition: all 0.2s;
-            margin-left: 8px;
-        }
-        .rx-bookmark-btn:hover { border-color: #89b4fa; background: #45475a; }
-        .rx-bookmark-btn.saved { border-color: #f9e2af; color: #f9e2af; }
         .rx-bookmark-btn svg { width: 14px; height: 14px; fill: currentColor; }
+        .rx-bookmark-btn.saved { color: #f9e2af !important; }
         .rx-bookmarks-overlay {
             position: fixed; inset: 0; z-index: 100000;
             background: rgba(0,0,0,0.7); display: flex;
@@ -9584,6 +10245,7 @@ const QuickBookmark = {
             bookmarks = bookmarks.filter(b => b.url !== url);
             this._saveBookmarks(bookmarks);
             this._btn?.classList.remove('saved');
+            this._btn?.setAttribute('aria-pressed', 'false');
         } else {
             const title = qs('.video-header-container__title, h1')?.textContent?.trim() || document.title;
             const channel = qs('.media-heading-name, .media-by--a')?.textContent?.trim() || '';
@@ -9591,6 +10253,7 @@ const QuickBookmark = {
             bookmarks.unshift({ url, title, channel, thumb, time: Date.now() });
             this._saveBookmarks(bookmarks);
             this._btn?.classList.add('saved');
+            this._btn?.setAttribute('aria-pressed', 'true');
         }
     },
 
@@ -9708,14 +10371,17 @@ const QuickBookmark = {
 
         // Add bookmark button on watch pages
         if (Page.isWatch()) {
-            waitForFeature(this, '.video-header-container, .media-description, .media-heading').then(container => {
+            waitForFeature(this, '#videoPlayer, .videoPlayer-Rumble-cls').then(container => {
                 const btn = document.createElement('button');
                 btn.className = 'rx-bookmark-btn';
-                if (this._isBookmarked(location.href)) btn.classList.add('saved');
+                btn.type = 'button';
+                const saved = this._isBookmarked(location.href);
+                if (saved) btn.classList.add('saved');
+                btn.setAttribute('aria-label', rxT('bookmarkVideoAria', 'Bookmark this video'));
+                btn.setAttribute('aria-pressed', String(saved));
                 btn.innerHTML = `<svg viewBox="0 0 24 24"><path d="M17 3H7c-1.1 0-2 .9-2 2v16l7-3 7 3V5c0-1.1-.9-2-2-2z"/></svg><span>Bookmark</span>`;
                 btn.addEventListener('click', () => this._toggleBookmark());
-                container.appendChild(btn);
-                this._btn = btn;
+                this._btn = PlayerActionDock.add(container, btn);
             }).catch(() => {});
         }
 
@@ -9737,7 +10403,7 @@ const QuickBookmark = {
 
     destroy() {
         this._styleEl?.remove();
-        this._btn?.remove();
+        PlayerActionDock.remove(this._btn);
         this._btn = null;
         this._viewWrapper?.remove();
         this._viewWrapper = null;
@@ -10221,24 +10887,6 @@ const ShareTimestamp = {
     _toast: null,
 
     _css: `
-        .rx-share-ts-btn {
-            position: absolute;
-            bottom: 52px; right: 80px;
-            z-index: 100;
-            background: rgba(17,17,27,0.75);
-            border: 1px solid rgba(205,214,244,0.2);
-            color: #cdd6f4;
-            border-radius: 6px;
-            padding: 5px 10px;
-            cursor: pointer;
-            font: 700 11px/1 system-ui, sans-serif;
-            opacity: 0; transition: opacity 0.2s;
-            pointer-events: auto;
-            display: flex; align-items: center; gap: 5px;
-        }
-        .videoPlayer-Rumble-cls:hover .rx-share-ts-btn,
-        #videoPlayer:hover .rx-share-ts-btn { opacity: 1; }
-        .rx-share-ts-btn:hover { background: rgba(17,17,27,0.9); border-color: #89b4fa; }
         .rx-share-ts-btn svg { width: 14px; height: 14px; fill: currentColor; }
     `,
 
@@ -10283,17 +10931,20 @@ const ShareTimestamp = {
             container.style.position = container.style.position || 'relative';
             const btn = document.createElement('button');
             btn.className = 'rx-share-ts-btn';
+            btn.type = 'button';
             btn.title = 'Copy URL at current time';
-            btn.innerHTML = `<svg viewBox="0 0 24 24"><path d="M3.9 12c0-1.71 1.39-3.1 3.1-3.1h4V7H7c-2.76 0-5 2.24-5 5s2.24 5 5 5h4v-1.9H7c-1.71 0-3.1-1.39-3.1-3.1zM8 13h8v-2H8v2zm9-6h-4v1.9h4c1.71 0 3.1 1.39 3.1 3.1s-1.39 3.1-3.1 3.1h-4V17h4c2.76 0 5-2.24 5-5s-2.24-5-5-5z"/></svg>Share@Time`;
+            btn.setAttribute('aria-label', rxT('shareTimestampAria', 'Copy video URL at current time'));
+            btn.innerHTML = `<svg viewBox="0 0 24 24"><path d="M3.9 12c0-1.71 1.39-3.1 3.1-3.1h4V7H7c-2.76 0-5 2.24-5 5s2.24 5 5 5h4v-1.9H7c-1.71 0-3.1-1.39-3.1-3.1zM8 13h8v-2H8v2zm9-6h-4v1.9h4c1.71 0 3.1 1.39 3.1 3.1s-1.39 3.1-3.1 3.1h-4V17h4c2.76 0 5-2.24 5-5s-2.24-5-5-5z"/></svg>`;
+            btn.appendChild(document.createTextNode(rxT('shareTimestampLabel', 'Share at time')));
             btn.addEventListener('click', (e) => { e.stopPropagation(); this._copyURL(); });
-            container.appendChild(btn);
-            this._btn = btn;
+            this._btn = PlayerActionDock.add(container, btn);
         }).catch(() => {});
     },
 
     destroy() {
         this._styleEl?.remove();
-        this._btn?.remove();
+        PlayerActionDock.remove(this._btn);
+        this._btn = null;
         this._toast?.remove();
     }
 };
@@ -11116,22 +11767,34 @@ const SettingsPanel = {
     _keyHandler: null,
 
     _css: `
-        /* ── Toolbar (FAB) ── */
+        /* Compact site toolbar */
         html.rx-theater #rx-toolbar { display: none !important; }
         #rx-toolbar {
-            position: fixed; bottom: 20px; right: 20px; z-index: 10010;
-            display: flex; flex-direction: column; align-items: center; gap: 8px;
+            position: fixed; bottom: 18px; right: 18px; z-index: 10010;
+            display: flex; flex-direction: row; align-items: center; gap: 2px;
+            padding: 4px;
+            background: var(--rx-site-panel, rgba(17,17,22,0.94));
+            border: 1px solid var(--rx-site-border-strong, rgba(255,255,255,0.12));
+            border-radius: 10px;
+            box-shadow: 0 12px 34px rgba(0,0,0,0.4);
+            opacity: 0.72;
+            backdrop-filter: blur(14px);
+            transition: opacity 160ms ease, transform 160ms ease, border-color 160ms ease;
         }
+        #rx-toolbar:hover,
+        #rx-toolbar:focus-within { opacity: 1; transform: translateY(-1px); }
         #rx-toolbar .rx-tb-btn {
-            width: 44px; height: 44px; border-radius: 50%;
-            background: rgba(30,30,46,0.9); border: 1px solid rgba(137,180,250,0.25);
-            color: rgba(255,255,255,0.7); cursor: pointer;
+            width: 40px; height: 40px; border-radius: 7px;
+            background: transparent; border: 1px solid transparent;
+            color: var(--rx-subtext, rgba(255,255,255,0.72)); cursor: pointer;
             display: flex; align-items: center; justify-content: center;
-            transition: background 0.2s, transform 0.2s, border-color 0.2s;
-            box-shadow: 0 4px 16px rgba(0,0,0,0.4); text-decoration: none;
+            transition: background-color 160ms ease, color 160ms ease, border-color 160ms ease;
+            box-shadow: none; text-decoration: none;
         }
         #rx-toolbar .rx-tb-btn:hover {
-            background: rgba(49,50,68,0.95); border-color: rgba(137,180,250,0.5); transform: scale(1.08);
+            background: var(--rx-site-raised, rgba(255,255,255,0.08));
+            border-color: var(--rx-site-border-strong, rgba(255,255,255,0.14));
+            color: var(--rx-text, #fff);
         }
         #rx-toolbar .rx-tb-btn:focus-visible,
         .rx-m-close:focus-visible,
@@ -11142,8 +11805,15 @@ const SettingsPanel = {
             outline: 2px solid #85d551; outline-offset: 2px;
         }
         #rx-home-btn svg { width: 20px; height: 20px; }
-        #rx-home-btn:hover { border-color: rgba(133,213,81,0.6) !important; }
+        #rx-home-btn:hover { border-color: var(--rx-accent, rgba(133,213,81,0.6)) !important; }
         #rx-settings-btn svg { transition: transform 0.3s cubic-bezier(.4,0,.2,1); }
+        @media (max-width: 700px), (pointer: coarse) {
+            #rx-toolbar { bottom: 12px; right: 12px; opacity: 0.86; }
+            #rx-toolbar .rx-tb-btn { width: 44px; height: 44px; }
+        }
+        @media (prefers-reduced-motion: reduce) {
+            #rx-toolbar, #rx-toolbar .rx-tb-btn { transition: none !important; }
+        }
 
         /* ── Overlay ── */
         #rx-overlay {
@@ -11977,12 +12647,15 @@ const SettingsPanel = {
         homeBtn.className = 'rx-tb-btn';
         homeBtn.href = Settings.get('logoToFeed') ? 'https://rumble.com/subscriptions' : 'https://rumble.com/';
         homeBtn.title = Settings.get('logoToFeed') ? 'My Feed' : 'Rumble Home';
+        homeBtn.setAttribute('aria-label', homeBtn.title);
         homeBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none"><path d="M6.5 3C4.015 3 2 5.015 2 7.5v9C2 18.985 4.015 21 6.5 21h11c2.485 0 4.5-2.015 4.5-4.5v-9C22 5.015 19.985 3 17.5 3h-11zm3.25 4.5c.69 0 1.25.56 1.25 1.25v1.5l2.5-2.25c.33-.3.76-.5 1.22-.5h.78c.97 0 1.45 1.17.77 1.85L13.5 12l2.72 2.65c.68.68.2 1.85-.77 1.85h-.78c-.46 0-.89-.18-1.22-.5L11 13.75v1.5c0 .69-.56 1.25-1.25 1.25S8.5 15.94 8.5 15.25v-7.5c0-.69.56-1.25 1.25-1.25z" fill="#85d551"/></svg>';
         toolbar.appendChild(homeBtn);
 
         if (Page.isWatch() && Settings.get('videoDownload')) {
             const dlBtn = document.createElement('button');
             dlBtn.id = 'rx-download-btn'; dlBtn.className = 'rx-tb-btn'; dlBtn.title = rxT('dlTitle', 'Download Video');
+            dlBtn.type = 'button';
+            dlBtn.setAttribute('aria-label', dlBtn.title);
             dlBtn.innerHTML = VideoDownloader._downloadSVG;
             dlBtn.addEventListener('click', () => VideoDownloader._showDownloadTab());
             toolbar.appendChild(dlBtn);
