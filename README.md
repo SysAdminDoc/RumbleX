@@ -298,7 +298,7 @@ Every release ships `SHA256SUMS.txt` covering both extension ZIPs and both users
 sha256sum -c SHA256SUMS.txt --ignore-missing
 ```
 
-That proves the file arrived intact. It does not prove who built it, so releases are also signed with the project's SSH release key. When a release carries `SHA256SUMS.txt.sig` and the repo carries `allowed_signers`, verify the origin too:
+That proves the file arrived intact. It does not prove who built it. A release can also carry `SHA256SUMS.txt.sig` after the project publishes an SSH signing identity in `allowed_signers`. When both files are present, verify the origin too:
 
 ```bash
 ssh-keygen -Y verify -f allowed_signers -I release@rumblex -n file \
@@ -306,6 +306,8 @@ ssh-keygen -Y verify -f allowed_signers -I release@rumblex -n file \
 ```
 
 A `Good "file" signature` result means the checksums came from the key published in this repository. If either check fails, do not install the files. The only official sources are this repository's Releases page and the raw userscript URLs above; copies elsewhere are not ours.
+
+v3.52.0 is unsigned because the project does not yet have a published release signing identity. Its release page states that directly; use `SHA256SUMS.txt` to verify download integrity.
 
 ### Request-shield support matrix
 
@@ -416,13 +418,13 @@ npx playwright test
 
 The selector harness uses checked-in, synthetic desktop captures. Private MHTML captures in `Sample Pages/` are optional local evidence and never enter release packages.
 
-Release builds also sign the checksums. Point `RUMBLEX_SIGNING_KEY` at the release private key and the build writes `SHA256SUMS.txt.sig`, then verifies it against `allowed_signers` before finishing:
+Release builds can sign the checksums after a public identity exists. Point `RUMBLEX_SIGNING_KEY` at the matching private key and the build writes `SHA256SUMS.txt.sig`, then verifies it against `allowed_signers` before finishing:
 
 ```bash
 RUMBLEX_SIGNING_KEY=~/.ssh/rumblex_release ./build.sh
 ```
 
-A signature that does not verify against the published key fails the build rather than shipping. Builds without the variable set are unsigned and say so, which is fine for local development.
+A signature that does not verify against the published key fails the build rather than shipping. Builds without the variable set are unsigned and say so. Unsigned public releases must state that on the release page.
 
 Each build also produces `RumbleX-firefox.xpi` (the AMO signing input) and `RumbleX-source.zip` (the source bundle AMO review asks for, since the package ships two minified libraries). Provenance for those libraries is recorded in `extension/lib/VENDOR.json`: package, version, npm tarball URL, SHA-256, and the command that reproduces the exact vendored bytes. `npm run test:vendor-manifest` checks that record against the files on disk and against the hashes pinned in `build.sh`, so the three cannot drift apart.
 
