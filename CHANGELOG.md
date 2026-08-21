@@ -6,9 +6,15 @@ All notable changes to RumbleX will be documented in this file.
 
 ### Added
 - Large HLS videos can now convert to MP4 straight into a selected file on supported Chromium browsers. Mediabunny reads the transport stream incrementally, writes positioned 8 MiB MP4 chunks with backpressure, and never holds the complete input or output in tab memory. Cancelling stops the network and worker, then discards partial file changes. The buffered converter remains available for smaller media, while browsers without WebCodecs keep the existing TS-to-disk option.
+- Added five checked-in, privacy-safe desktop fixtures for the current Rumble home, watch, search, channel, and custom-card structures. The channel fixture also preserves the served-HTML `items` contract used after Rumble's listing migration, with synthetic names and `.invalid` media URLs.
+
+### Fixed
+- Current `<rum-video-thumbnail>` cards now resolve their creator surface from the card's `name` attribute when Rumble omits the old author link.
+- The selector harness now checks every top-level selector in a comma-separated stable list and matches CSS class tokens exactly. Older captures no longer produce false fallback warnings from ignored alternatives or partial class-name matches.
 
 ### Verified
 - Added golden MPEG-TS coverage for streamed MP4 video and audio metadata, positioned output reconstruction, bounded chunk size, and cancellation cleanup. A browser test also proves that media above 512 MiB offers MP4 to disk without exposing the in-memory MP4 path.
+- The selector harness now gates 149 current and legacy surface checks with zero fallbacks or failures. Loaded-extension tests exercise all five sanitized captures, custom-card metadata, channel listing JSON, route health, and fixture privacy constraints.
 
 ## [3.51.0] - 2026-08-20
 

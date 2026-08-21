@@ -3,9 +3,10 @@
 RumbleX selector regression harness — v3.4 deliverable.
 
 Always checks the release-safe HTML contracts in tests/fixtures/platform/.
-When the private MHTML captures are available, it also walks Sample Pages/
-and extracts their HTML payload. Every named surface must match at least one
-element via its stable or fallback selector.
+The current desktop fixtures are sanitized structural captures and must match
+their stable selectors. When the private MHTML captures are available, the
+harness also walks Sample Pages/ and extracts their HTML payload. Legacy
+captures may use a fallback, but every named surface must still resolve.
 
 The asserter uses regex/substring matching, not a real CSS engine. That's
 intentional — we want a stdlib-only script (matches analyze_pages.py
@@ -42,6 +43,21 @@ CONTENT_JS = os.path.join(REPO_ROOT, 'extension', 'content.js')
 # Small, synthetic contracts are committed so CI and release checkouts always
 # gate the platform surfaces whose real captures require a logged-in account.
 PLATFORM_FIXTURE_EXPECTATIONS = {
+    'desktop-home.html': ['header.root', 'nav.mainMenu', 'search.form', 'search.input',
+                          'feed.card', 'feed.cardTitle', 'feed.author', 'modal.portal'],
+    'desktop-watch.html': ['header.root', 'watch.media', 'watch.player', 'watch.title',
+                           'watch.share', 'watch.description', 'watch.related',
+                           'watch.relatedCard', 'comments.root', 'modal.portal'],
+    'desktop-search.html': ['header.root', 'nav.mainMenu', 'search.form', 'search.input',
+                            'feed.card', 'feed.cardTitle', 'feed.author', 'modal.portal'],
+    'desktop-channel.html': ['header.root', 'nav.mainMenu', 'search.form', 'search.input',
+                             'feed.card', 'feed.cardTitle', 'feed.author', 'modal.portal'],
+    'desktop-custom-card.html': ['feed.card', 'feed.cardTitle', 'feed.author'],
+    'modern-search.html': ['header.root', 'nav.mainMenu', 'search.form', 'search.input',
+                           'feed.card', 'feed.cardTitle', 'feed.author', 'modal.portal'],
+    'modern-watch.html': ['header.root', 'watch.media', 'watch.player', 'watch.title',
+                          'watch.share', 'watch.description', 'watch.related',
+                          'watch.relatedCard', 'comments.root', 'modal.portal'],
     'shorts-route.html': ['shorts.feed', 'shorts.card', 'shorts.player', 'shorts.navItem'],
     'wallet-tip.html': ['wallet.tipButton'],
     'premium-promo.html': ['premium.promo'],
@@ -97,7 +113,9 @@ FIXTURE_EXPECTATIONS = {
     # New top-level platform surfaces.
     'Shorts.mhtml':             ['header.root', 'nav.mainMenu', 'modal.portal',
                                  'shorts.feed', 'shorts.card', 'shorts.player', 'shorts.navItem'],
-    'Rumble Studio.mhtml':      ['header.root'],  # heavy SPA, minimal static HTML
+    # Studio is a separate SPA. Page.classify() reports it as unknown and the
+    # runtime health check does not require main-site header anchors there.
+    'Rumble Studio.mhtml':      [],
 
     # Non-content pages — sanity-check only that the header still renders.
     'Stats and Analytics.mhtml':     ['header.root'],
@@ -170,12 +188,66 @@ def simplify_selector(sel):
     # Strip :has(...) bodies entirely — they nest CSS recursively.
     sel = re.sub(r':has\([^)]*\)', '', sel)
     sel = re.sub(r':not\([^)]*\)', '', sel)
-    # Split on comma → multi-selector — take the first since any one match counts.
-    sel = sel.split(',')[0].strip()
     # Split on whitespace / combinators → take the LAST descendant compound.
     parts = re.split(r'[\s>+~]+', sel)
     parts = [p for p in parts if p]
     return parts[-1] if parts else ''
+
+
+def split_selector_list(selector):
+    """Split a CSS selector list on top-level commas.
+
+    Attribute values and functional pseudo-classes can contain commas, so a
+    plain ``str.split(',')`` silently drops valid stable alternatives. The
+    registry uses selector lists extensively for current and legacy card
+    variants, making that shortcut report false fallback degradation.
+    """
+    parts = []
+    current = []
+    quote = None
+    escaped = False
+    square_depth = 0
+    round_depth = 0
+    for char in selector:
+        if escaped:
+            current.append(char)
+            escaped = False
+            continue
+        if char == '\\':
+            current.append(char)
+            escaped = True
+            continue
+        if quote:
+            current.append(char)
+            if char == quote:
+                quote = None
+            continue
+        if char in ('"', "'"):
+            quote = char
+            current.append(char)
+        elif char == '[':
+            square_depth += 1
+            current.append(char)
+        elif char == ']':
+            square_depth = max(0, square_depth - 1)
+            current.append(char)
+        elif char == '(':
+            round_depth += 1
+            current.append(char)
+        elif char == ')':
+            round_depth = max(0, round_depth - 1)
+            current.append(char)
+        elif char == ',' and square_depth == 0 and round_depth == 0:
+            part = ''.join(current).strip()
+            if part:
+                parts.append(part)
+            current = []
+        else:
+            current.append(char)
+    part = ''.join(current).strip()
+    if part:
+        parts.append(part)
+    return parts
 
 
 def selector_to_regex(sel):
@@ -205,7 +277,9 @@ def selector_to_regex(sel):
     # Classes.
     for cmatch in re.finditer(r'\.([\w-]+)', sel):
         cls = re.escape(cmatch.group(1))
-        patterns.append(r'class\s*=\s*["\'][^"\']*\b' + cls + r'\b[^"\']*["\']')
+        patterns.append(
+            r'class\s*=\s*["\'](?:[^"\']+\s)?' + cls + r'(?:\s[^"\']*)?["\']'
+        )
     # Bare tag at the start of the compound.
     tag_only = re.match(r'^([a-zA-Z][\w-]*)(?:[.#\[]|$)', sel)
     if tag_only:
@@ -218,14 +292,12 @@ def selector_matches(html, sel):
     against `html`. AND across compound patterns — every component must
     appear at least once anywhere in the HTML (not necessarily on the
     same element — that's the harness's documented limitation)."""
-    simplified = simplify_selector(sel)
-    patterns = selector_to_regex(simplified)
-    if not patterns:
-        return False
-    for pat in patterns:
-        if not re.search(pat, html, re.IGNORECASE):
-            return False
-    return True
+    for alternative in split_selector_list(sel):
+        simplified = simplify_selector(alternative)
+        patterns = selector_to_regex(simplified)
+        if patterns and all(re.search(pat, html, re.IGNORECASE) for pat in patterns):
+            return True
+    return False
 
 
 def main():
@@ -251,7 +323,7 @@ def main():
     failures = []
     passes = 0
 
-    def check_fixture(fname, html, expected, source):
+    def check_fixture(fname, html, expected, source, require_stable=False):
         nonlocal passes
         if verbose:
             print(f'\n[*] {source}/{fname} ({len(html):,} chars HTML, checking {len(expected)} surfaces)')
@@ -267,6 +339,9 @@ def main():
                 passes += 1
                 if verbose:
                     print(f'    OK     {surface}  (stable)')
+            elif fallback_ok and require_stable:
+                failures.append((f'{source}/{fname}', surface, entry['stable'], entry['fallback']))
+                print(f'    FAIL   {source}/{fname} / {surface}  (current fixture matched fallback only)')
             elif fallback_ok:
                 passes += 1
                 print(f'    WARN   {source}/{fname} / {surface}  (only fallback selector matched)')
@@ -283,7 +358,7 @@ def main():
             print(f'    FAIL   platform/{fname}  (required fixture file is missing)')
             continue
         with open(path, encoding='utf-8') as f:
-            check_fixture(fname, f.read(), expected, 'platform')
+            check_fixture(fname, f.read(), expected, 'platform', require_stable=True)
 
     if not os.path.isdir(SAMPLE_DIR):
         if allow_missing:

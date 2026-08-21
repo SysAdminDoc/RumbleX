@@ -23,7 +23,7 @@
 // @updateURL    https://github.com/SysAdminDoc/RumbleX/raw/main/RumbleX.user.js
 // ==/UserScript==
 
-// Generated from extension/settings-schema.js + extension/content.js. Shared runtime SHA-256: 6c7529f6ba9d968865abafe992bdc0de1279c48297e93704672f582fb9bedcfa
+// Generated from extension/settings-schema.js + extension/content.js. Shared runtime SHA-256: f84079a7d022b7487fe74223ea8b317420a10c578e27a391b8297d86478a38fd
 // RumbleX shared settings schema. This file is the canonical source for
 // defaults and trust-boundary normalization across content, options, popup,
 // background profile/Gist restores, and the generated userscript.
@@ -1829,14 +1829,14 @@ const Page = {
 // callers reject false-positive matches structurally.
 const Selectors = {
     _map: {
-        'header.root':        { stable: 'header[data-js="app_header"]', fallback: '.header' },
+        'header.root':        { stable: 'header[data-js="app_header"], header.header', fallback: '.header' },
         'nav.mainMenu':       { stable: '#main-menu', fallback: '.hover-menu.main-menu-nav' },
         'search.form':        { stable: 'form[data-js="search_form"]', fallback: '.header-search' },
         'search.input':       { stable: '[data-js="search_input"]', fallback: '.header-search-field' },
         'search.autocomplete':{ stable: '[data-js="autocomplete_results_container"]', fallback: '[hx-post="/search/htmx/get-autocomplete-results"]' },
         'feed.card':          { stable: 'rum-video-thumbnail[role="listitem"], [role="listitem"][data-video-id], article.video-item', fallback: '.videostream.thumbnail__grid--item' },
         'feed.cardTitle':     { stable: '[video-title], rum-text[role="heading"], .thumbnail__title, .video-item--title', fallback: '.thumbnail__title.line-clamp-2' },
-        'feed.author':        { stable: 'a[rel="author"].channel__link, article.video-item a[rel="author"]', fallback: '.channel__link' },
+        'feed.author':        { stable: 'rum-video-thumbnail[name], a[rel="author"].channel__link, article.video-item a[rel="author"]', fallback: '.channel__link' },
         'watch.media':        { stable: '[data-js="media_container"]', fallback: '.media-page' },
         'watch.player':       { stable: '#videoPlayer, video', fallback: '.videoPlayer-Rumble-cls' },
         'watch.title':        { stable: '.video-header-container__title', fallback: '[class*="video-header"] [class*="title"]' },

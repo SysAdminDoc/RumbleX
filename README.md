@@ -397,6 +397,15 @@ cd extension
 ```
 Requires `zip`; on Windows without `zip`, the script falls back to the Windows-bundled bsdtar so ZIP entries keep browser-safe forward-slash paths. See `CHANGELOG.md` for per-version details.
 
+Run the current selector contracts and loaded-extension suite before packaging:
+
+```bash
+python test_selectors.py
+npx playwright test
+```
+
+The selector harness uses checked-in, synthetic desktop captures. Private MHTML captures in `Sample Pages/` are optional local evidence and never enter release packages.
+
 Release builds also sign the checksums. Point `RUMBLEX_SIGNING_KEY` at the release private key and the build writes `SHA256SUMS.txt.sig`, then verifies it against `allowed_signers` before finishing:
 
 ```bash
