@@ -4345,7 +4345,10 @@ const VideoDownloader = {
             return;
         }
 
-        const exceedsMemoryLimit = Number(quality.size) > this._MAX_IN_MEMORY_BYTES;
+        const publishedSize = Number(quality.size);
+        const hasKnownSize = Number.isFinite(publishedSize) && publishedSize > 0;
+        const exceedsMemoryLimit = hasKnownSize && publishedSize > this._MAX_IN_MEMORY_BYTES;
+        const prefersDisk = exceedsMemoryLimit || !hasKnownSize;
         const canStreamToDisk = this._supportsStreamingFileSave();
         const canStreamMp4 = canStreamToDisk && this._supportsMediabunnyWorker();
         if (exceedsMemoryLimit && !canStreamToDisk) {
@@ -4385,7 +4388,7 @@ const VideoDownloader = {
             btn.addEventListener('click', onClick);
             return btn;
         };
-        if (!exceedsMemoryLimit) {
+        if (!prefersDisk || !canStreamToDisk) {
             row.appendChild(makeBtn('MP4', 'Converted in browser', () => this._startDownload(quality, title, 'mp4')));
         } else if (canStreamMp4) {
             row.appendChild(makeBtn(
@@ -4403,10 +4406,16 @@ const VideoDownloader = {
         } else if (!exceedsMemoryLimit) {
             row.appendChild(makeBtn('TS', 'Raw stream (in memory)', () => this._startDownload(quality, title, 'ts')));
         }
-        if (exceedsMemoryLimit) {
+        if (prefersDisk) {
             const note = document.createElement('div');
             note.className = 'rx-dl-tar-note';
-            note.textContent = canStreamMp4
+            note.textContent = !hasKnownSize && !canStreamToDisk
+                ? rxT(
+                    'dlUnknownSizeMemoryLimit',
+                    'Rumble did not publish the stream size. In-browser conversion stops at {size} to protect this tab.',
+                    { size: this._formatSize(this._MAX_IN_MEMORY_BYTES) },
+                )
+                : canStreamMp4
                 ? rxT(
                     'dlLargeMp4Ready',
                     'MP4 and TS disk modes keep the full video out of tab memory. Cancelling discards partial file changes.',
@@ -4698,6 +4707,11 @@ const VideoDownloader = {
                 },
             });
             if (signal.aborted) throw new DOMException('The download was cancelled.', 'AbortError');
+            // FileSystemWritableFileStream cannot reliably roll back once close()
+            // begins. End the cancellable phase before committing so the UI never
+            // promises to discard a file that Chromium may already have replaced.
+            cancel.remove();
+            if (this._downloadController === controller) this._downloadController = null;
             stage = 'file-close';
             setProgress(99, rxT('dlFinalizingFile', 'Finalizing file…'));
             await writable.close();
@@ -4707,7 +4721,6 @@ const VideoDownloader = {
                 'Saved {size} to disk.',
                 { size: this._formatSize(streamed.bytes) },
             ));
-            cancel.remove();
             const done = document.createElement('div');
             done.className = 'rx-dl-done';
             done.textContent = isMp4

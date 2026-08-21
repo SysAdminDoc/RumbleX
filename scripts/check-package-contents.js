@@ -15,6 +15,7 @@
 const assert = require('assert/strict');
 const fs = require('fs');
 const path = require('path');
+const zlib = require('zlib');
 
 const ROOT = path.resolve(__dirname, '..');
 const EXT = path.join(ROOT, 'extension');
@@ -69,13 +70,13 @@ const undeclaredDirs = runtimeDirs.filter((name) => !packDirs.includes(name));
 assert.deepEqual(undeclaredDirs, [],
     `directories in extension/ that build.sh does not package: ${undeclaredDirs.join(', ')}`);
 
-// Read the ZIP central directory directly rather than shelling out.
+// Read ZIP entries directly rather than shelling out.
 //
 // Shelling out to `tar -tf` is not portable here: the `tar` on PATH in Git Bash
 // is GNU tar, which cannot read a ZIP at all and also parses a drive-letter path
-// as a remote host. Parsing the central directory needs no external tool and
-// works identically wherever Node runs.
-function listArchive(file) {
+// as a remote host. The packages use only stored or deflated entries, both of
+// which Node can decode without adding a release-only dependency.
+function readArchive(file) {
     const buf = fs.readFileSync(file);
 
     // Locate the End Of Central Directory record, scanning back from the tail
@@ -90,23 +91,64 @@ function listArchive(file) {
     const entryCount = buf.readUInt16LE(eocd + 10);
     let offset = buf.readUInt32LE(eocd + 16);
 
-    const names = [];
+    const entries = new Map();
     const CENTRAL_SIG = 0x02014b50;
+    const LOCAL_SIG = 0x04034b50;
     for (let i = 0; i < entryCount; i += 1) {
         assert.equal(buf.readUInt32LE(offset), CENTRAL_SIG,
             `${path.basename(file)} central directory is malformed at entry ${i}`);
+        const compression = buf.readUInt16LE(offset + 10);
+        const compressedSize = buf.readUInt32LE(offset + 20);
+        const uncompressedSize = buf.readUInt32LE(offset + 24);
         const nameLength = buf.readUInt16LE(offset + 28);
         const extraLength = buf.readUInt16LE(offset + 30);
         const commentLength = buf.readUInt16LE(offset + 32);
-        names.push(buf.toString('utf8', offset + 46, offset + 46 + nameLength).replace(/^\.\//, ''));
+        const localOffset = buf.readUInt32LE(offset + 42);
+        const name = buf.toString('utf8', offset + 46, offset + 46 + nameLength).replace(/^\.\//, '');
+        assert.ok(!entries.has(name), `${path.basename(file)} contains duplicate entry ${name}`);
+
+        assert.equal(buf.readUInt32LE(localOffset), LOCAL_SIG,
+            `${path.basename(file)} local header is malformed for ${name}`);
+        const localNameLength = buf.readUInt16LE(localOffset + 26);
+        const localExtraLength = buf.readUInt16LE(localOffset + 28);
+        const dataStart = localOffset + 30 + localNameLength + localExtraLength;
+        const compressed = buf.subarray(dataStart, dataStart + compressedSize);
+        let data;
+        if (compression === 0) data = Buffer.from(compressed);
+        else if (compression === 8) data = zlib.inflateRawSync(compressed);
+        else assert.fail(`${path.basename(file)} uses unsupported ZIP compression ${compression} for ${name}`);
+        assert.equal(data.length, uncompressedSize,
+            `${path.basename(file)} has the wrong uncompressed size for ${name}`);
+        entries.set(name, data);
         offset += 46 + nameLength + extraLength + commentLength;
     }
-    return names;
+    return entries;
 }
 
+const runtimeSources = new Map(packFiles.map((name) => [name, path.join(EXT, name)]));
+const collectDirectory = (directory) => {
+    const root = path.join(EXT, directory);
+    const visit = (current) => {
+        for (const entry of fs.readdirSync(current, { withFileTypes: true })) {
+            const absolute = path.join(current, entry.name);
+            if (entry.isDirectory()) visit(absolute);
+            else if (entry.isFile()) {
+                const relative = path.relative(EXT, absolute).split(path.sep).join('/');
+                runtimeSources.set(relative, absolute);
+            }
+        }
+    };
+    visit(root);
+};
+for (const directory of packDirs) collectDirectory(directory);
+
+const archives = new Map();
 for (const pkg of PACKAGES) {
-    const entries = listArchive(pkg.file);
-    const entrySet = new Set(entries.map((e) => e.replace(/\/$/, '')));
+    const archive = readArchive(pkg.file);
+    archives.set(pkg.label, archive);
+    const entries = [...archive.keys()];
+    const fileEntrySet = new Set(entries.filter((entry) => !entry.endsWith('/')));
+    const entrySet = new Set(entries.map((entry) => entry.replace(/\/$/, '')));
 
     const missingFiles = packFiles.filter((name) => !entrySet.has(name));
     assert.deepEqual(missingFiles, [],
@@ -119,6 +161,27 @@ for (const pkg of PACKAGES) {
 
     assert.ok(entrySet.has('manifest.json'), `${pkg.label} package has no manifest.json`);
 
+    const expectedFiles = new Set(['manifest.json', ...runtimeSources.keys()]);
+    const unexpectedFiles = [...fileEntrySet].filter((name) => !expectedFiles.has(name));
+    assert.deepEqual(unexpectedFiles, [],
+        `${pkg.label} package contains undeclared files: ${unexpectedFiles.join(', ')}`);
+
+    for (const [entryName, sourcePath] of runtimeSources) {
+        assert.ok(fileEntrySet.has(entryName), `${pkg.label} package is missing runtime source ${entryName}`);
+        assert.equal(Buffer.compare(archive.get(entryName), fs.readFileSync(sourcePath)), 0,
+            `${pkg.label} package contains stale bytes for ${entryName}`);
+    }
+
+    const manifestSource = fs.readFileSync(path.join(EXT, pkg.manifest));
+    assert.equal(Buffer.compare(archive.get('manifest.json'), manifestSource), 0,
+        `${pkg.label} package manifest differs from extension/${pkg.manifest}`);
+    const archivedManifest = JSON.parse(archive.get('manifest.json').toString('utf8'));
+    assert.equal(archivedManifest.manifest_version, pkg.label === 'Chrome' ? 3 : 2,
+        `${pkg.label} package has the wrong manifest version`);
+    const sourceManifest = JSON.parse(manifestSource.toString('utf8'));
+    assert.deepEqual(archivedManifest.content_scripts, sourceManifest.content_scripts,
+        `${pkg.label} package content-script order differs from extension/${pkg.manifest}`);
+
     // The working tree must never leak build scaffolding into a release.
     for (const forbidden of ['manifest-firefox.json', 'manifest-chrome-backup.json', 'build.sh', '_metadata']) {
         assert.ok(!entrySet.has(forbidden),
@@ -127,8 +190,8 @@ for (const pkg of PACKAGES) {
 }
 
 // The two packages must differ only in manifest content, never in file set.
-const chromeEntries = new Set(listArchive(PACKAGES[0].file).map((e) => e.replace(/\/$/, '')));
-const firefoxEntries = new Set(listArchive(PACKAGES[1].file).map((e) => e.replace(/\/$/, '')));
+const chromeEntries = new Set([...archives.get('Chrome').keys()].map((entry) => entry.replace(/\/$/, '')));
+const firefoxEntries = new Set([...archives.get('Firefox').keys()].map((entry) => entry.replace(/\/$/, '')));
 const onlyChrome = [...chromeEntries].filter((e) => !firefoxEntries.has(e));
 const onlyFirefox = [...firefoxEntries].filter((e) => !chromeEntries.has(e));
 assert.deepEqual(onlyChrome, [], `files present only in the Chrome package: ${onlyChrome.join(', ')}`);
@@ -140,4 +203,4 @@ const workingManifest = JSON.parse(fs.readFileSync(path.join(EXT, 'manifest.json
 assert.equal(workingManifest.manifest_version, 3,
     'extension/manifest.json is not MV3 — an interrupted build may have left the Firefox manifest in place');
 
-console.log(`Package contents guard OK: ${packFiles.length} files + ${packDirs.length} directories present in both packages.`);
+console.log(`Package contents guard OK: ${runtimeSources.size} runtime files match source bytes, with verified MV3 and MV2 manifests.`);

@@ -217,6 +217,9 @@ test('injected feature panels carry a role and an accessible name', async ({ con
 });
 
 test('chapter rows and search-history controls are real buttons, not click-only divs', async ({ context, serviceWorker }) => {
+    // Accessibility behavior is the assertion here. The dedicated extension
+    // boot test owns the strict 15-second startup contract.
+    test.setTimeout(60_000);
     const page = await context.newPage();
     await page.route('**/*', (route) => {
         const url = route.request().url();
@@ -226,7 +229,7 @@ test('chapter rows and search-history controls are real buttons, not click-only 
         return route.abort();
     });
     await page.goto('https://rumble.com/vfixture-keyboard.html', { waitUntil: 'domcontentloaded' });
-    await page.waitForSelector('#rx-settings-btn', { state: 'attached', timeout: 15_000 });
+    await page.waitForSelector('#rx-settings-btn', { state: 'attached', timeout: 30_000 });
 
     const targetTabId = await serviceWorker.evaluate(async (url) => {
         const tab = (await chrome.tabs.query({})).find((entry) => entry.url === url);

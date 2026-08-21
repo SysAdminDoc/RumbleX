@@ -241,6 +241,10 @@ test('dismissing the first-run welcome changes nothing and it stays gone', async
 });
 
 test('the in-page settings modal stays usable in a small window', async ({ context }) => {
+    // Extension injection can queue behind the catalog-wide lifecycle test on
+    // a busy single-worker run. The dedicated boot test keeps the strict 15 s
+    // startup contract; this geometry test needs enough setup time to reach it.
+    test.setTimeout(60_000);
     // The narrow/short-viewport rules used to sit ABOVE the desktop rules they
     // override. A media query adds no specificity, so every property both
     // declared lost on source order: the sidebar stayed a 240px vertical
@@ -261,7 +265,7 @@ test('the in-page settings modal stays usable in a small window', async ({ conte
         status: 200, contentType: 'text/html', body: fixture,
     }));
     await page.goto('https://rumble.com/vnarrow-modal.html', { waitUntil: 'domcontentloaded' });
-    await page.locator('#rx-settings-btn').waitFor({ state: 'attached', timeout: 15_000 });
+    await page.locator('#rx-settings-btn').waitFor({ state: 'attached', timeout: 30_000 });
     await page.evaluate(() => document.querySelector('#rx-settings-btn')?.click());
     await page.waitForFunction(() => document.body.classList.contains('rx-panel-open'));
     await page.waitForTimeout(300);

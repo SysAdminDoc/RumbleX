@@ -2097,6 +2097,10 @@
     "message": "La transmisión a MP4 necesita WebCodecs en este navegador. TS al disco sigue disponible y al cancelar se descartan los cambios parciales del archivo.",
     "description": "In-page UI string (shared core)."
   },
+  "dlUnknownSizeMemoryLimit": {
+    "message": "Rumble no publicó el tamaño del stream. La conversión en el navegador se detendrá al alcanzar {size} para proteger esta pestaña.",
+    "description": "In-page UI string (shared core)."
+  },
   "dlDiskProgress": {
     "message": "Progreso de transmisión al disco",
     "description": "In-page UI string (shared core)."

@@ -48,15 +48,54 @@ function stageExtension(baseUrl) {
     // host pattern covers the ephemeral HTTP server port used by the probe.
     const originPattern = 'http://127.0.0.1/*';
     if (!manifest.permissions.includes(originPattern)) manifest.permissions.push(originPattern);
+    const runtimeEntry = manifest.content_scripts.find((entry) =>
+        entry.matches?.some((match) => match.includes('rumble.com')));
+    if (!runtimeEntry?.js?.length) throw new Error('Firefox manifest has no Rumble runtime script list');
     manifest.content_scripts.push({
         matches: [originPattern],
-        js: ['browser-polyfill.js', 'settings-schema.js', 'platform.js', 'firefox-smoke-probe.js'],
+        js: ['firefox-smoke-bootstrap.js', ...runtimeEntry.js, 'firefox-smoke-probe.js'],
         run_at: 'document_start',
         all_frames: false,
     });
     fs.writeFileSync(path.join(stage, 'manifest.json'), `${JSON.stringify(manifest, null, 2)}\n`);
 
     const reportUrl = `${baseUrl}result`;
+    const bootstrap = `
+'use strict';
+(() => {
+    let sent = false;
+    const reportUrl = ${JSON.stringify(reportUrl)};
+    const send = (result) => {
+        if (sent) return;
+        sent = true;
+        const safe = {};
+        for (const [key, value] of Object.entries(result || {})) {
+            safe[key] = String(value).slice(0, 2000);
+        }
+        fetch(reportUrl + '?' + new URLSearchParams(safe), {
+            method: 'GET',
+            cache: 'no-store',
+        }).catch(() => {});
+    };
+    Object.defineProperty(globalThis, '__rxFirefoxSmokeReport', {
+        value: send,
+        configurable: true,
+    });
+    addEventListener('error', (event) => send({
+        injected: true,
+        error: 'content error: ' + String(event.error?.stack || event.message || 'unknown'),
+    }), { once: true });
+    addEventListener('unhandledrejection', (event) => send({
+        injected: true,
+        error: 'unhandled rejection: ' + String(event.reason?.stack || event.reason || 'unknown'),
+    }), { once: true });
+    setTimeout(() => send({
+        injected: true,
+        error: 'production runtime did not reach the Firefox smoke probe within 15 seconds',
+    }), 15000);
+})();
+`;
+    fs.writeFileSync(path.join(stage, 'firefox-smoke-bootstrap.js'), bootstrap);
     const probe = `
 'use strict';
 (async () => {
@@ -68,6 +107,18 @@ function stageExtension(baseUrl) {
         result.requestBlocking = platform?.capabilities?.requestBlocking === true;
         result.requestBlockingMode = platform?.capabilities?.requestBlockingMode || null;
         result.settingsSchema = Object.keys(globalThis.RumbleXSettingsSchema?.DEFAULTS || {}).length >= 208;
+        result.coreRuntime = [Page, Router, Selectors, VideoCards, MediaHelpers,
+            PageData, MediaProbeCache, VideoDownloader]
+            .every((value) => value && typeof value === 'object');
+        result.routeBoundary = Page.classify() === 'home' && typeof Router.onChange === 'function';
+        result.selectorBoundary = typeof Selectors.healthCheck === 'function';
+        result.cardBoundary = typeof VideoCards.all === 'function';
+        result.mediaBoundary = MediaHelpers.parseMasterPlaylist([
+            '#EXTM3U',
+            '#EXT-X-STREAM-INF:BANDWIDTH=900000,RESOLUTION=640x360',
+            'https://hugh.cdn.rumble.cloud/firefox-smoke/360.m3u8',
+        ].join('\\n'), location.href).length === 1;
+        result.contentRegistry = Array.isArray(features) && features.length >= 86;
 
         const key = 'rx_firefox_smoke_value';
         const value = 'firefox-mv2-' + Date.now();
@@ -86,10 +137,7 @@ function stageExtension(baseUrl) {
     } catch (error) {
         result.error = String(error?.stack || error);
     }
-    fetch(${JSON.stringify(reportUrl)} + '?' + new URLSearchParams(result), {
-        method: 'GET',
-        cache: 'no-store',
-    }).catch(() => {});
+    globalThis.__rxFirefoxSmokeReport(result);
 })();
 `;
     fs.writeFileSync(path.join(stage, 'firefox-smoke-probe.js'), probe);
@@ -184,7 +232,12 @@ async function main() {
         clearTimeout(timer);
         const expectedVersion = JSON.parse(fs.readFileSync(path.join(EXTENSION, 'manifest-firefox.json'), 'utf8')).version;
         const failures = [];
-        for (const key of ['injected', 'storageRoundTrip', 'storageRemove', 'responseMessage', 'packagedAsset', 'requestBlocking', 'settingsSchema']) {
+        for (const key of [
+            'injected', 'storageRoundTrip', 'storageRemove', 'responseMessage',
+            'packagedAsset', 'requestBlocking', 'settingsSchema', 'coreRuntime',
+            'routeBoundary', 'selectorBoundary', 'cardBoundary', 'mediaBoundary',
+            'contentRegistry',
+        ]) {
             if (result[key] !== 'true') failures.push(`${key}=${result[key] || 'missing'}`);
         }
         if (result.platform !== 'extension') failures.push(`platform=${result.platform || 'missing'}`);
@@ -192,7 +245,7 @@ async function main() {
         if (result.version !== expectedVersion) failures.push(`version=${result.version || 'missing'} (expected ${expectedVersion})`);
         if (result.error) failures.push(`runtime=${result.error}`);
         if (failures.length) throw new Error(`Firefox MV2 smoke failed: ${failures.join(', ')}\n${runnerLog}`);
-        console.log(`Firefox MV2 smoke passed (v${expectedVersion}): schema, storage, removal, messaging, packaged asset, content injection.`);
+        console.log(`Firefox MV2 smoke passed (v${expectedVersion}): production core order, routing, selectors, cards, media, registry, storage, messaging, and packaged assets.`);
     } finally {
         clearTimeout(timer);
         stopProcessTree(child);

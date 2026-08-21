@@ -2097,6 +2097,10 @@
     "message": "MP4-Streaming benötigt WebCodecs in diesem Browser. TS auf Datenträger bleibt verfügbar und beim Abbrechen werden Teiländerungen an der Datei verworfen.",
     "description": "In-page UI string (shared core)."
   },
+  "dlUnknownSizeMemoryLimit": {
+    "message": "Rumble hat keine Streamgröße veröffentlicht. Die Konvertierung im Browser stoppt bei {size}, um diesen Tab zu schützen.",
+    "description": "In-page UI string (shared core)."
+  },
   "dlDiskProgress": {
     "message": "Fortschritt beim Streamen auf Datenträger",
     "description": "In-page UI string (shared core)."

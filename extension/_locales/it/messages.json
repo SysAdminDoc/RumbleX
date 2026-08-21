@@ -2097,6 +2097,10 @@
     "message": "Lo streaming MP4 richiede WebCodecs in questo browser. TS su disco rimane disponibile e l’annullamento elimina le modifiche parziali al file.",
     "description": "In-page UI string (shared core)."
   },
+  "dlUnknownSizeMemoryLimit": {
+    "message": "Rumble non ha indicato la dimensione del flusso. La conversione nel browser si fermerà a {size} per proteggere questa scheda.",
+    "description": "In-page UI string (shared core)."
+  },
   "dlDiskProgress": {
     "message": "Avanzamento dello streaming su disco",
     "description": "In-page UI string (shared core)."

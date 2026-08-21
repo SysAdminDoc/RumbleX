@@ -104,6 +104,45 @@ test('loaded extension shares routing, selectors, cards, and media helpers acros
                     const delegatedSegments = VideoDownloader._parseSegmentEntries(segments, location.href);
                     const healthBeforeRoute = Selectors.healthCheck();
 
+                    const originalProbeTtl = Settings._cache.downloadProbeCacheTtlHours;
+                    let probeCache;
+                    try {
+                        Settings._cache.downloadProbeCacheTtlHours = 1;
+                        await MediaProbeCache.clear();
+                        await MediaProbeCache.set('core-fresh', { status: 'fresh' });
+                        await new Promise((resolve) => setTimeout(resolve, 350));
+                        const fresh = await MediaProbeCache.get('core-fresh');
+                        const persistedAfterSet = await RXPlatform.storage.get(MediaProbeCache._KEY);
+
+                        MediaProbeCache._mem['core-fresh'].at = Date.now() - (2 * 3600 * 1000);
+                        const expired = await MediaProbeCache.get('core-fresh');
+                        await new Promise((resolve) => setTimeout(resolve, 350));
+                        const persistedAfterExpiry = await RXPlatform.storage.get(MediaProbeCache._KEY);
+
+                        await MediaProbeCache.set('core-clear', { status: 'clear-me' });
+                        await MediaProbeCache.clear();
+                        await new Promise((resolve) => setTimeout(resolve, 350));
+                        const cleared = await MediaProbeCache.get('core-clear');
+                        const persistedAfterClear = await RXPlatform.storage.get(MediaProbeCache._KEY);
+
+                        Settings._cache.downloadProbeCacheTtlHours = 0;
+                        await MediaProbeCache.set('core-disabled', { status: 'must-not-store' });
+                        const disabled = await MediaProbeCache.get('core-disabled');
+                        probeCache = {
+                            fresh,
+                            persisted: persistedAfterSet[MediaProbeCache._KEY]?.['core-fresh']?.val?.status === 'fresh',
+                            expired,
+                            expiredGc: !persistedAfterExpiry[MediaProbeCache._KEY]?.['core-fresh'],
+                            cleared,
+                            clearRemovedStorage: !Object.hasOwn(persistedAfterClear, MediaProbeCache._KEY),
+                            disabled,
+                            disabledNotStored: !MediaProbeCache._mem['core-disabled'],
+                        };
+                    } finally {
+                        Settings._cache.downloadProbeCacheTtlHours = originalProbeTtl;
+                        await MediaProbeCache.clear();
+                    }
+
                     const routeEvents = [];
                     const unsubscribe = Router.onChange((detail) => routeEvents.push(detail));
                     History.prototype.pushState.call(history, {}, '', '/search/all?q=core-boundary');
@@ -130,6 +169,7 @@ test('loaded extension shares routing, selectors, cards, and media helpers acros
                             activeTag: getActiveMedia()?.tagName || null,
                             structuredAvailable: PageData.available(),
                             probeMethods: ['get', 'set', 'clear'].every((name) => typeof MediaProbeCache[name] === 'function'),
+                            probeCache,
                         },
                     };
                 },
@@ -163,4 +203,14 @@ test('loaded extension shares routing, selectors, cards, and media helpers acros
     expect(result.media.activeTag).toBe('VIDEO');
     expect(result.media.structuredAvailable).toBe(false);
     expect(result.media.probeMethods).toBe(true);
+    expect(result.media.probeCache).toEqual({
+        fresh: { status: 'fresh' },
+        persisted: true,
+        expired: null,
+        expiredGc: true,
+        cleared: null,
+        clearRemovedStorage: true,
+        disabled: null,
+        disabledNotStored: true,
+    });
 });

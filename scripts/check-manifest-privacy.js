@@ -111,6 +111,12 @@ const expectedHosts = union([
 ]);
 const expectedResources = union(manifests.flatMap(normalizeWebAccessibleResources));
 const content = fs.readFileSync(CONTENT_PATH, 'utf8');
+const runtimeScriptPaths = union(manifests.flatMap((manifest) =>
+    (manifest.content_scripts || []).flatMap((entry) => entry.js || [])));
+const runtimeSources = runtimeScriptPaths.map((relativePath) => ({
+    relativePath,
+    source: fs.readFileSync(path.join(ROOT, 'extension', relativePath), 'utf8'),
+}));
 
 const errors = [
     ...compareSet(
@@ -144,8 +150,10 @@ for (const [index, manifest] of manifests.entries()) {
         }
     }
 }
-if (/\bworld\s*:\s*['"]MAIN['"]/.test(content)) {
-    errors.push('content core requests MAIN-world execution');
+for (const { relativePath, source } of runtimeSources) {
+    if (/\bworld\b\s*['"`]?\s*:\s*['"`]MAIN['"`]/.test(source)) {
+        errors.push(`${relativePath} requests MAIN-world execution`);
+    }
 }
 
 const requiredReportSnippets = [

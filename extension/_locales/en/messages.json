@@ -2099,6 +2099,10 @@
     "message": "Streaming MP4 needs WebCodecs in this browser. TS to disk remains available and cancelling discards partial file changes.",
     "description": "In-page UI string (shared core)."
   },
+  "dlUnknownSizeMemoryLimit": {
+    "message": "Rumble did not publish the stream size. In-browser conversion stops at {size} to protect this tab.",
+    "description": "In-page UI string (shared core)."
+  },
   "dlDiskProgress": {
     "message": "Stream-to-disk progress",
     "description": "In-page UI string (shared core)."

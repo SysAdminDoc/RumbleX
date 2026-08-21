@@ -2097,6 +2097,10 @@
     "message": "Le MP4 en flux continu nécessite WebCodecs dans ce navigateur. Le mode TS sur disque reste disponible et l’annulation supprime les modifications partielles du fichier.",
     "description": "In-page UI string (shared core)."
   },
+  "dlUnknownSizeMemoryLimit": {
+    "message": "Rumble n’a pas indiqué la taille du flux. La conversion dans le navigateur s’arrêtera à {size} afin de protéger cet onglet.",
+    "description": "In-page UI string (shared core)."
+  },
   "dlDiskProgress": {
     "message": "Progression de l’écriture sur disque",
     "description": "In-page UI string (shared core)."

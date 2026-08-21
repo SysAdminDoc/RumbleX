@@ -4,6 +4,10 @@ const { test, expect, chromium } = require('@playwright/test');
 const { INSTRUMENTED_CORE, PLATFORM, SCHEMA, BODY, INIT_STYLE_IDS, routeFor, createHarnessPage } = require('./_harness');
 
 test('every feature initializes and destroys through the canonical registry', async () => {
+    // This is the catalog-wide lifecycle pass, not a boot-time performance
+    // assertion. Keep enough headroom for a loaded Windows browser host while
+    // the dedicated extension-load test retains the strict 15-second budget.
+    test.setTimeout(90_000);
     const browser = await chromium.launch({ headless: true });
     try {
         const { context, page } = await createHarnessPage(browser);
@@ -51,6 +55,10 @@ test('every feature initializes and destroys through the canonical registry', as
 });
 
 test('all CSS toggles and handwritten style modules mount and clean up on their intended route', async () => {
+    // This test deliberately initializes and destroys 137 modules in one
+    // browser. The default 30-second budget is too tight on a loaded Windows
+    // host even when every lifecycle assertion completes correctly.
+    test.setTimeout(90_000);
     const browser = await chromium.launch({ headless: true });
     try {
         const { context, page } = await createHarnessPage(browser);

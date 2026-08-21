@@ -13,6 +13,9 @@ All notable changes to RumbleX will be documented in this file.
 - Chrome, Firefox, the full userscript, and the Lite userscript load the same core files in one guarded order. The userscript hash now covers the settings schema plus every shared core source.
 
 ### Fixed
+- Direct-to-disk saves now remove the Cancel control immediately before the browser commits the selected file. Chromium cannot reliably roll back after `close()` begins, so RumbleX no longer claims a late cancellation discarded a file that may already have been replaced.
+- HLS qualities with missing size metadata now use MP4-to-disk when File System Access and WebCodecs are available. Browsers without a file picker keep the bounded in-memory choices and show the 512 MiB ceiling before conversion starts.
+- Clearing the media probe cache now cancels its pending storage flush, so an immediate clear cannot recreate a stale cache key a quarter-second later.
 - Current `<rum-video-thumbnail>` cards now resolve their creator surface from the card's `name` attribute when Rumble omits the old author link.
 - The selector harness now checks every top-level selector in a comma-separated stable list and matches CSS class tokens exactly. Older captures no longer produce false fallback warnings from ignored alternatives or partial class-name matches.
 
@@ -20,6 +23,8 @@ All notable changes to RumbleX will be documented in this file.
 - Added golden MPEG-TS coverage for streamed MP4 video and audio metadata, positioned output reconstruction, bounded chunk size, and cancellation cleanup. A browser test also proves that media above 512 MiB offers MP4 to disk without exposing the in-memory MP4 path.
 - The selector harness now gates 149 current and legacy surface checks with zero fallbacks or failures. Loaded-extension tests exercise all five sanitized captures, custom-card metadata, channel listing JSON, route health, and fixture privacy constraints.
 - Added loaded-extension boundary coverage for manifest order, userscript source order, route events, selector health, modern cards, schema.org metadata, active-media selection, HLS parsing parity, and the probe-cache API.
+- The probe-cache boundary now covers persistence, TTL expiry, lazy cleanup, disabled mode, and an immediate clear while a flush is pending.
+- The Firefox smoke loads the exact production content-script order. Release ZIP checks now compare all 38 archived runtime files with source bytes and validate both archived manifests.
 
 ## [3.51.0] - 2026-08-20
 

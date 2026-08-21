@@ -23,7 +23,7 @@
 // @updateURL    https://github.com/SysAdminDoc/RumbleX/raw/main/RumbleX.lite.user.js
 // ==/UserScript==
 
-// Generated from the shared extension core files. Shared runtime SHA-256: 9c73f0bb7a3b35b8df9651124c4e5bac9ea536c3008236032d646b0c0e6ef8fd
+// Generated from the shared extension core files. Shared runtime SHA-256: 9cf6264d71281be879fe9837cf34897636e67719633d0c23799d0b3bf6a8cf1c
 // RumbleX shared settings schema. This file is the canonical source for
 // defaults and trust-boundary normalization across content, options, popup,
 // background profile/Gist restores, and the generated userscript.
@@ -1220,6 +1220,7 @@
   "dlMp4ToDiskNote": "Converts while downloading",
   "dlLargeMp4Ready": "MP4 and TS disk modes keep the full video out of tab memory. Cancelling discards partial file changes.",
   "dlLargeMp4Unavailable": "Streaming MP4 needs WebCodecs in this browser. TS to disk remains available and cancelling discards partial file changes.",
+  "dlUnknownSizeMemoryLimit": "Rumble did not publish the stream size. In-browser conversion stops at {size} to protect this tab.",
   "dlDiskProgress": "Stream-to-disk progress",
   "dlMp4ReadingProgress": "Reading {completed}/{total} segments · {size}",
   "dlDiskWritingProgress": "Writing {completed}/{total} segments · {size}",
@@ -2371,6 +2372,8 @@ const MediaProbeCache = {
         this._scheduleFlush();
     },
     async clear() {
+        clearTimeout(this._flushTimer);
+        this._flushTimer = null;
         this._mem = {};
         try { await RXPlatform.storage.remove(this._KEY); } catch {}
     },
@@ -2378,11 +2381,13 @@ const MediaProbeCache = {
     _scheduleFlush() {
         clearTimeout(this._flushTimer);
         this._flushTimer = setTimeout(() => {
-            try { RXPlatform.storage.set({ [this._KEY]: this._mem }); } catch {}
+            this._flushTimer = null;
+            try {
+                void Promise.resolve(RXPlatform.storage.set({ [this._KEY]: this._mem })).catch(() => {});
+            } catch {}
         }, 250);
     },
 };
-
 
 
 
@@ -6733,7 +6738,10 @@ const VideoDownloader = {
             return;
         }
 
-        const exceedsMemoryLimit = Number(quality.size) > this._MAX_IN_MEMORY_BYTES;
+        const publishedSize = Number(quality.size);
+        const hasKnownSize = Number.isFinite(publishedSize) && publishedSize > 0;
+        const exceedsMemoryLimit = hasKnownSize && publishedSize > this._MAX_IN_MEMORY_BYTES;
+        const prefersDisk = exceedsMemoryLimit || !hasKnownSize;
         const canStreamToDisk = this._supportsStreamingFileSave();
         const canStreamMp4 = canStreamToDisk && this._supportsMediabunnyWorker();
         if (exceedsMemoryLimit && !canStreamToDisk) {
@@ -6773,7 +6781,7 @@ const VideoDownloader = {
             btn.addEventListener('click', onClick);
             return btn;
         };
-        if (!exceedsMemoryLimit) {
+        if (!prefersDisk || !canStreamToDisk) {
             row.appendChild(makeBtn('MP4', 'Converted in browser', () => this._startDownload(quality, title, 'mp4')));
         } else if (canStreamMp4) {
             row.appendChild(makeBtn(
@@ -6791,10 +6799,16 @@ const VideoDownloader = {
         } else if (!exceedsMemoryLimit) {
             row.appendChild(makeBtn('TS', 'Raw stream (in memory)', () => this._startDownload(quality, title, 'ts')));
         }
-        if (exceedsMemoryLimit) {
+        if (prefersDisk) {
             const note = document.createElement('div');
             note.className = 'rx-dl-tar-note';
-            note.textContent = canStreamMp4
+            note.textContent = !hasKnownSize && !canStreamToDisk
+                ? rxT(
+                    'dlUnknownSizeMemoryLimit',
+                    'Rumble did not publish the stream size. In-browser conversion stops at {size} to protect this tab.',
+                    { size: this._formatSize(this._MAX_IN_MEMORY_BYTES) },
+                )
+                : canStreamMp4
                 ? rxT(
                     'dlLargeMp4Ready',
                     'MP4 and TS disk modes keep the full video out of tab memory. Cancelling discards partial file changes.',
@@ -7086,6 +7100,11 @@ const VideoDownloader = {
                 },
             });
             if (signal.aborted) throw new DOMException('The download was cancelled.', 'AbortError');
+            // FileSystemWritableFileStream cannot reliably roll back once close()
+            // begins. End the cancellable phase before committing so the UI never
+            // promises to discard a file that Chromium may already have replaced.
+            cancel.remove();
+            if (this._downloadController === controller) this._downloadController = null;
             stage = 'file-close';
             setProgress(99, rxT('dlFinalizingFile', 'Finalizing file…'));
             await writable.close();
@@ -7095,7 +7114,6 @@ const VideoDownloader = {
                 'Saved {size} to disk.',
                 { size: this._formatSize(streamed.bytes) },
             ));
-            cancel.remove();
             const done = document.createElement('div');
             done.className = 'rx-dl-done';
             done.textContent = isMp4

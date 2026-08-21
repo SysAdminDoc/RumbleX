@@ -344,6 +344,8 @@ const MediaProbeCache = {
         this._scheduleFlush();
     },
     async clear() {
+        clearTimeout(this._flushTimer);
+        this._flushTimer = null;
         this._mem = {};
         try { await RXPlatform.storage.remove(this._KEY); } catch {}
     },
@@ -351,9 +353,11 @@ const MediaProbeCache = {
     _scheduleFlush() {
         clearTimeout(this._flushTimer);
         this._flushTimer = setTimeout(() => {
-            try { RXPlatform.storage.set({ [this._KEY]: this._mem }); } catch {}
+            this._flushTimer = null;
+            try {
+                void Promise.resolve(RXPlatform.storage.set({ [this._KEY]: this._mem })).catch(() => {});
+            } catch {}
         }, 250);
     },
 };
-
 

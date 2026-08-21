@@ -1165,9 +1165,8 @@ test('VideoDownloader writes info.json and NFO sidecars from page metadata', asy
     expect(result.withThumb.urls).toEqual(['https://1a-1791.com/video/fww1/9f/thumb.jpg']);
 });
 
-test('VideoDownloader offers streaming MP4 for large HLS media without exposing the in-memory path', async () => {
+test('VideoDownloader routes large and unknown-size HLS media through bounded format choices', async () => {
     const result = await inHarness(() => {
-        document.body.innerHTML = '<div id="rx-tab-download"><div class="rx-dl-body"></div></div>';
         const harness = globalThis.__RumbleXFeatureHarness;
         harness.enable('videoDownload');
         const dl = harness.features.find((feature) => feature.id === 'videoDownload');
@@ -1176,23 +1175,47 @@ test('VideoDownloader offers streaming MP4 for large HLS media without exposing 
         const originalStart = dl._startStreamingToDisk;
         const originalHls = dl._hlsUrl;
         const starts = [];
+        let fileSave = true;
+        let webCodecs = true;
         try {
             dl._hlsUrl = 'https://rumble.com/master.m3u8';
-            dl._supportsStreamingFileSave = () => true;
-            dl._supportsMediabunnyWorker = () => true;
+            dl._supportsStreamingFileSave = () => fileSave;
+            dl._supportsMediabunnyWorker = () => webCodecs;
             dl._startStreamingToDisk = (_quality, _title, format) => starts.push(format);
-            dl._showFormatPicker({
-                label: '2160p', width: 3840, height: 2160,
-                size: dl._MAX_IN_MEMORY_BYTES + 1,
-            }, 'Large fixture');
+            const render = (size, capabilities = {}) => {
+                fileSave = capabilities.fileSave ?? true;
+                webCodecs = capabilities.webCodecs ?? true;
+                document.body.innerHTML = '<div id="rx-tab-download"><div class="rx-dl-body"></div></div>';
+                dl._showFormatPicker({
+                    label: '2160p', width: 3840, height: 2160, size,
+                }, 'HLS fixture');
+                const buttons = [...document.querySelectorAll('.rx-dl-format-btn')];
+                return {
+                    labels: buttons.map((button) => button.firstChild?.textContent?.trim()),
+                    note: document.querySelector('.rx-dl-tar-note')?.textContent || '',
+                    buttons,
+                };
+            };
 
-            const buttons = [...document.querySelectorAll('.rx-dl-format-btn')];
-            const labels = buttons.map((button) => button.firstChild?.textContent?.trim());
-            buttons.find((button) => button.textContent.includes('MP4 to disk'))?.click();
+            const large = render(dl._MAX_IN_MEMORY_BYTES + 1);
+            large.buttons.find((button) => button.textContent.includes('MP4 to disk'))?.click();
+            const unknown = render(0);
+            const small = render(64 * 1024 * 1024);
+            const unknownWithoutWebCodecs = render(0, { webCodecs: false });
+            const unknownWithoutPicker = render(0, { fileSave: false });
             return {
-                labels,
+                large: { labels: large.labels, note: large.note },
+                unknown: { labels: unknown.labels, note: unknown.note },
+                small: { labels: small.labels, note: small.note },
+                unknownWithoutWebCodecs: {
+                    labels: unknownWithoutWebCodecs.labels,
+                    note: unknownWithoutWebCodecs.note,
+                },
+                unknownWithoutPicker: {
+                    labels: unknownWithoutPicker.labels,
+                    note: unknownWithoutPicker.note,
+                },
                 starts,
-                note: document.querySelector('.rx-dl-tar-note')?.textContent || '',
             };
         } finally {
             dl._supportsStreamingFileSave = originalFileSave;
@@ -1202,10 +1225,114 @@ test('VideoDownloader offers streaming MP4 for large HLS media without exposing 
         }
     });
 
-    expect(result.labels).toEqual(['MP4 to disk', 'TS to disk']);
-    expect(result.labels).not.toContain('MP4');
+    expect(result.large.labels).toEqual(['MP4 to disk', 'TS to disk']);
+    expect(result.unknown.labels).toEqual(['MP4 to disk', 'TS to disk']);
+    expect(result.small.labels).toEqual(['MP4', 'TS to disk']);
+    expect(result.unknownWithoutWebCodecs.labels).toEqual(['TS to disk']);
+    expect(result.unknownWithoutPicker.labels).toEqual(['MP4', 'TS']);
     expect(result.starts).toEqual(['mp4']);
-    expect(result.note).toContain('keep the full video out of tab memory');
+    expect(result.large.note).toContain('keep the full video out of tab memory');
+    expect(result.unknown.note).toContain('keep the full video out of tab memory');
+    expect(result.unknownWithoutWebCodecs.note).toContain('needs WebCodecs');
+    expect(result.unknownWithoutPicker.note).toContain('stops at 512 MB');
+});
+
+test('VideoDownloader ends cancellation before the selected file enters its commit phase', async () => {
+    const result = await inHarness(async () => {
+        document.body.innerHTML = '<div id="rx-tab-download"><div class="rx-dl-body"></div></div>';
+        const harness = globalThis.__RumbleXFeatureHarness;
+        harness.enable('videoDownload');
+        const dl = harness.features.find((feature) => feature.id === 'videoDownload');
+        const originals = {
+            supportsFileSave: dl._supportsStreamingFileSave,
+            supportsMediabunny: dl._supportsMediabunnyWorker,
+            stream: dl._streamMediabunnyHlsToWritable,
+            sidecars: dl._writeSidecars,
+            picker: globalThis.showSaveFilePicker,
+        };
+        let closeStartedResolve;
+        let closeResolve;
+        let aborts = 0;
+        let sidecars = 0;
+        const fileName = `rumblex-finalize-${Date.now()}.mp4`;
+        const opfsRoot = await navigator.storage.getDirectory();
+        const opfsHandle = await opfsRoot.getFileHandle(fileName, { create: true });
+        const closeStarted = new Promise((resolve) => { closeStartedResolve = resolve; });
+
+        try {
+            dl._supportsStreamingFileSave = () => true;
+            dl._supportsMediabunnyWorker = () => true;
+            dl._streamMediabunnyHlsToWritable = async (_quality, writable) => {
+                await writable.write(new TextEncoder().encode('complete MP4 fixture'));
+                return {
+                    bytes: 20,
+                    segments: 1,
+                    trimmed: false,
+                    sponsorPlan: { removedCount: 0, removedSeconds: 0 },
+                };
+            };
+            dl._writeSidecars = () => { sidecars += 1; };
+            globalThis.showSaveFilePicker = async () => ({
+                createWritable: async () => {
+                    const nativeWritable = await opfsHandle.createWritable();
+                    return {
+                        write: (...args) => nativeWritable.write(...args),
+                        close: async () => {
+                            closeStartedResolve();
+                            await new Promise((resolve) => { closeResolve = resolve; });
+                            return nativeWritable.close();
+                        },
+                        abort: (...args) => {
+                            aborts += 1;
+                            return nativeWritable.abort(...args);
+                        },
+                    };
+                },
+            });
+
+            const saving = dl._startStreamingToDisk(
+                { label: '1080p', url: 'https://example.invalid/video.m3u8' },
+                'Delayed close fixture',
+                'mp4',
+            );
+            await Promise.race([
+                closeStarted,
+                new Promise((_, reject) => setTimeout(
+                    () => reject(new Error('selected file never entered close')),
+                    2000,
+                )),
+            ]);
+            const cancelPresentDuringClose = !!document.querySelector('.rx-dl-cancel');
+            closeResolve();
+            await saving;
+
+            const panelText = document.querySelector('.rx-dl-body')?.textContent || '';
+            const fileText = await (await opfsHandle.getFile()).text();
+            return {
+                aborts,
+                sidecars,
+                panelText,
+                fileText,
+                cancelPresentDuringClose,
+                doneCount: document.querySelectorAll('.rx-dl-done').length,
+            };
+        } finally {
+            dl._supportsStreamingFileSave = originals.supportsFileSave;
+            dl._supportsMediabunnyWorker = originals.supportsMediabunny;
+            dl._streamMediabunnyHlsToWritable = originals.stream;
+            dl._writeSidecars = originals.sidecars;
+            if (originals.picker === undefined) delete globalThis.showSaveFilePicker;
+            else globalThis.showSaveFilePicker = originals.picker;
+            await opfsRoot.removeEntry(fileName).catch(() => {});
+        }
+    });
+
+    expect(result.cancelPresentDuringClose).toBe(false);
+    expect(result.aborts).toBe(0);
+    expect(result.fileText).toBe('complete MP4 fixture');
+    expect(result.sidecars).toBe(1);
+    expect(result.doneCount).toBe(1);
+    expect(result.panelText).toContain('MP4 saved');
 });
 
 test('SponsorBlockRX honours per-category behavior, undo and the time-saved counter', async () => {
