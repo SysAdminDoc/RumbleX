@@ -947,6 +947,14 @@
     "message": "Masquer les vignettes uniquement dans la barre latérale des suggestions",
     "description": "In-page UI string (shared core)."
   },
+  "feat_realFramePreviews_label": {
+    "message": "Aperçus d'images réelles",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_realFramePreviews_desc": {
+    "message": "Capturer localement une image après un survol volontaire; survolez à nouveau pour voir l'originale",
+    "description": "In-page UI string (shared core)."
+  },
   "feat_compactAccountPagination_label": {
     "message": "Pagination compacte du compte",
     "description": "In-page UI string (shared core)."

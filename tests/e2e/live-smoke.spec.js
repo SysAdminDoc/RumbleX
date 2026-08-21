@@ -12,6 +12,8 @@
 // behavior. This spec exists for the case where rumble.com itself changes
 // something we haven't captured.
 const { test, expect } = require('./_fixtures');
+const fs = require('fs');
+const path = require('path');
 
 const LIVE = process.env.RUMBLEX_LIVE_SMOKE === '1';
 const LIVE_URL = process.env.RUMBLEX_LIVE_URL || 'https://rumble.com/';
@@ -144,5 +146,77 @@ test.describe('live rumble.com smoke', () => {
             `persistent live selector failure: ${JSON.stringify(result.selectorHealth)}`,
         ).not.toBe('broken');
         expect(result.requestShield?.enforcement).toBe('chromium-dnr');
+    });
+
+    test('real frame previews capture from the live CDN and restore on disable', async ({ context, serviceWorker }) => {
+        await serviceWorker.evaluate(async () => {
+            const stored = await chrome.storage.local.get('rx_settings');
+            await chrome.storage.local.set({
+                rx_settings: { ...(stored.rx_settings || {}), realFramePreviews: true },
+            });
+        });
+
+        const page = await context.newPage();
+        await openLivePage(page);
+        const candidatePath = await page.evaluate(async () => {
+            const html = await fetch(location.href, { credentials: 'omit', cache: 'no-store' }).then((response) => response.text());
+            const parsed = new DOMParser().parseFromString(html, 'text/html');
+            const items = [];
+            for (const script of parsed.querySelectorAll('script')) {
+                const body = script.textContent || '';
+                if (!body.includes('"items"')) continue;
+                try {
+                    const payload = JSON.parse(body.trim());
+                    if (Array.isArray(payload?.items)) items.push(...payload.items);
+                } catch {}
+            }
+            return items.find((item) => item?.object_type === 'video'
+                && item?.relative_url
+                && item?.videos?.some((video) => video?.type === 'mp4'))?.relative_url || null;
+        });
+        test.skip(!candidatePath, 'The live feed did not expose an MP4-backed card');
+
+        const cards = page.locator([
+            'rum-video-thumbnail[role="listitem"]',
+            '[role="listitem"][data-video-id]',
+            '.videostream',
+            'article.video-item',
+            '.mediaList-item',
+            '.thumbnail__grid-item',
+        ].join(', '));
+        await expect.poll(() => cards.count(), { timeout: 20_000 }).toBeGreaterThan(0);
+        const cardIndex = await cards.evaluateAll((nodes, wantedPath) => nodes.findIndex((card) => {
+            const raw = card.getAttribute('url') || card.querySelector('a[href*="/v"]')?.getAttribute('href') || '';
+            try { return new URL(raw, location.origin).pathname === wantedPath; } catch { return false; }
+        }), candidatePath);
+        test.skip(cardIndex < 0, 'The MP4-backed listing item was not present in the hydrated card grid');
+
+        const card = cards.nth(cardIndex);
+        await card.hover();
+        const overlay = card.locator('.rx-real-frame-overlay');
+        await overlay.waitFor({ state: 'attached', timeout: 30_000 });
+        const originalSrc = await card.locator('img:not(.rx-real-frame-overlay)').first().getAttribute('src');
+        await page.mouse.move(0, 0);
+        await page.waitForTimeout(200);
+        expect(await overlay.evaluate((node) => getComputedStyle(node).opacity)).toBe('1');
+        await card.hover();
+        await page.waitForTimeout(200);
+        expect(await overlay.evaluate((node) => getComputedStyle(node).opacity)).toBe('0');
+        expect(await card.locator('img:not(.rx-real-frame-overlay)').first().getAttribute('src')).toBe(originalSrc);
+
+        await page.mouse.move(0, 0);
+        await page.waitForTimeout(200);
+        const screenshotDir = path.join(__dirname, '..', '..', 'design', 'mockups', 'site-implementation');
+        fs.mkdirSync(screenshotDir, { recursive: true });
+        await card.screenshot({ path: path.join(screenshotDir, 'real-frame-previews.png') });
+
+        await serviceWorker.evaluate(async () => {
+            const stored = await chrome.storage.local.get('rx_settings');
+            await chrome.storage.local.set({
+                rx_settings: { ...(stored.rx_settings || {}), realFramePreviews: false },
+            });
+        });
+        await expect(overlay).toHaveCount(0, { timeout: 10_000 });
+        expect(await card.locator('img:not(.rx-real-frame-overlay)').first().getAttribute('src')).toBe(originalSrc);
     });
 });

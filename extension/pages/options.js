@@ -238,6 +238,7 @@
         hideThumbnails: { group: 'layout', label: 'Hide Thumbnails (everywhere)', desc: 'Master toggle that hides all thumbnails.' },
         hideThumbnailsFeeds: { group: 'layout', label: 'Hide Thumbnails (feeds)', desc: 'Hide thumbnails on feed/home/subs.' },
         hideThumbnailsRelated: { group: 'layout', label: 'Hide Thumbnails (related)', desc: 'Hide thumbnails in the related sidebar.' },
+        realFramePreviews: { group: 'layout', label: 'Real Frame Previews', desc: 'Replace feed artwork with a locally captured video frame after deliberate hover or keyboard focus. Hover again to reveal the original.' },
         compactAccountPagination: { group: 'layout', label: 'Compact Account Pagination', desc: 'Shrink the autoPg pagination on /account/content pages.' },
         homeCleanupPreset: { group: 'layout', label: 'Home Cleanup Preset', desc: 'none | focused | minimal | custom.' },
         pageDensity: { group: 'layout', label: 'Page Density', desc: 'dense | normal — RumbleX UI density only.' },

@@ -947,6 +947,14 @@
     "message": "Vorschaubilder nur in der Seitenleiste für ähnliche Videos ausblenden",
     "description": "In-page UI string (shared core)."
   },
+  "feat_realFramePreviews_label": {
+    "message": "Echte Videobild-Vorschauen",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_realFramePreviews_desc": {
+    "message": "Nach bewusstem Darüberfahren lokal ein Videobild erfassen; erneut darüberfahren, um das Original zu sehen",
+    "description": "In-page UI string (shared core)."
+  },
   "feat_compactAccountPagination_label": {
     "message": "Kompakte Kontoseiten-Navigation",
     "description": "In-page UI string (shared core)."

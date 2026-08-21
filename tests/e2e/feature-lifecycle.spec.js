@@ -20,8 +20,8 @@ test('every feature initializes and destroys through the canonical registry', as
             hasInit: typeof feature.init === 'function',
             hasDestroy: typeof feature.destroy === 'function',
         })));
-        expect(catalog).toHaveLength(137);
-        expect(new Set(catalog.map(({ id }) => id)).size).toBe(137);
+        expect(catalog).toHaveLength(138);
+        expect(new Set(catalog.map(({ id }) => id)).size).toBe(138);
         expect(catalog.every(({ id, name, hasInit, hasDestroy }) => id && name && hasInit && hasDestroy)).toBe(true);
 
         const excluded = new Set(['autoTheater', 'disableShortsFeed']);
@@ -55,7 +55,7 @@ test('every feature initializes and destroys through the canonical registry', as
 });
 
 test('all CSS toggles and handwritten style modules mount and clean up on their intended route', async () => {
-    // This test deliberately initializes and destroys 137 modules in one
+    // This test deliberately initializes and destroys 138 modules in one
     // browser. The default 30-second budget is too tight on a loaded Windows
     // host even when every lifecycle assertion completes correctly.
     test.setTimeout(90_000);

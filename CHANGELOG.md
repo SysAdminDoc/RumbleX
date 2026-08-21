@@ -7,6 +7,7 @@ All notable changes to RumbleX will be documented in this file.
 ### Added
 - Large HLS videos can now convert to MP4 straight into a selected file on supported Chromium browsers. Mediabunny reads the transport stream incrementally, writes positioned 8 MiB MP4 chunks with backpressure, and never holds the complete input or output in tab memory. Cancelling stops the network and worker, then discards partial file changes. The buffered converter remains available for smaller media, while browsers without WebCodecs keep the existing TS-to-disk option.
 - Added five checked-in, privacy-safe desktop fixtures for the current Rumble home, watch, search, channel, and custom-card structures. The channel fixture also preserves the served-HTML `items` contract used after Rumble's listing migration, with synthetic names and `.invalid` media URLs.
+- Added opt-in Real Frame Previews for feed cards. A deliberate hover or keyboard focus reads the page listing once, picks the lowest safe Rumble MP4, captures one ranged frame locally, and keeps it in a 30-day cache capped at 150 entries. Hovering or focusing the finished card reveals Rumble's untouched original artwork.
 
 ### Changed
 - Split page classification and routing, selector health, video-card adaptation, and media/probe helpers into four shared core files. `content.js` now focuses on feature modules and keeps compatibility methods for downloader callers.
@@ -25,6 +26,7 @@ All notable changes to RumbleX will be documented in this file.
 - Added loaded-extension boundary coverage for manifest order, userscript source order, route events, selector health, modern cards, schema.org metadata, active-media selection, HLS parsing parity, and the probe-cache API.
 - The probe-cache boundary now covers persistence, TTL expiry, lazy cleanup, disabled mode, and an immediate clear while a flush is pending.
 - The Firefox smoke loads the exact production content-script order. Release ZIP checks now compare all 38 archived runtime files with source bytes and validate both archived manifests.
+- Added behavior coverage for intent-only loading, lowest-rendition selection, CORS assignment order, cache reuse and expiry, hover reveal, and full teardown. The opt-in live smoke captures an actual CDN frame and writes the current visual reference.
 
 ## [3.51.0] - 2026-08-20
 

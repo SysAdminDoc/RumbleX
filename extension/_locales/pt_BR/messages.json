@@ -947,6 +947,14 @@
     "message": "Ocultar as miniaturas apenas na barra lateral de relacionados",
     "description": "In-page UI string (shared core)."
   },
+  "feat_realFramePreviews_label": {
+    "message": "Prévias com quadros reais",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_realFramePreviews_desc": {
+    "message": "Capture localmente um quadro após manter o ponteiro; passe novamente para ver a imagem original",
+    "description": "In-page UI string (shared core)."
+  },
   "feat_compactAccountPagination_label": {
     "message": "Paginação compacta da conta",
     "description": "In-page UI string (shared core)."

@@ -42,7 +42,7 @@ function unquote(literal) {
 }
 
 /**
- * RX_CATEGORIES is the settings-modal data table: 137 feature labels and 124
+ * RX_CATEGORIES is the settings-modal data table: 138 feature labels and 125
  * descriptions that the modal renders through rxFeatLabel/rxFeatDesc/rxCatLabel.
  * The keys are derived from the entry ids, so the array itself stays the single
  * English source and there is no parallel list to keep in step by hand.

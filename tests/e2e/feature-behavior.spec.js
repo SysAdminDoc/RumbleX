@@ -8,7 +8,9 @@
 // list, a persisted entry, a skipped segment, a seek position, an exported file
 // shape — rather than the fact that a DOM node appeared.
 const { test, expect, chromium } = require('@playwright/test');
-const { BODY, createHarnessPage } = require('./_harness');
+const fs = require('fs');
+const path = require('path');
+const { ROOT, BODY, createHarnessPage } = require('./_harness');
 
 /** Run `fn` inside a fresh harness page and return its result. */
 async function inHarness(fn, arg) {
@@ -2443,6 +2445,171 @@ test('SubtitleSidecar reads Rumble\'s own caption tracks off the embed payload',
     expect(result.cleared).toEqual({ cues: 0, active: null, pressed: ['false', 'false'] });
     // Off means the embed endpoint is never called.
     expect(result.callsWhenOff).toBe(0);
+});
+
+test('RealFramePreviews loads on intent, caches the smallest MP4, and restores originals', async () => {
+    test.setTimeout(60_000);
+    const source = fs.readFileSync(path.join(ROOT, 'extension', 'content.js'), 'utf8');
+    const featureStart = source.indexOf('const RealFramePreviews = {');
+    const captureStart = source.indexOf('async _captureFrame', featureStart);
+    const captureEnd = source.indexOf('\n    _mount(', captureStart);
+    const captureSource = source.slice(captureStart, captureEnd);
+    expect(captureSource.indexOf("video.crossOrigin = 'anonymous'"), 'crossOrigin assignment is missing').toBeGreaterThan(-1);
+    expect(captureSource.indexOf('video.crossOrigin'), 'crossOrigin must be set before src')
+        .toBeLessThan(captureSource.indexOf('video.src = url'));
+
+    const browser = await chromium.launch({ headless: true });
+    try {
+        const { context, page } = await createHarnessPage(browser);
+        const errors = [];
+        page.on('pageerror', (error) => errors.push(String(error?.stack || error)));
+
+        const early = await page.evaluate(async () => {
+            const harness = globalThis.__RumbleXFeatureHarness;
+            harness.enable('realFramePreviews');
+            const feature = harness.features.find((entry) => entry.id === 'realFramePreviews');
+            feature.INTENT_DELAY_MS = 30;
+            const card = document.querySelector('rum-video-thumbnail[url="/valpha123-alpha.html"]');
+            const image = card.querySelector('img');
+            image.src = 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="16" height="9"/>';
+            globalThis.__rxRealFrameStats = { listingCalls: 0, captures: 0, capturedUrl: null };
+            ChannelListing.load = async () => {
+                globalThis.__rxRealFrameStats.listingCalls++;
+                return [{
+                    object_type: 'video',
+                    relative_url: '/valpha123-alpha.html',
+                    videos: [
+                        { type: 'mp4', resolution: 1080, bitrate_kbps: 4000, url: 'https://1a-1791.com/video/alpha-1080.mp4' },
+                        { type: 'hls', resolution: 0, url: 'https://rumble.com/hls-vod/alpha/playlist.m3u8' },
+                        { type: 'mp4', resolution: 240, bitrate_kbps: 210, url: 'https://1a-1791.com/video/alpha-240.mp4' },
+                        { type: 'mp4', resolution: 360, bitrate_kbps: 500, url: 'https://1a-1791.com/video/alpha-360.mp4' },
+                        { type: 'mp4', resolution: 144, url: 'https://example.com/rejected.mp4' },
+                    ],
+                }];
+            };
+            feature._captureFrame = async (url) => {
+                globalThis.__rxRealFrameStats.captures++;
+                globalThis.__rxRealFrameStats.capturedUrl = url;
+                return new Blob(['fixture-frame'], { type: 'image/jpeg' });
+            };
+            feature.init();
+            card.dispatchEvent(new PointerEvent('pointerover', { bubbles: true }));
+            await new Promise((resolve) => setTimeout(resolve, 10));
+            return {
+                listingCalls: globalThis.__rxRealFrameStats.listingCalls,
+                captures: globalThis.__rxRealFrameStats.captures,
+                overlay: !!card.querySelector('.rx-real-frame-overlay'),
+                originalSrc: image.getAttribute('src'),
+            };
+        });
+
+        expect(early).toEqual({
+            listingCalls: 0,
+            captures: 0,
+            overlay: false,
+            originalSrc: 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="16" height="9"/>',
+        });
+
+        const card = page.locator('rum-video-thumbnail[url="/valpha123-alpha.html"]');
+        await card.locator('.rx-real-frame-overlay').waitFor({ state: 'attached', timeout: 5_000 });
+        await page.mouse.move(0, 0);
+        await page.waitForTimeout(180);
+        expect(await card.locator('.rx-real-frame-overlay').evaluate((node) => getComputedStyle(node).opacity)).toBe('1');
+
+        await card.hover();
+        await page.waitForTimeout(180);
+        expect(await card.locator('.rx-real-frame-overlay').evaluate((node) => getComputedStyle(node).opacity)).toBe('0');
+        await page.mouse.move(0, 0);
+        await page.waitForTimeout(180);
+
+        const firstPass = await page.evaluate(() => ({
+            ...globalThis.__rxRealFrameStats,
+            originalSrc: document.querySelector('rum-video-thumbnail[url="/valpha123-alpha.html"] img').getAttribute('src'),
+        }));
+        expect(firstPass.capturedUrl).toBe('https://1a-1791.com/video/alpha-240.mp4');
+        expect(firstPass.listingCalls).toBe(1);
+        expect(firstPass.captures).toBe(1);
+        expect(firstPass.originalSrc).toBe('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="16" height="9"/>');
+
+        const cached = await page.evaluate(async () => {
+            const feature = globalThis.__RumbleXFeatureHarness.features.find((entry) => entry.id === 'realFramePreviews');
+            const card = document.querySelector('rum-video-thumbnail[url="/valpha123-alpha.html"]');
+            feature.destroy();
+            ChannelListing.load = async () => {
+                globalThis.__rxRealFrameStats.listingCalls++;
+                return [];
+            };
+            feature._captureFrame = async () => {
+                globalThis.__rxRealFrameStats.captures++;
+                throw new Error('cache miss');
+            };
+            feature.init();
+            card.dispatchEvent(new PointerEvent('pointerover', { bubbles: true }));
+            const deadline = Date.now() + 5_000;
+            while (!card.querySelector('.rx-real-frame-overlay') && Date.now() < deadline) {
+                await new Promise((resolve) => setTimeout(resolve, 20));
+            }
+            const staleKey = '/expired-real-frame-fixture.html';
+            await RealFrameCache.put(staleKey, new Blob(['old'], { type: 'image/jpeg' }), Date.now() - RealFrameCache.MAX_AGE_MS - 1);
+            const stale = await RealFrameCache.get(staleKey);
+            const db = await RealFrameCache.open();
+            await new Promise((resolve, reject) => {
+                const tx = db.transaction(RealFrameCache.STORE_NAME, 'readwrite');
+                const store = tx.objectStore(RealFrameCache.STORE_NAME);
+                for (let index = 0; index < RealFrameCache.MAX_ENTRIES + 2; index++) {
+                    store.put({
+                        key: `/real-frame-cache-cap-${index}.html`,
+                        blob: new Blob([String(index)], { type: 'image/jpeg' }),
+                        createdAt: Date.now() + index,
+                    });
+                }
+                tx.oncomplete = resolve;
+                tx.onerror = tx.onabort = () => reject(tx.error || new Error('cache fixture transaction failed'));
+            });
+            await RealFrameCache.prune();
+            const cacheCount = await new Promise((resolve, reject) => {
+                const request = db.transaction(RealFrameCache.STORE_NAME, 'readonly')
+                    .objectStore(RealFrameCache.STORE_NAME).count();
+                request.onsuccess = () => resolve(request.result);
+                request.onerror = () => reject(request.error);
+            });
+            return {
+                overlay: !!card.querySelector('.rx-real-frame-overlay'),
+                listingCalls: globalThis.__rxRealFrameStats.listingCalls,
+                captures: globalThis.__rxRealFrameStats.captures,
+                stale: stale === null,
+                cacheCount,
+            };
+        });
+        expect(cached).toEqual({ overlay: true, listingCalls: 1, captures: 1, stale: true, cacheCount: 150 });
+
+        const destroyed = await page.evaluate(() => {
+            const feature = globalThis.__RumbleXFeatureHarness.features.find((entry) => entry.id === 'realFramePreviews');
+            const card = document.querySelector('rum-video-thumbnail[url="/valpha123-alpha.html"]');
+            const originalSrc = card.querySelector('img').getAttribute('src');
+            feature.destroy();
+            return {
+                overlays: document.querySelectorAll('.rx-real-frame-overlay').length,
+                style: !!document.getElementById('rx-real-frame-previews-css'),
+                cardClass: card.classList.contains('rx-real-frame-card'),
+                hostClass: !!card.querySelector('.rx-real-frame-host'),
+                originalSrc: card.querySelector('img').getAttribute('src'),
+                originalUnchanged: card.querySelector('img').getAttribute('src') === originalSrc,
+            };
+        });
+        expect(destroyed).toEqual({
+            overlays: 0,
+            style: false,
+            cardClass: false,
+            hostClass: false,
+            originalSrc: 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="16" height="9"/>',
+            originalUnchanged: true,
+        });
+        expect(errors).toEqual([]);
+        await context.close();
+    } finally {
+        await browser.close();
+    }
 });
 
 test('CreatorProgram counts this month from the embedded listing, not the DOM cards', async () => {

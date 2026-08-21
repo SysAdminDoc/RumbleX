@@ -165,6 +165,7 @@
         hideThumbnails: false,
         hideThumbnailsFeeds: false,
         hideThumbnailsRelated: false,
+        realFramePreviews: false,
         compactAccountPagination: false,
         homeCleanupPreset: 'none',
         pageDensity: 'dense',

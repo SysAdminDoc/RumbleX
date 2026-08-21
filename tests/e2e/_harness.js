@@ -186,7 +186,8 @@ const INIT_STYLE_IDS = Object.freeze({
     transcripts: 'rx-transcripts-css', audioOnly: 'rx-audioonly-css', batchDownload: 'rx-batch-css',
     autoHideHeader: 'rx-autohide-header-css', autoHideNavSidebar: 'rx-autohide-nav-css',
     fullWidthPlayer: 'rx-fullwidth-css', adaptiveLiveLayout: 'rx-adaptive-live-css',
-    commentBlocking: 'rx-commentblock-css', hideThumbnails: 'rx-thumbnailhider', denseMode: 'rx-densemode',
+    commentBlocking: 'rx-commentblock-css', realFramePreviews: 'rx-real-frame-previews-css',
+    hideThumbnails: 'rx-thumbnailhider', denseMode: 'rx-densemode',
     compactAccountPagination: 'rx-acct-pagination', reducedMotion: 'rx-reduced-motion',
     homeCleanupPreset: 'rx-home-cleanup-preset', externalPlayerEnabled: 'rx-extplayer-css',
     rantTierFilter: 'rx-rant-tier-filter',
@@ -195,7 +196,7 @@ const INIT_STYLE_IDS = Object.freeze({
 
 const HOME_FEATURES = new Set([
     'feedCleanup', 'categoryFilter', 'channelBlocker', 'shortsFilter', 'quickSave',
-    'batchDownload', 'homeCleanupPreset',
+    'batchDownload', 'homeCleanupPreset', 'realFramePreviews',
 ]);
 const ACCOUNT_FEATURES = new Set(['compactAccountPagination', 'bulkUnsubscribeEnabled']);
 function routeFor(id) {

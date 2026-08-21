@@ -48,6 +48,7 @@ const GROUPS = [
             { id: 'fullTitles', label: 'Full Titles' },
             { id: 'titleFont', label: 'Title Font' },
             { id: 'titleNormalizer', label: 'Title Normalizer' },
+            { id: 'realFramePreviews', label: 'Real Frame Previews' },
             { id: 'perChannelVolumeMemory', label: 'Per-Channel Playback' },
             { id: 'rssExportEnabled', label: 'Channel RSS' },
         ],
@@ -228,6 +229,7 @@ const GROUP_MESSAGE_KEYS = {
 const FEATURE_MESSAGE_KEYS = {
     disableShortsFeed: 'tipDisableShortsFeed',
     hideWalletTipButton: 'tipHideWalletTipButton',
+    realFramePreviews: 'feat_realFramePreviews_label',
 };
 
 function i18n(key, fallback = '') {

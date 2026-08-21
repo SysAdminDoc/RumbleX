@@ -947,6 +947,14 @@
     "message": "Hide thumbnails in the related sidebar only",
     "description": "In-page UI string (shared core)."
   },
+  "feat_realFramePreviews_label": {
+    "message": "Real Frame Previews",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_realFramePreviews_desc": {
+    "message": "Capture one local video frame after deliberate hover; hover again for the original",
+    "description": "In-page UI string (shared core)."
+  },
   "feat_compactAccountPagination_label": {
     "message": "Compact Account Pagination",
     "description": "In-page UI string (shared core)."

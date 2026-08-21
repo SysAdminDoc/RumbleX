@@ -67,6 +67,9 @@ async function inContent(serviceWorker, targetTabId, action, args = []) {
                     return {
                         rightWidth: right.getBoundingClientRect().width,
                         dividerWidth: divider.getBoundingClientRect().width,
+                        rightFlex: right.style.flex,
+                        rightExpanded: right.classList.contains('rx-expanded'),
+                        splitActive: document.documentElement.classList.contains('rx-split'),
                         separatorRole: divider.getAttribute('role'),
                         closeLabel: document.querySelector('#rx-theater-close')?.getAttribute('aria-label'),
                         commentsCount: document.querySelectorAll('#video-comments').length,
@@ -221,6 +224,7 @@ test('modern card adapter drives related, keyword, progress, and channel feature
 });
 
 test('Theater has usable geometry, keyboard semantics, exit, and route remounting', async ({ context, serviceWorker }) => {
+    test.setTimeout(60_000);
     const page = await openWatch(context);
     const id = await tabId(serviceWorker, page.url());
     await expect(page.locator('#rx-split-wrapper')).toBeVisible({ timeout: 15_000 });
@@ -244,11 +248,17 @@ test('Theater has usable geometry, keyboard semantics, exit, and route remountin
     expect(geometry.closeLabel).toBe('Exit theater mode');
     expect(geometry.commentsCount).toBe(1);
 
-    await page.locator('#rx-collapse-strip').click();
-    await expect(reveal).toBeFocused();
-    await expect(reveal).toHaveAttribute('aria-expanded', 'false');
-    await reveal.click();
-    await expect.poll(async () => (await inContent(serviceWorker, id, 'theaterGeometry')).rightWidth).toBeGreaterThan(200);
+    for (let attempt = 0; attempt < 4; attempt += 1) {
+        await page.locator('#rx-collapse-strip').click();
+        await expect(reveal).toBeFocused();
+        await expect(reveal).toHaveAttribute('aria-expanded', 'false');
+        await reveal.click();
+        await expect(reveal).toHaveAttribute('aria-expanded', 'true');
+        await expect.poll(async () => {
+            const state = await inContent(serviceWorker, id, 'theaterGeometry');
+            return state.rightWidth > 200 ? 'expanded' : JSON.stringify(state);
+        }).toBe('expanded');
+    }
 
     await page.locator('#rx-theater-close').click();
     await expect(page.locator('#rx-split-wrapper')).toHaveCount(0);
@@ -324,7 +334,12 @@ test('shared trust boundaries reject malicious settings, media URLs, and modifie
 test('privacy report exposes the request-shield mode and critical selector health', async ({ context, serviceWorker }) => {
     const page = await openWatch(context, 'vmodern-health-report.html');
     const id = await tabId(serviceWorker, page.url());
-    await expect.poll(() => inContent(serviceWorker, id, 'settingsReady')).toBe(true);
+    // This assertion verifies report contents, not startup performance. The
+    // dedicated extension-load test keeps the strict 15-second boot budget.
+    await expect.poll(
+        () => inContent(serviceWorker, id, 'settingsReady'),
+        { timeout: 30_000 },
+    ).toBe(true);
 
     const report = await inContent(serviceWorker, id, 'privacyReport');
     expect(report.requestShield).toEqual({

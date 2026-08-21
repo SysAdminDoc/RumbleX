@@ -32,6 +32,9 @@ test('popup renders feature groups with toggles', async ({ context, extensionId 
     await expect(firstToggle).toHaveAttribute('aria-label', /.+/);
     await expect(firstToggle).not.toHaveAttribute('aria-pressed');
     await expect(page.locator('.popup-shield')).toHaveText('Network shield active');
+    const realFrameRow = page.locator('.feat-row').filter({ hasText: 'Real Frame Previews' });
+    await expect(realFrameRow).toHaveCount(1);
+    await expect(realFrameRow.locator('input[type="checkbox"]')).not.toBeChecked();
 });
 
 test('options and popup consume localized UI messages', async ({ context, extensionId }) => {

@@ -947,6 +947,14 @@
     "message": "Nascondere le anteprime solo nella barra laterale dei video correlati",
     "description": "In-page UI string (shared core)."
   },
+  "feat_realFramePreviews_label": {
+    "message": "Anteprime con fotogrammi reali",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_realFramePreviews_desc": {
+    "message": "Cattura localmente un fotogramma dopo un passaggio intenzionale; passa di nuovo per vedere l'originale",
+    "description": "In-page UI string (shared core)."
+  },
   "feat_compactAccountPagination_label": {
     "message": "Paginazione compatta dell'account",
     "description": "In-page UI string (shared core)."

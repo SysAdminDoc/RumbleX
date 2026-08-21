@@ -23,7 +23,7 @@
 // @updateURL    https://github.com/SysAdminDoc/RumbleX/raw/main/RumbleX.lite.user.js
 // ==/UserScript==
 
-// Generated from the shared extension core files. Shared runtime SHA-256: 9cf6264d71281be879fe9837cf34897636e67719633d0c23799d0b3bf6a8cf1c
+// Generated from the shared extension core files. Shared runtime SHA-256: 5edcb2d1e429fb38eb6a0c3cf70573f3b8c070309370da05ef5087106334c249
 // RumbleX shared settings schema. This file is the canonical source for
 // defaults and trust-boundary normalization across content, options, popup,
 // background profile/Gist restores, and the generated userscript.
@@ -191,6 +191,7 @@
         hideThumbnails: false,
         hideThumbnailsFeeds: false,
         hideThumbnailsRelated: false,
+        realFramePreviews: false,
         compactAccountPagination: false,
         homeCleanupPreset: 'none',
         pageDensity: 'dense',
@@ -932,6 +933,8 @@
   "feat_hideThumbnailsFeeds_desc": "Hide thumbnails on home/subs/for-you only",
   "feat_hideThumbnailsRelated_label": "Hide Thumbs (Related)",
   "feat_hideThumbnailsRelated_desc": "Hide thumbnails in the related sidebar only",
+  "feat_realFramePreviews_label": "Real Frame Previews",
+  "feat_realFramePreviews_desc": "Capture one local video frame after deliberate hover; hover again for the original",
   "feat_compactAccountPagination_label": "Compact Account Pagination",
   "feat_compactAccountPagination_desc": "Shrink the autoPg pagination on /account/content",
   "feat_videoDownload_label": "Video Download",
@@ -3914,6 +3917,7 @@ const TheaterSplit = {
             position: relative;
             z-index: 10;
         }
+        html.rx-split #rx-split-divider { min-width: 6px; }
         #rx-split-divider:hover,
         #rx-split-divider.rx-dragging,
         #rx-split-divider:focus-visible { background: var(--rx-theater-accent, #89b4fa); outline: none; }
@@ -3935,15 +3939,17 @@ const TheaterSplit = {
             width: 0;
             overflow: hidden;
             opacity: 0;
+            transform: translateX(12px);
             background: var(--rx-theater-panel, #111116);
             border-left: 1px solid var(--rx-theater-border, rgba(255,255,255,0.1));
-            transition: flex-basis 0.4s cubic-bezier(.4,0,.2,1),
-                        opacity 0.35s ease;
+            transition: opacity 0.22s ease,
+                        transform 0.28s cubic-bezier(.2,.8,.2,1);
             display: flex;
             flex-direction: column;
         }
         #rx-split-right.rx-expanded {
             opacity: 1;
+            transform: translateX(0);
             overflow-y: auto;
             overflow-x: hidden;
         }
@@ -4254,14 +4260,22 @@ const TheaterSplit = {
                 width: 100% !important;
                 height: 0;
                 min-height: 0;
+                min-width: 0;
                 cursor: row-resize;
             }
             #rx-split-divider::after {
                 width: 32px;
                 height: 4px;
             }
-            #rx-split-right { width: 100% !important; min-width: 0 !important; }
-            #rx-split-right.rx-expanded { min-height: 280px; }
+            #rx-split-right {
+                width: 100% !important;
+                min-width: 0 !important;
+                transform: translateY(10px);
+            }
+            #rx-split-right.rx-expanded {
+                min-height: 280px;
+                transform: translateY(0);
+            }
             #rx-split-reveal { right: 74px; height: 44px; }
             #rx-theater-close { width: 44px; height: 44px; }
         }
@@ -13562,6 +13576,7 @@ const RX_CATEGORIES = [
             { id: 'hideThumbnails', label: 'Hide Thumbnails', desc: 'Hide all thumbnails (master toggle)' },
             { id: 'hideThumbnailsFeeds', label: 'Hide Thumbs (Feeds)', desc: 'Hide thumbnails on home/subs/for-you only' },
             { id: 'hideThumbnailsRelated', label: 'Hide Thumbs (Related)', desc: 'Hide thumbnails in the related sidebar only' },
+            { id: 'realFramePreviews', label: 'Real Frame Previews', desc: 'Capture one local video frame after deliberate hover; hover again for the original' },
             { id: 'compactAccountPagination', label: 'Compact Account Pagination', desc: 'Shrink the autoPg pagination on /account/content' },
         ],
     },
@@ -19233,6 +19248,420 @@ const SiteTheme = {
 };
 
 // ═══════════════════════════════════════════
+//  FEATURE: Real Frame Previews
+// ═══════════════════════════════════════════
+// Live measurements on 2026-08-21 found low-resolution source files ranging
+// from 2.6 MB for 84 seconds to 121 MB for a 79-minute recording. The CDN
+// supports byte ranges, but idle prefetch would still be wasteful. Capture
+// therefore starts only after deliberate pointer or keyboard intent.
+const RealFrameCache = {
+    DB_NAME: 'rumblex-real-frame-previews',
+    STORE_NAME: 'frames',
+    DB_VERSION: 1,
+    MAX_ENTRIES: 150,
+    MAX_AGE_MS: 30 * 24 * 60 * 60 * 1000,
+    _dbPromise: null,
+
+    async open() {
+        if (typeof indexedDB === 'undefined') return null;
+        if (this._dbPromise) return this._dbPromise;
+        this._dbPromise = new Promise((resolve) => {
+            let request;
+            try { request = indexedDB.open(this.DB_NAME, this.DB_VERSION); }
+            catch { resolve(null); return; }
+            request.onupgradeneeded = () => {
+                const db = request.result;
+                if (!db.objectStoreNames.contains(this.STORE_NAME)) {
+                    db.createObjectStore(this.STORE_NAME, { keyPath: 'key' });
+                }
+            };
+            request.onsuccess = () => resolve(request.result);
+            request.onerror = () => {
+                this._dbPromise = null;
+                resolve(null);
+            };
+            request.onblocked = () => {
+                this._dbPromise = null;
+                resolve(null);
+            };
+        });
+        return this._dbPromise;
+    },
+
+    async get(key, now = Date.now()) {
+        const db = await this.open();
+        if (!db) return null;
+        return new Promise((resolve) => {
+            let request;
+            try { request = db.transaction(this.STORE_NAME, 'readonly').objectStore(this.STORE_NAME).get(key); }
+            catch { resolve(null); return; }
+            request.onsuccess = () => {
+                const entry = request.result;
+                if (!(entry?.blob instanceof Blob) || now - Number(entry.createdAt || 0) > this.MAX_AGE_MS) {
+                    if (entry) void this.delete(key);
+                    resolve(null);
+                    return;
+                }
+                resolve(entry.blob);
+            };
+            request.onerror = () => resolve(null);
+        });
+    },
+
+    async put(key, blob, createdAt = Date.now()) {
+        if (!(blob instanceof Blob) || !blob.size) return false;
+        const db = await this.open();
+        if (!db) return false;
+        const stored = await new Promise((resolve) => {
+            let tx;
+            try {
+                tx = db.transaction(this.STORE_NAME, 'readwrite');
+                tx.objectStore(this.STORE_NAME).put({ key, blob, createdAt });
+            } catch { resolve(false); return; }
+            tx.oncomplete = () => resolve(true);
+            tx.onerror = tx.onabort = () => resolve(false);
+        });
+        if (stored) void this.prune(createdAt);
+        return stored;
+    },
+
+    async delete(key) {
+        const db = await this.open();
+        if (!db) return;
+        await new Promise((resolve) => {
+            let tx;
+            try {
+                tx = db.transaction(this.STORE_NAME, 'readwrite');
+                tx.objectStore(this.STORE_NAME).delete(key);
+            } catch { resolve(); return; }
+            tx.oncomplete = tx.onerror = tx.onabort = () => resolve();
+        });
+    },
+
+    async prune(now = Date.now()) {
+        const db = await this.open();
+        if (!db) return;
+        await new Promise((resolve) => {
+            let tx;
+            try {
+                tx = db.transaction(this.STORE_NAME, 'readwrite');
+                const store = tx.objectStore(this.STORE_NAME);
+                const request = store.getAll();
+                request.onsuccess = () => {
+                    const current = request.result
+                        .filter((entry) => now - Number(entry.createdAt || 0) <= this.MAX_AGE_MS)
+                        .sort((a, b) => Number(b.createdAt || 0) - Number(a.createdAt || 0));
+                    const keep = new Set(current.slice(0, this.MAX_ENTRIES).map((entry) => entry.key));
+                    for (const entry of request.result) {
+                        if (!keep.has(entry.key)) store.delete(entry.key);
+                    }
+                };
+            } catch { resolve(); return; }
+            tx.oncomplete = tx.onerror = tx.onabort = () => resolve();
+        });
+    },
+};
+
+const RealFramePreviews = {
+    id: 'realFramePreviews',
+    name: 'Real Frame Previews',
+    INTENT_DELAY_MS: 350,
+    MEDIA_TIMEOUT_MS: 15_000,
+    _styleEl: null,
+    _controller: null,
+    _listingPromise: null,
+    _queuePromise: null,
+    _pending: null,
+    _waiters: null,
+    _overlays: null,
+    _intentTimer: null,
+    _intentCard: null,
+    _intentHandler: null,
+    _intentEndHandler: null,
+
+    _css: `
+        .rx-real-frame-host {
+            position: relative !important;
+            overflow: hidden !important;
+        }
+        .rx-real-frame-overlay {
+            position: absolute !important;
+            inset: 0 !important;
+            z-index: 2 !important;
+            display: block !important;
+            width: 100% !important;
+            height: 100% !important;
+            margin: 0 !important;
+            object-fit: cover !important;
+            opacity: 1;
+            pointer-events: none !important;
+            transition: opacity 150ms ease;
+        }
+        .rx-real-frame-card:hover .rx-real-frame-overlay,
+        .rx-real-frame-card:focus-within .rx-real-frame-overlay {
+            opacity: 0;
+        }
+        @media (prefers-reduced-motion: reduce) {
+            .rx-real-frame-overlay { transition: none; }
+        }
+    `,
+
+    _keyFor(card) {
+        const raw = VideoCards.url(card);
+        if (!raw) return '';
+        try { return new URL(raw, location.origin).pathname.toLowerCase().replace(/\/$/, ''); }
+        catch { return ''; }
+    },
+
+    _surface(card) {
+        const thumbnail = VideoCards.thumbnail(card);
+        if (!thumbnail) return null;
+        const image = thumbnail.matches?.('img')
+            ? thumbnail
+            : thumbnail.querySelector('img') || card.querySelector('img.thumbnail__image, img.video-item--img, img');
+        const wrapper = image?.closest([
+            '.rum-video-thumbnail__image',
+            '.videostream__thumbnail',
+            '.videostream__image',
+            '.thumbnail__thumb',
+            '.thumbnail__image-container',
+            '.video-item--img-wrapper',
+        ].join(', '));
+        const host = wrapper || image?.parentElement;
+        return host && image ? { host, image } : null;
+    },
+
+    _selectSource(item) {
+        return (Array.isArray(item?.videos) ? item.videos : [])
+            .map((video, index) => {
+                const url = MediaHelpers.safeMediaUrl(video?.url);
+                let isMp4 = false;
+                try { isMp4 = new URL(url || '').pathname.toLowerCase().endsWith('.mp4'); } catch {}
+                return {
+                    index,
+                    url,
+                    isMp4: video?.type === 'mp4' || isMp4,
+                    resolution: Number(video?.resolution ?? video?.res) || Number.MAX_SAFE_INTEGER,
+                    bitrate: Number(video?.bitrate_kbps) || Number.MAX_SAFE_INTEGER,
+                };
+            })
+            .filter((video) => video.url && video.isMp4)
+            .sort((a, b) => a.resolution - b.resolution || a.bitrate - b.bitrate || a.index - b.index)[0]?.url || null;
+    },
+
+    async _listingMap(signal) {
+        if (!this._listingPromise) {
+            this._listingPromise = ChannelListing.load({ signal }).then((items) => {
+                const map = new Map();
+                for (const item of items) {
+                    try {
+                        const key = new URL(item.relative_url, location.origin).pathname.toLowerCase().replace(/\/$/, '');
+                        if (!map.has(key)) map.set(key, item);
+                    } catch {}
+                }
+                return map;
+            }).catch(() => new Map());
+        }
+        return this._listingPromise;
+    },
+
+    _waitForMedia(video, eventName, signal) {
+        return new Promise((resolve, reject) => {
+            let timer = null;
+            const cleanup = () => {
+                if (timer) clearTimeout(timer);
+                video.removeEventListener(eventName, onReady);
+                video.removeEventListener('error', onError);
+                signal?.removeEventListener('abort', onAbort);
+            };
+            const onReady = () => { cleanup(); resolve(); };
+            const onError = () => { cleanup(); reject(new Error('Video frame source could not be loaded')); };
+            const onAbort = () => { cleanup(); reject(new DOMException('Frame capture stopped', 'AbortError')); };
+            if (signal?.aborted) { onAbort(); return; }
+            video.addEventListener(eventName, onReady, { once: true });
+            video.addEventListener('error', onError, { once: true });
+            signal?.addEventListener('abort', onAbort, { once: true });
+            timer = setTimeout(() => {
+                cleanup();
+                reject(new Error('Video frame capture timed out'));
+            }, this.MEDIA_TIMEOUT_MS);
+        });
+    },
+
+    async _captureFrame(url, signal) {
+        const video = document.createElement('video');
+        video.muted = true;
+        video.playsInline = true;
+        video.crossOrigin = 'anonymous';
+        video.preload = 'metadata';
+        const metadataReady = this._waitForMedia(video, 'loadedmetadata', signal);
+        video.src = url;
+        video.load();
+        try {
+            await metadataReady;
+            const duration = Number(video.duration);
+            if (Number.isFinite(duration) && duration > 0.5) {
+                const target = Math.min(Math.max(duration * 0.18, Math.min(3, duration / 2)), 90, duration - 0.25);
+                const seeked = this._waitForMedia(video, 'seeked', signal);
+                video.currentTime = Math.max(0, target);
+                await seeked;
+            } else if (video.readyState < 2) {
+                await this._waitForMedia(video, 'loadeddata', signal);
+            }
+            if (signal?.aborted) throw new DOMException('Frame capture stopped', 'AbortError');
+            const sourceWidth = Number(video.videoWidth);
+            const sourceHeight = Number(video.videoHeight);
+            if (!sourceWidth || !sourceHeight) throw new Error('Video frame has no dimensions');
+            const canvas = document.createElement('canvas');
+            canvas.width = Math.min(480, sourceWidth);
+            canvas.height = Math.max(1, Math.round(canvas.width * sourceHeight / sourceWidth));
+            canvas.getContext('2d', { alpha: false }).drawImage(video, 0, 0, canvas.width, canvas.height);
+            return await new Promise((resolve, reject) => {
+                try {
+                    canvas.toBlob((blob) => blob ? resolve(blob) : reject(new Error('Video frame encoding failed')), 'image/jpeg', 0.78);
+                } catch (error) { reject(error); }
+            });
+        } finally {
+            video.removeAttribute('src');
+            video.load();
+        }
+    },
+
+    _mount(card, blob) {
+        if (!card?.isConnected || this._overlays.has(card)) return;
+        const surface = this._surface(card);
+        if (!surface) return;
+        const objectUrl = URL.createObjectURL(blob);
+        const overlay = document.createElement('img');
+        overlay.className = 'rx-real-frame-overlay';
+        overlay.alt = '';
+        overlay.setAttribute('aria-hidden', 'true');
+        overlay.decoding = 'async';
+        overlay.draggable = false;
+        overlay.src = objectUrl;
+        surface.host.classList.add('rx-real-frame-host');
+        card.classList.add('rx-real-frame-card');
+        surface.host.appendChild(overlay);
+        this._overlays.set(card, { overlay, host: surface.host, objectUrl });
+    },
+
+    _clearIntent() {
+        if (this._intentTimer) {
+            clearTimeout(this._intentTimer);
+            this._rxPendingTimeouts?.delete(this._intentTimer);
+        }
+        this._intentTimer = null;
+        this._intentCard = null;
+    },
+
+    _schedule(card) {
+        if (!card || this._overlays.has(card)) return;
+        if (this._intentCard === card && this._intentTimer) return;
+        this._clearIntent();
+        this._intentCard = card;
+        this._intentTimer = setFeatureTimeout(this, () => {
+            this._intentTimer = null;
+            this._intentCard = null;
+            this._queueCard(card);
+        }, this.INTENT_DELAY_MS);
+    },
+
+    _queueCard(card) {
+        const key = this._keyFor(card);
+        if (!key) return;
+        let cards = this._waiters.get(key);
+        if (!cards) {
+            cards = new Set();
+            this._waiters.set(key, cards);
+        }
+        cards.add(card);
+        if (this._pending.has(key)) return;
+        const generation = this._rxLifecycleGeneration;
+        const pending = this._pending;
+        const waiters = this._waiters;
+        pending.add(key);
+        this._queuePromise = this._queuePromise.catch(() => {}).then(async () => {
+            const signal = this._controller?.signal;
+            if (!signal || signal.aborted || generation !== this._rxLifecycleGeneration) return;
+            let blob = await RealFrameCache.get(key);
+            if (!blob) {
+                const item = (await this._listingMap(signal)).get(key);
+                const source = this._selectSource(item);
+                if (!source) return;
+                blob = await this._captureFrame(source, signal);
+                if (signal.aborted || generation !== this._rxLifecycleGeneration) return;
+                await RealFrameCache.put(key, blob);
+            }
+            if (signal.aborted || generation !== this._rxLifecycleGeneration) return;
+            for (const waitingCard of waiters.get(key) || []) this._mount(waitingCard, blob);
+        }).catch(() => {}).finally(() => {
+            pending.delete(key);
+            waiters.delete(key);
+        });
+    },
+
+    _onIntent(event) {
+        const card = event.target instanceof Element ? event.target.closest(VideoCards.selector) : null;
+        if (!card) return;
+        if (event.relatedTarget instanceof Node && card.contains(event.relatedTarget)) return;
+        this._schedule(card);
+    },
+
+    _onIntentEnd(event) {
+        const card = event.target instanceof Element ? event.target.closest(VideoCards.selector) : null;
+        if (!card || card !== this._intentCard) return;
+        if (event.relatedTarget instanceof Node && card.contains(event.relatedTarget)) return;
+        this._clearIntent();
+    },
+
+    init() {
+        if (!Settings.get(this.id)) return;
+        this._controller = new AbortController();
+        this._listingPromise = null;
+        this._queuePromise = Promise.resolve();
+        this._pending = new Set();
+        this._waiters = new Map();
+        this._overlays = new Map();
+        this._styleEl = injectStyle(this._css, 'rx-real-frame-previews-css');
+        this._intentHandler = (event) => this._onIntent(event);
+        this._intentEndHandler = (event) => this._onIntentEnd(event);
+        document.addEventListener('pointerover', this._intentHandler, true);
+        document.addEventListener('pointerout', this._intentEndHandler, true);
+        document.addEventListener('focusin', this._intentHandler, true);
+        document.addEventListener('focusout', this._intentEndHandler, true);
+    },
+
+    destroy() {
+        this._clearIntent();
+        if (this._intentHandler) {
+            document.removeEventListener('pointerover', this._intentHandler, true);
+            document.removeEventListener('focusin', this._intentHandler, true);
+        }
+        if (this._intentEndHandler) {
+            document.removeEventListener('pointerout', this._intentEndHandler, true);
+            document.removeEventListener('focusout', this._intentEndHandler, true);
+        }
+        this._intentHandler = null;
+        this._intentEndHandler = null;
+        this._controller?.abort();
+        this._controller = null;
+        for (const [card, entry] of this._overlays || []) {
+            entry.overlay.remove();
+            entry.host.classList.remove('rx-real-frame-host');
+            card.classList.remove('rx-real-frame-card');
+            URL.revokeObjectURL(entry.objectUrl);
+        }
+        this._overlays?.clear();
+        this._pending?.clear();
+        this._waiters?.clear();
+        this._listingPromise = null;
+        this._queuePromise = null;
+        this._styleEl?.remove();
+        this._styleEl = null;
+    },
+};
+
+// ═══════════════════════════════════════════
 //  FEATURE: Thumbnail Hider (v2.1.0)
 // ═══════════════════════════════════════════
 // Three independent toggles compose into one feature:
@@ -19268,6 +19697,7 @@ const ThumbnailHider = {
                 html.rumblex-active rum-video-thumbnail img,
                 html.rumblex-active .media-item__thumb img,
                 html.rumblex-active picture.thumbnail__image-container > img,
+                html.rumblex-active .rx-real-frame-overlay,
                 html.rumblex-active .channel-header--backsplash {
                     visibility: hidden !important;
                     opacity: 0 !important;
@@ -19286,7 +19716,9 @@ const ThumbnailHider = {
                     html.rumblex-active .videostream__thumbnail img,
                     html.rumblex-active .homepage-content--inner rum-video-thumbnail img,
                     html.rumblex-active .video-item--img-wrapper img,
-                    html.rumblex-active img.video-item--img {
+                    html.rumblex-active img.video-item--img,
+                    html.rumblex-active .homepage-content--inner .rx-real-frame-overlay,
+                    html.rumblex-active .thumbnail__grid .rx-real-frame-overlay {
                         visibility: hidden !important;
                         opacity: 0 !important;
                     }
@@ -19302,6 +19734,7 @@ const ThumbnailHider = {
                     html.rumblex-active .media-page-related-media-desktop-sidebar img,
                     html.rumblex-active .mediaList-item img,
                     html.rumblex-active .mediaList-item picture,
+                    html.rumblex-active .media-page-related-media-desktop-sidebar .rx-real-frame-overlay,
                     html.rumblex-active .media-page-related-media-desktop-sidebar rum-video-thumbnail .rum-video-thumbnail__image {
                         visibility: hidden !important;
                         opacity: 0 !important;
@@ -20194,7 +20627,7 @@ const features = [
     AutoHideHeader, AutoHideNavSidebar, AutoLike, AutoLoadComments,
     FullWidthPlayer, AdaptiveLiveLayout, CommentBlocking, SiteTheme,
     // v2.1.0 — Premium UI and Layout Superset
-    ThumbnailHider, DenseMode, AccountPaginationCompact, ReducedMotion, HomeCleanupPreset,
+    RealFramePreviews, ThumbnailHider, DenseMode, AccountPaginationCompact, ReducedMotion, HomeCleanupPreset,
     // v2.2.0 — Download Manager 2.0 (visible surfaces; cache module is global)
     ExternalPlayer,
     // v2.3.0 — Live Chat, Rants, and Multi-Stream

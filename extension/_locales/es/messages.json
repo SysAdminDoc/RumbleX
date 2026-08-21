@@ -947,6 +947,14 @@
     "message": "Ocultar las miniaturas solo en la barra lateral de vídeos relacionados",
     "description": "In-page UI string (shared core)."
   },
+  "feat_realFramePreviews_label": {
+    "message": "Vistas previas de fotogramas reales",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_realFramePreviews_desc": {
+    "message": "Captura localmente un fotograma tras mantener el puntero; vuelve a pasar el puntero para ver la imagen original",
+    "description": "In-page UI string (shared core)."
+  },
   "feat_compactAccountPagination_label": {
     "message": "Paginación compacta de la cuenta",
     "description": "In-page UI string (shared core)."
