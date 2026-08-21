@@ -118,6 +118,101 @@ async function runProductionMux(serviceWorker, tabId, mode, forceNoWebCodecs = f
     }, { targetTabId: tabId, bytes: fixture, requestedMode: mode, disableWebCodecs: forceNoWebCodecs });
 }
 
+async function runStreamingMux(serviceWorker, tabId, abortAfterFirstSegment = false) {
+    const fixture = Array.from(GOLDEN_BYTES);
+    return serviceWorker.evaluate(async ({ targetTabId, bytes, shouldAbort }) => {
+        const executions = await chrome.scripting.executeScript({
+            target: { tabId: targetTabId },
+            world: 'ISOLATED',
+            func: async (fixtureBytes, abortAfterFirst) => {
+                if (typeof VideoDownloader === 'undefined') {
+                    throw new Error('RumbleX muxer globals unavailable in the content world');
+                }
+                const originalFetch = globalThis.fetch;
+                const originalHls = VideoDownloader._hlsUrl;
+                const originalChunkBytes = VideoDownloader._MP4_STREAM_CHUNK_BYTES;
+                const controller = new AbortController();
+                const source = Uint8Array.from(fixtureBytes);
+                const cutA = Math.floor(source.byteLength / (188 * 3)) * 188;
+                const cutB = Math.floor((source.byteLength * 2) / (188 * 3)) * 188;
+                const segmentBytes = [
+                    source.slice(0, cutA),
+                    source.slice(cutA, cutB),
+                    source.slice(cutB),
+                ];
+                const payloads = new Map([
+                    ['https://rumble.com/master.m3u8', '#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=250000,RESOLUTION=160x90\nhttps://rumble.com/stream.m3u8'],
+                    ['https://rumble.com/stream.m3u8', '#EXTM3U\n#EXTINF:0.34,\nhttps://cdn.1a-1791.com/a.ts\n#EXTINF:0.33,\nhttps://cdn.1a-1791.com/b.ts\n#EXTINF:0.33,\nhttps://cdn.1a-1791.com/c.ts'],
+                ]);
+                const bytesByUrl = new Map([
+                    ['https://cdn.1a-1791.com/a.ts', segmentBytes[0]],
+                    ['https://cdn.1a-1791.com/b.ts', segmentBytes[1]],
+                    ['https://cdn.1a-1791.com/c.ts', segmentBytes[2]],
+                ]);
+                const writes = [];
+                const writable = {
+                    async write(chunk) {
+                        const data = new Uint8Array(chunk?.data || chunk || []);
+                        writes.push({
+                            position: Number(chunk?.position || 0),
+                            bytes: Array.from(data),
+                        });
+                    },
+                };
+                globalThis.fetch = async (input) => {
+                    const url = String(input instanceof Request ? input.url : input);
+                    if (payloads.has(url)) return new Response(payloads.get(url), { status: 200 });
+                    if (bytesByUrl.has(url)) return new Response(bytesByUrl.get(url), { status: 200 });
+                    return new Response('', { status: 404 });
+                };
+                try {
+                    VideoDownloader._hlsUrl = 'https://rumble.com/master.m3u8';
+                    VideoDownloader._MP4_STREAM_CHUNK_BYTES = 1024;
+                    let summary = null;
+                    let errorName = null;
+                    try {
+                        summary = await VideoDownloader._streamMediabunnyHlsToWritable(
+                            { height: 90, label: '90p' },
+                            writable,
+                            {
+                                signal: controller.signal,
+                                onProgress: ({ completed }) => {
+                                    if (abortAfterFirst && completed === 1) controller.abort();
+                                },
+                            },
+                        );
+                    } catch (error) {
+                        errorName = error?.name || String(error);
+                    }
+
+                    const maxEnd = writes.reduce(
+                        (max, entry) => Math.max(max, entry.position + entry.bytes.length),
+                        0,
+                    );
+                    const output = new Uint8Array(maxEnd);
+                    for (const entry of writes) output.set(entry.bytes, entry.position);
+                    return {
+                        bytes: Array.from(output),
+                        summary,
+                        errorName,
+                        positions: writes.map((entry) => entry.position),
+                        writeCount: writes.length,
+                        maxWriteSize: writes.reduce((max, entry) => Math.max(max, entry.bytes.length), 0),
+                        workerCleared: VideoDownloader._mediabunnyWorker === null,
+                    };
+                } finally {
+                    globalThis.fetch = originalFetch;
+                    VideoDownloader._hlsUrl = originalHls;
+                    VideoDownloader._MP4_STREAM_CHUNK_BYTES = originalChunkBytes;
+                }
+            },
+            args: [bytes, shouldAbort],
+        });
+        if (!executions[0]?.result) throw new Error('Streaming muxer execution returned no result');
+        return executions[0].result;
+    }, { targetTabId: tabId, bytes: fixture, shouldAbort: abortAfterFirstSegment });
+}
+
 async function inspectInOffscreen(context, extensionId, bytes) {
     const options = await context.newPage();
     await options.goto(`chrome-extension://${extensionId}/pages/options.html`);
@@ -176,6 +271,34 @@ test('mux.js and Mediabunny produce playable metadata parity from one golden TS 
     expectGoldenMetadata(muxjsMetadata);
     expectGoldenMetadata(mediabunnyMetadata);
     expect(Math.abs(muxjsMetadata.duration - mediabunnyMetadata.duration)).toBeLessThan(0.08);
+});
+
+test('streaming Mediabunny preserves golden metadata, positioned writes, and cancellation', async ({ context, extensionId, serviceWorker }) => {
+    const rumble = await openRumbleFixture(context);
+    const tabId = await findTabId(serviceWorker, rumble.url());
+
+    const buffered = await runProductionMux(serviceWorker, tabId, 'mediabunnyWebCodecs');
+    const streamed = await runStreamingMux(serviceWorker, tabId);
+    expect(streamed.errorName).toBeNull();
+    expect(streamed.summary).toMatchObject({
+        segments: 3,
+        engine: 'mediabunnyWebCodecs',
+    });
+    expect(streamed.writeCount).toBeGreaterThan(1);
+    expect(streamed.maxWriteSize).toBeLessThanOrEqual(1024);
+    expect(streamed.positions.every((position) => Number.isInteger(position) && position >= 0)).toBe(true);
+
+    const bufferedMetadata = await inspectInOffscreen(context, extensionId, buffered.bytes);
+    const streamedMetadata = await inspectInOffscreen(context, extensionId, streamed.bytes);
+    expectGoldenMetadata(streamedMetadata);
+    expect(Math.abs(bufferedMetadata.duration - streamedMetadata.duration)).toBeLessThan(0.08);
+    expect(streamedMetadata.video).toEqual(bufferedMetadata.video);
+    expect(streamedMetadata.audio).toEqual(bufferedMetadata.audio);
+
+    const cancelled = await runStreamingMux(serviceWorker, tabId, true);
+    expect(cancelled.errorName).toBe('AbortError');
+    expect(cancelled.summary).toBeNull();
+    expect(cancelled.workerCleared).toBe(true);
 });
 
 test('a stalled mux.js worker is terminated instead of hanging the download', async ({ context, serviceWorker }) => {

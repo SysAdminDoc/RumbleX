@@ -2072,5 +2072,57 @@
   "shareTimestampLabel": {
     "message": "Condividi da qui",
     "description": "In-page UI string (shared core)."
+  },
+  "dlStreamingMp4Convert": {
+    "message": "Conversione del flusso in MP4…",
+    "description": "In-page UI string (shared core)."
+  },
+  "dlSelectedLarge": {
+    "message": "Selezionato: {quality} · flusso di grandi dimensioni, modalità disco richiesta",
+    "description": "In-page UI string (shared core)."
+  },
+  "dlMp4ToDisk": {
+    "message": "MP4 su disco",
+    "description": "In-page UI string (shared core)."
+  },
+  "dlMp4ToDiskNote": {
+    "message": "Converte durante il download",
+    "description": "In-page UI string (shared core)."
+  },
+  "dlLargeMp4Ready": {
+    "message": "Le modalità disco MP4 e TS evitano di caricare l’intero video nella memoria della scheda. L’annullamento elimina le modifiche parziali al file.",
+    "description": "In-page UI string (shared core)."
+  },
+  "dlLargeMp4Unavailable": {
+    "message": "Lo streaming MP4 richiede WebCodecs in questo browser. TS su disco rimane disponibile e l’annullamento elimina le modifiche parziali al file.",
+    "description": "In-page UI string (shared core)."
+  },
+  "dlDiskProgress": {
+    "message": "Avanzamento dello streaming su disco",
+    "description": "In-page UI string (shared core)."
+  },
+  "dlMp4ReadingProgress": {
+    "message": "Lettura di {completed}/{total} segmenti · {size}",
+    "description": "In-page UI string (shared core)."
+  },
+  "dlDiskWritingProgress": {
+    "message": "Scrittura di {completed}/{total} segmenti · {size}",
+    "description": "In-page UI string (shared core)."
+  },
+  "dlFinalizingFile": {
+    "message": "Finalizzazione del file…",
+    "description": "In-page UI string (shared core)."
+  },
+  "dlSavedToDisk": {
+    "message": "{size} salvati su disco.",
+    "description": "In-page UI string (shared core)."
+  },
+  "dlMp4Saved": {
+    "message": "L’MP4 è stato salvato direttamente nel file selezionato.",
+    "description": "In-page UI string (shared core)."
+  },
+  "dlDiskCancelled": {
+    "message": "Download annullato. Le modifiche parziali al file sono state eliminate.",
+    "description": "In-page UI string (shared core)."
   }
 }

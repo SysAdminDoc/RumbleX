@@ -1165,6 +1165,49 @@ test('VideoDownloader writes info.json and NFO sidecars from page metadata', asy
     expect(result.withThumb.urls).toEqual(['https://1a-1791.com/video/fww1/9f/thumb.jpg']);
 });
 
+test('VideoDownloader offers streaming MP4 for large HLS media without exposing the in-memory path', async () => {
+    const result = await inHarness(() => {
+        document.body.innerHTML = '<div id="rx-tab-download"><div class="rx-dl-body"></div></div>';
+        const harness = globalThis.__RumbleXFeatureHarness;
+        harness.enable('videoDownload');
+        const dl = harness.features.find((feature) => feature.id === 'videoDownload');
+        const originalFileSave = dl._supportsStreamingFileSave;
+        const originalMediabunny = dl._supportsMediabunnyWorker;
+        const originalStart = dl._startStreamingToDisk;
+        const originalHls = dl._hlsUrl;
+        const starts = [];
+        try {
+            dl._hlsUrl = 'https://rumble.com/master.m3u8';
+            dl._supportsStreamingFileSave = () => true;
+            dl._supportsMediabunnyWorker = () => true;
+            dl._startStreamingToDisk = (_quality, _title, format) => starts.push(format);
+            dl._showFormatPicker({
+                label: '2160p', width: 3840, height: 2160,
+                size: dl._MAX_IN_MEMORY_BYTES + 1,
+            }, 'Large fixture');
+
+            const buttons = [...document.querySelectorAll('.rx-dl-format-btn')];
+            const labels = buttons.map((button) => button.firstChild?.textContent?.trim());
+            buttons.find((button) => button.textContent.includes('MP4 to disk'))?.click();
+            return {
+                labels,
+                starts,
+                note: document.querySelector('.rx-dl-tar-note')?.textContent || '',
+            };
+        } finally {
+            dl._supportsStreamingFileSave = originalFileSave;
+            dl._supportsMediabunnyWorker = originalMediabunny;
+            dl._startStreamingToDisk = originalStart;
+            dl._hlsUrl = originalHls;
+        }
+    });
+
+    expect(result.labels).toEqual(['MP4 to disk', 'TS to disk']);
+    expect(result.labels).not.toContain('MP4');
+    expect(result.starts).toEqual(['mp4']);
+    expect(result.note).toContain('keep the full video out of tab memory');
+});
+
 test('SponsorBlockRX honours per-category behavior, undo and the time-saved counter', async () => {
     const result = await inHarness(({ body }) => {
         document.body.innerHTML = body;

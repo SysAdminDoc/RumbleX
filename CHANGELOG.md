@@ -2,6 +2,14 @@
 
 All notable changes to RumbleX will be documented in this file.
 
+## Unreleased
+
+### Added
+- Large HLS videos can now convert to MP4 straight into a selected file on supported Chromium browsers. Mediabunny reads the transport stream incrementally, writes positioned 8 MiB MP4 chunks with backpressure, and never holds the complete input or output in tab memory. Cancelling stops the network and worker, then discards partial file changes. The buffered converter remains available for smaller media, while browsers without WebCodecs keep the existing TS-to-disk option.
+
+### Verified
+- Added golden MPEG-TS coverage for streamed MP4 video and audio metadata, positioned output reconstruction, bounded chunk size, and cancellation cleanup. A browser test also proves that media above 512 MiB offers MP4 to disk without exposing the in-memory MP4 path.
+
 ## [3.51.0] - 2026-08-20
 
 ### Changed

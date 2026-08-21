@@ -27,7 +27,7 @@ const CORE = path.join(ROOT, 'extension', 'content.js');
  */
 const BASELINE = {
     assignments: 68, // .textContent / .placeholder / .title = 'literal'
-    ariaLabels: 40,   // setAttribute('aria-label', 'literal')
+    ariaLabels: 39,   // setAttribute('aria-label', 'literal')
     // RX_CATEGORIES is no longer counted: the modal renders it through
     // rxFeatLabel/rxFeatDesc/rxCatLabel, and sync-content-locale.js derives the
     // catalog keys straight from the array, so those literals ARE the English

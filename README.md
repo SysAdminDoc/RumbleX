@@ -171,7 +171,7 @@ Live chat got the things every other chat platform already has, and rants became
 - **Title Font**. Unbold + normalize title typography
 
 ### Downloads & Capture
-- **Video Download**. Download direct MP4, bounded HLS-to-MP4, or raw HLS TS. On Chromium desktops with the File System Access picker, **TS to disk** writes each response chunk directly to a selected file and supports cancellation without retaining the complete stream in memory; Firefox and unsupported userscript environments keep the 512 MiB in-tab ceiling and direct/TAR fallbacks. Default MP4 engine is the pinned mux.js path; advanced settings include an experimental Mediabunny + WebCodecs engine with golden-sample output parity and bounded fallback to mux.js when WebCodecs, module startup, or conversion is unavailable. RumbleX-owned browser transfers pause on offline events and queue safe ID-only resumes for the next online event, without persisting signed media URLs. Includes an automatic **Deep Scan (RUD)** that probes `hugh.cdn.rumble.cloud` for every quality variant the embed API didn't surface (1080p/720p/480p/360p/240p × mp4/tar × live/vod), with live progress bar, per-row copy-link buttons, and support for TAR live-replay archives (with inline *extract with 7-Zip, drop the `.m3u8` into VLC* hint).
+- **Video Download**. Download direct MP4, HLS-to-MP4, or raw HLS TS. On Chromium desktops with the File System Access picker, large HLS media can convert to **MP4 on disk** through Mediabunny or save as **TS on disk** without retaining the complete stream in memory. Cancelling stops the conversion and discards partial file changes. Firefox and unsupported userscript environments keep the 512 MiB in-tab ceiling plus direct and TAR fallbacks. Mediabunny 1.55.1 is the default MP4 engine, with mux.js kept as the bounded fallback when WebCodecs, module startup, or conversion is unavailable. RumbleX-owned browser transfers pause on offline events and queue safe ID-only resumes for the next online event without persisting signed media URLs. The automatic **Deep Scan (RUD)** probes `hugh.cdn.rumble.cloud` for quality variants the embed API did not surface, with live progress, per-row copy-link buttons, and TAR live-replay support.
 - **Failure diagnostics**. Failed quality discovery, direct downloads, HLS fetches, clip exports, archive jobs, and muxing paths expose copy/export controls beside the error and in Options → Privacy & Data. The local-only 50-attempt ring includes failure stage, selected quality, muxer/fallback path, and worker/offscreen capabilities; URL credentials, query values, fragments, cookies, and token-like data are redacted before storage.
 - **Low-Bitrate MP4 (for listening)**. Download the smallest video variant for background audio (saved as `.mp4`. honest naming; Rumble doesn't expose a pure audio track).
 - **Video Clips**. Mark In/Out on the player and export a clip as MP4 (segment slicing + transmux)
@@ -315,8 +315,8 @@ RumbleX intentionally does not request Declarative Net Request feedback/debug pe
 - Chrome Extension Manifest V3 + Firefox Manifest V2 (parallel manifests)
 - `chrome.storage.local` (extensions) or `GM_*Value` (userscript) for settings persistence
 - `localStorage` (per-origin) for watch progress, volume memory, history, rant archives
-- mux.js (bundled) for default HLS segment transmuxing in a Web Worker
-- Mediabunny 1.46.0 (bundled, opt-in) for the experimental WebCodecs-era HLS-to-MP4 path
+- Mediabunny 1.55.1 (bundled) for default HLS-to-MP4 conversion, including direct-to-disk streaming
+- mux.js 7.0.3 (bundled) as the bounded fallback when Mediabunny or WebCodecs is unavailable
 - `AbortController` + generation-counter guards for cancellable async work
 - Anti-FOUC: CSS injected at `document_start`
 - GitHub Releases API for update checking

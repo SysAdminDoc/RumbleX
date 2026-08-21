@@ -23,7 +23,7 @@
 // @updateURL    https://github.com/SysAdminDoc/RumbleX/raw/main/RumbleX.lite.user.js
 // ==/UserScript==
 
-// Generated from extension/settings-schema.js + extension/content.js. Shared runtime SHA-256: a0e5f8bd9868f1ef7094981332f7f1436a589198d1fd7914bbf945a64095e147
+// Generated from extension/settings-schema.js + extension/content.js. Shared runtime SHA-256: 6c7529f6ba9d968865abafe992bdc0de1279c48297e93704672f582fb9bedcfa
 // RumbleX shared settings schema. This file is the canonical source for
 // defaults and trust-boundary normalization across content, options, popup,
 // background profile/Gist restores, and the generated userscript.
@@ -1213,7 +1213,20 @@
   "videoStatsShow": "Show video statistics",
   "bookmarkVideoAria": "Bookmark this video",
   "shareTimestampAria": "Copy video URL at current time",
-  "shareTimestampLabel": "Share at time"
+  "shareTimestampLabel": "Share at time",
+  "dlStreamingMp4Convert": "Converting stream to MP4…",
+  "dlSelectedLarge": "Selected: {quality} · large stream, disk mode required",
+  "dlMp4ToDisk": "MP4 to disk",
+  "dlMp4ToDiskNote": "Converts while downloading",
+  "dlLargeMp4Ready": "MP4 and TS disk modes keep the full video out of tab memory. Cancelling discards partial file changes.",
+  "dlLargeMp4Unavailable": "Streaming MP4 needs WebCodecs in this browser. TS to disk remains available and cancelling discards partial file changes.",
+  "dlDiskProgress": "Stream-to-disk progress",
+  "dlMp4ReadingProgress": "Reading {completed}/{total} segments · {size}",
+  "dlDiskWritingProgress": "Writing {completed}/{total} segments · {size}",
+  "dlFinalizingFile": "Finalizing file…",
+  "dlSavedToDisk": "Saved {size} to disk.",
+  "dlMp4Saved": "MP4 saved directly to your selected file.",
+  "dlDiskCancelled": "Download cancelled. Partial file changes were discarded."
 });
     const STORAGE_KEYS_WITH_CHANGE_EVENTS = ['rx_settings'];
     const ALLOWED_REQUEST_HOSTS = ['rumble.com', 'rumble.cloud', '1a-1791.com'];
@@ -4943,6 +4956,8 @@ const VideoDownloader = {
     _PROBE_CONCURRENCY: 6,
     _PROBE_TIMEOUT_MS: 12000,
     _MAX_IN_MEMORY_BYTES: 512 * 1024 * 1024,
+    _MP4_STREAM_CHUNK_BYTES: 8 * 1024 * 1024,
+    _MP4_STREAM_IDLE_TIMEOUT_MS: 2 * 60 * 1000,
     _scanController: null,
     _downloadController: null,
     _scanSeq: 0, // guards against late results after the user navigates away
@@ -5470,6 +5485,243 @@ const VideoDownloader = {
             // Do not transfer here: if the experimental path fails, the mux.js
             // fallback still needs the original buffers.
             worker.postMessage({ id, action: 'transmux-mediabunny', buffers: tsBuffers });
+        });
+    },
+
+    async _streamMediabunnyHlsToWritable(quality, writable, {
+        signal,
+        diagnosticUrls = [],
+        onProgress,
+        onStage,
+    } = {}) {
+        if (!writable || typeof writable.write !== 'function') {
+            throw new Error('The selected file is not writable.');
+        }
+        const resolved = await this._resolveHlsSegments(quality, {
+            signal,
+            diagnosticUrls,
+            onStage,
+        });
+        const trim = this._applySponsorTrim(resolved.segmentEntries);
+        const segmentUrls = trim ? trim.entries.map((entry) => entry.url) : resolved.segmentUrls;
+        const sponsorPlan = trim
+            || this._planSponsorTrim(resolved.segmentEntries, this._localSponsorSegments());
+        const worker = await this._getMediabunnyWorker();
+
+        return new Promise((resolve, reject) => {
+            const id = Date.now() + Math.random();
+            let settled = false;
+            let segmentIndex = 0;
+            let completed = 0;
+            let inputBytes = 0;
+            let outputBytes = 0;
+            let reader = null;
+            let inputBusy = false;
+            let idleTimer = null;
+            let writeChain = Promise.resolve();
+            let workerDiagnostic = {
+                engine: 'mediabunnyWebCodecs',
+                stage: 'worker-dispatch',
+                segmentCount: segmentUrls.length,
+            };
+
+            const armIdleTimeout = () => {
+                clearTimeout(idleTimer);
+                idleTimer = setTimeout(() => {
+                    const error = new Error('Mediabunny streaming conversion stopped responding');
+                    error.rxWorkerDiagnostic = {
+                        ...workerDiagnostic,
+                        stage: 'worker-timeout',
+                        timeoutMs: this._MP4_STREAM_IDLE_TIMEOUT_MS,
+                    };
+                    fail(error, true);
+                }, this._MP4_STREAM_IDLE_TIMEOUT_MS);
+            };
+            const cancelReader = () => {
+                if (!reader) return;
+                try { void reader.cancel(); } catch {}
+                try { reader.releaseLock(); } catch {}
+                reader = null;
+            };
+            const cleanup = () => {
+                clearTimeout(idleTimer);
+                worker.removeEventListener('message', handler);
+                worker.removeEventListener('error', errorHandler);
+                worker.removeEventListener('messageerror', errorHandler);
+                signal?.removeEventListener('abort', abortHandler);
+            };
+            const stopWorker = () => {
+                if (this._mediabunnyWorker !== worker) return;
+                try { worker.terminate(); } catch {}
+                this._mediabunnyWorker = null;
+            };
+            const fail = (error, terminate = false) => {
+                if (settled) return;
+                settled = true;
+                cleanup();
+                cancelReader();
+                if (terminate) stopWorker();
+                reject(error);
+            };
+            const abortHandler = () => {
+                try { worker.postMessage({ id, action: 'transmux-mediabunny-stream-abort' }); } catch {}
+                const error = new DOMException('The download was cancelled.', 'AbortError');
+                error.rxWorkerDiagnostic = { ...workerDiagnostic, stage: 'cancelled' };
+                fail(error, true);
+            };
+
+            const sendNextInput = async () => {
+                if (inputBusy || settled) return;
+                inputBusy = true;
+                try {
+                    while (segmentIndex < segmentUrls.length) {
+                        if (signal?.aborted) throw new DOMException('The download was cancelled.', 'AbortError');
+                        if (!reader) {
+                            const url = segmentUrls[segmentIndex];
+                            const response = await RXPlatform.fetch(url, { signal });
+                            if (!response.ok) throw this._httpError(response, 'segment-download', url);
+                            if (response.body?.getReader) {
+                                reader = response.body.getReader();
+                            } else {
+                                const bytes = new Uint8Array(await response.arrayBuffer());
+                                inputBytes += bytes.byteLength;
+                                const transfer = bytes.slice();
+                                worker.postMessage({
+                                    id,
+                                    action: 'transmux-mediabunny-stream-input',
+                                    data: transfer.buffer,
+                                }, [transfer.buffer]);
+                                completed++;
+                                segmentIndex++;
+                                onProgress?.({ completed, total: segmentUrls.length, bytes: inputBytes });
+                                armIdleTimeout();
+                                return;
+                            }
+                        }
+
+                        const { value, done } = await reader.read();
+                        if (done) {
+                            try { reader.releaseLock(); } catch {}
+                            reader = null;
+                            completed++;
+                            segmentIndex++;
+                            onProgress?.({ completed, total: segmentUrls.length, bytes: inputBytes });
+                            continue;
+                        }
+                        if (!value?.byteLength) continue;
+                        const transfer = new Uint8Array(value).slice();
+                        inputBytes += transfer.byteLength;
+                        worker.postMessage({
+                            id,
+                            action: 'transmux-mediabunny-stream-input',
+                            data: transfer.buffer,
+                        }, [transfer.buffer]);
+                        armIdleTimeout();
+                        return;
+                    }
+                    worker.postMessage({ id, action: 'transmux-mediabunny-stream-end' });
+                    armIdleTimeout();
+                } catch (error) {
+                    fail(error, true);
+                } finally {
+                    inputBusy = false;
+                }
+            };
+
+            const handler = (event) => {
+                if (event.data?.id !== id || settled) return;
+                armIdleTimeout();
+                if (event.data.debug) {
+                    workerDiagnostic = { ...workerDiagnostic, ...event.data.debug };
+                    onStage?.(event.data.debug.stage, 76, rxT(
+                        'dlStreamingMp4Convert',
+                        'Converting stream to MP4…',
+                    ));
+                    return;
+                }
+                const message = event.data.stream;
+                if (!message) return;
+                if (message.type === 'input-request') {
+                    void sendNextInput();
+                    return;
+                }
+                if (message.type === 'output-chunk') {
+                    const data = new Uint8Array(message.data || []);
+                    outputBytes = Math.max(outputBytes, Number(message.position || 0) + data.byteLength);
+                    writeChain = writeChain.then(async () => {
+                        try {
+                            await writable.write({
+                                type: 'write',
+                                position: Number(message.position || 0),
+                                data,
+                            });
+                            worker.postMessage({
+                                id,
+                                action: 'transmux-mediabunny-stream-output-ack',
+                                sequence: message.sequence,
+                            });
+                        } catch (error) {
+                            try {
+                                worker.postMessage({
+                                    id,
+                                    action: 'transmux-mediabunny-stream-output-error',
+                                    sequence: message.sequence,
+                                    error: error?.message || String(error),
+                                });
+                            } catch {}
+                            fail(error, true);
+                        }
+                    });
+                    return;
+                }
+                if (message.type === 'error') {
+                    const error = message.errorName === 'AbortError'
+                        ? new DOMException(message.error || 'The download was cancelled.', 'AbortError')
+                        : new Error(message.error || 'Mediabunny streaming conversion failed');
+                    error.rxWorkerDiagnostic = message.diagnostic || workerDiagnostic;
+                    fail(error, message.errorName === 'AbortError');
+                    return;
+                }
+                if (message.type === 'complete') {
+                    writeChain.then(() => {
+                        if (settled) return;
+                        settled = true;
+                        cleanup();
+                        workerDiagnostic = { ...workerDiagnostic, ...(message.diagnostic || {}) };
+                        resolve({
+                            bytes: Number(message.diagnostic?.outputBytes || outputBytes),
+                            inputBytes: Number(message.diagnostic?.inputBytes || inputBytes),
+                            inputChunks: Number(message.diagnostic?.inputChunks || 0),
+                            outputChunks: Number(message.diagnostic?.outputChunks || 0),
+                            segments: completed,
+                            sponsorPlan,
+                            trimmed: !!trim,
+                            engine: 'mediabunnyWebCodecs',
+                            diagnostic: workerDiagnostic,
+                        });
+                    }).catch((error) => fail(error, true));
+                }
+            };
+            const errorHandler = (event) => {
+                const error = new Error(event?.message || 'Mediabunny streaming worker failed');
+                error.rxWorkerDiagnostic = { ...workerDiagnostic, stage: 'worker-runtime' };
+                fail(error, true);
+            };
+
+            worker.addEventListener('message', handler);
+            worker.addEventListener('error', errorHandler);
+            worker.addEventListener('messageerror', errorHandler);
+            if (signal?.aborted) return abortHandler();
+            signal?.addEventListener('abort', abortHandler, { once: true });
+            armIdleTimeout();
+            worker.postMessage({
+                id,
+                action: 'transmux-mediabunny-stream-start',
+                options: {
+                    chunkSize: this._MP4_STREAM_CHUNK_BYTES,
+                    inputCacheBytes: 32 * 1024 * 1024,
+                },
+            });
         });
     },
 
@@ -6375,6 +6627,7 @@ const VideoDownloader = {
 
         const exceedsMemoryLimit = Number(quality.size) > this._MAX_IN_MEMORY_BYTES;
         const canStreamToDisk = this._supportsStreamingFileSave();
+        const canStreamMp4 = canStreamToDisk && this._supportsMediabunnyWorker();
         if (exceedsMemoryLimit && !canStreamToDisk) {
             this._setBodyText(
                 'rx-dl-error',
@@ -6392,7 +6645,7 @@ const VideoDownloader = {
         const status = document.createElement('div');
         status.className = 'rx-dl-status';
         status.textContent = exceedsMemoryLimit
-            ? `Selected: ${dimsLabel} · large stream, disk mode required`
+            ? rxT('dlSelectedLarge', 'Selected: {quality} · large stream, disk mode required', { quality: dimsLabel })
             : 'Selected: ' + dimsLabel;
         body.appendChild(status);
         const row = document.createElement('div');
@@ -6414,16 +6667,34 @@ const VideoDownloader = {
         };
         if (!exceedsMemoryLimit) {
             row.appendChild(makeBtn('MP4', 'Converted in browser', () => this._startDownload(quality, title, 'mp4')));
+        } else if (canStreamMp4) {
+            row.appendChild(makeBtn(
+                rxT('dlMp4ToDisk', 'MP4 to disk'),
+                rxT('dlMp4ToDiskNote', 'Converts while downloading'),
+                () => this._startStreamingToDisk(quality, title, 'mp4'),
+            ));
         }
         if (canStreamToDisk) {
-            row.appendChild(makeBtn('TS to disk', 'Streams without buffering the full video', () => this._startStreamingTs(quality, title)));
+            row.appendChild(makeBtn(
+                'TS to disk',
+                'Streams without buffering the full video',
+                () => this._startStreamingToDisk(quality, title, 'ts'),
+            ));
         } else if (!exceedsMemoryLimit) {
             row.appendChild(makeBtn('TS', 'Raw stream (in memory)', () => this._startDownload(quality, title, 'ts')));
         }
         if (exceedsMemoryLimit) {
             const note = document.createElement('div');
             note.className = 'rx-dl-tar-note';
-            note.textContent = `MP4 conversion stays disabled above ${this._formatSize(this._MAX_IN_MEMORY_BYTES)}. TS-to-disk writes each network chunk directly to your selected file and discards partial output if cancelled.`;
+            note.textContent = canStreamMp4
+                ? rxT(
+                    'dlLargeMp4Ready',
+                    'MP4 and TS disk modes keep the full video out of tab memory. Cancelling discards partial file changes.',
+                )
+                : rxT(
+                    'dlLargeMp4Unavailable',
+                    'Streaming MP4 needs WebCodecs in this browser. TS to disk remains available and cancelling discards partial file changes.',
+                );
             body.appendChild(note);
         }
         this._mountSponsorTrimToggle(body);
@@ -6590,18 +6861,29 @@ const VideoDownloader = {
         }
     },
 
-    async _startStreamingTs(quality, title) {
-        const operationId = this._newOperationId('hls-stream-to-disk');
+    async _startStreamingToDisk(quality, title, container = 'ts') {
+        const isMp4 = container === 'mp4';
+        const operation = isMp4 ? 'hls-mp4-stream-to-disk' : 'hls-ts-stream-to-disk';
+        const format = isMp4 ? 'mp4-stream' : 'ts-stream';
+        const extension = isMp4 ? 'mp4' : 'ts';
+        const operationId = this._newOperationId(operation);
         const diagnosticUrls = [];
         let stage = 'file-picker';
         if (!this._supportsStreamingFileSave()) {
             this._setBodyText('rx-dl-error', 'Direct-to-disk streaming is unavailable in this browser.');
             return;
         }
+        if (isMp4 && !this._supportsMediabunnyWorker()) {
+            this._setBodyText(
+                'rx-dl-error',
+                rxT('dlLargeMp4Unavailable', 'Streaming MP4 needs WebCodecs in this browser. TS to disk remains available and cancelling discards partial file changes.'),
+            );
+            return;
+        }
 
         const filename = RxFsAccess.sanitizeFilename(
-            `${title} - ${quality?.label || 'stream'}.ts`,
-            'rumble-video.ts',
+            `${title} - ${quality?.label || 'stream'}.${extension}`,
+            `rumble-video.${extension}`,
         );
         let fileHandle;
         try {
@@ -6610,16 +6892,16 @@ const VideoDownloader = {
             fileHandle = await globalThis.showSaveFilePicker({
                 suggestedName: filename,
                 types: [{
-                    description: 'MPEG transport stream',
-                    accept: { 'video/mp2t': ['.ts'] },
+                    description: isMp4 ? 'MP4 video' : 'MPEG transport stream',
+                    accept: isMp4 ? { 'video/mp4': ['.mp4'] } : { 'video/mp2t': ['.ts'] },
                 }],
             });
         } catch (error) {
             if (error?.name === 'AbortError') return;
             const errorBody = this._setBodyText('rx-dl-error', 'Could not select a destination: ' + (error?.message || error));
             void this._reportFailure({
-                operation: 'hls-stream-to-disk', operationId, stage, error,
-                quality, format: 'ts-stream', urls: diagnosticUrls,
+                operation, operationId, stage, error,
+                quality, format, urls: diagnosticUrls,
             }, errorBody);
             return;
         }
@@ -6645,7 +6927,7 @@ const VideoDownloader = {
         const barEl = document.createElement('div');
         barEl.className = 'rx-dl-bar-fill';
         barEl.setAttribute('role', 'progressbar');
-        barEl.setAttribute('aria-label', 'Stream-to-disk progress');
+        barEl.setAttribute('aria-label', rxT('dlDiskProgress', 'Stream-to-disk progress'));
         barEl.setAttribute('aria-valuemin', '0');
         barEl.setAttribute('aria-valuemax', '100');
         barEl.setAttribute('aria-valuenow', '0');
@@ -6669,7 +6951,10 @@ const VideoDownloader = {
         try {
             stage = 'file-open';
             writable = await fileHandle.createWritable();
-            streamed = await this._streamHlsToWritable(quality, writable, {
+            const streamMethod = isMp4
+                ? this._streamMediabunnyHlsToWritable.bind(this)
+                : this._streamHlsToWritable.bind(this);
+            streamed = await streamMethod(quality, writable, {
                 signal,
                 diagnosticUrls,
                 onStage: (nextStage, pct, message) => {
@@ -6678,20 +6963,36 @@ const VideoDownloader = {
                 },
                 onProgress: ({ completed, total, bytes }) => {
                     stage = 'segment-download';
-                    const pct = 5 + (completed / total) * 94;
-                    setProgress(pct, `Writing ${completed}/${total} segments · ${this._formatSize(bytes)}`);
+                    const pct = 5 + (completed / total) * (isMp4 ? 68 : 94);
+                    setProgress(pct, isMp4
+                        ? rxT(
+                            'dlMp4ReadingProgress',
+                            'Reading {completed}/{total} segments · {size}',
+                            { completed, total, size: this._formatSize(bytes) },
+                        )
+                        : rxT(
+                            'dlDiskWritingProgress',
+                            'Writing {completed}/{total} segments · {size}',
+                            { completed, total, size: this._formatSize(bytes) },
+                        ));
                 },
             });
             if (signal.aborted) throw new DOMException('The download was cancelled.', 'AbortError');
             stage = 'file-close';
-            setProgress(99, 'Finalizing file…');
+            setProgress(99, rxT('dlFinalizingFile', 'Finalizing file…'));
             await writable.close();
             writable = null;
-            setProgress(100, `Saved ${this._formatSize(streamed.bytes)} to disk.`);
+            setProgress(100, rxT(
+                'dlSavedToDisk',
+                'Saved {size} to disk.',
+                { size: this._formatSize(streamed.bytes) },
+            ));
             cancel.remove();
             const done = document.createElement('div');
             done.className = 'rx-dl-done';
-            done.textContent = rxT('dlTsSaved', 'TS stream saved directly to your selected file.');
+            done.textContent = isMp4
+                ? rxT('dlMp4Saved', 'MP4 saved directly to your selected file.')
+                : rxT('dlTsSaved', 'TS stream saved directly to your selected file.');
             body.appendChild(done);
             if (streamed.trimmed) {
                 const trimmedNote = document.createElement('div');
@@ -6718,7 +7019,10 @@ const VideoDownloader = {
                 writable = null;
             }
             if (error?.name === 'AbortError') {
-                this._setBodyText('rx-dl-status', 'Download cancelled. Partial file changes were discarded.');
+                this._setBodyText(
+                    'rx-dl-status',
+                    rxT('dlDiskCancelled', 'Download cancelled. Partial file changes were discarded.'),
+                );
                 return;
             }
             const errorEl = document.createElement('div');
@@ -6726,8 +7030,8 @@ const VideoDownloader = {
             errorEl.textContent = rxT('dlError', 'Error: {reason}', { reason: error?.message || error });
             body.appendChild(errorEl);
             void this._reportFailure({
-                operation: 'hls-stream-to-disk', operationId, stage, error,
-                quality, format: 'ts-stream', urls: diagnosticUrls,
+                operation, operationId, stage, error,
+                quality, format, urls: diagnosticUrls,
                 extra: streamed ? { streamedBytes: streamed.bytes, segmentCount: streamed.segments } : null,
             }, body);
         } finally {

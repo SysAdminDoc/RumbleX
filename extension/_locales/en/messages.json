@@ -2074,5 +2074,57 @@
   "shareTimestampLabel": {
     "message": "Share at time",
     "description": "In-page UI string (shared core)."
+  },
+  "dlStreamingMp4Convert": {
+    "message": "Converting stream to MP4…",
+    "description": "In-page UI string (shared core)."
+  },
+  "dlSelectedLarge": {
+    "message": "Selected: {quality} · large stream, disk mode required",
+    "description": "In-page UI string (shared core)."
+  },
+  "dlMp4ToDisk": {
+    "message": "MP4 to disk",
+    "description": "In-page UI string (shared core)."
+  },
+  "dlMp4ToDiskNote": {
+    "message": "Converts while downloading",
+    "description": "In-page UI string (shared core)."
+  },
+  "dlLargeMp4Ready": {
+    "message": "MP4 and TS disk modes keep the full video out of tab memory. Cancelling discards partial file changes.",
+    "description": "In-page UI string (shared core)."
+  },
+  "dlLargeMp4Unavailable": {
+    "message": "Streaming MP4 needs WebCodecs in this browser. TS to disk remains available and cancelling discards partial file changes.",
+    "description": "In-page UI string (shared core)."
+  },
+  "dlDiskProgress": {
+    "message": "Stream-to-disk progress",
+    "description": "In-page UI string (shared core)."
+  },
+  "dlMp4ReadingProgress": {
+    "message": "Reading {completed}/{total} segments · {size}",
+    "description": "In-page UI string (shared core)."
+  },
+  "dlDiskWritingProgress": {
+    "message": "Writing {completed}/{total} segments · {size}",
+    "description": "In-page UI string (shared core)."
+  },
+  "dlFinalizingFile": {
+    "message": "Finalizing file…",
+    "description": "In-page UI string (shared core)."
+  },
+  "dlSavedToDisk": {
+    "message": "Saved {size} to disk.",
+    "description": "In-page UI string (shared core)."
+  },
+  "dlMp4Saved": {
+    "message": "MP4 saved directly to your selected file.",
+    "description": "In-page UI string (shared core)."
+  },
+  "dlDiskCancelled": {
+    "message": "Download cancelled. Partial file changes were discarded.",
+    "description": "In-page UI string (shared core)."
   }
 }
