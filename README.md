@@ -1,8 +1,18 @@
 # RumbleX
 
-![Version](https://img.shields.io/badge/version-v3.51.0-blue) ![License](https://img.shields.io/badge/license-MIT-green) ![Platform](https://img.shields.io/badge/platform-Extension%20%2B%20Userscript-lightgrey) ![Firefox](https://img.shields.io/badge/firefox-109%2B-orange)
+![Version](https://img.shields.io/badge/version-v3.52.0-blue) ![License](https://img.shields.io/badge/license-MIT-green) ![Platform](https://img.shields.io/badge/platform-Extension%20%2B%20Userscript-lightgrey) ![Firefox](https://img.shields.io/badge/firefox-109%2B-orange)
 
 **A large Rumble enhancement suite.** More than 130 feature modules cover ad blocking, theater mode, downloads, playback, chat, local history, feed controls, and granular page cleanup. It runs as a browser extension or userscript.
+
+### What's new in v3.52
+
+This release finishes the current roadmap and hardens the shared runtime underneath the website overhaul.
+
+- **Large HLS downloads can become MP4 files without filling tab memory.** Supported Chromium browsers stream transport data through Mediabunny and write bounded chunks straight to the selected file.
+- **Current Rumble pages have checked-in, privacy-safe fixtures.** Home, watch, search, channel, and custom-card tests now fail before a selector drift reaches users.
+- **The extension and both userscripts share the same page core.** Routing, selectors, card adaptation, and media helpers load in one guarded order across every package.
+- **Real Frame Previews are available as a local opt-in.** A deliberate hover or keyboard focus captures the smallest safe video rendition, caches one frame locally, and keeps Rumble's original artwork available on hover.
+- **Theater Split now survives repeated panel toggles.** Geometry updates immediately while the panel content uses a short fade and slide, avoiding a Chromium transition state that could leave the panel stuck closed.
 
 ### What's new in v3.51
 

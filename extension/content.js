@@ -1,4 +1,4 @@
-// RumbleX v3.51.0 - Shared Content Core
+// RumbleX v3.52.0 - Shared Content Core
 // Rumble enhancement suite - Chrome/Firefox extension
 'use strict';
 
@@ -8,7 +8,7 @@
 // DOM feature ship from one canonical source.
 const RXPlatform = globalThis.RumbleXPlatform;
 if (!RXPlatform) throw new Error('RumbleX platform adapter is missing');
-const VERSION = RXPlatform.version || '3.51.0';
+const VERSION = RXPlatform.version || '3.52.0';
 /**
  * In-page translation lookup.
  *

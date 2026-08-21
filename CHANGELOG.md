@@ -4,6 +4,8 @@ All notable changes to RumbleX will be documented in this file.
 
 ## Unreleased
 
+## [3.52.0] - 2026-08-21
+
 ### Added
 - Large HLS videos can now convert to MP4 straight into a selected file on supported Chromium browsers. Mediabunny reads the transport stream incrementally, writes positioned 8 MiB MP4 chunks with backpressure, and never holds the complete input or output in tab memory. Cancelling stops the network and worker, then discards partial file changes. The buffered converter remains available for smaller media, while browsers without WebCodecs keep the existing TS-to-disk option.
 - Added five checked-in, privacy-safe desktop fixtures for the current Rumble home, watch, search, channel, and custom-card structures. The channel fixture also preserves the served-HTML `items` contract used after Rumble's listing migration, with synthetic names and `.invalid` media URLs.
@@ -19,6 +21,7 @@ All notable changes to RumbleX will be documented in this file.
 - Clearing the media probe cache now cancels its pending storage flush, so an immediate clear cannot recreate a stale cache key a quarter-second later.
 - Current `<rum-video-thumbnail>` cards now resolve their creator surface from the card's `name` attribute when Rumble omits the old author link.
 - The selector harness now checks every top-level selector in a comma-separated stable list and matches CSS class tokens exactly. Older captures no longer produce false fallback warnings from ignored alternatives or partial class-name matches.
+- Theater Split now updates panel geometry synchronously and animates only the panel content, so repeated collapse and expand cycles cannot strand Chromium's flex-basis transition at zero.
 
 ### Verified
 - Added golden MPEG-TS coverage for streamed MP4 video and audio metadata, positioned output reconstruction, bounded chunk size, and cancellation cleanup. A browser test also proves that media above 512 MiB offers MP4 to disk without exposing the in-memory MP4 path.
@@ -27,6 +30,7 @@ All notable changes to RumbleX will be documented in this file.
 - The probe-cache boundary now covers persistence, TTL expiry, lazy cleanup, disabled mode, and an immediate clear while a flush is pending.
 - The Firefox smoke loads the exact production content-script order. Release ZIP checks now compare all 38 archived runtime files with source bytes and validate both archived manifests.
 - Added behavior coverage for intent-only loading, lowest-rendition selection, CORS assignment order, cache reuse and expiry, hover reveal, and full teardown. The opt-in live smoke captures an actual CDN frame and writes the current visual reference.
+- The Theater geometry regression now performs four collapse and expand cycles per launch and verifies the panel, divider, accessibility state, exit path, and route remount.
 
 ## [3.51.0] - 2026-08-20
 
