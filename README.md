@@ -326,11 +326,10 @@ RumbleX intentionally does not request Declarative Net Request feedback/debug pe
 
 ```mermaid
 flowchart LR
-    Site[Rumble page] --> Content[content.js]
-    Extension[Chrome / Firefox adapter] --> Content
-    Userscript[Tampermonkey / Violentmonkey adapter] --> Content
-    Content --> Core[Settings + Page + Selectors + Router]
-    Core --> Features[Feature modules]
+    Site[Rumble page] --> Core[Routing + selectors + cards + media]
+    Extension[Chrome / Firefox adapter] --> Core
+    Userscript[Tampermonkey / Violentmonkey adapter] --> Core
+    Core --> Content[content.js feature modules]
     Content <--> Worker[worker.js / mediabunny-worker.js]
     Content <--> Background[background.js service worker]
     Popup[Popup / Options / Side panel] <--> Background
@@ -341,7 +340,7 @@ flowchart LR
     Userscript --> Embedded[Embedded pinned media workers]
 ```
 
-`settings-schema.js` owns the canonical defaults, migration, and validation contract for every runtime. `content.js` is the canonical shared page core and owns page classification, selector contracts, route lifecycle, and injected features. `extension/platform.js` and `userscript/platform.js` adapt storage, downloads, network requests, assets, localization, and capabilities. `background.js` is the extension-only privileged boundary for persistent downloads, context menus, notifications, tab operations, queue alarms, and offscreen work. Popup/options/side-panel pages edit the same validated settings catalog in `chrome.storage.local`; per-Rumble history and bookmark data remains on the Rumble origin.
+`settings-schema.js` owns defaults, migration, and validation for every runtime. Four small shared files own routing, selector health, card adaptation, and media/probe helpers. `content.js` holds the injected feature modules. The browser extension and generated userscripts load those sources in the same order, with a hash guard that catches drift. `extension/platform.js` and `userscript/platform.js` adapt storage, downloads, network requests, assets, localization, and capabilities. `background.js` remains the extension-only privileged boundary for persistent downloads, context menus, notifications, tab operations, queue alarms, and offscreen work. Popup, options, and side-panel pages edit the same validated settings catalog in `chrome.storage.local`. Per-Rumble history and bookmarks stay on the Rumble origin.
 
 ### Feature-module template
 

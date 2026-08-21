@@ -19,7 +19,13 @@ const fs = require('fs');
 const path = require('path');
 
 const ROOT = path.resolve(__dirname, '..');
-const CORE = path.join(ROOT, 'extension', 'content.js');
+const CORE_FILES = [
+    'core-routing.js',
+    'core-selectors.js',
+    'core-video-cards.js',
+    'core-media.js',
+    'content.js',
+].map((file) => path.join(ROOT, 'extension', file));
 
 /**
  * Lower these as surfaces are localized. Never raise them: a new hardcoded
@@ -62,7 +68,7 @@ function ariaLiterals(source) {
 }
 
 function main() {
-    const source = fs.readFileSync(CORE, 'utf8');
+    const source = CORE_FILES.map((file) => fs.readFileSync(file, 'utf8')).join('\n\n');
     const counts = {
         assignments: assignmentLiterals(source).length,
         ariaLabels: ariaLiterals(source).length,

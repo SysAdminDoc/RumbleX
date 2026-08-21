@@ -2,7 +2,7 @@
 // @name         RumbleX Lite
 // @namespace    https://github.com/SysAdminDoc/RumbleX
 // @version      3.51.0
-// @description  Rumble enhancement suite (Lite) — the same shared feature core, without the bundled transmuxers. Downloads save the raw stream; MP4 remux needs the full build or the extension.
+// @description  Rumble enhancement suite (Lite). The same shared feature core, without bundled transmuxers. Downloads save the raw stream; MP4 remux needs the full build or the extension.
 // @author       SysAdminDoc
 // @match        https://rumble.com/*
 // @match        https://*.rumble.com/*
@@ -23,7 +23,7 @@
 // @updateURL    https://github.com/SysAdminDoc/RumbleX/raw/main/RumbleX.lite.user.js
 // ==/UserScript==
 
-// Generated from extension/settings-schema.js + extension/content.js. Shared runtime SHA-256: f84079a7d022b7487fe74223ea8b317420a10c578e27a391b8297d86478a38fd
+// Generated from the shared extension core files. Shared runtime SHA-256: 9c73f0bb7a3b35b8df9651124c4e5bac9ea536c3008236032d646b0c0e6ef8fd
 // RumbleX shared settings schema. This file is the canonical source for
 // defaults and trust-boundary normalization across content, options, popup,
 // background profile/Gist restores, and the generated userscript.
@@ -1550,239 +1550,8 @@
 })();
 
 
-// RumbleX v3.51.0 - Shared Content Core
-// Rumble enhancement suite - Chrome/Firefox extension
+// RumbleX shared page classification and route lifecycle.
 'use strict';
-
-// ── Platform + Version ──
-// extension/platform.js and the generated userscript adapter expose the same
-// small runtime contract. Keeping browser APIs outside this file makes every
-// DOM feature ship from one canonical source.
-const RXPlatform = globalThis.RumbleXPlatform;
-if (!RXPlatform) throw new Error('RumbleX platform adapter is missing');
-const VERSION = RXPlatform.version || '3.51.0';
-/**
- * In-page translation lookup.
- *
- * Every user-facing string in the injected UI used to be a hardcoded English
- * literal, which made the four shipped locales cover only the extension's own
- * pages while the entire in-page experience stayed English. `RXPlatform.t`
- * resolves through chrome.i18n in the extension and through the catalog the
- * userscript build embeds, so one call works in both runtimes.
- *
- * The English text stays inline as the fallback deliberately: it keeps the
- * source readable, and it means a missing or misspelled key degrades to
- * correct English rather than to a blank control.
- *
- * @param {string} key   messages.json key
- * @param {string} fallback English text, also the source of truth for the catalog
- * @param {Record<string, string|number>} [vars] `{name}` placeholders to substitute
- */
-function rxT(key, fallback, vars) {
-    let text = fallback;
-    try {
-        const translated = RXPlatform.t?.(key);
-        if (typeof translated === 'string' && translated) text = translated;
-    } catch { /* keep the English fallback */ }
-    if (vars) {
-        for (const [name, value] of Object.entries(vars)) {
-            text = text.split('{' + name + '}').join(String(value));
-        }
-    }
-    return text;
-}
-
-/**
- * Translated label/description for a settings-modal entry.
- *
- * The English strings live in RX_CATEGORIES, which stays the source of truth:
- * `scripts/sync-content-locale.js` reads the array directly and emits these
- * keys, so the catalog cannot drift from the data.
- */
-const rxFeatLabel = (feat) => rxT('feat_' + feat.id + '_label', feat.label);
-const rxFeatDesc = (feat) => rxT('feat_' + feat.id + '_desc', feat.desc);
-// chrome.i18n only accepts [A-Za-z0-9_@] in a key, and category ids are
-// kebab-case, so the hyphens have to go or Chrome rejects the catalog and
-// refuses to load the extension at all.
-const rxCatLabel = (cat) => rxT('cat_' + cat.id.replace(/-/g, '_') + '_label', cat.label);
-
-const RXSettingsSchema = globalThis.RumbleXSettingsSchema;
-if (!RXSettingsSchema) throw new Error('RumbleX settings schema is missing');
-const SCHEMA_VERSION = RXSettingsSchema.SCHEMA_VERSION;
-
-// ── Settings Manager (chrome.storage.local) ──
-const Settings = {
-    _cache: null,
-    _ready: false,
-    _defaults: RXSettingsSchema.DEFAULTS,
-    _writeTimer: null,
-    _pendingWrite: false,
-    _writeChain: Promise.resolve(),
-    _writeRevision: 0,
-    _pendingRevisions: new Map(),
-    // Tracks keys the user has changed locally but hasn't yet been flushed to
-    // chrome.storage. If an external change arrives inside the debounce
-    // window, we merge external values UNDER these pending keys — otherwise
-    // the user's in-flight toggle would be silently discarded.
-    _pendingKeys: null,
-    // Track the last-known value of rx_settings we either read from or wrote
-    // to storage. Used by the onChanged listener to tell "this change was me"
-    // from "this change was a different tab/window/options page".
-    _lastWritten: null,
-    _externalHandlers: [],
-
-    async init() {
-        const data = await RXPlatform.storage.get('rx_settings');
-        const legacy = (!data.rx_settings || typeof data.rx_settings !== 'object')
-            ? await RXPlatform.migrateLegacySettings?.(this._defaults)
-            : null;
-        const stored = data.rx_settings || legacy || {};
-        const migrated = this._migrate(stored);
-        const sanitized = this._sanitize(migrated);
-        // A set() that lands while this await is in flight used to be discarded
-        // outright: the cache was replaced wholesale and _pendingKeys was reset,
-        // so the write reported success and silently vanished. Layer any pending
-        // changes back on top, exactly as _applyExternal already does for writes
-        // that race an external change.
-        const merged = { ...this._defaults, ...sanitized };
-        const pendingDuringBoot = this._pendingKeys;
-        if (this._cache && pendingDuringBoot && pendingDuringBoot.size > 0) {
-            for (const key of pendingDuringBoot) {
-                if (key in this._cache) merged[key] = this._cache[key];
-            }
-        }
-        this._cache = merged;
-        this._lastWritten = JSON.stringify(this._cache);
-        this._pendingKeys = pendingDuringBoot || new Set();
-        this._ready = true;
-        if (migrated !== stored || JSON.stringify(sanitized) !== JSON.stringify(migrated)) {
-            // Persist migrations and normalization so other extension surfaces
-            // never keep reading values the content core has already rejected.
-            try { await RXPlatform.storage.set({ rx_settings: this._cache }); } catch {}
-            this._lastWritten = JSON.stringify(this._cache);
-        }
-    },
-    // Pre-v2 storage shapes:
-    //   - schemaVersion missing or < 2
-    //   - keyboardNav: bool (replaced by legacyKeyboardNav: false; off by house style)
-    // Migration preserves user intent: if they explicitly had keyboardNav on,
-    // their hotkeys still work after upgrade because legacyKeyboardNav inherits
-    // that value. Otherwise keyboardNav silently drops to off (the new default).
-    _migrate(stored) {
-        return RXSettingsSchema.migrate(stored);
-    },
-    _sanitize(input) {
-        return RXSettingsSchema.normalize(input, this._defaults);
-    },
-    get(key) {
-        if (!this._cache) return this._defaults[key];
-        return this._cache[key];
-    },
-    set(key, val) {
-        if (!Object.hasOwn(this._defaults, key)) return this.get(key);
-        const safe = this._sanitize({ [key]: val });
-        if (!Object.hasOwn(safe, key)) return this.get(key);
-        if (!this._cache) this._cache = { ...this._defaults };
-        this._cache[key] = safe[key];
-        if (!this._pendingKeys) this._pendingKeys = new Set();
-        this._pendingKeys.add(key);
-        this._pendingRevisions.set(key, ++this._writeRevision);
-        this._scheduleWrite();
-    },
-    // Coalesce rapid writes into a single storage.local.set call. Without
-    // this, features that update settings on keystroke (search history,
-    // volume slider, etc.) could thrash storage. 120ms is short enough to
-    // feel instant and long enough to batch bursts.
-    _scheduleWrite() {
-        this._pendingWrite = true;
-        clearTimeout(this._writeTimer);
-        this._writeTimer = setTimeout(() => this._flush(), 120);
-    },
-    _flush() {
-        if (!this._pendingWrite || !this._cache) return this._writeChain;
-        this._pendingWrite = false;
-        const snapshotObject = JSON.parse(JSON.stringify(this._cache));
-        const snapshot = JSON.stringify(snapshotObject);
-        const captured = new Map(this._pendingRevisions);
-        const commit = async () => {
-            // Mark before dispatch so the synchronous storage-change event
-            // some engines emit for our own write is recognized as local.
-            this._lastWritten = snapshot;
-            try {
-                await RXPlatform.storage.set({ rx_settings: snapshotObject });
-                for (const [key, revision] of captured) {
-                    if (this._pendingRevisions.get(key) !== revision) continue;
-                    this._pendingRevisions.delete(key);
-                    this._pendingKeys?.delete(key);
-                }
-                return true;
-            } catch (e) {
-                if (this._lastWritten === snapshot) this._lastWritten = null;
-                console.warn('[RumbleX] settings flush failed; retrying:', e);
-                this._pendingWrite = true;
-                clearTimeout(this._writeTimer);
-                this._writeTimer = setTimeout(() => this._flush(), 1000);
-                return false;
-            }
-        };
-        this._writeChain = this._writeChain.then(commit, commit);
-        return this._writeChain;
-    },
-    toggle(key) {
-        const v = !this.get(key);
-        this.set(key, v);
-        return v;
-    },
-    onExternalChange(fn) {
-        this._externalHandlers.push(fn);
-    },
-    // Called by chrome.storage.onChanged when rx_settings changed in another
-    // tab or from the options page. Refreshes our cache in place and fires
-    // subscribers so features can react (show a toast, re-run, etc.).
-    //
-    // `newValue === undefined` means the key was removed (e.g. options-page
-    // reset): reset our cache to defaults instead of silently ignoring so
-    // subsequent Settings.get() calls return the right value without needing
-    // a page reload.
-    _applyExternal(newValue) {
-        const isReset = newValue === undefined;
-        if (!isReset && (!newValue || typeof newValue !== 'object')) return;
-        const incoming = isReset ? '__reset__' : JSON.stringify(newValue);
-        if (incoming === this._lastWritten) return; // our own write, ignore
-
-        if (isReset) {
-            // Reset is explicit user intent: wipe pending too so we don't
-            // resurrect discarded values on the next flush.
-            this._pendingKeys?.clear();
-            this._pendingRevisions.clear();
-            this._cache = { ...this._defaults };
-        } else {
-            // Build the merged cache from external, then layer our still-
-            // pending changes ON TOP so an in-flight toggle isn't lost just
-            // because another tab happened to save first.
-            const merged = { ...this._defaults, ...this._sanitize(newValue) };
-            if (this._cache && this._pendingKeys && this._pendingKeys.size > 0) {
-                for (const k of this._pendingKeys) {
-                    if (k in this._cache) merged[k] = this._cache[k];
-                }
-            }
-            this._cache = merged;
-        }
-        this._lastWritten = incoming;
-        for (const fn of this._externalHandlers) {
-            try { fn(isReset); } catch (e) { console.warn('[RumbleX] external-change handler failed:', e); }
-        }
-    },
-};
-
-if (RXPlatform.storage?.onChanged) {
-    RXPlatform.storage.onChanged((changes) => {
-        if (!changes.rx_settings) return;
-        Settings._applyExternal(changes.rx_settings.newValue);
-    });
-}
-// Ensure pending writes land before the page unloads.
-window.addEventListener('pagehide', () => Settings._flush(), { capture: true });
 
 // ── Page Detection ──
 const Page = {
@@ -1820,6 +1589,78 @@ const Page = {
         return 'unknown';
     },
 };
+
+// ── Route Lifecycle (v2.0.0) ──
+// Single source of route-change signals for features. Patches history once,
+// subscribes to popstate, and listens for htmx swap/settle events. Feature
+// modules call Router.onChange(cb) and re-init/destroy themselves on route
+// transitions instead of relying on hardcoded MutationObservers per feature.
+const Router = {
+    _handlers: [],
+    _lastUrl: location.href,
+    _lastPage: null,
+    _patched: false,
+    init() {
+        if (this._patched) return;
+        this._patched = true;
+        const fire = (reason) => this._fire(reason);
+        try {
+            const origPush = history.pushState;
+            const origReplace = history.replaceState;
+            history.pushState = function (...args) {
+                const r = origPush.apply(this, args);
+                queueMicrotask(() => fire('pushState'));
+                return r;
+            };
+            history.replaceState = function (...args) {
+                const r = origReplace.apply(this, args);
+                queueMicrotask(() => fire('replaceState'));
+                return r;
+            };
+        } catch (e) { console.warn('[RumbleX] history patch failed:', e); }
+        window.addEventListener('popstate', () => fire('popstate'));
+        // htmx may load after content.js — listen on document so any later
+        // htmx-emitted event still bubbles to us.
+        for (const evt of ['htmx:afterSwap', 'htmx:afterSettle', 'htmx:historyRestore']) {
+            document.addEventListener(evt, () => fire(evt));
+        }
+        document.addEventListener('visibilitychange', () => fire('visibilitychange'));
+        this._lastPage = Page.classify();
+    },
+    _fire(reason) {
+        const url = location.href;
+        const page = Page.classify();
+        const changed = url !== this._lastUrl || page !== this._lastPage;
+        const detail = { url, prevUrl: this._lastUrl, page, prevPage: this._lastPage, reason, changed };
+        this._lastUrl = url;
+        this._lastPage = page;
+        for (const fn of this._handlers) {
+            try {
+                fn(detail);
+            } catch (e) {
+                console.warn('[RumbleX] router handler failed:', e);
+                // v3.23.0 — record route-handler failures so a misbehaving
+                // subscriber surfaces in the error log instead of silently
+                // breaking on every navigation.
+                try { RxErrorLog?.record(fn.name || 'routeHandler', e, 'route:' + (detail?.reason || '?')); } catch {}
+            }
+        }
+    },
+    onChange(fn) {
+        if (typeof fn === 'function') this._handlers.push(fn);
+        return () => {
+            const i = this._handlers.indexOf(fn);
+            if (i >= 0) this._handlers.splice(i, 1);
+        };
+    },
+    page() { return Page.classify(); },
+};
+
+
+
+
+// RumbleX shared selector registry and health monitor.
+'use strict';
 
 // ── Selector Registry (v2.0.0) ──
 // Named surface selectors with stable/fallback pairs from the MHTML map.
@@ -2127,71 +1968,657 @@ const Selectors = {
     },
 };
 
-// ── Route Lifecycle (v2.0.0) ──
-// Single source of route-change signals for features. Patches history once,
-// subscribes to popstate, and listens for htmx swap/settle events. Feature
-// modules call Router.onChange(cb) and re-init/destroy themselves on route
-// transitions instead of relying on hardcoded MutationObservers per feature.
-const Router = {
-    _handlers: [],
-    _lastUrl: location.href,
-    _lastPage: null,
-    _patched: false,
-    init() {
-        if (this._patched) return;
-        this._patched = true;
-        const fire = (reason) => this._fire(reason);
-        try {
-            const origPush = history.pushState;
-            const origReplace = history.replaceState;
-            history.pushState = function (...args) {
-                const r = origPush.apply(this, args);
-                queueMicrotask(() => fire('pushState'));
-                return r;
-            };
-            history.replaceState = function (...args) {
-                const r = origReplace.apply(this, args);
-                queueMicrotask(() => fire('replaceState'));
-                return r;
-            };
-        } catch (e) { console.warn('[RumbleX] history patch failed:', e); }
-        window.addEventListener('popstate', () => fire('popstate'));
-        // htmx may load after content.js — listen on document so any later
-        // htmx-emitted event still bubbles to us.
-        for (const evt of ['htmx:afterSwap', 'htmx:afterSettle', 'htmx:historyRestore']) {
-            document.addEventListener(evt, () => fire(evt));
-        }
-        document.addEventListener('visibilitychange', () => fire('visibilitychange'));
-        this._lastPage = Page.classify();
+
+
+
+// RumbleX shared video-card adapter.
+'use strict';
+
+// ── Video Card + Active Media Adapters (v3.36.0) ──
+// Rumble currently mixes legacy `.videostream` nodes with the newer
+// `<rum-video-thumbnail>` custom element. Consumers use this adapter so a
+// future card migration is repaired in one place instead of per feature.
+const VideoCards = {
+    selector: [
+        'rum-video-thumbnail[role="listitem"]',
+        '[role="listitem"][data-video-id]',
+        '.videostream',
+        'article.video-item',
+        '.mediaList-item',
+        '.thumbnail__grid-item',
+    ].join(', '),
+    all(root = document) { return qsa(this.selector, root); },
+    related(root = document) {
+        return qsa(
+            '.media-page-related-media-desktop-sidebar rum-video-thumbnail[role="listitem"], ' +
+            '.media-page-related-media-desktop-sidebar .mediaList-item',
+            root
+        );
     },
-    _fire(reason) {
-        const url = location.href;
-        const page = Page.classify();
-        const changed = url !== this._lastUrl || page !== this._lastPage;
-        const detail = { url, prevUrl: this._lastUrl, page, prevPage: this._lastPage, reason, changed };
-        this._lastUrl = url;
-        this._lastPage = page;
-        for (const fn of this._handlers) {
-            try {
-                fn(detail);
-            } catch (e) {
-                console.warn('[RumbleX] router handler failed:', e);
-                // v3.23.0 — record route-handler failures so a misbehaving
-                // subscriber surfaces in the error log instead of silently
-                // breaking on every navigation.
-                try { RxErrorLog?.record(fn.name || 'routeHandler', e, 'route:' + (detail?.reason || '?')); } catch {}
+    title(card) {
+        return (card.getAttribute('video-title')
+            || card.querySelector('rum-text[role="heading"], .thumbnail__title, .videostream__title, .mediaList-heading, .media-item__title, .video-item--title')?.textContent
+            || '').trim();
+    },
+    channel(card) {
+        return (card.getAttribute('name')
+            || card.querySelector('[rel="author"], .videostream__author, .video-listing-entry--by-name, .mediaList-by-heading, [class*="channel-name"], a[href*="/c/"], a[href*="/user/"]')?.textContent
+            || '').trim();
+    },
+    channelAnchor(card) {
+        return card.querySelector('[rel="author"], a[href*="/c/"], a[href*="/user/"]');
+    },
+    url(card) {
+        const raw = card.getAttribute('url')
+            || card.querySelector('a[href*="/v"]')?.getAttribute('href')
+            || '';
+        try { return new URL(raw, location.origin).href; } catch { return ''; }
+    },
+    videoId(card) {
+        return this.url(card).match(/\/(v[a-z0-9]+)-/i)?.[1] || null;
+    },
+    thumbnail(card) {
+        return card.querySelector('.rum-video-thumbnail__image, .videostream__image, .thumbnail__image, .videostream__thumbnail, .video-item--img-wrapper, [class*="thumbnail"]');
+    },
+};
+
+
+
+
+// RumbleX shared media metadata, HLS parsing, active-media, and probe helpers.
+'use strict';
+
+// ═══════════════════════════════════════════
+//  Media URL and HLS parsing helpers
+// ═══════════════════════════════════════════
+const MediaHelpers = {
+    safeMediaUrl(raw, base = location.href) {
+        if (!raw) return null;
+        try {
+            const parsed = new URL(String(raw), base);
+            const approved = ['rumble.com', 'rumble.cloud', '1a-1791.com'].some((host) =>
+                parsed.hostname === host || parsed.hostname.endsWith('.' + host)
+            );
+            return parsed.protocol === 'https:' && approved ? parsed.href : null;
+        } catch { return null; }
+    },
+
+    extractHlsUrl(data) {
+        const candidates = [
+            data?.u?.hls?.auto?.url,
+            data?.ua?.hls?.auto?.url,
+            data?.u?.hls?.url,
+            data?.ua?.hls?.url,
+        ];
+        for (const candidate of candidates) {
+            const safe = this.safeMediaUrl(candidate);
+            if (safe) return safe;
+        }
+        return null;
+    },
+
+    parseQualities(data) {
+        const qualities = [];
+        const sources = [data?.ua, data?.u].filter((source) => source && typeof source === 'object');
+
+        for (const src of sources) {
+            for (const fmt of ['mp4', 'webm']) {
+                const group = src[fmt];
+                if (!group || typeof group !== 'object') continue;
+                if (group.url && group.meta?.h > 0) {
+                    const directUrl = this.safeMediaUrl(group.url);
+                    if (directUrl) qualities.push({
+                        key: fmt, label: `${group.meta.h}p`, height: group.meta.h,
+                        width: group.meta.w || 0, bitrate: group.meta.bitrate || 0,
+                        size: group.meta.size || 0, directUrl, type: fmt,
+                    });
+                    continue;
+                }
+                for (const [key, val] of Object.entries(group)) {
+                    const directUrl = this.safeMediaUrl(val?.url);
+                    if (!directUrl || !val?.meta?.h) continue;
+                    qualities.push({
+                        key, label: `${val.meta.h}p`, height: val.meta.h,
+                        width: val.meta.w || 0, bitrate: val.meta.bitrate || 0,
+                        size: val.meta.size || 0, directUrl, type: fmt,
+                    });
+                }
             }
         }
+
+        for (const src of sources) {
+            const tar = src.tar;
+            if (!tar || typeof tar !== 'object') continue;
+            for (const [key, val] of Object.entries(tar)) {
+                if (!val?.meta?.h) continue;
+                const height = val.meta.h;
+                if (qualities.some((quality) => quality.height === height)) continue;
+                qualities.push({
+                    key, label: `${height}p`, height,
+                    width: val.meta.w || 0, bitrate: val.meta.bitrate || 0,
+                    size: val.meta.size || 0, directUrl: null, type: 'hls',
+                });
+            }
+        }
+
+        qualities.sort((a, b) => b.height - a.height);
+        const seen = new Map();
+        for (const quality of qualities) {
+            const existing = seen.get(quality.height);
+            if (!existing || (quality.directUrl && !existing.directUrl) || quality.bitrate > existing.bitrate) {
+                seen.set(quality.height, quality);
+            }
+        }
+        return [...seen.values()];
     },
-    onChange(fn) {
-        if (typeof fn === 'function') this._handlers.push(fn);
-        return () => {
-            const i = this._handlers.indexOf(fn);
-            if (i >= 0) this._handlers.splice(i, 1);
-        };
+
+    parseMasterPlaylist(text, baseUrl) {
+        const variants = [];
+        const lines = String(text || '').trim().split('\n');
+        for (let index = 0; index < lines.length; index++) {
+            if (!lines[index].startsWith('#EXT-X-STREAM-INF:')) continue;
+            const info = lines[index];
+            const rawUrl = lines[index + 1]?.trim();
+            if (!rawUrl || rawUrl.startsWith('#')) continue;
+            const url = this.safeMediaUrl(rawUrl, baseUrl);
+            if (!url) continue;
+            const resolution = info.match(/RESOLUTION=(\d+)x(\d+)/);
+            const bandwidth = info.match(/BANDWIDTH=(\d+)/);
+            variants.push({
+                url,
+                width: resolution ? Number.parseInt(resolution[1]) : 0,
+                height: resolution ? Number.parseInt(resolution[2]) : 0,
+                bandwidth: bandwidth ? Number.parseInt(bandwidth[1]) : 0,
+            });
+        }
+        return variants;
     },
-    page() { return Page.classify(); },
+
+    parseSegmentPlaylist(text, baseUrl) {
+        return this.parseSegmentEntries(text, baseUrl).map((entry) => entry.url);
+    },
+
+    parseSegmentEntries(text, baseUrl) {
+        const entries = [];
+        const lines = String(text || '').trim().split('\n');
+        let pending = 0;
+        let clock = 0;
+        for (const line of lines) {
+            const trimmed = line.trim();
+            if (!trimmed) continue;
+            if (trimmed.startsWith('#EXTINF:')) {
+                const value = Number.parseFloat(trimmed.slice('#EXTINF:'.length));
+                pending = Number.isFinite(value) && value > 0 ? value : 0;
+                continue;
+            }
+            if (trimmed.startsWith('#')) continue;
+            const url = this.safeMediaUrl(trimmed, baseUrl);
+            if (url) {
+                entries.push({ url, duration: pending, start: clock, end: clock + pending });
+                clock += pending;
+            }
+            pending = 0;
+        }
+        return entries;
+    },
 };
+
+// ═══════════════════════════════════════════
+//  Structured page data (schema.org JSON-LD)
+// ═══════════════════════════════════════════
+// Rumble emits a schema.org VideoObject on watch pages for search engines. That
+// makes it the most stable description of a video on the page: it carries the
+// exact view count, an ISO 8601 duration, the upload date and the embed id,
+// none of which have to be scraped out of presentation markup that Rumble is
+// free to restyle.
+//
+// This is deliberately a *supplement*, not a replacement. Channel and feed
+// listings were checked against live Rumble on 2026-08-19 and still render real
+// DOM cards, so `VideoCards` stays the card layer and every reader here falls
+// back to the DOM when the JSON-LD is absent, malformed, or for a different
+// video.
+const PageData = {
+    _url: null,
+    _video: null,
+
+    // ISO 8601 durations, e.g. "PT01H36M12S". Rumble has also been seen to emit
+    // bare second counts, so accept a plain number too.
+    _isoDuration(value) {
+        if (typeof value === 'number' && Number.isFinite(value)) return value > 0 ? value : null;
+        if (typeof value !== 'string') return null;
+        const trimmed = value.trim();
+        if (/^\d+(\.\d+)?$/.test(trimmed)) {
+            const plain = Number(trimmed);
+            return plain > 0 ? plain : null;
+        }
+        const match = /^P(?:([\d.]+)D)?(?:T(?:([\d.]+)H)?(?:([\d.]+)M)?(?:([\d.]+)S)?)?$/.exec(trimmed);
+        if (!match) return null;
+        const [, d, h, m, s] = match;
+        if (!d && !h && !m && !s) return null;
+        const total = (Number(d || 0) * 86400) + (Number(h || 0) * 3600) + (Number(m || 0) * 60) + Number(s || 0);
+        return Number.isFinite(total) && total > 0 ? total : null;
+    },
+
+    _parse(root = document) {
+        const nodes = qsa('script[type="application/ld+json"]', root);
+        for (const node of nodes) {
+            let parsed;
+            // A single malformed block must not hide a valid one later in the
+            // document, so failures are skipped rather than aborting the scan.
+            try { parsed = JSON.parse(node.textContent || ''); } catch { continue; }
+            const queue = Array.isArray(parsed) ? [...parsed] : [parsed];
+            while (queue.length) {
+                const item = queue.shift();
+                if (!item || typeof item !== 'object') continue;
+                if (Array.isArray(item['@graph'])) queue.push(...item['@graph']);
+                const type = item['@type'];
+                const isVideo = type === 'VideoObject'
+                    || (Array.isArray(type) && type.includes('VideoObject'));
+                if (isVideo) return item;
+            }
+        }
+        return null;
+    },
+
+    // Cached per URL. Rumble is an SPA, so a stale object from the previous
+    // watch page would silently describe the wrong video.
+    videoObject(root = document) {
+        const href = typeof location !== 'undefined' ? location.href : '';
+        if (this._url === href && this._video) return this._video;
+        let found = null;
+        try { found = this._parse(root); } catch { found = null; }
+        // Only a hit is cached. On an SPA route change the URL updates before
+        // the new markup lands, so caching the miss would pin "no data" for the
+        // rest of the visit to a page that does have it.
+        this._url = found ? href : null;
+        this._video = found;
+        return found;
+    },
+
+    invalidate() {
+        this._url = null;
+        this._video = null;
+    },
+
+    title() {
+        const value = this.videoObject()?.name;
+        return typeof value === 'string' ? value.trim() : '';
+    },
+
+    description() {
+        const value = this.videoObject()?.description;
+        return typeof value === 'string' ? value.trim() : '';
+    },
+
+    durationSeconds() {
+        return this._isoDuration(this.videoObject()?.duration);
+    },
+
+    uploadDate() {
+        const value = this.videoObject()?.uploadDate;
+        if (typeof value !== 'string' || !value.trim()) return null;
+        const parsed = new Date(value);
+        return Number.isNaN(parsed.getTime()) ? null : value.trim();
+    },
+
+    thumbnailUrl() {
+        const raw = this.videoObject()?.thumbnailUrl;
+        const value = Array.isArray(raw) ? raw[0] : raw;
+        if (typeof value !== 'string') return '';
+        try { return new URL(value, location.origin).href; } catch { return ''; }
+    },
+
+    // schema.org allows one object or an array of them; only the watch counter
+    // is meaningful here.
+    viewCount() {
+        const raw = this.videoObject()?.interactionStatistic;
+        if (!raw) return null;
+        const entries = Array.isArray(raw) ? raw : [raw];
+        for (const entry of entries) {
+            if (!entry || typeof entry !== 'object') continue;
+            const type = entry.interactionType;
+            const name = typeof type === 'string' ? type : (type && typeof type === 'object' ? type['@type'] || type.name : '');
+            if (name && !/WatchAction/i.test(String(name))) continue;
+            const count = Number(entry.userInteractionCount);
+            if (Number.isFinite(count) && count >= 0) return count;
+        }
+        return null;
+    },
+
+    // The embed id is not always the id in the page URL, and the download path
+    // needs the embed one. Taking it from here avoids re-deriving it from
+    // markup.
+    embedId() {
+        const value = this.videoObject()?.embedUrl;
+        if (typeof value !== 'string') return null;
+        return value.match(/\/embed\/([a-z0-9]+)/i)?.[1] || null;
+    },
+
+    // Reported in the privacy/selector-health surface so a reader can tell
+    // structured data from scraped markup.
+    available() {
+        return !!this.videoObject();
+    },
+};
+
+function getActiveMedia(root = document) {
+    const candidates = qsa('video', root).filter((video) => video.isConnected);
+    if (!candidates.length) return null;
+    return candidates.map((video, index) => {
+        const rect = video.getBoundingClientRect();
+        const visibleArea = Math.max(0, rect.width) * Math.max(0, rect.height);
+        const rendered = getComputedStyle(video).visibility !== 'hidden' && getComputedStyle(video).display !== 'none';
+        const score = (rendered ? visibleArea : 0)
+            + (!video.paused ? 1_000_000_000 : 0)
+            + (video.currentSrc ? 1_000_000 : 0)
+            + ((video.readyState || 0) * 10_000)
+            - index;
+        return { video, score };
+    }).sort((a, b) => b.score - a.score)[0].video;
+}
+
+// ═══════════════════════════════════════════
+//  MODULE: Media Probe Cache (v2.2.0)
+// ═══════════════════════════════════════════
+// Persistent TTL-keyed cache for media probe results (embedJS responses,
+// HLS manifest variants, CDN HEAD probes). Other download modules can call
+// MediaProbeCache.get(key) before hitting the network and MediaProbeCache.set(key, val)
+// after a successful probe. Honors Settings.get('downloadProbeCacheTtlHours'):
+// 0 disables cache, otherwise entries expire at `at + ttlHours * 3600000`.
+//
+// Storage: a single chrome.storage.local key holds the full cache; on
+// chrome.runtime.lastError or quota errors we fall back to in-memory only
+// so the cache never blocks downloads. Cache is GC'd lazily on read.
+const MediaProbeCache = {
+    _KEY: 'rx_probe_cache',
+    _mem: null,       // { [key]: { at: number, val: any } }
+    _ready: false,
+    async _load() {
+        if (this._ready) return;
+        try {
+            const data = await RXPlatform.storage.get(this._KEY);
+            this._mem = (data && data[this._KEY]) || {};
+        } catch {
+            this._mem = {};
+        }
+        this._ready = true;
+    },
+    _ttlMs() {
+        const hrs = Number(Settings.get('downloadProbeCacheTtlHours'));
+        if (!Number.isFinite(hrs) || hrs <= 0) return 0;
+        return hrs * 3600 * 1000;
+    },
+    async get(key) {
+        if (!key) return null;
+        await this._load();
+        const entry = this._mem[key];
+        if (!entry) return null;
+        const ttl = this._ttlMs();
+        if (ttl === 0) return null; // cache disabled — every read misses
+        if (Date.now() - entry.at > ttl) {
+            // Expired: GC inline so the cache doesn't grow unbounded.
+            delete this._mem[key];
+            this._scheduleFlush();
+            return null;
+        }
+        return entry.val;
+    },
+    async set(key, val) {
+        if (!key) return;
+        if (this._ttlMs() === 0) return; // don't persist if cache is disabled
+        await this._load();
+        this._mem[key] = { at: Date.now(), val };
+        this._scheduleFlush();
+    },
+    async clear() {
+        this._mem = {};
+        try { await RXPlatform.storage.remove(this._KEY); } catch {}
+    },
+    _flushTimer: null,
+    _scheduleFlush() {
+        clearTimeout(this._flushTimer);
+        this._flushTimer = setTimeout(() => {
+            try { RXPlatform.storage.set({ [this._KEY]: this._mem }); } catch {}
+        }, 250);
+    },
+};
+
+
+
+
+// RumbleX v3.51.0 - Shared Content Core
+// Rumble enhancement suite - Chrome/Firefox extension
+'use strict';
+
+// ── Platform + Version ──
+// extension/platform.js and the generated userscript adapter expose the same
+// small runtime contract. Keeping browser APIs outside this file makes every
+// DOM feature ship from one canonical source.
+const RXPlatform = globalThis.RumbleXPlatform;
+if (!RXPlatform) throw new Error('RumbleX platform adapter is missing');
+const VERSION = RXPlatform.version || '3.51.0';
+/**
+ * In-page translation lookup.
+ *
+ * Every user-facing string in the injected UI used to be a hardcoded English
+ * literal, which made the four shipped locales cover only the extension's own
+ * pages while the entire in-page experience stayed English. `RXPlatform.t`
+ * resolves through chrome.i18n in the extension and through the catalog the
+ * userscript build embeds, so one call works in both runtimes.
+ *
+ * The English text stays inline as the fallback deliberately: it keeps the
+ * source readable, and it means a missing or misspelled key degrades to
+ * correct English rather than to a blank control.
+ *
+ * @param {string} key   messages.json key
+ * @param {string} fallback English text, also the source of truth for the catalog
+ * @param {Record<string, string|number>} [vars] `{name}` placeholders to substitute
+ */
+function rxT(key, fallback, vars) {
+    let text = fallback;
+    try {
+        const translated = RXPlatform.t?.(key);
+        if (typeof translated === 'string' && translated) text = translated;
+    } catch { /* keep the English fallback */ }
+    if (vars) {
+        for (const [name, value] of Object.entries(vars)) {
+            text = text.split('{' + name + '}').join(String(value));
+        }
+    }
+    return text;
+}
+
+/**
+ * Translated label/description for a settings-modal entry.
+ *
+ * The English strings live in RX_CATEGORIES, which stays the source of truth:
+ * `scripts/sync-content-locale.js` reads the array directly and emits these
+ * keys, so the catalog cannot drift from the data.
+ */
+const rxFeatLabel = (feat) => rxT('feat_' + feat.id + '_label', feat.label);
+const rxFeatDesc = (feat) => rxT('feat_' + feat.id + '_desc', feat.desc);
+// chrome.i18n only accepts [A-Za-z0-9_@] in a key, and category ids are
+// kebab-case, so the hyphens have to go or Chrome rejects the catalog and
+// refuses to load the extension at all.
+const rxCatLabel = (cat) => rxT('cat_' + cat.id.replace(/-/g, '_') + '_label', cat.label);
+
+const RXSettingsSchema = globalThis.RumbleXSettingsSchema;
+if (!RXSettingsSchema) throw new Error('RumbleX settings schema is missing');
+const SCHEMA_VERSION = RXSettingsSchema.SCHEMA_VERSION;
+
+// ── Settings Manager (chrome.storage.local) ──
+const Settings = {
+    _cache: null,
+    _ready: false,
+    _defaults: RXSettingsSchema.DEFAULTS,
+    _writeTimer: null,
+    _pendingWrite: false,
+    _writeChain: Promise.resolve(),
+    _writeRevision: 0,
+    _pendingRevisions: new Map(),
+    // Tracks keys the user has changed locally but hasn't yet been flushed to
+    // chrome.storage. If an external change arrives inside the debounce
+    // window, we merge external values UNDER these pending keys — otherwise
+    // the user's in-flight toggle would be silently discarded.
+    _pendingKeys: null,
+    // Track the last-known value of rx_settings we either read from or wrote
+    // to storage. Used by the onChanged listener to tell "this change was me"
+    // from "this change was a different tab/window/options page".
+    _lastWritten: null,
+    _externalHandlers: [],
+
+    async init() {
+        const data = await RXPlatform.storage.get('rx_settings');
+        const legacy = (!data.rx_settings || typeof data.rx_settings !== 'object')
+            ? await RXPlatform.migrateLegacySettings?.(this._defaults)
+            : null;
+        const stored = data.rx_settings || legacy || {};
+        const migrated = this._migrate(stored);
+        const sanitized = this._sanitize(migrated);
+        // A set() that lands while this await is in flight used to be discarded
+        // outright: the cache was replaced wholesale and _pendingKeys was reset,
+        // so the write reported success and silently vanished. Layer any pending
+        // changes back on top, exactly as _applyExternal already does for writes
+        // that race an external change.
+        const merged = { ...this._defaults, ...sanitized };
+        const pendingDuringBoot = this._pendingKeys;
+        if (this._cache && pendingDuringBoot && pendingDuringBoot.size > 0) {
+            for (const key of pendingDuringBoot) {
+                if (key in this._cache) merged[key] = this._cache[key];
+            }
+        }
+        this._cache = merged;
+        this._lastWritten = JSON.stringify(this._cache);
+        this._pendingKeys = pendingDuringBoot || new Set();
+        this._ready = true;
+        if (migrated !== stored || JSON.stringify(sanitized) !== JSON.stringify(migrated)) {
+            // Persist migrations and normalization so other extension surfaces
+            // never keep reading values the content core has already rejected.
+            try { await RXPlatform.storage.set({ rx_settings: this._cache }); } catch {}
+            this._lastWritten = JSON.stringify(this._cache);
+        }
+    },
+    // Pre-v2 storage shapes:
+    //   - schemaVersion missing or < 2
+    //   - keyboardNav: bool (replaced by legacyKeyboardNav: false; off by house style)
+    // Migration preserves user intent: if they explicitly had keyboardNav on,
+    // their hotkeys still work after upgrade because legacyKeyboardNav inherits
+    // that value. Otherwise keyboardNav silently drops to off (the new default).
+    _migrate(stored) {
+        return RXSettingsSchema.migrate(stored);
+    },
+    _sanitize(input) {
+        return RXSettingsSchema.normalize(input, this._defaults);
+    },
+    get(key) {
+        if (!this._cache) return this._defaults[key];
+        return this._cache[key];
+    },
+    set(key, val) {
+        if (!Object.hasOwn(this._defaults, key)) return this.get(key);
+        const safe = this._sanitize({ [key]: val });
+        if (!Object.hasOwn(safe, key)) return this.get(key);
+        if (!this._cache) this._cache = { ...this._defaults };
+        this._cache[key] = safe[key];
+        if (!this._pendingKeys) this._pendingKeys = new Set();
+        this._pendingKeys.add(key);
+        this._pendingRevisions.set(key, ++this._writeRevision);
+        this._scheduleWrite();
+    },
+    // Coalesce rapid writes into a single storage.local.set call. Without
+    // this, features that update settings on keystroke (search history,
+    // volume slider, etc.) could thrash storage. 120ms is short enough to
+    // feel instant and long enough to batch bursts.
+    _scheduleWrite() {
+        this._pendingWrite = true;
+        clearTimeout(this._writeTimer);
+        this._writeTimer = setTimeout(() => this._flush(), 120);
+    },
+    _flush() {
+        if (!this._pendingWrite || !this._cache) return this._writeChain;
+        this._pendingWrite = false;
+        const snapshotObject = JSON.parse(JSON.stringify(this._cache));
+        const snapshot = JSON.stringify(snapshotObject);
+        const captured = new Map(this._pendingRevisions);
+        const commit = async () => {
+            // Mark before dispatch so the synchronous storage-change event
+            // some engines emit for our own write is recognized as local.
+            this._lastWritten = snapshot;
+            try {
+                await RXPlatform.storage.set({ rx_settings: snapshotObject });
+                for (const [key, revision] of captured) {
+                    if (this._pendingRevisions.get(key) !== revision) continue;
+                    this._pendingRevisions.delete(key);
+                    this._pendingKeys?.delete(key);
+                }
+                return true;
+            } catch (e) {
+                if (this._lastWritten === snapshot) this._lastWritten = null;
+                console.warn('[RumbleX] settings flush failed; retrying:', e);
+                this._pendingWrite = true;
+                clearTimeout(this._writeTimer);
+                this._writeTimer = setTimeout(() => this._flush(), 1000);
+                return false;
+            }
+        };
+        this._writeChain = this._writeChain.then(commit, commit);
+        return this._writeChain;
+    },
+    toggle(key) {
+        const v = !this.get(key);
+        this.set(key, v);
+        return v;
+    },
+    onExternalChange(fn) {
+        this._externalHandlers.push(fn);
+    },
+    // Called by chrome.storage.onChanged when rx_settings changed in another
+    // tab or from the options page. Refreshes our cache in place and fires
+    // subscribers so features can react (show a toast, re-run, etc.).
+    //
+    // `newValue === undefined` means the key was removed (e.g. options-page
+    // reset): reset our cache to defaults instead of silently ignoring so
+    // subsequent Settings.get() calls return the right value without needing
+    // a page reload.
+    _applyExternal(newValue) {
+        const isReset = newValue === undefined;
+        if (!isReset && (!newValue || typeof newValue !== 'object')) return;
+        const incoming = isReset ? '__reset__' : JSON.stringify(newValue);
+        if (incoming === this._lastWritten) return; // our own write, ignore
+
+        if (isReset) {
+            // Reset is explicit user intent: wipe pending too so we don't
+            // resurrect discarded values on the next flush.
+            this._pendingKeys?.clear();
+            this._pendingRevisions.clear();
+            this._cache = { ...this._defaults };
+        } else {
+            // Build the merged cache from external, then layer our still-
+            // pending changes ON TOP so an in-flight toggle isn't lost just
+            // because another tab happened to save first.
+            const merged = { ...this._defaults, ...this._sanitize(newValue) };
+            if (this._cache && this._pendingKeys && this._pendingKeys.size > 0) {
+                for (const k of this._pendingKeys) {
+                    if (k in this._cache) merged[k] = this._cache[k];
+                }
+            }
+            this._cache = merged;
+        }
+        this._lastWritten = incoming;
+        for (const fn of this._externalHandlers) {
+            try { fn(isReset); } catch (e) { console.warn('[RumbleX] external-change handler failed:', e); }
+        }
+    },
+};
+
+if (RXPlatform.storage?.onChanged) {
+    RXPlatform.storage.onChanged((changes) => {
+        if (!changes.rx_settings) return;
+        Settings._applyExternal(changes.rx_settings.newValue);
+    });
+}
+// Ensure pending writes land before the page unloads.
+window.addEventListener('pagehide', () => Settings._flush(), { capture: true });
 
 // ── Anti-FOUC: Inject immediately at document-start ──
 const ANTI_FOUC_CSS = `
@@ -2553,208 +2980,6 @@ const AdNuker = {
         earlyStyle.remove();
     }
 };
-
-// ── Video Card + Active Media Adapters (v3.36.0) ──
-// Rumble currently mixes legacy `.videostream` nodes with the newer
-// `<rum-video-thumbnail>` custom element. Consumers use this adapter so a
-// future card migration is repaired in one place instead of per feature.
-const VideoCards = {
-    selector: [
-        'rum-video-thumbnail[role="listitem"]',
-        '[role="listitem"][data-video-id]',
-        '.videostream',
-        'article.video-item',
-        '.mediaList-item',
-        '.thumbnail__grid-item',
-    ].join(', '),
-    all(root = document) { return qsa(this.selector, root); },
-    related(root = document) {
-        return qsa(
-            '.media-page-related-media-desktop-sidebar rum-video-thumbnail[role="listitem"], ' +
-            '.media-page-related-media-desktop-sidebar .mediaList-item',
-            root
-        );
-    },
-    title(card) {
-        return (card.getAttribute('video-title')
-            || card.querySelector('rum-text[role="heading"], .thumbnail__title, .videostream__title, .mediaList-heading, .media-item__title, .video-item--title')?.textContent
-            || '').trim();
-    },
-    channel(card) {
-        return (card.getAttribute('name')
-            || card.querySelector('[rel="author"], .videostream__author, .video-listing-entry--by-name, .mediaList-by-heading, [class*="channel-name"], a[href*="/c/"], a[href*="/user/"]')?.textContent
-            || '').trim();
-    },
-    channelAnchor(card) {
-        return card.querySelector('[rel="author"], a[href*="/c/"], a[href*="/user/"]');
-    },
-    url(card) {
-        const raw = card.getAttribute('url')
-            || card.querySelector('a[href*="/v"]')?.getAttribute('href')
-            || '';
-        try { return new URL(raw, location.origin).href; } catch { return ''; }
-    },
-    videoId(card) {
-        return this.url(card).match(/\/(v[a-z0-9]+)-/i)?.[1] || null;
-    },
-    thumbnail(card) {
-        return card.querySelector('.rum-video-thumbnail__image, .videostream__image, .thumbnail__image, .videostream__thumbnail, .video-item--img-wrapper, [class*="thumbnail"]');
-    },
-};
-
-// ═══════════════════════════════════════════
-//  Structured page data (schema.org JSON-LD)
-// ═══════════════════════════════════════════
-// Rumble emits a schema.org VideoObject on watch pages for search engines. That
-// makes it the most stable description of a video on the page: it carries the
-// exact view count, an ISO 8601 duration, the upload date and the embed id,
-// none of which have to be scraped out of presentation markup that Rumble is
-// free to restyle.
-//
-// This is deliberately a *supplement*, not a replacement. Channel and feed
-// listings were checked against live Rumble on 2026-08-19 and still render real
-// DOM cards, so `VideoCards` stays the card layer and every reader here falls
-// back to the DOM when the JSON-LD is absent, malformed, or for a different
-// video.
-const PageData = {
-    _url: null,
-    _video: null,
-
-    // ISO 8601 durations, e.g. "PT01H36M12S". Rumble has also been seen to emit
-    // bare second counts, so accept a plain number too.
-    _isoDuration(value) {
-        if (typeof value === 'number' && Number.isFinite(value)) return value > 0 ? value : null;
-        if (typeof value !== 'string') return null;
-        const trimmed = value.trim();
-        if (/^\d+(\.\d+)?$/.test(trimmed)) {
-            const plain = Number(trimmed);
-            return plain > 0 ? plain : null;
-        }
-        const match = /^P(?:([\d.]+)D)?(?:T(?:([\d.]+)H)?(?:([\d.]+)M)?(?:([\d.]+)S)?)?$/.exec(trimmed);
-        if (!match) return null;
-        const [, d, h, m, s] = match;
-        if (!d && !h && !m && !s) return null;
-        const total = (Number(d || 0) * 86400) + (Number(h || 0) * 3600) + (Number(m || 0) * 60) + Number(s || 0);
-        return Number.isFinite(total) && total > 0 ? total : null;
-    },
-
-    _parse(root = document) {
-        const nodes = qsa('script[type="application/ld+json"]', root);
-        for (const node of nodes) {
-            let parsed;
-            // A single malformed block must not hide a valid one later in the
-            // document, so failures are skipped rather than aborting the scan.
-            try { parsed = JSON.parse(node.textContent || ''); } catch { continue; }
-            const queue = Array.isArray(parsed) ? [...parsed] : [parsed];
-            while (queue.length) {
-                const item = queue.shift();
-                if (!item || typeof item !== 'object') continue;
-                if (Array.isArray(item['@graph'])) queue.push(...item['@graph']);
-                const type = item['@type'];
-                const isVideo = type === 'VideoObject'
-                    || (Array.isArray(type) && type.includes('VideoObject'));
-                if (isVideo) return item;
-            }
-        }
-        return null;
-    },
-
-    // Cached per URL. Rumble is an SPA, so a stale object from the previous
-    // watch page would silently describe the wrong video.
-    videoObject(root = document) {
-        const href = typeof location !== 'undefined' ? location.href : '';
-        if (this._url === href && this._video) return this._video;
-        let found = null;
-        try { found = this._parse(root); } catch { found = null; }
-        // Only a hit is cached. On an SPA route change the URL updates before
-        // the new markup lands, so caching the miss would pin "no data" for the
-        // rest of the visit to a page that does have it.
-        this._url = found ? href : null;
-        this._video = found;
-        return found;
-    },
-
-    invalidate() {
-        this._url = null;
-        this._video = null;
-    },
-
-    title() {
-        const value = this.videoObject()?.name;
-        return typeof value === 'string' ? value.trim() : '';
-    },
-
-    description() {
-        const value = this.videoObject()?.description;
-        return typeof value === 'string' ? value.trim() : '';
-    },
-
-    durationSeconds() {
-        return this._isoDuration(this.videoObject()?.duration);
-    },
-
-    uploadDate() {
-        const value = this.videoObject()?.uploadDate;
-        if (typeof value !== 'string' || !value.trim()) return null;
-        const parsed = new Date(value);
-        return Number.isNaN(parsed.getTime()) ? null : value.trim();
-    },
-
-    thumbnailUrl() {
-        const raw = this.videoObject()?.thumbnailUrl;
-        const value = Array.isArray(raw) ? raw[0] : raw;
-        if (typeof value !== 'string') return '';
-        try { return new URL(value, location.origin).href; } catch { return ''; }
-    },
-
-    // schema.org allows one object or an array of them; only the watch counter
-    // is meaningful here.
-    viewCount() {
-        const raw = this.videoObject()?.interactionStatistic;
-        if (!raw) return null;
-        const entries = Array.isArray(raw) ? raw : [raw];
-        for (const entry of entries) {
-            if (!entry || typeof entry !== 'object') continue;
-            const type = entry.interactionType;
-            const name = typeof type === 'string' ? type : (type && typeof type === 'object' ? type['@type'] || type.name : '');
-            if (name && !/WatchAction/i.test(String(name))) continue;
-            const count = Number(entry.userInteractionCount);
-            if (Number.isFinite(count) && count >= 0) return count;
-        }
-        return null;
-    },
-
-    // The embed id is not always the id in the page URL, and the download path
-    // needs the embed one. Taking it from here avoids re-deriving it from
-    // markup.
-    embedId() {
-        const value = this.videoObject()?.embedUrl;
-        if (typeof value !== 'string') return null;
-        return value.match(/\/embed\/([a-z0-9]+)/i)?.[1] || null;
-    },
-
-    // Reported in the privacy/selector-health surface so a reader can tell
-    // structured data from scraped markup.
-    available() {
-        return !!this.videoObject();
-    },
-};
-
-function getActiveMedia(root = document) {
-    const candidates = qsa('video', root).filter((video) => video.isConnected);
-    if (!candidates.length) return null;
-    return candidates.map((video, index) => {
-        const rect = video.getBoundingClientRect();
-        const visibleArea = Math.max(0, rect.width) * Math.max(0, rect.height);
-        const rendered = getComputedStyle(video).visibility !== 'hidden' && getComputedStyle(video).display !== 'none';
-        const score = (rendered ? visibleArea : 0)
-            + (!video.paused ? 1_000_000_000 : 0)
-            + (video.currentSrc ? 1_000_000 : 0)
-            + ((video.readyState || 0) * 10_000)
-            - index;
-        return { video, score };
-    }).sort((a, b) => b.score - a.score)[0].video;
-}
 
 // ═══════════════════════════════════════════
 //  FEATURE: Feed Cleanup
@@ -4979,30 +5204,12 @@ const VideoDownloader = {
     },
 
     _safeMediaUrl(raw, base = location.href) {
-        if (!raw) return null;
-        try {
-            const parsed = new URL(String(raw), base);
-            const approved = ['rumble.com', 'rumble.cloud', '1a-1791.com'].some((host) =>
-                parsed.hostname === host || parsed.hostname.endsWith('.' + host)
-            );
-            return parsed.protocol === 'https:' && approved ? parsed.href : null;
-        } catch { return null; }
+        return MediaHelpers.safeMediaUrl(raw, base);
     },
 
     _extractHlsUrl(data) {
-        const candidates = [
-            data?.u?.hls?.auto?.url,
-            data?.ua?.hls?.auto?.url,
-            data?.u?.hls?.url,
-            data?.ua?.hls?.url,
-        ];
-        for (const candidate of candidates) {
-            const safe = this._safeMediaUrl(candidate);
-            if (safe) return safe;
-        }
-        return null;
+        return MediaHelpers.extractHlsUrl(data);
     },
-
     async _fetchEmbedData(embedId, signal = this._scanController?.signal) {
         const url = `https://rumble.com/embedJS/u3/?request=video&ver=2&v=${embedId}`;
         const resp = await RXPlatform.fetch(url, { signal });
@@ -5011,119 +5218,20 @@ const VideoDownloader = {
     },
 
     _parseQualities(data) {
-        const qualities = [];
-        const sources = [data?.ua, data?.u].filter((source) => source && typeof source === 'object');
-
-        // Check for direct MP4/webm URLs (NOT tar - those are HLS containers)
-        for (const src of sources) {
-            for (const fmt of ['mp4', 'webm']) {
-                const group = src[fmt];
-                if (!group || typeof group !== 'object') continue;
-                if (group.url && group.meta?.h > 0) {
-                    const directUrl = this._safeMediaUrl(group.url);
-                    if (directUrl) qualities.push({
-                        key: fmt, label: `${group.meta.h}p`, height: group.meta.h,
-                        width: group.meta.w || 0, bitrate: group.meta.bitrate || 0,
-                        size: group.meta.size || 0, directUrl, type: fmt,
-                    });
-                    continue;
-                }
-                for (const [key, val] of Object.entries(group)) {
-                    const directUrl = this._safeMediaUrl(val?.url);
-                    if (!directUrl || !val?.meta?.h) continue;
-                    qualities.push({
-                        key, label: `${val.meta.h}p`, height: val.meta.h,
-                        width: val.meta.w || 0, bitrate: val.meta.bitrate || 0,
-                        size: val.meta.size || 0, directUrl, type: fmt,
-                    });
-                }
-            }
-        }
-
-        // Add entries from tar metadata (tar URLs are HLS containers, NOT direct MP4s)
-        for (const src of sources) {
-            const tar = src.tar;
-            if (!tar || typeof tar !== 'object') continue;
-            for (const [key, val] of Object.entries(tar)) {
-                if (!val?.meta?.h) continue;
-                const h = val.meta.h;
-                if (qualities.some(q => q.height === h)) continue;
-                qualities.push({
-                    key, label: `${h}p`, height: h,
-                    width: val.meta.w || 0, bitrate: val.meta.bitrate || 0,
-                    size: val.meta.size || 0, directUrl: null, type: 'hls',
-                });
-            }
-        }
-
-        qualities.sort((a, b) => b.height - a.height);
-        const seen = new Map();
-        for (const q of qualities) {
-            const existing = seen.get(q.height);
-            if (!existing || (q.directUrl && !existing.directUrl) || q.bitrate > existing.bitrate) {
-                seen.set(q.height, q);
-            }
-        }
-        return [...seen.values()];
+        return MediaHelpers.parseQualities(data);
     },
 
     _parseMasterPlaylist(text, baseUrl) {
-        const variants = [];
-        const lines = text.trim().split('\n');
-        for (let i = 0; i < lines.length; i++) {
-            if (lines[i].startsWith('#EXT-X-STREAM-INF:')) {
-                const info = lines[i];
-                const url = lines[i + 1]?.trim();
-                if (url && !url.startsWith('#')) {
-                    const safeUrl = this._safeMediaUrl(url, baseUrl);
-                    if (!safeUrl) continue;
-                    const resMatch = info.match(/RESOLUTION=(\d+)x(\d+)/);
-                    const bwMatch = info.match(/BANDWIDTH=(\d+)/);
-                    variants.push({
-                        url: safeUrl,
-                        width: resMatch ? parseInt(resMatch[1]) : 0,
-                        height: resMatch ? parseInt(resMatch[2]) : 0,
-                        bandwidth: bwMatch ? parseInt(bwMatch[1]) : 0,
-                    });
-                }
-            }
-        }
-        return variants;
+        return MediaHelpers.parseMasterPlaylist(text, baseUrl);
     },
 
     _parseSegmentPlaylist(text, baseUrl) {
-        return this._parseSegmentEntries(text, baseUrl).map((entry) => entry.url);
+        return MediaHelpers.parseSegmentPlaylist(text, baseUrl);
     },
 
-    // Same walk as above, but keeping the #EXTINF duration that precedes each
-    // URL. Those durations are the only way to map a wall-clock SponsorBlock
-    // region onto the segment list. A playlist without them still parses; every
-    // entry just reports a zero-length window, which the trim planner treats as
-    // "no timeline" and refuses to cut against.
     _parseSegmentEntries(text, baseUrl) {
-        const entries = [];
-        const lines = String(text || '').trim().split('\n');
-        let pending = 0;
-        let clock = 0;
-        for (const line of lines) {
-            const t = line.trim();
-            if (!t) continue;
-            if (t.startsWith('#EXTINF:')) {
-                const value = Number.parseFloat(t.slice('#EXTINF:'.length));
-                pending = Number.isFinite(value) && value > 0 ? value : 0;
-                continue;
-            }
-            if (t.startsWith('#')) continue;
-            const safeUrl = this._safeMediaUrl(t, baseUrl);
-            if (safeUrl) {
-                entries.push({ url: safeUrl, duration: pending, start: clock, end: clock + pending });
-                clock += pending;
-            }
-            pending = 0;
-        }
-        return entries;
+        return MediaHelpers.parseSegmentEntries(text, baseUrl);
     },
-
     _supportsStreamingFileSave() {
         return !!RXPlatform.capabilities.streamingFileSave
             && typeof globalThis.showSaveFilePicker === 'function';
@@ -19357,72 +19465,6 @@ const HomeCleanupPreset = {
         this._styleEl = injectStyle(css, 'rx-home-cleanup-preset');
     },
     destroy() { this._styleEl?.remove(); },
-};
-
-// ═══════════════════════════════════════════
-//  MODULE: Media Probe Cache (v2.2.0)
-// ═══════════════════════════════════════════
-// Persistent TTL-keyed cache for media probe results (embedJS responses,
-// HLS manifest variants, CDN HEAD probes). Other download modules can call
-// MediaProbeCache.get(key) before hitting the network and MediaProbeCache.set(key, val)
-// after a successful probe. Honors Settings.get('downloadProbeCacheTtlHours'):
-// 0 disables cache, otherwise entries expire at `at + ttlHours * 3600000`.
-//
-// Storage: a single chrome.storage.local key holds the full cache; on
-// chrome.runtime.lastError or quota errors we fall back to in-memory only
-// so the cache never blocks downloads. Cache is GC'd lazily on read.
-const MediaProbeCache = {
-    _KEY: 'rx_probe_cache',
-    _mem: null,       // { [key]: { at: number, val: any } }
-    _ready: false,
-    async _load() {
-        if (this._ready) return;
-        try {
-            const data = await RXPlatform.storage.get(this._KEY);
-            this._mem = (data && data[this._KEY]) || {};
-        } catch {
-            this._mem = {};
-        }
-        this._ready = true;
-    },
-    _ttlMs() {
-        const hrs = Number(Settings.get('downloadProbeCacheTtlHours'));
-        if (!Number.isFinite(hrs) || hrs <= 0) return 0;
-        return hrs * 3600 * 1000;
-    },
-    async get(key) {
-        if (!key) return null;
-        await this._load();
-        const entry = this._mem[key];
-        if (!entry) return null;
-        const ttl = this._ttlMs();
-        if (ttl === 0) return null; // cache disabled — every read misses
-        if (Date.now() - entry.at > ttl) {
-            // Expired: GC inline so the cache doesn't grow unbounded.
-            delete this._mem[key];
-            this._scheduleFlush();
-            return null;
-        }
-        return entry.val;
-    },
-    async set(key, val) {
-        if (!key) return;
-        if (this._ttlMs() === 0) return; // don't persist if cache is disabled
-        await this._load();
-        this._mem[key] = { at: Date.now(), val };
-        this._scheduleFlush();
-    },
-    async clear() {
-        this._mem = {};
-        try { await RXPlatform.storage.remove(this._KEY); } catch {}
-    },
-    _flushTimer: null,
-    _scheduleFlush() {
-        clearTimeout(this._flushTimer);
-        this._flushTimer = setTimeout(() => {
-            try { RXPlatform.storage.set({ [this._KEY]: this._mem }); } catch {}
-        }, 250);
-    },
 };
 
 // ═══════════════════════════════════════════

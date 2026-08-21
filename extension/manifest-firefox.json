@@ -55,7 +55,16 @@
   },
   "content_scripts": [{
     "matches": ["https://rumble.com/*", "https://*.rumble.com/*"],
-    "js": ["browser-polyfill.js", "settings-schema.js", "platform.js", "content.js"],
+    "js": [
+      "browser-polyfill.js",
+      "settings-schema.js",
+      "platform.js",
+      "core-routing.js",
+      "core-selectors.js",
+      "core-video-cards.js",
+      "core-media.js",
+      "content.js"
+    ],
     "run_at": "document_start",
     "all_frames": false
   }],

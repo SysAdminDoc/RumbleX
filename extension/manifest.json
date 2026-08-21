@@ -72,6 +72,10 @@
       "js": [
         "settings-schema.js",
         "platform.js",
+        "core-routing.js",
+        "core-selectors.js",
+        "core-video-cards.js",
+        "core-media.js",
         "content.js"
       ],
       "run_at": "document_start",

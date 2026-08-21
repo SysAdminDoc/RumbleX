@@ -32,6 +32,10 @@ const { DEFAULTS, UNIMPLEMENTED } = schemaContext.RumbleXSettingsSchema;
 // they read every key by definition, so counting them would make this guard
 // vacuous.
 const RUNTIME_FILES = [
+    'extension/core-routing.js',
+    'extension/core-selectors.js',
+    'extension/core-video-cards.js',
+    'extension/core-media.js',
     'extension/content.js',
     'extension/background.js',
     'extension/offscreen.js',

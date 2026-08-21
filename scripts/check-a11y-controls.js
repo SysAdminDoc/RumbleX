@@ -22,7 +22,14 @@
 const fs = require('fs');
 const path = require('path');
 
-const CORE = path.join(__dirname, '..', 'extension', 'content.js');
+const EXTENSION = path.join(__dirname, '..', 'extension');
+const CORE_FILES = [
+    'core-routing.js',
+    'core-selectors.js',
+    'core-video-cards.js',
+    'core-media.js',
+    'content.js',
+].map((file) => path.join(EXTENSION, file));
 
 // Tags with no native activation behaviour and no implicit role that would
 // make them keyboard-operable.
@@ -43,7 +50,7 @@ const ALLOWED_BACKDROPS = [
 ];
 
 function main() {
-    const lines = fs.readFileSync(CORE, 'utf8').split(/\r?\n/);
+    const lines = CORE_FILES.map((file) => fs.readFileSync(file, 'utf8')).join('\n\n').split(/\r?\n/);
 
     // Every `x = document.createElement('tag')`, in source order.
     const decls = [];
@@ -77,7 +84,7 @@ function main() {
         if (ALLOWED_BACKDROPS.some((key) => configured.includes(key))) return;
 
         failures.push(
-            `  content.js:${i + 1} — <${decl.tag}> "${m[1]}" (created at line ${decl.line + 1}) takes a click `
+            `  shared-core:${i + 1} — <${decl.tag}> "${m[1]}" (created at line ${decl.line + 1}) takes a click `
             + 'handler but is not a button/link and carries no role+tabindex.',
         );
     });

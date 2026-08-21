@@ -16,6 +16,10 @@ const SCAN_FILES = [
     // The shared core and the service worker were structurally invisible to
     // this guard, which is why content.js could carry zero i18n calls without
     // anything failing.
+    path.join(ROOT, 'extension', 'core-routing.js'),
+    path.join(ROOT, 'extension', 'core-selectors.js'),
+    path.join(ROOT, 'extension', 'core-video-cards.js'),
+    path.join(ROOT, 'extension', 'core-media.js'),
     path.join(ROOT, 'extension', 'content.js'),
     path.join(ROOT, 'extension', 'background.js'),
 ];

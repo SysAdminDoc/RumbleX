@@ -38,7 +38,7 @@ import sys
 REPO_ROOT = os.path.dirname(os.path.abspath(__file__))
 SAMPLE_DIR = os.path.join(REPO_ROOT, 'Sample Pages')
 PLATFORM_FIXTURE_DIR = os.path.join(REPO_ROOT, 'tests', 'fixtures', 'platform')
-CONTENT_JS = os.path.join(REPO_ROOT, 'extension', 'content.js')
+SELECTORS_JS = os.path.join(REPO_ROOT, 'extension', 'core-selectors.js')
 
 # Small, synthetic contracts are committed so CI and release checkouts always
 # gate the platform surfaces whose real captures require a logged-in account.
@@ -153,17 +153,17 @@ def extract_html_from_mhtml(path):
     return best
 
 
-def parse_selectors_map(content_js_text):
-    """Extract Selectors._map entries from content.js. Returns dict
+def parse_selectors_map(selectors_js_text):
+    """Extract Selectors._map entries from core-selectors.js. Returns dict
     name → { 'stable': str, 'fallback': str }.
 
     Handles mixed-quote selectors like `'header[data-js="app_header"]'`
     by matching `'...'` and `"..."` strings where the contents may
     contain the OTHER quote type freely."""
     # Find the _map: { ... } block.
-    map_match = re.search(r'_map:\s*\{(.+?)\n    \},', content_js_text, re.DOTALL)
+    map_match = re.search(r'_map:\s*\{(.+?)\n    \},', selectors_js_text, re.DOTALL)
     if not map_match:
-        raise ValueError('Could not locate Selectors._map block in content.js')
+        raise ValueError('Could not locate Selectors._map block in core-selectors.js')
     block = map_match.group(1)
     # Two string patterns: 'sq-body' or "dq-body". Permissive on internals.
     str_pat = r"(?:'((?:[^'\\]|\\.)*)'|\"((?:[^\"\\]|\\.)*)\")"
@@ -311,14 +311,14 @@ def main():
                      or os.environ.get('GITHUB_ACTIONS') == 'true'
                      or os.environ.get('CI') == 'true')
 
-    if not os.path.isfile(CONTENT_JS):
-        print(f'[!] extension/content.js not found at {CONTENT_JS}', file=sys.stderr)
+    if not os.path.isfile(SELECTORS_JS):
+        print(f'[!] extension/core-selectors.js not found at {SELECTORS_JS}', file=sys.stderr)
         sys.exit(2)
 
-    with open(CONTENT_JS, encoding='utf-8') as f:
+    with open(SELECTORS_JS, encoding='utf-8') as f:
         content = f.read()
     selectors = parse_selectors_map(content)
-    print(f'[*] Parsed {len(selectors)} selector entries from content.js')
+    print(f'[*] Parsed {len(selectors)} selector entries from core-selectors.js')
 
     failures = []
     passes = 0

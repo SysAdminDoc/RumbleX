@@ -9,7 +9,16 @@ const ROOT = path.join(__dirname, '..', '..');
 const VERSION = require(path.join(ROOT, 'package.json')).version;
 const readSource = (file) => fs.readFileSync(file, 'utf8').replace(/\r\n?/g, '\n');
 const SCHEMA = readSource(path.join(ROOT, 'extension', 'settings-schema.js'));
-const CORE = readSource(path.join(ROOT, 'extension', 'content.js'));
+const CORE_FILES = [
+    'core-routing.js',
+    'core-selectors.js',
+    'core-video-cards.js',
+    'core-media.js',
+    'content.js',
+];
+const CORE = CORE_FILES
+    .map((file) => readSource(path.join(ROOT, 'extension', file)))
+    .join('\n\n');
 
 const HARNESS_INJECTION = `
 globalThis.__RumbleXFeatureHarness = {

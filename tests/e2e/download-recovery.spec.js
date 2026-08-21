@@ -49,18 +49,31 @@ test('worker offline/online events pause managed transfers and release archive j
             await rxTrackManagedDownload(102, { operation: 'direct-download' });
 
             self.dispatchEvent(new Event('offline'));
-            for (let attempt = 0; attempt < 100 && calls.pause.length === 0; attempt++) {
+            let offlineRecovery;
+            let offlineArchive;
+            for (let attempt = 0; attempt < 100; attempt++) {
                 await new Promise((resolve) => setTimeout(resolve, 10));
+                offlineRecovery = await rxLoadDownloadRecovery();
+                offlineArchive = await rxLoadArchiveQueue();
+                const browserJob = offlineArchive.jobs.find((job) => job.id === 'archive-browser');
+                const discoveryJob = offlineArchive.jobs.find((job) => job.id === 'archive-discovery');
+                if (calls.pause.length > 0
+                    && offlineRecovery.networkStatus === 'offline'
+                    && browserJob?.networkState === 'waiting-online'
+                    && discoveryJob?.networkState === 'waiting-online') break;
             }
-            const offlineRecovery = await rxLoadDownloadRecovery();
-            const offlineArchive = await rxLoadArchiveQueue();
 
             self.dispatchEvent(new Event('online'));
-            for (let attempt = 0; attempt < 100 && calls.resume.length === 0; attempt++) {
+            let onlineRecovery;
+            let onlineArchive;
+            for (let attempt = 0; attempt < 100; attempt++) {
                 await new Promise((resolve) => setTimeout(resolve, 10));
+                onlineRecovery = await rxLoadDownloadRecovery();
+                onlineArchive = await rxLoadArchiveQueue();
+                if (calls.resume.length > 0
+                    && onlineRecovery.networkStatus === 'online'
+                    && onlineArchive.jobs.every((job) => job.networkResumePending === false)) break;
             }
-            const onlineRecovery = await rxLoadDownloadRecovery();
-            const onlineArchive = await rxLoadArchiveQueue();
 
             return { calls, offlineRecovery, offlineArchive, onlineRecovery, onlineArchive };
         } finally {

@@ -20,7 +20,13 @@ const fs = require('fs');
 const path = require('path');
 
 const ROOT = path.resolve(__dirname, '..');
-const CORE = path.join(ROOT, 'extension', 'content.js');
+const CORE_FILES = [
+    'core-routing.js',
+    'core-selectors.js',
+    'core-video-cards.js',
+    'core-media.js',
+    'content.js',
+].map((file) => path.join(ROOT, 'extension', file));
 const EN = path.join(ROOT, 'extension', '_locales', 'en', 'messages.json');
 
 // rxT('key', 'text')  /  rxT('key', "text")  — the fallback must be a plain
@@ -73,7 +79,7 @@ function extractCategories(source) {
 }
 
 function extract() {
-    const source = fs.readFileSync(CORE, 'utf8');
+    const source = CORE_FILES.map((file) => fs.readFileSync(file, 'utf8')).join('\n\n');
     const found = extractCategories(source);
     const conflicts = [];
     for (const match of source.matchAll(CALL)) {

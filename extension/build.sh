@@ -114,7 +114,7 @@ fi
 # new runtime file cannot ship in one archiver branch and be silently missing
 # from another — the previous version repeated the list in all three branches
 # and only one substring of it was guarded.
-PACK_FILES="browser-polyfill.js settings-schema.js ad-blocker.js archive-fs.js background.js platform.js content.js worker.js mediabunny-worker.js offscreen.html offscreen.js"
+PACK_FILES="browser-polyfill.js settings-schema.js ad-blocker.js archive-fs.js background.js platform.js core-routing.js core-selectors.js core-video-cards.js core-media.js content.js worker.js mediabunny-worker.js offscreen.html offscreen.js"
 PACK_DIRS="lib icons pages rules _locales"
 
 # Stage a package in a temp directory, then archive from there.

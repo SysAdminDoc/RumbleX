@@ -18,6 +18,14 @@ const pkg = json('package.json');
 const chromeManifest = json('extension/manifest.json');
 const firefoxManifest = json('extension/manifest-firefox.json');
 const schema = read('extension/settings-schema.js');
+const CORE_FILES = [
+    'extension/core-routing.js',
+    'extension/core-selectors.js',
+    'extension/core-video-cards.js',
+    'extension/core-media.js',
+    'extension/content.js',
+];
+const coreSources = CORE_FILES.map(read);
 const core = read('extension/content.js');
 const background = read('extension/background.js');
 const options = read('extension/pages/options.js');
@@ -27,7 +35,8 @@ const popupHtml = read('extension/pages/popup.html');
 const buildScript = read('extension/build.sh');
 const adapter = read('userscript/platform.js');
 const generated = read('RumbleX.user.js');
-const sharedRuntime = schema + '\n\n' + core;
+const sharedCore = coreSources.join('\n\n');
+const sharedRuntime = [schema, ...coreSources].join('\n\n');
 const hash = crypto.createHash('sha256').update(sharedRuntime).digest('hex');
 
 if (pkg.version !== chromeManifest.version || pkg.version !== firefoxManifest.version) {
@@ -35,15 +44,19 @@ if (pkg.version !== chromeManifest.version || pkg.version !== firefoxManifest.ve
 }
 if (!generated.includes(`// @version      ${pkg.version}\n`)) fail('generated metadata version does not match package.json');
 if (!generated.includes(`Shared runtime SHA-256: ${hash}`)) fail('generated shared-runtime hash is stale');
-if (!generated.endsWith(core)) fail('generated userscript does not end with the byte-identical canonical content core');
+if (!generated.endsWith(sharedCore)) {
+    fail('generated userscript does not end with the byte-identical shared core in canonical order');
+}
 if (!generated.includes(schema + '\n\n// RumbleX platform adapter')) {
     fail('generated userscript does not embed the byte-identical canonical settings schema before its platform adapter');
 }
 
 for (const [name, manifest] of [['Chrome', chromeManifest], ['Firefox', firefoxManifest]]) {
     const scripts = manifest.content_scripts?.[0]?.js || [];
-    if (scripts.at(-3) !== 'settings-schema.js' || scripts.at(-2) !== 'platform.js' || scripts.at(-1) !== 'content.js') {
-        fail(`${name} content scripts must load settings-schema.js and platform.js before content.js`);
+    const expected = ['settings-schema.js', 'platform.js', ...CORE_FILES.map((file) => path.basename(file))];
+    const actual = scripts.slice(-expected.length);
+    if (JSON.stringify(actual) !== JSON.stringify(expected)) {
+        fail(`${name} content scripts do not load the shared page core in canonical order`);
     }
 }
 if (firefoxManifest.content_scripts?.[0]?.js?.[0] !== 'browser-polyfill.js'
@@ -82,7 +95,7 @@ function stripCommentsAndStrings(source) {
     return out;
 }
 
-const executableCore = stripCommentsAndStrings(core);
+const executableCore = stripCommentsAndStrings(sharedCore);
 const executableSchema = stripCommentsAndStrings(schema);
 // Both namespaces, not just `chrome`. Chrome 148 exposes every extension API
 // under `browser` as well, so a call written that way now runs fine in a
@@ -172,7 +185,9 @@ if (longestLiteLine > MAX_READABLE_LINE) {
 }
 
 // Same runtime, not a fork.
-if (!lite.endsWith(core)) fail('lite userscript does not end with the byte-identical canonical content core');
+if (!lite.endsWith(sharedCore)) {
+    fail('lite userscript does not end with the byte-identical shared core in canonical order');
+}
 if (!lite.includes(schema + '\n\n// RumbleX platform adapter')) {
     fail('lite userscript does not embed the byte-identical canonical settings schema');
 }
