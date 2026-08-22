@@ -1,4 +1,4 @@
-// RumbleX v3.52.0 - Shared Content Core
+// RumbleX v3.53.0 - Shared Content Core
 // Rumble enhancement suite - Chrome/Firefox extension
 'use strict';
 
@@ -8,7 +8,7 @@
 // DOM feature ship from one canonical source.
 const RXPlatform = globalThis.RumbleXPlatform;
 if (!RXPlatform) throw new Error('RumbleX platform adapter is missing');
-const VERSION = RXPlatform.version || '3.52.0';
+const VERSION = RXPlatform.version || '3.53.0';
 /**
  * In-page translation lookup.
  *
@@ -1239,9 +1239,50 @@ const DarkEnhance = {
             border-color: var(--rx-site-border) !important;
         }
 
+        /* v3.53.0: give long feeds a quiet rhythm instead of one flat canvas. */
+        html.rumblex-active .homepage-section {
+            position: relative;
+            padding: 18px 0 24px !important;
+            border-top: 1px solid color-mix(in srgb, var(--rx-site-border) 74%, transparent) !important;
+            background: linear-gradient(180deg, color-mix(in srgb, var(--rx-site-panel) 42%, transparent), transparent 92%) !important;
+        }
+        html.rumblex-active .homepage-section:first-of-type {
+            border-top: 0 !important;
+            padding-top: 10px !important;
+        }
+        html.rumblex-active .homepage-heading__title {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        html.rumblex-active .homepage-heading__title::after {
+            content: '';
+            display: block;
+            flex: 1 1 auto;
+            min-width: 28px;
+            height: 1px;
+            background: linear-gradient(90deg, var(--rx-site-border-strong), transparent);
+            opacity: 0.82;
+        }
+        html.rumblex-active .rum-featured-pills-row__scroll-btn--start,
+        html.rumblex-active .rum-featured-pills-row__scroll-btn--end {
+            width: 36px !important;
+            height: 36px !important;
+            border: 1px solid var(--rx-site-border-strong) !important;
+            border-radius: 999px !important;
+            background: var(--rx-site-raised) !important;
+            color: var(--rx-text) !important;
+            box-shadow: var(--rx-site-shadow-soft) !important;
+        }
+
         /* Video cards */
         html.rumblex-active rum-video-thumbnail[role="listitem"],
         html.rumblex-active .videostream {
+            display: block !important;
+            box-sizing: border-box !important;
+            overflow: hidden !important;
+            background: var(--rx-site-panel) !important;
+            border: 1px solid var(--rx-site-border) !important;
             border-radius: var(--rx-site-radius-lg) !important;
             transition: transform 180ms ease, background-color 180ms ease, box-shadow 180ms ease !important;
         }
@@ -1272,6 +1313,16 @@ const DarkEnhance = {
         html.rumblex-active rum-video-thumbnail[role="listitem"] .channel__link,
         html.rumblex-active rum-video-thumbnail[role="listitem"] [class*="channel"] {
             color: var(--rx-subtext) !important;
+        }
+        html.rumblex-active rum-video-thumbnail-footer {
+            display: block !important;
+            padding: 8px 10px 0 !important;
+        }
+        html.rumblex-active rum-video-thumbnail-footer [role="heading"] {
+            margin: 0 0 4px !important;
+        }
+        html.rumblex-active rum-video-thumbnail-footer rum-avatar {
+            margin-top: 5px !important;
         }
         html.rumblex-active .media-page-related-media-desktop-sidebar,
         html.rumblex-active .media-page-related-media-mobile {
@@ -1308,6 +1359,25 @@ const DarkEnhance = {
             border: 1px solid var(--rx-site-border) !important;
             border-radius: var(--rx-site-radius-lg) !important;
             box-shadow: inset 0 1px 0 rgba(255,255,255,0.025) !important;
+        }
+        html.rumblex-active .main-and-sidebar {
+            gap: 18px !important;
+        }
+        html.rumblex-active .media-page-related-media-desktop-sidebar {
+            padding-left: 18px !important;
+            border-left: 1px solid var(--rx-site-border) !important;
+        }
+        html.rumblex-active .media-by {
+            padding: 14px 0 !important;
+            border-top: 1px solid var(--rx-site-border) !important;
+            border-bottom: 1px solid var(--rx-site-border) !important;
+        }
+        html.rumblex-active .media-description-section {
+            margin-top: 16px !important;
+            padding: 18px !important;
+            background: var(--rx-site-panel) !important;
+            border: 1px solid var(--rx-site-border) !important;
+            border-radius: var(--rx-site-radius-lg) !important;
         }
         html.rumblex-active .round-button.media-by-actions-button,
         html.rumblex-active .btn,
@@ -1374,6 +1444,19 @@ const DarkEnhance = {
         }
         html.rumblex-active .comment-item:hover {
             background: ${t.hoverBg} !important;
+        }
+        html.rumblex-active #chat-history-list .chat-history--row {
+            padding: 8px 10px !important;
+            border-radius: var(--rx-site-radius-sm) !important;
+            transition: background-color 150ms ease !important;
+        }
+        html.rumblex-active #chat-history-list .chat-history--row:hover {
+            background: ${t.hoverBg} !important;
+        }
+        html.rumblex-active #chat-history-list .chat-history--username,
+        html.rumblex-active #chat-history-list .chat-history--rant-username {
+            color: var(--rx-accent) !important;
+            font-weight: 700 !important;
         }
 
         html.rumblex-active :where(a, button, input, select, textarea, [tabindex]):focus-visible {

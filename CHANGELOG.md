@@ -4,6 +4,18 @@ All notable changes to RumbleX will be documented in this file.
 
 ## Unreleased
 
+## [3.53.0] - 2026-08-22
+
+### Changed
+- Refined the main Rumble theme with section separators, a restrained feed wash, and heading rules that make long home-page scrolls easier to scan.
+- Gave current `<rum-video-thumbnail>` cards and legacy feed cards the same raised shell, border, metadata spacing, hover lift, and keyboard focus treatment.
+- Added clearer watch-page separation between the player, creator actions, description, and related rail without changing the underlying Rumble content.
+- Matched category scroll buttons and live-chat rows to the shared theme tokens so the shell stays consistent beyond the first viewport.
+
+### Verified
+- Added a synthetic theme visual regression that checks card framing, section rhythm, watch-page panels, and teardown.
+- Re-ran the opt-in live site visual capture for the home page, watch page, Theater Split, and Player tools menu.
+
 ## [3.52.0] - 2026-08-21
 
 ### Added

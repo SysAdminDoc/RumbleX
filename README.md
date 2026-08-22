@@ -1,8 +1,17 @@
 # RumbleX
 
-![Version](https://img.shields.io/badge/version-v3.52.0-blue) ![License](https://img.shields.io/badge/license-MIT-green) ![Platform](https://img.shields.io/badge/platform-Extension%20%2B%20Userscript-lightgrey) ![Firefox](https://img.shields.io/badge/firefox-109%2B-orange)
+![Version](https://img.shields.io/badge/version-v3.53.0-blue) ![License](https://img.shields.io/badge/license-MIT-green) ![Platform](https://img.shields.io/badge/platform-Extension%20%2B%20Userscript-lightgrey) ![Firefox](https://img.shields.io/badge/firefox-109%2B-orange)
 
 **A large Rumble enhancement suite.** More than 130 feature modules cover ad blocking, theater mode, downloads, playback, chat, local history, feed controls, and granular page cleanup. It runs as a browser extension or userscript.
+
+### What's new in v3.53
+
+The main Rumble surfaces get another visual refinement pass after the larger v3.51 rebuild.
+
+- **Feed sections have a clearer rhythm.** Home rows now use quiet separators, a restrained section wash, and a heading rule so a long scroll reads as a sequence of collections instead of one flat canvas.
+- **Video cards have a shared surface.** Current custom-element cards and legacy feed cards now share a bordered, raised shell with consistent metadata spacing, creator treatment, hover lift, and focus visibility.
+- **Watch pages have a stronger reading order.** The related rail has a defined edge, creator and action bands have breathing room, and descriptions read as their own panel without changing the site's content.
+- **Chat rows and category navigation match the shell.** Scroll buttons, chat hover states, and sender names now use the same palette and interaction language as the rest of the page.
 
 ### What's new in v3.52
 
@@ -307,7 +316,7 @@ ssh-keygen -Y verify -f allowed_signers -I release@rumblex -n file \
 
 A `Good "file" signature` result means the checksums came from the key published in this repository. If either check fails, do not install the files. The only official sources are this repository's Releases page and the raw userscript URLs above; copies elsewhere are not ours.
 
-v3.52.0 is unsigned because the project does not yet have a published release signing identity. Its release page states that directly; use `SHA256SUMS.txt` to verify download integrity.
+v3.53.0 is unsigned because the project does not yet have a published release signing identity. Its release page states that directly; use `SHA256SUMS.txt` to verify download integrity.
 
 ### Request-shield support matrix
 
