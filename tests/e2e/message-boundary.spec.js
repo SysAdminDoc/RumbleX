@@ -82,6 +82,7 @@ test('Rumble content scripts cannot invoke extension-only or secret-bearing acti
             encryptedGistSync: true,
             encryptedGistSyncToken: 'github_pat_boundary_fixture',
             encryptedGistSyncId: 'boundary-gist-id',
+            discordWebhookUrl: 'https://discord.com/api/webhooks/123/boundary-secret',
         },
     }));
     await serviceWorker.evaluate(() => {
@@ -94,8 +95,19 @@ test('Rumble content scripts cannot invoke extension-only or secret-bearing acti
     });
 
     try {
+        const extensionSettings = await options.evaluate(() => chrome.runtime.sendMessage({ action: 'getSettings' }));
+        expect(extensionSettings).toMatchObject({
+            encryptedGistSyncToken: 'github_pat_boundary_fixture',
+            encryptedGistSyncId: 'boundary-gist-id',
+            discordWebhookUrl: 'https://discord.com/api/webhooks/123/boundary-secret',
+        });
         const settings = await contentMessage(options, tabId, { action: 'getSettings' });
         expect(settings).toEqual(expect.any(Object));
+        for (const key of ['encryptedGistSyncToken', 'encryptedGistSyncId', 'discordWebhookUrl']) {
+            expect(settings).not.toHaveProperty(key);
+        }
+        expect(JSON.stringify(settings)).not.toContain('boundary-secret');
+        expect(JSON.stringify(settings)).not.toContain('github_pat_boundary_fixture');
 
         expect(await contentMessage(options, tabId, {
             action: 'gistSyncPush',

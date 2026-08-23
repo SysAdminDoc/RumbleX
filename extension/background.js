@@ -2250,7 +2250,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     // consumer (popup, options, userscript) still asks the worker for state.
     if (message.action === 'getSettings') {
         chrome.storage.local.get('rx_settings', (data) => {
-            sendResponse(rxNormalizeSettings(data.rx_settings || {}));
+            const normalized = rxNormalizeSettings(data.rx_settings || {});
+            const response = authorization.senderClass === RX_MESSAGE_SENDER.CONTENT_SCRIPT
+                ? RXSettingsSchema.sanitizeSettingsForTransport(normalized)
+                : normalized;
+            sendResponse(response);
         });
         return true;
     }

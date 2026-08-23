@@ -39,6 +39,11 @@ assert.match(
     'background listener does not enforce the registry before dispatch',
 );
 assert.match(
+    background,
+    /authorization\.senderClass === RX_MESSAGE_SENDER\.CONTENT_SCRIPT[\s\S]*?sanitizeSettingsForTransport\(normalized\)/,
+    'content-script settings reads are not stripped of extension-page credentials',
+);
+assert.match(
     offscreen,
     /sender\?\.id !== chrome\.runtime\.id \|\| senderOrigin !== ownOrigin/,
     'offscreen listener does not require an extension-origin sender',
