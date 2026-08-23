@@ -20,6 +20,12 @@ const ROOT = path.resolve(__dirname, '..');
 const LISTING = path.join(ROOT, 'design', 'store', 'listing.json');
 const STORE_DIR = path.join(ROOT, 'design', 'store');
 const MANIFEST = path.join(ROOT, 'extension', 'manifest.json');
+const FIREFOX_MANIFEST = path.join(ROOT, 'extension', 'manifest-firefox.json');
+const PACKAGE = path.join(ROOT, 'package.json');
+const PACKAGE_LOCK = path.join(ROOT, 'package-lock.json');
+const README = path.join(ROOT, 'README.md');
+const LANDING = path.join(ROOT, 'docs', 'index.html');
+const CONTENT = path.join(ROOT, 'extension', 'content.js');
 
 const SHORT_DESCRIPTION_MAX = 132;
 // Derived, not hardcoded: adding a locale to extension/_locales must also add
@@ -42,12 +48,75 @@ function pngSize(file) {
     return [buf.readUInt32BE(16), buf.readUInt32BE(20)];
 }
 
+function featureCatalogCount() {
+    const core = fs.readFileSync(CONTENT, 'utf8');
+    const registryBody = core.match(/const features = \[([\s\S]*?)\n\];/)?.[1] || '';
+    const cssBody = core.match(/const RX_CSS_TOGGLES = \[([\s\S]*?)\n\];/)?.[1] || '';
+    if (!registryBody || !cssBody) throw new Error('feature registries are missing from content.js');
+    const handwritten = [...registryBody.replace(/\/\/.*$/gm, '').matchAll(/\b[A-Z][A-Za-z0-9]+\b/g)]
+        .map((match) => match[0])
+        .filter((symbol) => symbol !== 'RX_CSS_FEATURES');
+    const cssIds = [...cssBody.matchAll(/\bid:\s*'([^']+)'/g)].map((match) => match[1]);
+    if (new Set(handwritten).size !== handwritten.length || new Set(cssIds).size !== cssIds.length) {
+        throw new Error('feature registries contain duplicate entries');
+    }
+    return handwritten.length + cssIds.length;
+}
+
+function addVersionError(errors, canonical, label, actual) {
+    if (actual !== canonical) {
+        errors.push(`${label} version is ${actual || 'missing'}, expected ${canonical}`);
+    }
+}
+
 function main() {
     const errors = [];
     const listing = JSON.parse(fs.readFileSync(LISTING, 'utf8'));
     const manifest = JSON.parse(fs.readFileSync(MANIFEST, 'utf8'));
+    const firefoxManifest = JSON.parse(fs.readFileSync(FIREFOX_MANIFEST, 'utf8'));
+    const packageJson = JSON.parse(fs.readFileSync(PACKAGE, 'utf8'));
+    const packageLock = JSON.parse(fs.readFileSync(PACKAGE_LOCK, 'utf8'));
+    const readme = fs.readFileSync(README, 'utf8');
+    const landing = fs.readFileSync(LANDING, 'utf8');
+    const canonicalVersion = packageJson.version;
+    const featureCount = featureCatalogCount();
 
-    // 1. Every requested permission is justified, and nothing is justified
+    // 1. package.json is the canonical version. Everything a user can install
+    //    or see before installing must agree with it.
+    const readmeVersion = readme.match(/shields\.io\/badge\/version-v([0-9]+\.[0-9]+\.[0-9]+)-/i)?.[1] || null;
+    const landingVersion = landing.match(/data-rumblex-version=["']([^"']+)["']/i)?.[1] || null;
+    const visibleLandingVersion = landing.match(
+        /data-rumblex-version=["'][^"']+["'][^>]*>\s*<strong>v([^<]+)<\/strong>\s*current build/i,
+    )?.[1] || null;
+    for (const [label, actual] of [
+        ['Chrome manifest', manifest.version],
+        ['Firefox manifest', firefoxManifest.version],
+        ['package-lock root', packageLock.version],
+        ['package-lock package entry', packageLock.packages?.['']?.version],
+        ['store listing', listing.version],
+        ['README badge', readmeVersion],
+        ['project page metadata', landingVersion],
+        ['project page visible label', visibleLandingVersion],
+    ]) {
+        addVersionError(errors, canonicalVersion, label, actual);
+    }
+
+    const landingFeatureCount = Number(
+        landing.match(/data-rumblex-feature-count=["'](\d+)["']/i)?.[1] || NaN,
+    );
+    const visibleFeatureCount = Number(
+        landing.match(
+            /data-rumblex-feature-count=["'][^"']+["'][^>]*>\s*<strong>(\d+)<\/strong>\s*feature modules/i,
+        )?.[1] || NaN,
+    );
+    if (landingFeatureCount !== featureCount) {
+        errors.push(`project page feature metadata is ${Number.isFinite(landingFeatureCount) ? landingFeatureCount : 'missing'}, expected ${featureCount}`);
+    }
+    if (visibleFeatureCount !== featureCount) {
+        errors.push(`project page visible feature count is ${Number.isFinite(visibleFeatureCount) ? visibleFeatureCount : 'missing'}, expected ${featureCount}`);
+    }
+
+    // 2. Every requested permission is justified, and nothing is justified
     //    that is no longer requested (a stale entry reads as a live claim).
     const requestedHosts = [
         ...(manifest.host_permissions || []),
@@ -67,7 +136,7 @@ function main() {
         }
     }
 
-    // 2. Store copy exists in every shipped locale and fits the CWS cap.
+    // 3. Store copy exists in every shipped locale and fits the CWS cap.
     for (const locale of REQUIRED_LOCALES) {
         const copy = listing.copy[locale];
         if (!copy) { errors.push(`store copy missing for locale ${locale}`); continue; }
@@ -82,7 +151,7 @@ function main() {
         }
     }
 
-    // 3. Every declared asset exists, and the promo images are exactly right.
+    // 4. Every declared asset exists, and the promo images are exactly right.
     const declared = [
         ...listing.assets.screenshots_1280x800,
         ...listing.assets.screenshots_640x400,
@@ -111,7 +180,8 @@ function main() {
 
     const perms = (manifest.permissions || []).length + requestedHosts.length;
     console.log(
-        `check-store-listing OK: ${perms} permissions justified, `
+        `check-store-listing OK: v${canonicalVersion}, ${featureCount} public feature modules, `
+        + `${perms} permissions justified, `
         + `${REQUIRED_LOCALES.length} locales of copy within the ${SHORT_DESCRIPTION_MAX}-character cap, `
         + `${declared.length} assets at their exact required sizes.`,
     );
