@@ -2,8 +2,11 @@
 'use strict';
 
 const assert = require('assert/strict');
+const crypto = require('crypto');
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
+const { spawnSync } = require('child_process');
 const { createFirefoxArchive, OUTPUT } = require('./build-firefox-amo');
 const { readArchive } = require('./zip-utils');
 
@@ -20,13 +23,113 @@ function signedXpiArgument() {
 }
 
 function signatureEntriesPass(entries, file) {
-    const names = [...entries.keys()].map((name) => name.toUpperCase());
-    const hasJarManifest = names.includes('META-INF/MANIFEST.MF');
-    const hasJarStatement = names.some((name) => /^META-INF\/[^/]+\.SF$/.test(name));
-    const hasJarBlock = names.some((name) => /^META-INF\/[^/]+\.(RSA|DSA|EC)$/.test(name));
-    const hasCosePair = names.includes('META-INF/COSE.MANIFEST') && names.includes('META-INF/COSE.SIG');
-    assert.ok((hasJarManifest && hasJarStatement && hasJarBlock) || hasCosePair,
-        `${path.basename(file)} has no complete Mozilla JAR or COSE signature entry set`);
+    const upperEntries = new Map([...entries].map(([name, data]) => [name.toUpperCase(), data]));
+    const packageManifest = upperEntries.get('MANIFEST.JSON');
+    assert.ok(packageManifest?.length, `${path.basename(file)} has no packaged manifest.json`);
+    assert.equal(JSON.parse(packageManifest.toString('utf8')).manifest_version, 2,
+        `${path.basename(file)} does not contain the Firefox MV2 manifest`);
+
+    const digest = (data) => crypto.createHash('sha256').update(data).digest('base64');
+    const hasManifestEntryDigest = (signedManifest) => {
+        if (!signedManifest?.length) return false;
+        const text = signedManifest.toString('utf8');
+        const section = text.split(/\r?\n\r?\n/).find((part) => /^Name: manifest\.json\r?$/mi.test(part));
+        const declared = section?.match(/^SHA256-Digest:\s*(\S+)\s*$/mi)?.[1];
+        return !!declared && declared === digest(packageManifest);
+    };
+
+    const jarManifest = upperEntries.get('META-INF/MANIFEST.MF');
+    let jarSigned = false;
+    if (jarManifest?.length && hasManifestEntryDigest(jarManifest)) {
+        const statements = [...upperEntries.entries()]
+            .filter(([name]) => /^META-INF\/[^/]+\.SF$/.test(name));
+        jarSigned = statements.some(([statementName, statement]) => {
+            const stem = statementName.slice(0, -3);
+            const block = ['.RSA', '.DSA', '.EC']
+                .map((suffix) => upperEntries.get(stem + suffix))
+                .find(Boolean);
+            if (!statement?.length || !block || block.length < 512) return false;
+            const text = statement.toString('utf8');
+            const declared = text.match(/^SHA256-Digest-Manifest:\s*(\S+)\s*$/mi)?.[1];
+            return /^Signature-Version:\s*1\.0\s*$/mi.test(text)
+                && !!declared
+                && declared === digest(jarManifest);
+        });
+    }
+
+    const coseManifest = upperEntries.get('META-INF/COSE.MANIFEST');
+    const coseSignature = upperEntries.get('META-INF/COSE.SIG');
+    const coseSigned = !!coseSignature
+        && coseSignature.length >= 512
+        && hasManifestEntryDigest(coseManifest);
+
+    assert.ok(jarSigned || coseSigned,
+        `${path.basename(file)} has no internally consistent Mozilla JAR or COSE signature entry set`);
+}
+
+function assertSignatureGuardRejectsPlaceholders() {
+    const packageManifest = Buffer.from('{"manifest_version":2}', 'utf8');
+    const digest = (data) => crypto.createHash('sha256').update(data).digest('base64');
+    const signedManifest = Buffer.from([
+        'Manifest-Version: 1.0',
+        '',
+        'Name: manifest.json',
+        `SHA256-Digest: ${digest(packageManifest)}`,
+        '',
+    ].join('\r\n'), 'utf8');
+    const statement = Buffer.from([
+        'Signature-Version: 1.0',
+        `SHA256-Digest-Manifest: ${digest(signedManifest)}`,
+        '',
+    ].join('\r\n'), 'utf8');
+
+    assert.throws(() => signatureEntriesPass(new Map([
+        ['manifest.json', packageManifest],
+        ['META-INF/MANIFEST.MF', Buffer.alloc(0)],
+        ['META-INF/EMPTY.SF', Buffer.alloc(0)],
+        ['META-INF/EMPTY.RSA', Buffer.alloc(0)],
+    ]), 'empty-signature-fixture.xpi'), /no internally consistent Mozilla JAR or COSE signature/,
+    'empty signature placeholders must not pass the installable-XPI gate');
+
+    assert.throws(() => signatureEntriesPass(new Map([
+        ['manifest.json', packageManifest],
+        ['META-INF/MANIFEST.MF', signedManifest],
+        ['META-INF/A.SF', statement],
+        ['META-INF/B.RSA', Buffer.alloc(1024, 1)],
+    ]), 'mismatched-signature-fixture.xpi'), /no internally consistent Mozilla JAR or COSE signature/,
+    'unrelated statement and signature-block stems must not pass the installable-XPI gate');
+}
+
+assertSignatureGuardRejectsPlaceholders();
+
+function assertSourceArchiveReproducesSubmission(sourceEntries, expectedArchive) {
+    const stage = fs.mkdtempSync(path.join(os.tmpdir(), 'rumblex-source-repro-'));
+    try {
+        for (const [name, data] of sourceEntries) {
+            const target = path.resolve(stage, ...name.split('/'));
+            assert.ok(target.startsWith(`${stage}${path.sep}`),
+                `${path.basename(SOURCE_ARCHIVE)} contains an unsafe path: ${name}`);
+            if (name.endsWith('/')) {
+                fs.mkdirSync(target, { recursive: true });
+                continue;
+            }
+            fs.mkdirSync(path.dirname(target), { recursive: true });
+            fs.writeFileSync(target, data);
+        }
+        const build = spawnSync(process.execPath, ['scripts/build-firefox-amo.js'], {
+            cwd: stage,
+            encoding: 'utf8',
+            timeout: 30000,
+            windowsHide: true,
+        });
+        assert.equal(build.status, 0,
+            `source archive could not run its Firefox builder:\n${build.stdout || ''}${build.stderr || ''}`);
+        const reproduced = fs.readFileSync(path.join(stage, path.basename(OUTPUT)));
+        assert.equal(Buffer.compare(reproduced, expectedArchive), 0,
+            `${path.basename(SOURCE_ARCHIVE)} did not reproduce ${path.basename(OUTPUT)} byte-for-byte`);
+    } finally {
+        fs.rmSync(stage, { recursive: true, force: true, maxRetries: 2 });
+    }
 }
 
 assert.ok(fs.existsSync(OUTPUT), `missing ${path.basename(OUTPUT)}; run npm run build-for-amo`);
@@ -48,9 +151,19 @@ assert.equal(JSON.parse(unsignedEntries.get('manifest.json').toString('utf8')).m
     `${path.basename(OUTPUT)} does not contain the Firefox MV2 manifest`);
 
 const sourceEntries = readArchive(SOURCE_ARCHIVE);
-for (const required of ['extension/manifest-firefox.json', 'extension/build.sh', 'scripts/build-userscript.js', 'package.json', 'LICENSE', 'README.md']) {
+for (const required of [
+    'extension/manifest-firefox.json',
+    'extension/build.sh',
+    'scripts/build-userscript.js',
+    'scripts/build-firefox-amo.js',
+    'scripts/zip-utils.js',
+    'package.json',
+    'LICENSE',
+    'README.md',
+]) {
     assert.ok(sourceEntries.has(required), `${path.basename(SOURCE_ARCHIVE)} is missing ${required}`);
 }
+assertSourceArchiveReproducesSubmission(sourceEntries, actual);
 
 const landing = fs.readFileSync(path.join(ROOT, 'docs', 'index.html'), 'utf8');
 assert.ok(landing.includes(path.basename(OUTPUT)), 'project page does not name the unsigned AMO submission');

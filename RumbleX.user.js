@@ -23,7 +23,7 @@
 // @updateURL    https://github.com/SysAdminDoc/RumbleX/raw/main/RumbleX.user.js
 // ==/UserScript==
 
-// Generated from the shared extension core files. Shared runtime SHA-256: 7f30c0f49d4a6f4f2c106000e064047e9a33eb66217c567aa3d47cbac55b5464
+// Generated from the shared extension core files. Shared runtime SHA-256: 43bc3c27f4c65d6483976b6292c2bf78c2cc885519e5762ffdc0bbb935083175
 // RumbleX shared settings schema. This file is the canonical source for
 // defaults and trust-boundary normalization across content, options, popup,
 // background profile/Gist restores, and the generated userscript.
@@ -14758,7 +14758,8 @@ const SettingsPanel = {
         exportBtn.className = 'rx-m-btn rx-m-btn-primary';
         exportBtn.textContent = rxT('modalExport', 'Export');
         exportBtn.addEventListener('click', () => {
-            const blob = new Blob([JSON.stringify(Settings._cache, null, 2)], { type: 'application/json' });
+            const transportSettings = RXSettingsSchema.sanitizeSettingsForTransport(Settings._cache);
+            const blob = new Blob([JSON.stringify(transportSettings, null, 2)], { type: 'application/json' });
             const a = document.createElement('a');
             a.href = URL.createObjectURL(blob); a.download = 'rumblex-settings.json'; a.click();
             setTimeout(() => URL.revokeObjectURL(a.href), 1000);

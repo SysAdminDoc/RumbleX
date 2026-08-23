@@ -214,6 +214,8 @@ build_source_bundle() {
         cp -R . "$stage/extension/" || exit 1
         rm -rf "$stage/extension/_metadata" || true
         cp ../scripts/build-userscript.js "$stage/scripts/" || exit 1
+        cp ../scripts/build-firefox-amo.js "$stage/scripts/" || exit 1
+        cp ../scripts/zip-utils.js "$stage/scripts/" || exit 1
         cp ../package.json "$stage/" || exit 1
         cp ../LICENSE "$stage/" || exit 1
         cp ../README.md "$stage/" || exit 1

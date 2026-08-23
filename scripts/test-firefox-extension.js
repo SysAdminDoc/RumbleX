@@ -11,11 +11,13 @@ const http = require('http');
 const os = require('os');
 const path = require('path');
 const { spawn, spawnSync } = require('child_process');
+const { createDeterministicZip } = require('./zip-utils');
 
 const ROOT = path.resolve(__dirname, '..');
 const EXTENSION = path.join(ROOT, 'extension');
 const WEB_EXT_VERSION = '10.6.0';
 const TIMEOUT_MS = Number(process.env.RUMBLEX_FIREFOX_SMOKE_TIMEOUT_MS) || 90000;
+const WEBDRIVER_ELEMENT_KEY = 'element-6066-11e4-a52e-4f735466cecf';
 
 function findFirefoxBinary() {
     if (process.env.RUMBLEX_FIREFOX_BINARY) return process.env.RUMBLEX_FIREFOX_BINARY;
@@ -35,6 +37,7 @@ function findFirefoxBinary() {
 }
 
 const FIREFOX_BINARY = findFirefoxBinary();
+const GECKODRIVER_BINARY = process.env.RUMBLEX_GECKODRIVER_BINARY || 'geckodriver';
 const GITHUB_API_ORIGIN = 'https://api.github.com/*';
 
 function stageExtension(baseUrl) {
@@ -48,11 +51,6 @@ function stageExtension(baseUrl) {
     if (!(manifest.optional_permissions || []).includes(GITHUB_API_ORIGIN)) {
         throw new Error('Firefox manifest does not declare GitHub as an optional permission');
     }
-    // The smoke profile pre-authorizes the optional origin so the real Firefox
-    // runtime can prove the helper sees a granted host without opening a prompt
-    // on the user's active desktop.
-    manifest.optional_permissions = manifest.optional_permissions.filter((value) => value !== GITHUB_API_ORIGIN);
-    if (!manifest.permissions.includes(GITHUB_API_ORIGIN)) manifest.permissions.push(GITHUB_API_ORIGIN);
     // WebExtension match patterns do not include ports; this loopback-only
     // host pattern covers the ephemeral HTTP server port used by the probe.
     const originPattern = 'http://127.0.0.1/*';
@@ -91,6 +89,14 @@ function stageExtension(baseUrl) {
         value: send,
         configurable: true,
     });
+    const exposePermissionPage = () => {
+        document.documentElement?.setAttribute(
+            'data-rx-firefox-permission-page',
+            browser.runtime.getURL('firefox-smoke-permission.html'),
+        );
+    };
+    exposePermissionPage();
+    addEventListener('DOMContentLoaded', exposePermissionPage, { once: true });
     addEventListener('error', (event) => send({
         injected: true,
         error: 'content error: ' + String(event.error?.stack || event.message || 'unknown'),
@@ -110,14 +116,46 @@ function stageExtension(baseUrl) {
 'use strict';
 browser.runtime.onMessage.addListener((message) => {
     if (message?.action !== 'firefoxSmokeGithubPermission') return undefined;
-    return (async () => ({
-        api: typeof browser.permissions?.request === 'function'
-            && typeof browser.permissions?.contains === 'function',
-        granted: await globalThis.RumbleXGithubPermission.containsGithubApi(),
-    }))();
+    return (async () => {
+        return {
+            api: typeof browser.permissions?.request === 'function'
+                && typeof browser.permissions?.contains === 'function',
+            granted: await globalThis.RumbleXGithubPermission.containsGithubApi(),
+        };
+    })();
 });
 `;
     fs.writeFileSync(path.join(stage, 'firefox-smoke-permission-background.js'), permissionBackground);
+    fs.writeFileSync(path.join(stage, 'firefox-smoke-permission.html'), `<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>RumbleX optional permission smoke</title></head>
+<body>
+<button id="request-github" type="button">Grant GitHub API access</button>
+<script src="pages/github-permission.js"></script>
+<script src="firefox-smoke-permission-page.js"></script>
+</body>
+</html>\n`);
+    fs.writeFileSync(path.join(stage, 'firefox-smoke-permission-page.js'), `
+'use strict';
+document.querySelector('#request-github').addEventListener('click', async () => {
+    document.documentElement.dataset.rxFirefoxPermissionState = 'requesting';
+    try {
+        const request = globalThis.RumbleXGithubPermission.requestGithubApi();
+        const requested = await request;
+        const result = {
+            requested: requested.granted === true,
+            granted: await globalThis.RumbleXGithubPermission.containsGithubApi(),
+        };
+        document.documentElement.dataset.rxFirefoxPermissionResult = JSON.stringify(result);
+    } catch (error) {
+        document.documentElement.dataset.rxFirefoxPermissionResult = JSON.stringify({
+            requested: false,
+            granted: false,
+            error: String(error?.stack || error),
+        });
+    }
+}, { once: true });
+`);
     const probe = `
 'use strict';
 (async () => {
@@ -143,7 +181,7 @@ browser.runtime.onMessage.addListener((message) => {
         result.contentRegistry = Array.isArray(features) && features.length >= 86;
         const githubPermission = await platform.sendMessage({ action: 'firefoxSmokeGithubPermission' });
         result.githubPermissionApi = githubPermission?.api === true;
-        result.githubPermissionGranted = githubPermission?.granted === true;
+        result.githubPermissionInitiallyAbsent = githubPermission?.granted === false;
 
         const key = 'rx_firefox_smoke_value';
         const value = 'firefox-mv2-' + Date.now();
@@ -167,6 +205,187 @@ browser.runtime.onMessage.addListener((message) => {
 `;
     fs.writeFileSync(path.join(stage, 'firefox-smoke-probe.js'), probe);
     return stage;
+}
+
+function collectArchiveEntries(root) {
+    const entries = [];
+    const visit = (directory) => {
+        for (const item of fs.readdirSync(directory, { withFileTypes: true })) {
+            const absolute = path.join(directory, item.name);
+            if (item.isDirectory()) visit(absolute);
+            else if (item.isFile()) {
+                entries.push({
+                    name: path.relative(root, absolute).split(path.sep).join('/'),
+                    data: fs.readFileSync(absolute),
+                });
+            }
+        }
+    };
+    visit(root);
+    return entries;
+}
+
+async function reserveLoopbackPort() {
+    const server = http.createServer();
+    await new Promise((resolve, reject) => {
+        server.once('error', reject);
+        server.listen(0, '127.0.0.1', resolve);
+    });
+    const port = server.address().port;
+    await new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+    return port;
+}
+
+async function webdriverRequest(port, method, route, body) {
+    let response;
+    try {
+        response = await fetch(`http://127.0.0.1:${port}${route}`, {
+            method,
+            headers: body === undefined ? undefined : { 'Content-Type': 'application/json' },
+            body: body === undefined ? undefined : JSON.stringify(body),
+            signal: AbortSignal.timeout(30000),
+        });
+    } catch (error) {
+        throw new Error(`WebDriver ${method} ${route} request failed: ${error.message}`);
+    }
+    const text = await response.text();
+    const payload = text ? JSON.parse(text) : { value: null };
+    if (!response.ok || payload.value?.error) {
+        throw new Error(`WebDriver ${method} ${route} failed (${response.status}): ${text}`);
+    }
+    return payload.value;
+}
+
+async function waitForWebdriver(port, child, log) {
+    const deadline = Date.now() + 15000;
+    while (Date.now() < deadline) {
+        if (child.exitCode !== null) throw new Error(`geckodriver exited ${child.exitCode}\n${log()}`);
+        try {
+            const status = await webdriverRequest(port, 'GET', '/status');
+            if (status?.ready) return;
+        } catch {}
+        await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+    throw new Error(`geckodriver did not become ready\n${log()}`);
+}
+
+async function waitForValue(read, description, timeoutMs = 30000) {
+    const deadline = Date.now() + timeoutMs;
+    let value;
+    while (Date.now() < deadline) {
+        value = await read();
+        if (value) return value;
+        await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+    throw new Error(`timed out waiting for ${description}`);
+}
+
+async function runOptionalPermissionSmoke(stage, baseUrl) {
+    const port = await reserveLoopbackPort();
+    const xpi = path.join(os.tmpdir(), `rumblex-firefox-permission-${process.pid}-${Date.now()}.xpi`);
+    fs.writeFileSync(xpi, createDeterministicZip(collectArchiveEntries(stage)));
+
+    const child = spawn(GECKODRIVER_BINARY, [
+        '--port', String(port),
+        '--allow-system-access',
+        '--log', 'error',
+    ], {
+        cwd: ROOT,
+        stdio: ['ignore', 'pipe', 'pipe'],
+        windowsHide: true,
+    });
+    let driverLog = '';
+    const collect = (chunk) => {
+        driverLog = (driverLog + String(chunk)).slice(-12000);
+    };
+    child.stdout.on('data', collect);
+    child.stderr.on('data', collect);
+
+    let sessionId;
+    try {
+        await waitForWebdriver(port, child, () => driverLog);
+        const session = await webdriverRequest(port, 'POST', '/session', {
+            capabilities: {
+                alwaysMatch: {
+                    browserName: 'firefox',
+                    'moz:firefoxOptions': {
+                        binary: FIREFOX_BINARY,
+                        args: ['-headless'],
+                    },
+                },
+            },
+        });
+        sessionId = session.sessionId;
+        const sessionRoute = `/session/${sessionId}`;
+        await webdriverRequest(port, 'POST', `${sessionRoute}/moz/addon/install`, {
+            path: xpi,
+            temporary: true,
+        });
+
+        await webdriverRequest(port, 'POST', `${sessionRoute}/url`, { url: baseUrl });
+        const permissionPage = await waitForValue(() => webdriverRequest(
+            port,
+            'POST',
+            `${sessionRoute}/execute/sync`,
+            {
+                script: "return document.documentElement?.getAttribute('data-rx-firefox-permission-page') || null;",
+                args: [],
+            },
+        ), 'the staged permission page URL');
+        await webdriverRequest(port, 'POST', `${sessionRoute}/url`, { url: permissionPage });
+
+        const element = await webdriverRequest(port, 'POST', `${sessionRoute}/element`, {
+            using: 'css selector',
+            value: '#request-github',
+        });
+        const elementId = element?.[WEBDRIVER_ELEMENT_KEY];
+        if (!elementId) throw new Error('WebDriver did not return the optional-permission button');
+        await webdriverRequest(port, 'POST', `${sessionRoute}/element/${encodeURIComponent(elementId)}/click`, {});
+
+        await webdriverRequest(port, 'POST', `${sessionRoute}/moz/context`, { context: 'chrome' });
+        const accepted = await waitForValue(() => webdriverRequest(
+            port,
+            'POST',
+            `${sessionRoute}/execute/sync`,
+            {
+                script: `
+const win = Services.wm.getMostRecentWindow('navigator:browser');
+const notification = [...(win?.gBrowser?.browsers || [])]
+    .map(browser => win.PopupNotifications.getNotification('addon-webext-permissions', browser))
+    .find(Boolean);
+if (!notification) return false;
+notification.mainAction.callback();
+notification.remove();
+return true;
+`,
+                args: [],
+            },
+        ), 'the Firefox optional-permission prompt');
+        if (!accepted) throw new Error('Firefox optional-permission prompt was not accepted');
+
+        await webdriverRequest(port, 'POST', `${sessionRoute}/moz/context`, { context: 'content' });
+        const serialized = await waitForValue(() => webdriverRequest(
+            port,
+            'POST',
+            `${sessionRoute}/execute/sync`,
+            {
+                script: 'return document.documentElement?.dataset.rxFirefoxPermissionResult || null;',
+                args: [],
+            },
+        ), 'the optional-permission result');
+        const result = JSON.parse(serialized);
+        if (!result.requested || !result.granted) {
+            throw new Error(`Firefox optional-permission request failed: ${serialized}`);
+        }
+    } catch (error) {
+        throw new Error(`${error.message}\n${driverLog}`);
+    } finally {
+        if (sessionId) {
+            try { await webdriverRequest(port, 'DELETE', `/session/${sessionId}`); } catch {}
+        }
+        stopProcessTree(child);
+        try { fs.rmSync(xpi, { force: true }); } catch {}
+    }
 }
 
 function stopProcessTree(child) {
@@ -261,7 +480,7 @@ async function main() {
             'injected', 'storageRoundTrip', 'storageRemove', 'responseMessage',
             'packagedAsset', 'requestBlocking', 'settingsSchema', 'coreRuntime',
             'routeBoundary', 'selectorBoundary', 'cardBoundary', 'mediaBoundary',
-            'contentRegistry', 'githubPermissionApi', 'githubPermissionGranted',
+            'contentRegistry', 'githubPermissionApi', 'githubPermissionInitiallyAbsent',
         ]) {
             if (result[key] !== 'true') failures.push(`${key}=${result[key] || 'missing'}`);
         }
@@ -270,6 +489,8 @@ async function main() {
         if (result.version !== expectedVersion) failures.push(`version=${result.version || 'missing'} (expected ${expectedVersion})`);
         if (result.error) failures.push(`runtime=${result.error}`);
         if (failures.length) throw new Error(`Firefox MV2 smoke failed: ${failures.join(', ')}\n${runnerLog}`);
+        stopProcessTree(child);
+        await runOptionalPermissionSmoke(stage, baseUrl);
         console.log(`Firefox MV2 smoke passed (v${expectedVersion}): production core order, routing, selectors, cards, media, registry, storage, messaging, optional GitHub permission, and packaged assets.`);
     } finally {
         clearTimeout(timer);

@@ -77,6 +77,44 @@ test('file backups exclude credentials by default and require an explicit warned
     await expect(page.locator('#status')).toContainText('contains usable credentials');
 });
 
+test('in-page settings export uses the ordinary secret-free transport policy', async ({ context, extensionId }) => {
+    const options = await context.newPage();
+    await options.goto(`chrome-extension://${extensionId}/pages/options.html`);
+    await options.evaluate((secrets) => chrome.storage.local.set({
+        rx_settings: {
+            schemaVersion: 4,
+            darkEnhance: true,
+            discordWebhookUrl: secrets.webhook,
+            encryptedGistSync: true,
+            encryptedGistSyncToken: secrets.token,
+            encryptedGistSyncId: secrets.gistId,
+        },
+    }), SECRETS);
+
+    const rumble = await context.newPage();
+    await rumble.route('**/*', (route) => {
+        if (route.request().isNavigationRequest() && route.request().url().startsWith('https://rumble.com/')) {
+            return route.fulfill({ status: 200, contentType: 'text/html', body: OFFLINE_RUMBLE_FIXTURE });
+        }
+        return route.abort();
+    });
+    await rumble.goto('https://rumble.com/vsecret-export-fixture.html', { waitUntil: 'domcontentloaded' });
+    await rumble.waitForSelector('#rx-settings-btn', { state: 'attached', timeout: 15_000 });
+    await rumble.evaluate(() => document.querySelector('#rx-settings-btn')?.click());
+    await expect(rumble.locator('body')).toHaveClass(/rx-panel-open/);
+    await expect(rumble.locator('#rx-modal')).not.toHaveAttribute('aria-hidden', 'true');
+
+    const downloadEvent = rumble.waitForEvent('download');
+    await rumble.locator('.rx-m-footer .rx-m-btn-primary').click();
+    const text = await readDownload(await downloadEvent);
+    const settings = JSON.parse(text);
+    expect(settings.darkEnhance).toBe(true);
+    for (const key of ['discordWebhookUrl', 'encryptedGistSyncToken', 'encryptedGistSyncId']) {
+        expect(settings).not.toHaveProperty(key);
+    }
+    expectSecretsAbsent(text);
+});
+
 test('privacy and error JSON exports redact token-bearing URL paths', async ({ context, extensionId }) => {
     const options = await context.newPage();
     await options.goto(`chrome-extension://${extensionId}/pages/options.html`);
