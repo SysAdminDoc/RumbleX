@@ -1981,7 +1981,271 @@ if (chrome.contextMenus) {
     });
 }
 
+const RX_MESSAGE_SENDER = Object.freeze({
+    EXTENSION_PAGE: 'extension-page',
+    CONTENT_SCRIPT: 'content-script',
+});
+
+function rxMessageRule(senders, fields = {}) {
+    return Object.freeze({
+        senders: Object.freeze(senders.slice()),
+        fields: Object.freeze({ ...fields }),
+    });
+}
+
+function rxMessageField(type, options = {}) {
+    return Object.freeze({ type, ...options });
+}
+
+const RX_EXTENSION_ONLY = Object.freeze([RX_MESSAGE_SENDER.EXTENSION_PAGE]);
+const RX_CONTENT_ONLY = Object.freeze([RX_MESSAGE_SENDER.CONTENT_SCRIPT]);
+const RX_EXTENSION_OR_CONTENT = Object.freeze([
+    RX_MESSAGE_SENDER.EXTENSION_PAGE,
+    RX_MESSAGE_SENDER.CONTENT_SCRIPT,
+]);
+
+// The registry is the complete runtime-message contract. Every action handled
+// below declares who may call it and which top-level fields it accepts. Custom
+// field kinds validate nested records that can carry URLs or privileged data.
+const RX_MESSAGE_ACTIONS = Object.freeze({
+    getSettings: rxMessageRule(RX_EXTENSION_OR_CONTENT),
+    saveSettings: rxMessageRule(RX_EXTENSION_ONLY, {
+        data: rxMessageField('json-object', { required: true, maxBytes: 2 * 1024 * 1024 }),
+    }),
+    recordDownloadDiagnostic: rxMessageRule(RX_EXTENSION_OR_CONTENT, {
+        diagnostic: rxMessageField('json-object', { required: true, maxBytes: 256 * 1024 }),
+    }),
+    getDownloadDiagnostics: rxMessageRule(RX_EXTENSION_OR_CONTENT),
+    clearDownloadDiagnostics: rxMessageRule(RX_EXTENSION_ONLY),
+    checkUpdate: rxMessageRule(RX_EXTENSION_ONLY),
+    openSettings: rxMessageRule(RX_EXTENSION_ONLY),
+    clearLocalData: rxMessageRule(RX_EXTENSION_ONLY),
+    getLocalData: rxMessageRule(RX_EXTENSION_ONLY),
+    setLocalData: rxMessageRule(RX_EXTENSION_ONLY, {
+        data: rxMessageField('json-object', { required: true, maxBytes: 5 * 1024 * 1024 }),
+    }),
+    getPendingLocalDataOperation: rxMessageRule(RX_CONTENT_ONLY),
+    completePendingLocalDataOperation: rxMessageRule(RX_CONTENT_ONLY, {
+        id: rxMessageField('id', { required: true }),
+        cleared: rxMessageField('integer', { min: 0, max: 1_000_000 }),
+        written: rxMessageField('integer', { min: 0, max: 1_000_000 }),
+    }),
+    addWatchedChannel: rxMessageRule(RX_EXTENSION_ONLY, {
+        url: rxMessageField('rumble-url', { required: true, collection: true }),
+        name: rxMessageField('string', { maxLength: 300 }),
+    }),
+    removeWatchedChannel: rxMessageRule(RX_EXTENSION_ONLY, {
+        url: rxMessageField('rumble-url', { required: true, collection: true }),
+    }),
+    exportWatchedChannelsOpml: rxMessageRule(RX_EXTENSION_ONLY),
+    listProfiles: rxMessageRule(RX_EXTENSION_ONLY),
+    saveProfile: rxMessageRule(RX_EXTENSION_ONLY, {
+        name: rxMessageField('string', { required: true, maxLength: 60 }),
+    }),
+    switchProfile: rxMessageRule(RX_EXTENSION_ONLY, {
+        id: rxMessageField('id', { required: true }),
+    }),
+    deleteProfile: rxMessageRule(RX_EXTENSION_ONLY, {
+        id: rxMessageField('id', { required: true }),
+    }),
+    restoreProfile: rxMessageRule(RX_EXTENSION_ONLY, {
+        profile: rxMessageField('profile', { required: true }),
+    }),
+    runNotifierNow: rxMessageRule(RX_EXTENSION_ONLY),
+    exportWatchHistory: rxMessageRule(RX_EXTENSION_ONLY),
+    gistSyncPush: rxMessageRule(RX_EXTENSION_ONLY, {
+        passphrase: rxMessageField('string', { required: true, maxLength: 1024 }),
+    }),
+    gistSyncPull: rxMessageRule(RX_EXTENSION_ONLY, {
+        passphrase: rxMessageField('string', { required: true, maxLength: 1024 }),
+    }),
+    importFollowedChannels: rxMessageRule(RX_EXTENSION_ONLY),
+    testNotification: rxMessageRule(RX_EXTENSION_ONLY),
+    groupRumbleTabs: rxMessageRule(RX_EXTENSION_ONLY),
+    parseHtmlOffscreen: rxMessageRule(RX_EXTENSION_ONLY, {
+        html: rxMessageField('string', { required: true, maxLength: 2 * 1024 * 1024 }),
+    }),
+    hashBlobOffscreen: rxMessageRule(RX_EXTENSION_ONLY, {
+        url: rxMessageField('download-url', { required: true }),
+    }),
+    download: rxMessageRule(RX_CONTENT_ONLY, {
+        data: rxMessageField('download', { required: true }),
+        diagnostic: rxMessageField('json-object', { maxBytes: 256 * 1024 }),
+    }),
+    downloadRecoveryGetState: rxMessageRule(RX_EXTENSION_ONLY),
+    downloadRecoveryRunNow: rxMessageRule(RX_EXTENSION_ONLY),
+    archiveEnqueueChannel: rxMessageRule(RX_EXTENSION_OR_CONTENT, {
+        channelUrl: rxMessageField('rumble-url', { required: true, collection: true, allowPlaylist: true }),
+        maxItems: rxMessageField('integer', { min: 1, max: 500 }),
+        filterClips: rxMessageField('boolean'),
+    }),
+    archiveGetQueue: rxMessageRule(RX_EXTENSION_ONLY),
+    archivePauseQueue: rxMessageRule(RX_EXTENSION_ONLY),
+    archiveResumeQueue: rxMessageRule(RX_EXTENSION_ONLY),
+    archiveClearCompleted: rxMessageRule(RX_EXTENSION_ONLY),
+    archiveClearQueue: rxMessageRule(RX_EXTENSION_ONLY),
+    archiveRemoveJob: rxMessageRule(RX_EXTENSION_ONLY, {
+        id: rxMessageField('id', { required: true }),
+    }),
+    archiveRetryJob: rxMessageRule(RX_EXTENSION_ONLY, {
+        id: rxMessageField('id', { required: true }),
+    }),
+    archiveRetryFailed: rxMessageRule(RX_EXTENSION_ONLY),
+    archivePreflightQueue: rxMessageRule(RX_EXTENSION_ONLY),
+    archiveExportQueue: rxMessageRule(RX_EXTENSION_ONLY),
+    archiveImportQueue: rxMessageRule(RX_EXTENSION_ONLY, {
+        payload: rxMessageField('archive-import', { required: true }),
+    }),
+    archiveRunNow: rxMessageRule(RX_EXTENSION_ONLY),
+});
+
+function rxIsPlainMessageObject(value) {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+    const prototype = Object.getPrototypeOf(value);
+    return prototype === Object.prototype || prototype === null;
+}
+
+function rxMessageHasOnlyKeys(value, allowed) {
+    return rxIsPlainMessageObject(value)
+        && Object.keys(value).every((key) => allowed.has(key));
+}
+
+function rxMessageJsonWithin(value, maxBytes) {
+    try {
+        return JSON.stringify(value).length <= maxBytes;
+    } catch {
+        return false;
+    }
+}
+
+function rxIsSafeMessageRumbleUrl(value, { collection = false, allowPlaylist = false } = {}) {
+    if (typeof value !== 'string') return false;
+    try {
+        const url = new URL(value);
+        if (url.protocol !== 'https:' || url.username || url.password) return false;
+        if (!/(^|\.)rumble\.com$/i.test(url.hostname)) return false;
+        if (!collection) return true;
+        const routes = allowPlaylist ? '(?:c|user|playlists)' : '(?:c|user)';
+        return new RegExp(`^/${routes}/[^/]+`, 'i').test(url.pathname);
+    } catch {
+        return false;
+    }
+}
+
+function rxValidateDownloadPayload(value) {
+    if (!rxMessageHasOnlyKeys(value, new Set(['url', 'filename']))) return false;
+    if (!isAllowedDownloadUrl(value.url)) return false;
+    return value.filename === undefined
+        || (typeof value.filename === 'string' && value.filename.length <= 500);
+}
+
+function rxValidateProfilePayload(value) {
+    const allowed = new Set(['id', 'name', 'createdAt', 'settings']);
+    if (!rxMessageHasOnlyKeys(value, allowed)) return false;
+    if (!rxValidateMessageField(value.id, rxMessageField('id', { required: true }))) return false;
+    if (value.name !== undefined && (typeof value.name !== 'string' || value.name.length > 60)) return false;
+    if (value.createdAt !== undefined && (!Number.isFinite(Number(value.createdAt)) || Number(value.createdAt) <= 0)) return false;
+    return rxIsPlainMessageObject(value.settings) && rxMessageJsonWithin(value.settings, 2 * 1024 * 1024);
+}
+
+function rxValidateArchiveImportPayload(value) {
+    const rootKeys = new Set(['schemaVersion', 'exportedAt', 'extensionVersion', 'paused', 'jobs']);
+    if (!rxMessageHasOnlyKeys(value, rootKeys) || value.schemaVersion !== RX_ARCHIVE_EXPORT_SCHEMA) return false;
+    if (!Array.isArray(value.jobs) || value.jobs.length > RX_ARCHIVE_MAX_JOBS) return false;
+    if (value.exportedAt !== undefined && typeof value.exportedAt !== 'string') return false;
+    if (value.extensionVersion !== undefined && typeof value.extensionVersion !== 'string') return false;
+    if (value.paused !== undefined && typeof value.paused !== 'boolean') return false;
+    for (const job of value.jobs) {
+        // Queue imports are deliberately forward-compatible. The normalizer
+        // below skips malformed jobs and drops fields it does not recognize;
+        // this boundary only blocks unsafe URLs and pathological structures.
+        if (!rxIsPlainMessageObject(job)) return false;
+        if (job.channelUrl != null && !rxIsSafeMessageRumbleUrl(job.channelUrl, { collection: true, allowPlaylist: true })) return false;
+        if (job.videoUrl != null && !rxIsSafeMessageRumbleUrl(job.videoUrl)) return false;
+    }
+    return rxMessageJsonWithin(value, 5 * 1024 * 1024);
+}
+
+function rxValidateMessageField(value, field) {
+    if (value === undefined) return field.required !== true;
+    switch (field.type) {
+        case 'string':
+            return typeof value === 'string'
+                && value.length <= (field.maxLength || 4096);
+        case 'id':
+            return typeof value === 'string'
+                && value.length > 0
+                && value.length <= 160
+                && /^[A-Za-z0-9_.:-]+$/.test(value);
+        case 'boolean':
+            return typeof value === 'boolean';
+        case 'integer':
+            return Number.isInteger(value)
+                && value >= (field.min ?? Number.MIN_SAFE_INTEGER)
+                && value <= (field.max ?? Number.MAX_SAFE_INTEGER);
+        case 'json-object':
+            return rxIsPlainMessageObject(value)
+                && rxMessageJsonWithin(value, field.maxBytes || 1024 * 1024);
+        case 'rumble-url':
+            return rxIsSafeMessageRumbleUrl(value, field);
+        case 'download-url':
+            return typeof value === 'string' && isAllowedDownloadUrl(value);
+        case 'download':
+            return rxValidateDownloadPayload(value);
+        case 'profile':
+            return rxValidateProfilePayload(value);
+        case 'archive-import':
+            return rxValidateArchiveImportPayload(value);
+        default:
+            return false;
+    }
+}
+
+function rxClassifyMessageSender(sender) {
+    if (!sender || sender.id !== chrome.runtime.id) return null;
+    const ownOrigin = new URL(chrome.runtime.getURL('/')).origin;
+    const rawUrl = sender.url || sender.origin || sender.tab?.url || '';
+    try {
+        const url = new URL(rawUrl);
+        if (url.origin === ownOrigin) return RX_MESSAGE_SENDER.EXTENSION_PAGE;
+        if (sender.tab && url.protocol === 'https:' && /(^|\.)rumble\.com$/i.test(url.hostname)) {
+            return RX_MESSAGE_SENDER.CONTENT_SCRIPT;
+        }
+    } catch {}
+    return null;
+}
+
+function rxAuthorizeRuntimeMessage(message, sender) {
+    if (!rxIsPlainMessageObject(message) || typeof message.action !== 'string') {
+        return { handled: false, ok: false };
+    }
+    const rule = RX_MESSAGE_ACTIONS[message.action];
+    if (!rule) return { handled: false, ok: false };
+    const senderClass = rxClassifyMessageSender(sender);
+    if (!senderClass || !rule.senders.includes(senderClass)) {
+        return { handled: true, ok: false, reason: 'sender-not-allowed' };
+    }
+    const allowedKeys = new Set(['action', ...Object.keys(rule.fields)]);
+    const unknownField = Object.keys(message).find((key) => !allowedKeys.has(key));
+    if (unknownField) {
+        return { handled: true, ok: false, reason: 'invalid-payload', field: unknownField };
+    }
+    for (const [name, field] of Object.entries(rule.fields)) {
+        if (!rxValidateMessageField(message[name], field)) {
+            return { handled: true, ok: false, reason: 'invalid-payload', field: name };
+        }
+    }
+    return { handled: true, ok: true, senderClass };
+}
+
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    const authorization = rxAuthorizeRuntimeMessage(message, sender);
+    if (!authorization.handled) return false;
+    if (!authorization.ok) {
+        sendResponse({ ok: false, reason: authorization.reason, field: authorization.field || null });
+        return false;
+    }
+
     // Pass-through reads — kept for parity with earlier versions in case any
     // consumer (popup, options, userscript) still asks the worker for state.
     if (message.action === 'getSettings') {

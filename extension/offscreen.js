@@ -86,6 +86,13 @@ async function rxInspectMedia(rawBytes) {
 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     if (!msg || msg.target !== 'offscreen') return;
+    const ownOrigin = new URL(chrome.runtime.getURL('/')).origin;
+    let senderOrigin = '';
+    try { senderOrigin = new URL(sender?.url || sender?.origin || '').origin; } catch {}
+    if (sender?.id !== chrome.runtime.id || senderOrigin !== ownOrigin) {
+        sendResponse({ ok: false, reason: 'sender-not-allowed' });
+        return false;
+    }
 
     if (msg.action === 'getCapabilities') {
         sendResponse({
