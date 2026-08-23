@@ -384,6 +384,7 @@
         pageShell: document.querySelector('.page-shell'),
         version: document.getElementById('version'),
         exportButton: document.getElementById('export-btn'),
+        exportCredentialsInput: document.getElementById('export-include-credentials'),
         importButton: document.getElementById('import-btn'),
         importFile: document.getElementById('import-file'),
         resetButton: document.getElementById('reset-btn'),
@@ -493,6 +494,7 @@
         rantStatsExportCsvBtn: document.getElementById('rant-stats-export-csv-btn'),
         rantStatsClearBtn: document.getElementById('rant-stats-clear-btn'),
     };
+    if (elements.exportCredentialsInput) elements.exportCredentialsInput.checked = false;
     applyI18n();
 
     const state = {
@@ -770,6 +772,7 @@
         try {
             const store = await chrome.storage.local.get(STORAGE_KEY);
             const settings = store[STORAGE_KEY] || {};
+            const includeCredentials = elements.exportCredentialsInput?.checked === true;
 
             // Collect per-site data from an open Rumble tab if one exists.
             // This matches the multi-key backup behaviour of the Astra Deck
@@ -787,11 +790,12 @@
             } catch { /* no tabs / no receiver → settings-only export */ }
 
             const data = {
-                settings: sanitizeSettingsObject(settings),
+                settings: RXSettingsSchema.sanitizeSettingsForTransport(settings, { includeCredentials }),
                 localData, // empty object when no Rumble tab was available
                 exportVersion: 2,
                 exportDate: new Date().toISOString(),
                 rumblexVersion: manifest.version,
+                credentialsIncluded: includeCredentials,
             };
 
             // v3.6.0 — Compression Streams API gzip export.
@@ -827,7 +831,10 @@
             const suffix = localKeys
                 ? ` Included ${localKeys} per-site ${localKeys === 1 ? 'key' : 'keys'} from your open Rumble tab.`
                 : (tabsTouched === 0 ? ' Tip: open a Rumble tab first to include watch history, bookmarks, etc.' : '');
-            showStatus('Settings exported' + sizeSuffix + '.' + suffix, 'success');
+            const credentialSuffix = includeCredentials
+                ? ' This file contains usable credentials. Store it securely.'
+                : ' Credentials were excluded.';
+            showStatus('Settings exported' + sizeSuffix + '.' + suffix + credentialSuffix, 'success');
         } catch (err) {
             showStatus('Export failed: ' + err.message, 'error');
         }
@@ -1821,7 +1828,9 @@
     async function exportSelectorTelemetry() {
         const resp = await sendToContent('getSelectorTelemetry');
         if (!resp?.ok) { showStatus('Telemetry unavailable. Enable debugSelectorTelemetry in settings first.', 'error'); return; }
-        const events = Array.isArray(resp.events) ? resp.events : [];
+        const events = Array.isArray(resp.events)
+            ? RXSettingsSchema.sanitizeDiagnosticValue(resp.events)
+            : [];
         if (events.length === 0) {
             showStatus('Telemetry buffer is empty — turn on debugSelectorTelemetry and trigger a few features first.', 'info');
             return;
@@ -1835,7 +1844,9 @@
     async function exportErrorLog() {
         const resp = await sendToContent('getErrorLog');
         if (!resp?.ok) { showStatus('Error log unavailable. Open a rumble.com tab so the content script can respond.', 'error'); return; }
-        const entries = Array.isArray(resp.entries) ? resp.entries : [];
+        const entries = Array.isArray(resp.entries)
+            ? RXSettingsSchema.sanitizeDiagnosticValue(resp.entries)
+            : [];
         if (entries.length === 0) {
             showStatus('Error log is empty — no feature failures have been recorded on this page.', 'info');
             return;
@@ -1856,7 +1867,7 @@
         if (!response?.ok || !response.bundle) {
             throw new Error(response?.reason || 'Download diagnostics unavailable');
         }
-        return response.bundle;
+        return RXSettingsSchema.sanitizeDiagnosticValue(response.bundle);
     }
 
     async function copyTextToClipboard(text) {

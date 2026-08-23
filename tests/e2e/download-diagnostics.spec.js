@@ -75,8 +75,34 @@ test('download diagnostics redact secrets and expose local copy/export controls'
     await expect(page.locator('#download-diagnostics-export-btn')).toBeVisible();
     await expect(page.locator('#download-diagnostics-clear-btn')).toBeVisible();
 
+    await page.evaluate(() => {
+        globalThis.__rxCopiedDiagnosticText = '';
+        Object.defineProperty(navigator.clipboard, 'writeText', {
+            configurable: true,
+            value: async (text) => { globalThis.__rxCopiedDiagnosticText = String(text); },
+        });
+    });
     await page.locator('#download-diagnostics-copy-btn').click();
     await expect(page.locator('#status')).toContainText('Sanitized diagnostics copied');
+    const copied = await page.evaluate(() => globalThis.__rxCopiedDiagnosticText);
+    const copiedBundle = JSON.parse(copied);
+    expect(copiedBundle.count).toBe(1);
+    expect(copiedBundle.attempts[0]).toMatchObject({
+        operation: 'clip-export',
+        stage: 'segment-download',
+    });
+    for (const secret of [
+        'supersecretsegment',
+        'query-secret-value',
+        'signature-secret-value',
+        'private-fragment',
+        'bearer-secret-value',
+        'cookie-secret-value',
+        'access-token-secret-value',
+        'cHJpdmF0ZS1wYXlsb2Fk',
+    ]) {
+        expect(copied).not.toContain(secret);
+    }
 
     const downloadPromise = page.waitForEvent('download');
     await page.locator('#download-diagnostics-export-btn').click();

@@ -155,73 +155,10 @@ async function callOffscreen(action, payload) {
 // path segments, and other token-like data never enter the stored bundle.
 const RX_DOWNLOAD_DIAGNOSTICS_KEY = 'rx_download_diagnostics';
 const RX_DOWNLOAD_DIAGNOSTICS_MAX = 50;
-const RX_DIAGNOSTIC_SECRET_KEY_RE = /(?:authorization|cookie|credential|password|passphrase|secret|bearer|access[_-]?token|refresh[_-]?token|api[_-]?key|private[_-]?key|signature|signed[_-]?url|github[_-]?pat)/i;
 let rxDownloadDiagnosticWriteQueue = Promise.resolve();
-
-function rxRedactDiagnosticPathSegment(segment) {
-    if (!segment) return '';
-    let decoded = segment;
-    try { decoded = decodeURIComponent(segment); } catch {}
-    if (/^(?:embedJS|u[0-4]|hls-vod|playlist(?:\.m3u8)?|master(?:\.m3u8)?|manifest(?:\.m3u8)?|video|videos|clip|clips)$/i.test(decoded)) {
-        return decoded;
-    }
-    const extension = decoded.match(/\.(?:m3u8|mp4|webm|m4a|ts|tar|json)$/i)?.[0] || '';
-    return '[redacted]' + extension;
-}
-
-function rxRedactDiagnosticUrl(raw) {
-    const value = String(raw || '').slice(0, 4096);
-    try {
-        const parsed = new URL(value);
-        if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return '[redacted-url]';
-        const path = parsed.pathname
-            .split('/')
-            .map(rxRedactDiagnosticPathSegment)
-            .join('/');
-        const queryKeys = [...new Set([...parsed.searchParams.keys()])]
-            .map((key) => RX_DIAGNOSTIC_SECRET_KEY_RE.test(key) ? '[redacted]' : key.replace(/[^a-z0-9_.-]/gi, '').slice(0, 32))
-            .filter(Boolean)
-            .slice(0, 12);
-        const query = queryKeys.length ? '?params=' + encodeURIComponent(queryKeys.join(',')) : '';
-        return parsed.origin + (path || '/') + query;
-    } catch {
-        return '[redacted-url]';
-    }
-}
-
-function rxSanitizeDiagnosticString(raw) {
-    let value = String(raw || '').slice(0, 1200);
-    value = value.replace(/https?:\/\/[^\s<>"')]+/gi, (url) => rxRedactDiagnosticUrl(url));
-    value = value.replace(/\b(?:bearer\s+)[a-z0-9._~+\/-]+=*/gi, 'Bearer [redacted]');
-    value = value.replace(/\b(authorization|cookie|password|passphrase|secret|access[_-]?token|refresh[_-]?token|api[_-]?key|signature)\s*[:=]\s*[^\s,;]+/gi, '$1=[redacted]');
-    value = value.replace(/\beyJ[a-z0-9_-]+\.[a-z0-9_-]+\.[a-z0-9_-]+\b/gi, '[redacted-token]');
-    value = value.replace(/\b(?:github_pat_|gh[pousr]_)[a-z0-9_=-]+\b/gi, '[redacted-token]');
-    value = value.replace(/\b[a-z0-9+\/_=-]{48,}\b/gi, '[redacted-token]');
-    return value;
-}
-
-function rxSanitizeDiagnostic(value, key = '', depth = 0) {
-    if (RX_DIAGNOSTIC_SECRET_KEY_RE.test(key)) return '[redacted]';
-    if (depth > 5) return '[truncated]';
-    if (value == null || typeof value === 'boolean') return value;
-    if (typeof value === 'number') return Number.isFinite(value) ? value : null;
-    if (typeof value === 'string') {
-        if (/url$/i.test(key) || /^(?:url|href|src)$/i.test(key)) return rxRedactDiagnosticUrl(value);
-        return rxSanitizeDiagnosticString(value);
-    }
-    if (Array.isArray(value)) {
-        return value.slice(0, 30).map((item) => rxSanitizeDiagnostic(item, key, depth + 1));
-    }
-    if (typeof value === 'object') {
-        const out = {};
-        for (const [childKey, childValue] of Object.entries(value).slice(0, 40)) {
-            const safeKey = rxSanitizeDiagnosticString(childKey).slice(0, 80);
-            out[safeKey] = rxSanitizeDiagnostic(childValue, childKey, depth + 1);
-        }
-        return out;
-    }
-    return rxSanitizeDiagnosticString(value);
-}
+const rxRedactDiagnosticUrl = RXSettingsSchema.redactUrl;
+const rxSanitizeDiagnosticString = RXSettingsSchema.sanitizeDiagnosticText;
+const rxSanitizeDiagnostic = RXSettingsSchema.sanitizeDiagnosticValue;
 
 async function rxGetDownloadDiagnosticCapabilities(probeOffscreen = false) {
     const capabilities = {
@@ -2611,7 +2548,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                         false,
                         ['encrypt']
                     );
-                    const plaintext = enc.encode(JSON.stringify(settings));
+                    const transportSettings = RXSettingsSchema.sanitizeSettingsForTransport(settings);
+                    const plaintext = enc.encode(JSON.stringify(transportSettings));
                     const cipherBuf = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, aesKey, plaintext);
                     const payload = {
                         rumblex: {
@@ -2700,10 +2638,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                     while (arr.length > 50) arr.shift();
                     await new Promise((resolve) => chrome.storage.local.set({ rx_settings_snapshots: arr }, resolve));
                 } catch {}
-                // Preserve the LOCAL token + gist id so the user doesn't get
-                // logged out of their own sync target after a pull.
+                // Preserve every local credential so a remote payload can
+                // neither replace nor clear the user's sync and notifier keys.
                 const next = rxNormalizeSettings({
                     ...pulled,
+                    discordWebhookUrl: settings.discordWebhookUrl || '',
                     encryptedGistSyncToken: token,
                     encryptedGistSyncId: gistId,
                 });

@@ -170,6 +170,15 @@
             background: rgba(255, 255, 255, 0.025);
         }
         .actions-end { margin-left: auto; }
+        .credential-export-option {
+            display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 4px 10px;
+            align-items: start; margin: 8px 0 12px; padding: 10px 12px;
+            border: 1px solid rgba(249, 226, 175, 0.28); border-radius: 8px;
+            background: rgba(249, 226, 175, 0.055); color: var(--text-secondary);
+        }
+        .credential-export-option input { margin-top: 3px; accent-color: var(--accent); }
+        .credential-export-option label { font-size: 12px; font-weight: 720; color: var(--text-primary); }
+        .credential-export-warning { grid-column: 2; margin: 0; font-size: 11px; line-height: 1.45; color: var(--text-muted); }
 
         button {
             min-height: 38px; padding: 0 14px;
@@ -713,7 +722,7 @@
             }
         }
         @media (forced-colors: active) {
-            .settings-item, .workspace-command, .stat-card, .storage-note, .actions-row, .data-section,
+            .settings-item, .workspace-command, .stat-card, .storage-note, .actions-row, .credential-export-option, .data-section,
             button, input, select, textarea {
                 border-color: CanvasText; forced-color-adjust: none;
                 background: Canvas; color: CanvasText;
@@ -813,6 +822,12 @@
                     <button id="reset-btn" class="danger" type="button" data-i18n="resetAllData">Reset All Data</button>
                 </div>
             </nav>
+
+            <div class="credential-export-option">
+                <input id="export-include-credentials" type="checkbox" autocomplete="off" aria-describedby="export-credentials-warning">
+                <label for="export-include-credentials">Include credentials in exported backups</label>
+                <p class="credential-export-warning" id="export-credentials-warning">Off by default. Turning this on includes the usable Discord webhook, GitHub token, and Gist ID. Keep the exported file private.</p>
+            </div>
 
             <div class="status" id="status" role="status" aria-live="polite"></div>
 

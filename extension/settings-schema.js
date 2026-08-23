@@ -308,6 +308,13 @@
         archiveQueuePauseOnOffline: true,
     });
     const FORBIDDEN_KEYS = new Set(['__proto__', 'prototype', 'constructor']);
+    const SECRET_SETTING_KEYS = Object.freeze([
+        'discordWebhookUrl',
+        'encryptedGistSyncToken',
+        'encryptedGistSyncId',
+    ]);
+    const SECRET_SETTING_KEY_SET = new Set(SECRET_SETTING_KEYS);
+    const DIAGNOSTIC_SECRET_KEY_RE = /(?:authorization|cookie|credential|password|passphrase|secret|bearer|webhook|access[_-]?token|refresh[_-]?token|api[_-]?key|private[_-]?key|signature|signed[_-]?url|github[_-]?pat)/i;
     const STRING_ARRAYS = new Set([
         'blockedChannels', 'blockedChatters', 'blockedKeywords', 'blockedCommenters',
     ]);
@@ -421,6 +428,91 @@
             if (!/^\/api\/webhooks\/[^/]+\/[^/]+$/.test(parsed.pathname)) return null;
             return parsed.origin + parsed.pathname;
         } catch { return null; }
+    }
+
+    function redactPathSegment(segment) {
+        if (!segment) return '';
+        let decoded = segment;
+        try { decoded = decodeURIComponent(segment); } catch {}
+        if (/^(?:embedJS|u[0-4]|hls-vod|playlist(?:\.m3u8)?|master(?:\.m3u8)?|manifest(?:\.m3u8)?|video|videos|clip|clips)$/i.test(decoded)) {
+            return decoded;
+        }
+        const extension = decoded.match(/\.(?:m3u8|mp4|webm|m4a|ts|tar|json)$/i)?.[0] || '';
+        return '[redacted]' + extension;
+    }
+
+    // Shared export boundary for reports and diagnostics. URL paths are
+    // intentionally treated as secret-bearing because Discord webhooks and
+    // signed media links both put usable credentials in path segments.
+    function redactUrl(raw) {
+        const value = String(raw || '').slice(0, 4096);
+        try {
+            const parsed = new URL(value);
+            if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return '[redacted-url]';
+            const path = parsed.pathname.split('/').map(redactPathSegment).join('/');
+            const rawQueryKeys = parsed.searchParams.size === 1 && parsed.searchParams.has('params')
+                ? String(parsed.searchParams.get('params') || '').split(',')
+                : [...parsed.searchParams.keys()];
+            const queryKeys = [...new Set(rawQueryKeys)]
+                .map((key) => key === '[redacted]' || DIAGNOSTIC_SECRET_KEY_RE.test(key)
+                    ? '[redacted]'
+                    : key.replace(/[^a-z0-9_.-]/gi, '').slice(0, 32))
+                .filter(Boolean)
+                .slice(0, 12);
+            const query = queryKeys.length ? '?params=' + encodeURIComponent(queryKeys.join(',')) : '';
+            return parsed.origin + (path || '/') + query;
+        } catch {
+            return '[redacted-url]';
+        }
+    }
+
+    function sanitizeDiagnosticText(raw, max = 1200) {
+        let value = String(raw || '').slice(0, Math.max(0, Number(max) || 0));
+        value = value.replace(/https?:\/\/[^\s<>"')]+/gi, (url) => redactUrl(url));
+        value = value.replace(/\b(?:bearer\s+)[a-z0-9._~+\/-]+=*/gi, 'Bearer [redacted]');
+        value = value.replace(/\b(authorization|cookie|password|passphrase|secret|webhook|access[_-]?token|refresh[_-]?token|api[_-]?key|signature)\s*[:=]\s*[^\s,;]+/gi, '$1=[redacted]');
+        value = value.replace(/\beyJ[a-z0-9_-]+\.[a-z0-9_-]+\.[a-z0-9_-]+\b/gi, '[redacted-token]');
+        value = value.replace(/\b(?:github_pat_|gh[pousr]_)[a-z0-9_=-]+\b/gi, '[redacted-token]');
+        value = value.replace(/\b[a-z0-9+\/_=-]{48,}\b/gi, '[redacted-token]');
+        return value;
+    }
+
+    function sanitizeDiagnosticValue(value, key = '', depth = 0) {
+        if (DIAGNOSTIC_SECRET_KEY_RE.test(key)) return '[redacted]';
+        if (depth > 5) return '[truncated]';
+        if (value == null || typeof value === 'boolean') return value;
+        if (typeof value === 'number') return Number.isFinite(value) ? value : null;
+        if (typeof value === 'string') {
+            if (/url$/i.test(key) || /^(?:url|href|src)$/i.test(key)) return redactUrl(value);
+            return sanitizeDiagnosticText(value);
+        }
+        if (Array.isArray(value)) {
+            return value.slice(0, 30).map((item) => sanitizeDiagnosticValue(item, key, depth + 1));
+        }
+        if (typeof value === 'object') {
+            const out = {};
+            for (const [childKey, childValue] of Object.entries(value).slice(0, 40)) {
+                const safeKey = sanitizeDiagnosticText(childKey, 80);
+                out[safeKey] = sanitizeDiagnosticValue(childValue, childKey, depth + 1);
+            }
+            return out;
+        }
+        return sanitizeDiagnosticText(value);
+    }
+
+    // Settings that leave extension-local storage exclude credentials unless a
+    // user explicitly asks for a credential-bearing file backup. Remote Gist
+    // sync always uses the default and therefore never encrypts its own token,
+    // target id, or Discord webhook into the remote payload.
+    function sanitizeSettingsForTransport(input, { includeCredentials = false } = {}) {
+        const normalized = normalizeStored(input, DEFAULTS);
+        const out = {};
+        for (const [key, value] of Object.entries(normalized)) {
+            if (!includeCredentials && SECRET_SETTING_KEY_SET.has(key)) continue;
+            const safe = cloneSafe(value);
+            if (safe !== undefined) out[key] = safe;
+        }
+        return out;
     }
 
     function normalizeDurations(value) {
@@ -654,6 +746,11 @@
             normalizeStored,
             safeRumbleUrl,
             safeWebhookUrl,
+            SECRET_SETTING_KEYS,
+            redactUrl,
+            sanitizeDiagnosticText,
+            sanitizeDiagnosticValue,
+            sanitizeSettingsForTransport,
             UNIMPLEMENTED,
         }),
         configurable: false,

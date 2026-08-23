@@ -252,6 +252,7 @@ Click the extension icon → **gear button** to open the dedicated options page.
 - Workspace hero + **Open Settings Editor** CTA
 - 5-card stats overview (Enabled features, Storage size, Channels, Keywords, Chatters)
 - **Full-parity Export / Import**. backups now include both `rx_settings` AND per-origin localStorage (watch progress, watch/search history, bookmarks, volume memory, rant archives). Export format: `exportVersion: 2`; v1 imports still work. Imports are allowlisted by key so a crafted file cannot smuggle arbitrary localStorage keys onto rumble.com.
+- **Credential-safe backups**. Normal exports omit every configured credential. A warned checkbox can include them for a deliberate device migration. Privacy reports, error logs, clipboard diagnostics, and encrypted Gist payloads always redact or omit credential values.
 - **Reset All Data** broadcasts `clearLocalData` to every open Rumble tab and reports the honest "Cleared N per-site keys across M tabs" count
 - **Settings editor modal** with dirty-draft workflow: search, sidebar group nav (9 groups), chips for unsaved / needs-attention, Restore Defaults / Discard / Save toolbar, per-field Reset buttons, and non-blocking close/reset feedback
 - Per-control editors infer from value type: toggle / number / text / textarea / list / JSON / enum-dropdown (theme & siteTheme)

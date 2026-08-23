@@ -5,6 +5,7 @@ const assert = require('assert/strict');
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
+const zlib = require('zlib');
 
 const ROOT = path.resolve(__dirname, '..');
 const source = fs.readFileSync(path.join(ROOT, 'extension', 'settings-schema.js'), 'utf8');
@@ -159,4 +160,58 @@ const validWebhook = plain(evaluate(`RumbleXSettingsSchema.normalizeStored(JSON.
 }))}))`));
 assert.equal(validWebhook.discordWebhookUrl, 'https://discord.com/api/webhooks/123/tok');
 
-console.log(`Shared settings schema OK: ${Object.keys(schema.DEFAULTS).length} defaults, migration, bounds, URL and nested-data guards.`);
+const transportSecrets = Object.freeze({
+    discordWebhookUrl: 'https://discord.com/api/webhooks/123456789/discord-secret-token',
+    encryptedGistSyncToken: 'github_pat_gist-secret-token-value',
+    encryptedGistSyncId: 'gist-secret-id-value',
+});
+const ordinaryTransport = plain(evaluate(`RumbleXSettingsSchema.sanitizeSettingsForTransport(JSON.parse(${JSON.stringify(JSON.stringify({
+    schemaVersion: 4,
+    darkEnhance: true,
+    ...transportSecrets,
+}))}))`));
+for (const key of schema.SECRET_SETTING_KEYS) {
+    assert.ok(!Object.hasOwn(ordinaryTransport, key), `${key} leaked into an ordinary backup`);
+}
+const ordinaryJson = JSON.stringify(ordinaryTransport);
+const ordinaryGzipText = zlib.gunzipSync(zlib.gzipSync(ordinaryJson)).toString('utf8');
+for (const secret of Object.values(transportSecrets)) {
+    assert.ok(!ordinaryJson.includes(secret), 'credential leaked into ordinary JSON');
+    assert.ok(!ordinaryGzipText.includes(secret), 'credential leaked through gzip backup');
+}
+const credentialTransport = plain(evaluate(`RumbleXSettingsSchema.sanitizeSettingsForTransport(JSON.parse(${JSON.stringify(JSON.stringify({
+    schemaVersion: 4,
+    ...transportSecrets,
+}))}), { includeCredentials: true })`));
+assert.deepEqual(
+    Object.fromEntries(schema.SECRET_SETTING_KEYS.map((key) => [key, credentialTransport[key]])),
+    transportSecrets,
+    'the explicit credential-bearing backup path must preserve all credential fields',
+);
+
+const hostileDiagnostic = plain(evaluate(`RumbleXSettingsSchema.sanitizeDiagnosticValue(JSON.parse(${JSON.stringify(JSON.stringify({
+    message: 'Failed at https://discord.com/api/webhooks/123456789/discord-secret-token?token=query-secret-value#private-fragment',
+    authorization: 'Bearer bearer-secret-value',
+    nested: {
+        webhook: transportSecrets.discordWebhookUrl,
+        accessToken: transportSecrets.encryptedGistSyncToken,
+    },
+}))}))`));
+const diagnosticJson = JSON.stringify(hostileDiagnostic);
+for (const secret of [
+    ...Object.values(transportSecrets),
+    '123456789',
+    'query-secret-value',
+    'private-fragment',
+    'bearer-secret-value',
+]) {
+    assert.ok(!diagnosticJson.includes(secret), `diagnostic output leaked ${secret}`);
+}
+assert.ok(diagnosticJson.includes('[redacted]'), 'diagnostic policy did not mark redacted values');
+assert.deepEqual(
+    plain(evaluate(`RumbleXSettingsSchema.sanitizeDiagnosticValue(JSON.parse(${JSON.stringify(diagnosticJson)}))`)),
+    hostileDiagnostic,
+    'diagnostic sanitization must be idempotent across storage and export boundaries',
+);
+
+console.log(`Shared settings schema OK: ${Object.keys(schema.DEFAULTS).length} defaults, migration, bounds, secret transport, URL and nested-data guards.`);

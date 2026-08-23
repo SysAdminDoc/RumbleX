@@ -17943,14 +17943,14 @@ const RxErrorLog = {
         // resolved — which is exactly the window where boot failures happen and
         // the only window a user cannot retry. record() reads no setting at
         // all; only drain() does.
-        const entry = {
+        const entry = RXSettingsSchema.sanitizeDiagnosticValue({
             at: Date.now(),
             featureId: String(featureId || 'unknown').slice(0, 80),
             message: String(error?.message || error || '').slice(0, 500),
             stack: String(error?.stack || '').split('\n').slice(0, 8).join('\n'),
             context: context ? String(context).slice(0, 200) : null,
-            page: location.pathname,
-        };
+            pageUrl: location.href,
+        });
         this._buf.push(entry);
         if (this._buf.length > this.MAX) this._buf.splice(0, this._buf.length - this.MAX);
     },
@@ -18658,7 +18658,7 @@ function rxBuildPrivacyReport() {
             // Runtime-configured destinations are invisible to the manifest, so
             // the manifest-derived rows above cannot disclose them on their own.
             ...(settings.discordWebhookUrl
-                ? [`${settings.discordWebhookUrl} (User-configured Discord webhook; receives followed-channel name and URL when the notifier fires.)`]
+                ? [`${RXSettingsSchema.redactUrl(settings.discordWebhookUrl)} (User-configured Discord webhook; receives followed-channel name and URL when the notifier fires.)`]
                 : []),
         ],
         telemetry: 'none — no analytics, no remote logging, no usage beacons',
