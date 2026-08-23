@@ -416,25 +416,29 @@ Add the module to `features`, put new DOM contracts in `Selectors._map`, and kee
 - Backup imports are allowlisted: `setLocalData` rejects any key outside the `RX_LOCAL_STORAGE_KEYS` list + `rx_rants_` prefix, so a crafted file cannot write arbitrary keys to rumble.com's origin.
 
 ## Build
-```bash
-cd extension
-./build.sh       # produces browser packages, userscripts, the AMO source archive, and SHA256SUMS.txt
-```
-Requires `zip`; on Windows without `zip`, the script falls back to the Windows-bundled bsdtar so ZIP entries keep browser-safe forward-slash paths. See `CHANGELOG.md` for per-version details.
 
-Run the current selector contracts and loaded-extension suite before packaging:
+Run the mandatory local gate from the repository root:
 
 ```bash
-python test_selectors.py
-npx playwright test
+npm run verify
 ```
 
-The selector harness uses checked-in, synthetic desktop captures. Private MHTML captures in `Sample Pages/` are optional local evidence and never enter release packages.
+This runs every non-live source guard, the selector contracts, the headless Firefox smoke, and the full Playwright suite before it writes a package. It then builds the Chrome package, unsigned Firefox submission, AMO source archive, and userscripts before checking the archived files.
+
+Create a clean local release with the same gate:
+
+```bash
+npm run release:local
+```
+
+The release command removes known old package outputs, runs `npm run verify`, rebuilds the final files from a clean package state, and checks the archive bytes again. A failed guard stops before packaging. Requires `zip`; on Windows without `zip`, the build uses the Windows-bundled bsdtar so ZIP entries keep browser-safe forward-slash paths.
+
+The selector harness uses checked-in, synthetic desktop captures. Private MHTML captures in `Sample Pages/` are optional local evidence and never enter release packages. Live-site checks remain opt-in because network and account state are not deterministic release inputs.
 
 Release builds can sign the checksums after a public identity exists. Point `RUMBLEX_SIGNING_KEY` at the matching private key and the build writes `SHA256SUMS.txt.sig`, then verifies it against `allowed_signers` before finishing:
 
 ```bash
-RUMBLEX_SIGNING_KEY=~/.ssh/rumblex_release ./build.sh
+RUMBLEX_SIGNING_KEY=~/.ssh/rumblex_release npm run release:local
 ```
 
 A signature that does not verify against the published key fails the build rather than shipping. Builds without the variable set are unsigned and say so. Unsigned public releases must state that on the release page.

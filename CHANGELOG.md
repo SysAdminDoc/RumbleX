@@ -10,6 +10,7 @@ All notable changes to RumbleX will be documented in this file.
 - The in-page settings export now follows the same secret-free transport policy as ordinary backups. AMO source archives include the deterministic Firefox builder and its ZIP utility, so the submitted package can be reproduced from the review bundle alone.
 - Background messages now pass through a declarative sender and payload registry before dispatch. Rumble content scripts cannot call extension-page operations such as encrypted Gist sync, and unsafe URLs or unknown top-level fields are rejected before privileged work starts.
 - Store metadata and the public project page now use the package version as their checked source of truth. The same guard verifies both browser manifests, the lockfile, README badge, visible page label, and the feature-module count derived from the runtime registries.
+- `npm run verify` is now the mandatory local gate for source checks, selector contracts, headless browser coverage, packaging, and archive integrity. `npm run release:local` cleans known package outputs, runs that gate, rebuilds the final artifacts, and verifies their bytes again.
 
 ## [3.53.0] - 2026-08-22
 

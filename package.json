@@ -4,6 +4,8 @@
   "private": true,
   "description": "RumbleX Playwright E2E harness. Runtime code is in extension/.",
   "scripts": {
+    "verify": "node scripts/verify.js",
+    "release:local": "node scripts/release-local.js",
     "build:userscript": "node scripts/build-userscript.js",
     "build-for-amo": "node scripts/build-firefox-amo.js",
     "check:userscript": "node scripts/build-userscript.js --check",
@@ -19,6 +21,7 @@
     "test:userscript-platform": "node scripts/test-userscript-platform.js",
     "test:extension-platform": "node scripts/test-extension-platform.js",
     "test:github-permission": "node scripts/test-github-permission.js",
+    "test:release-gate": "node scripts/test-release-gate.js",
     "test:message-boundary": "node scripts/check-message-boundary.js",
     "test:settings-schema": "node scripts/test-settings-schema.js",
     "test:settings-consumers": "node scripts/check-settings-consumers.js",
