@@ -179,6 +179,10 @@
     "message": "Verificacao falhou",
     "description": "UI string used by popup/options i18n pass."
   },
+  "githubApiPermissionDenied": {
+    "message": "O acesso ao GitHub não foi concedido. Nenhuma solicitação foi enviada.",
+    "description": "Shown when the user declines optional GitHub API access."
+  },
   "checkRateLimited": {
     "message": "Limite de requisições do GitHub atingido — tente novamente mais tarde",
     "description": "Tooltip on the popup update button when GitHub's unauthenticated API quota is exhausted."

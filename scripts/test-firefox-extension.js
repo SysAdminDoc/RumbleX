@@ -35,6 +35,7 @@ function findFirefoxBinary() {
 }
 
 const FIREFOX_BINARY = findFirefoxBinary();
+const GITHUB_API_ORIGIN = 'https://api.github.com/*';
 
 function stageExtension(baseUrl) {
     const stage = fs.mkdtempSync(path.join(os.tmpdir(), 'rumblex-firefox-smoke-'));
@@ -44,6 +45,14 @@ function stageExtension(baseUrl) {
     });
 
     const manifest = JSON.parse(fs.readFileSync(path.join(EXTENSION, 'manifest-firefox.json'), 'utf8'));
+    if (!(manifest.optional_permissions || []).includes(GITHUB_API_ORIGIN)) {
+        throw new Error('Firefox manifest does not declare GitHub as an optional permission');
+    }
+    // The smoke profile pre-authorizes the optional origin so the real Firefox
+    // runtime can prove the helper sees a granted host without opening a prompt
+    // on the user's active desktop.
+    manifest.optional_permissions = manifest.optional_permissions.filter((value) => value !== GITHUB_API_ORIGIN);
+    if (!manifest.permissions.includes(GITHUB_API_ORIGIN)) manifest.permissions.push(GITHUB_API_ORIGIN);
     // WebExtension match patterns do not include ports; this loopback-only
     // host pattern covers the ephemeral HTTP server port used by the probe.
     const originPattern = 'http://127.0.0.1/*';
@@ -51,6 +60,7 @@ function stageExtension(baseUrl) {
     const runtimeEntry = manifest.content_scripts.find((entry) =>
         entry.matches?.some((match) => match.includes('rumble.com')));
     if (!runtimeEntry?.js?.length) throw new Error('Firefox manifest has no Rumble runtime script list');
+    manifest.background.scripts.push('pages/github-permission.js', 'firefox-smoke-permission-background.js');
     manifest.content_scripts.push({
         matches: [originPattern],
         js: ['firefox-smoke-bootstrap.js', ...runtimeEntry.js, 'firefox-smoke-probe.js'],
@@ -96,6 +106,18 @@ function stageExtension(baseUrl) {
 })();
 `;
     fs.writeFileSync(path.join(stage, 'firefox-smoke-bootstrap.js'), bootstrap);
+    const permissionBackground = `
+'use strict';
+browser.runtime.onMessage.addListener((message) => {
+    if (message?.action !== 'firefoxSmokeGithubPermission') return undefined;
+    return (async () => ({
+        api: typeof browser.permissions?.request === 'function'
+            && typeof browser.permissions?.contains === 'function',
+        granted: await globalThis.RumbleXGithubPermission.containsGithubApi(),
+    }))();
+});
+`;
+    fs.writeFileSync(path.join(stage, 'firefox-smoke-permission-background.js'), permissionBackground);
     const probe = `
 'use strict';
 (async () => {
@@ -119,6 +141,9 @@ function stageExtension(baseUrl) {
             'https://hugh.cdn.rumble.cloud/firefox-smoke/360.m3u8',
         ].join('\\n'), location.href).length === 1;
         result.contentRegistry = Array.isArray(features) && features.length >= 86;
+        const githubPermission = await platform.sendMessage({ action: 'firefoxSmokeGithubPermission' });
+        result.githubPermissionApi = githubPermission?.api === true;
+        result.githubPermissionGranted = githubPermission?.granted === true;
 
         const key = 'rx_firefox_smoke_value';
         const value = 'firefox-mv2-' + Date.now();
@@ -236,7 +261,7 @@ async function main() {
             'injected', 'storageRoundTrip', 'storageRemove', 'responseMessage',
             'packagedAsset', 'requestBlocking', 'settingsSchema', 'coreRuntime',
             'routeBoundary', 'selectorBoundary', 'cardBoundary', 'mediaBoundary',
-            'contentRegistry',
+            'contentRegistry', 'githubPermissionApi', 'githubPermissionGranted',
         ]) {
             if (result[key] !== 'true') failures.push(`${key}=${result[key] || 'missing'}`);
         }
@@ -245,7 +270,7 @@ async function main() {
         if (result.version !== expectedVersion) failures.push(`version=${result.version || 'missing'} (expected ${expectedVersion})`);
         if (result.error) failures.push(`runtime=${result.error}`);
         if (failures.length) throw new Error(`Firefox MV2 smoke failed: ${failures.join(', ')}\n${runnerLog}`);
-        console.log(`Firefox MV2 smoke passed (v${expectedVersion}): production core order, routing, selectors, cards, media, registry, storage, messaging, and packaged assets.`);
+        console.log(`Firefox MV2 smoke passed (v${expectedVersion}): production core order, routing, selectors, cards, media, registry, storage, messaging, optional GitHub permission, and packaged assets.`);
     } finally {
         clearTimeout(timer);
         stopProcessTree(child);

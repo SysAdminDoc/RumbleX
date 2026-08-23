@@ -49,9 +49,13 @@ function main() {
 
     // 1. Every requested permission is justified, and nothing is justified
     //    that is no longer requested (a stale entry reads as a live claim).
+    const requestedHosts = [
+        ...(manifest.host_permissions || []),
+        ...(manifest.optional_host_permissions || []),
+    ];
     const pairs = [
         ['API permission', manifest.permissions || [], Object.keys(listing.permission_justifications.api)],
-        ['host permission', manifest.host_permissions || [], Object.keys(listing.permission_justifications.host)],
+        ['host permission', requestedHosts, Object.keys(listing.permission_justifications.host)],
     ];
     for (const [label, requested, justified] of pairs) {
         for (const p of requested) {
@@ -105,7 +109,7 @@ function main() {
         process.exit(1);
     }
 
-    const perms = (manifest.permissions || []).length + (manifest.host_permissions || []).length;
+    const perms = (manifest.permissions || []).length + requestedHosts.length;
     console.log(
         `check-store-listing OK: ${perms} permissions justified, `
         + `${REQUIRED_LOCALES.length} locales of copy within the ${SHORT_DESCRIPTION_MAX}-character cap, `

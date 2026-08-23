@@ -17,6 +17,7 @@
     "test:parity": "node scripts/check-userscript-parity.js",
     "test:userscript-platform": "node scripts/test-userscript-platform.js",
     "test:extension-platform": "node scripts/test-extension-platform.js",
+    "test:github-permission": "node scripts/test-github-permission.js",
     "test:settings-schema": "node scripts/test-settings-schema.js",
     "test:settings-consumers": "node scripts/check-settings-consumers.js",
     "test:package-contents": "node scripts/check-package-contents.js",

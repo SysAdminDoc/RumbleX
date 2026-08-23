@@ -18574,13 +18574,19 @@ const RX_PRIVACY_WEB_RESOURCE_DISCLOSURES = Object.freeze({
 });
 
 function rxManifestApiPermissions(manifest) {
-    return (manifest.permissions || []).filter((permission) => !String(permission).includes('://'));
+    return Array.from(new Set([
+        ...(manifest.permissions || []),
+        ...(manifest.optional_permissions || []),
+    ])).filter((permission) => !String(permission).includes('://'));
 }
 
 function rxManifestHostPermissions(manifest) {
-    return manifest.host_permissions
-        || (manifest.permissions || []).filter((permission) => String(permission).includes('://'))
-        || [];
+    return Array.from(new Set([
+        ...(manifest.host_permissions || []),
+        ...(manifest.optional_host_permissions || []),
+        ...(manifest.permissions || []).filter((permission) => String(permission).includes('://')),
+        ...(manifest.optional_permissions || []).filter((permission) => String(permission).includes('://')),
+    ]));
 }
 
 function rxManifestWebAccessibleResources(manifest) {

@@ -17,13 +17,19 @@ function readJson(file) {
 }
 
 function normalizeApiPermissions(manifest) {
-    return (manifest.permissions || []).filter((permission) => !String(permission).includes('://'));
+    return union([
+        ...(manifest.permissions || []),
+        ...(manifest.optional_permissions || []),
+    ]).filter((permission) => !String(permission).includes('://'));
 }
 
 function normalizeHostPermissions(manifest) {
-    return manifest.host_permissions
-        || (manifest.permissions || []).filter((permission) => String(permission).includes('://'))
-        || [];
+    return union([
+        ...(manifest.host_permissions || []),
+        ...(manifest.optional_host_permissions || []),
+        ...(manifest.permissions || []).filter((permission) => String(permission).includes('://')),
+        ...(manifest.optional_permissions || []).filter((permission) => String(permission).includes('://')),
+    ]);
 }
 
 function normalizeWebAccessibleResources(manifest) {
@@ -135,6 +141,20 @@ const errors = [
         extractObjectKeys(content, 'RX_PRIVACY_WEB_RESOURCE_DISCLOSURES'),
     ),
 ];
+
+const githubOrigin = 'https://api.github.com/*';
+if ((manifests[0].host_permissions || []).includes(githubOrigin)) {
+    errors.push('Chrome must not request GitHub API access at install time');
+}
+if (!(manifests[0].optional_host_permissions || []).includes(githubOrigin)) {
+    errors.push('Chrome must declare GitHub API access in optional_host_permissions');
+}
+if ((manifests[1].permissions || []).includes(githubOrigin)) {
+    errors.push('Firefox must not request GitHub API access at install time');
+}
+if (!(manifests[1].optional_permissions || []).includes(githubOrigin)) {
+    errors.push('Firefox must declare GitHub API access in optional_permissions');
+}
 
 // RumbleX runs entirely in the isolated world. A content script declared with
 // `world: "MAIN"` executes in the page's own realm, where Rumble's script can

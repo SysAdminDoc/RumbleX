@@ -179,6 +179,10 @@
     "message": "Check failed",
     "description": "UI string used by popup/options i18n pass."
   },
+  "githubApiPermissionDenied": {
+    "message": "GitHub access was not granted. No request was sent.",
+    "description": "Shown when the user declines optional GitHub API access."
+  },
   "checkRateLimited": {
     "message": "GitHub rate limit reached — try again later",
     "description": "Tooltip on the popup update button when GitHub's unauthenticated API quota is exhausted."

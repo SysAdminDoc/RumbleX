@@ -7,6 +7,8 @@
 
     const RXSettingsSchema = globalThis.RumbleXSettingsSchema;
     if (!RXSettingsSchema) throw new Error('RumbleX settings schema is missing');
+    const RXGithubPermission = globalThis.RumbleXGithubPermission;
+    if (!RXGithubPermission) throw new Error('RumbleX GitHub permission gate is missing');
 
     const BRAND_NAME = 'RumbleX';
     const STORAGE_KEY = 'rx_settings';
@@ -2551,9 +2553,12 @@
     // v3.17.0 — Encrypted Gist Sync UI. Reads/writes the two persistent
     // settings keys (token, gist id) directly via chrome.storage.local so
     // the inputs stay populated across reloads. Passphrase is NEVER stored.
+    let gistSyncEnabled = false;
+
     async function refreshGistSyncInputs() {
         const got = await new Promise((resolve) => chrome.storage.local.get(['rx_settings'], resolve));
         const settings = (got && got.rx_settings && typeof got.rx_settings === 'object') ? got.rx_settings : {};
+        gistSyncEnabled = settings.encryptedGistSync === true;
         if (elements.gistSyncTokenInput) elements.gistSyncTokenInput.value = settings.encryptedGistSyncToken || '';
         if (elements.gistSyncIdInput) elements.gistSyncIdInput.value = settings.encryptedGistSyncId || '';
         if (elements.gistSyncSummary) {
@@ -2587,13 +2592,29 @@
         'malformed-payload': 'Gist contents are not a RumbleX encrypted payload.',
     };
 
+    async function requestGithubAccess() {
+        const permission = await RXGithubPermission.requestGithubApi();
+        if (permission.granted) return true;
+        showStatus(i18n(
+            'githubApiPermissionDenied',
+            'GitHub access was not granted. No request was sent.',
+        ), 'error');
+        return false;
+    }
+
     async function gistSyncPushAction() {
-        await _persistGistSyncCredentials();
         const passphrase = elements.gistSyncPassphraseInput?.value || '';
         if (passphrase.length < 8) { showStatus('Passphrase must be at least 8 characters.', 'error'); return; }
+        if (!(elements.gistSyncTokenInput?.value || '').trim()) { showStatus('Set a GitHub PAT first.', 'error'); return; }
+        if (!gistSyncEnabled) {
+            showStatus(GIST_SYNC_REASONS['sync-disabled'], 'error');
+            return;
+        }
         const btn = elements.gistSyncPushBtn;
         if (btn) { btn.disabled = true; btn.dataset.idleLabel = btn.dataset.idleLabel || btn.textContent; btn.textContent = 'Pushing…'; }
         try {
+            if (!await requestGithubAccess()) return;
+            await _persistGistSyncCredentials();
             const resp = await chrome.runtime.sendMessage({ action: 'gistSyncPush', passphrase });
             if (!resp?.ok) {
                 showStatus('Push failed: ' + (GIST_SYNC_REASONS[resp?.reason] || resp?.reason || 'unknown'), 'error');
@@ -2613,12 +2634,19 @@
     }
 
     async function gistSyncPullAction() {
-        await _persistGistSyncCredentials();
         const passphrase = elements.gistSyncPassphraseInput?.value || '';
         if (passphrase.length < 8) { showStatus('Passphrase must be at least 8 characters.', 'error'); return; }
+        if (!(elements.gistSyncTokenInput?.value || '').trim()) { showStatus('Set a GitHub PAT first.', 'error'); return; }
+        if (!(elements.gistSyncIdInput?.value || '').trim()) { showStatus(GIST_SYNC_REASONS['missing-gist-id'], 'error'); return; }
+        if (!gistSyncEnabled) {
+            showStatus(GIST_SYNC_REASONS['sync-disabled'], 'error');
+            return;
+        }
         const btn = elements.gistSyncPullBtn;
         if (btn) { btn.disabled = true; btn.dataset.idleLabel = btn.dataset.idleLabel || btn.textContent; btn.textContent = 'Pulling…'; }
         try {
+            if (!await requestGithubAccess()) return;
+            await _persistGistSyncCredentials();
             const resp = await chrome.runtime.sendMessage({ action: 'gistSyncPull', passphrase });
             if (!resp?.ok) {
                 showStatus('Pull failed: ' + (GIST_SYNC_REASONS[resp?.reason] || resp?.reason || 'unknown'), 'error');
@@ -3065,8 +3093,9 @@
                 if (areaName !== 'local') return;
                 await renderStorageInfo();
                 if (!changes[STORAGE_KEY]) return;
-                if (!state.modalOpen) return;
                 const newValue = changes[STORAGE_KEY].newValue;
+                gistSyncEnabled = newValue?.encryptedGistSync === true;
+                if (!state.modalOpen) return;
                 if (newValue && areValuesEqual(newValue, state.storedSettings)) return;
                 if (state.dirtyKeys.size === 0 && state.invalidKeys.size === 0) {
                     await refreshSettingsState({ resetDraft: true });

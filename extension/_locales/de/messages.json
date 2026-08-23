@@ -179,6 +179,10 @@
     "message": "Pruefung fehlgeschlagen",
     "description": "UI string used by popup/options i18n pass."
   },
+  "githubApiPermissionDenied": {
+    "message": "Der GitHub-Zugriff wurde nicht gewährt. Es wurde keine Anfrage gesendet.",
+    "description": "Shown when the user declines optional GitHub API access."
+  },
   "checkRateLimited": {
     "message": "GitHub-Ratenlimit erreicht – später erneut versuchen",
     "description": "Tooltip on the popup update button when GitHub's unauthenticated API quota is exhausted."

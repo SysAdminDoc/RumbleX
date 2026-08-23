@@ -40,7 +40,7 @@
       "*://*.rumble.com/*": "The site the extension exists to modify. Every feature is scoped to it.",
       "*://*.1a-1791.com/*": "Rumble's media CDN. Needed to read the media manifest for a download the user requested, and to match the ad rules that Rumble serves from this host.",
       "*://*.rumble.cloud/*": "Rumble's other media CDN (hugh.cdn.rumble.cloud). Same purpose as above.",
-      "https://api.github.com/*": "Used only by the optional encrypted-Gist settings sync, which is off by default. With the feature disabled the extension makes no request to this host at all — the background handler returns early before any fetch."
+      "https://api.github.com/*": "Requested only when a user clicks the update check or an encrypted Gist action. If access is denied, no GitHub request is sent."
     },
     "not_requested": {
       "_note": "Worth stating in the listing: the permissions a reviewer might expect and will not find.",

@@ -23,7 +23,7 @@
 // @updateURL    https://github.com/SysAdminDoc/RumbleX/raw/main/RumbleX.user.js
 // ==/UserScript==
 
-// Generated from the shared extension core files. Shared runtime SHA-256: 9b975e93f32751658cc29bbac5c6587a7dc7f47a088a059476830511e960ab5a
+// Generated from the shared extension core files. Shared runtime SHA-256: 7f30c0f49d4a6f4f2c106000e064047e9a33eb66217c567aa3d47cbac55b5464
 // RumbleX shared settings schema. This file is the canonical source for
 // defaults and trust-boundary normalization across content, options, popup,
 // background profile/Gist restores, and the generated userscript.
@@ -838,6 +838,7 @@
   "groupFailed": "Group failed",
   "checkingUpdates": "Checking...",
   "checkFailed": "Check failed",
+  "githubApiPermissionDenied": "GitHub access was not granted. No request was sent.",
   "checkRateLimited": "GitHub rate limit reached — try again later",
   "upToDate": "Up to date!",
   "appStatusLocal": "Local",
@@ -21067,13 +21068,19 @@ const RX_PRIVACY_WEB_RESOURCE_DISCLOSURES = Object.freeze({
 });
 
 function rxManifestApiPermissions(manifest) {
-    return (manifest.permissions || []).filter((permission) => !String(permission).includes('://'));
+    return Array.from(new Set([
+        ...(manifest.permissions || []),
+        ...(manifest.optional_permissions || []),
+    ])).filter((permission) => !String(permission).includes('://'));
 }
 
 function rxManifestHostPermissions(manifest) {
-    return manifest.host_permissions
-        || (manifest.permissions || []).filter((permission) => String(permission).includes('://'))
-        || [];
+    return Array.from(new Set([
+        ...(manifest.host_permissions || []),
+        ...(manifest.optional_host_permissions || []),
+        ...(manifest.permissions || []).filter((permission) => String(permission).includes('://')),
+        ...(manifest.optional_permissions || []).filter((permission) => String(permission).includes('://')),
+    ]));
 }
 
 function rxManifestWebAccessibleResources(manifest) {

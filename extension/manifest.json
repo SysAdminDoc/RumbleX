@@ -28,7 +28,9 @@
   "host_permissions": [
     "*://*.rumble.com/*",
     "*://*.1a-1791.com/*",
-    "*://*.rumble.cloud/*",
+    "*://*.rumble.cloud/*"
+  ],
+  "optional_host_permissions": [
     "https://api.github.com/*"
   ],
   "background": {

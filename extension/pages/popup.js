@@ -3,6 +3,8 @@
 
 const RXSettingsSchema = globalThis.RumbleXSettingsSchema;
 if (!RXSettingsSchema) throw new Error('RumbleX settings schema is missing');
+const RXGithubPermission = globalThis.RumbleXGithubPermission;
+if (!RXGithubPermission) throw new Error('RumbleX GitHub permission gate is missing');
 
 // Feature list grouped by category. Order within a group controls display
 // order in the popup; values and defaults come from the shared schema.
@@ -537,7 +539,7 @@ async function init() {
 
     // Update check
     const updateBtn = document.getElementById('btn-update');
-    updateBtn.addEventListener('click', () => {
+    updateBtn.addEventListener('click', async () => {
         if (updateBtn.classList.contains('has-update')) {
             const url = updateBtn.dataset.releaseUrl;
             if (url) chrome.tabs.create({ url });
@@ -545,28 +547,47 @@ async function init() {
         }
         updateBtn.classList.add('checking');
         updateBtn.dataset.tooltip = i18n('checkingUpdates', 'Checking...');
-        chrome.runtime.sendMessage({ action: 'checkUpdate' }, (res) => {
+        const permission = await RXGithubPermission.requestGithubApi();
+        if (!permission.granted) {
             updateBtn.classList.remove('checking');
-            if (res && res.error) {
-                updateBtn.classList.add('error');
-                updateBtn.dataset.tooltip = res.rateLimited
-                    ? i18n('checkRateLimited', 'GitHub rate limit reached — try again later')
-                    : i18n('checkFailed', 'Check failed');
-                setTimeout(() => {
-                    updateBtn.classList.remove('error');
-                    updateBtn.dataset.tooltip = i18n('checkForUpdates', 'Check for updates');
-                }, 3000);
-                return;
-            }
-            if (res && res.hasUpdate) {
-                updateBtn.classList.add('has-update');
-                updateBtn.dataset.tooltip = `Update available: v${res.latest}`;
-                updateBtn.dataset.releaseUrl = res.url;
-            } else {
-                updateBtn.dataset.tooltip = i18n('upToDate', 'Up to date!');
-                setTimeout(() => { updateBtn.dataset.tooltip = i18n('checkForUpdates', 'Check for updates'); }, 3000);
-            }
-        });
+            updateBtn.classList.add('error');
+            updateBtn.dataset.tooltip = i18n(
+                'githubApiPermissionDenied',
+                'GitHub access was not granted. No request was sent.',
+            );
+            setTimeout(() => {
+                updateBtn.classList.remove('error');
+                updateBtn.dataset.tooltip = i18n('checkForUpdates', 'Check for updates');
+            }, 3500);
+            return;
+        }
+
+        let res;
+        try {
+            res = await chrome.runtime.sendMessage({ action: 'checkUpdate' });
+        } catch (error) {
+            res = { error: String(error?.message || error) };
+        }
+        updateBtn.classList.remove('checking');
+        if (res && res.error) {
+            updateBtn.classList.add('error');
+            updateBtn.dataset.tooltip = res.rateLimited
+                ? i18n('checkRateLimited', 'GitHub rate limit reached. Try again later.')
+                : i18n('checkFailed', 'Check failed');
+            setTimeout(() => {
+                updateBtn.classList.remove('error');
+                updateBtn.dataset.tooltip = i18n('checkForUpdates', 'Check for updates');
+            }, 3000);
+            return;
+        }
+        if (res && res.hasUpdate) {
+            updateBtn.classList.add('has-update');
+            updateBtn.dataset.tooltip = `Update available: v${res.latest}`;
+            updateBtn.dataset.releaseUrl = res.url;
+        } else {
+            updateBtn.dataset.tooltip = i18n('upToDate', 'Up to date!');
+            setTimeout(() => { updateBtn.dataset.tooltip = i18n('checkForUpdates', 'Check for updates'); }, 3000);
+        }
     });
 }
 

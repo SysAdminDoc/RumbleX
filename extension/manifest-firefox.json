@@ -30,6 +30,9 @@
     "*://*.1a-1791.com/*",
     "*://*.rumble.cloud/*"
   ],
+  "optional_permissions": [
+    "https://api.github.com/*"
+  ],
   "browser_specific_settings": {
     "gecko": {
       "id": "rumblex@sysadmindoc",

@@ -179,6 +179,10 @@
     "message": "Échec de la vérification",
     "description": "UI string used by popup/options i18n pass."
   },
+  "githubApiPermissionDenied": {
+    "message": "L’accès à GitHub n’a pas été accordé. Aucune requête n’a été envoyée.",
+    "description": "Shown when the user declines optional GitHub API access."
+  },
   "checkRateLimited": {
     "message": "Limite de requêtes GitHub atteinte — réessayez plus tard",
     "description": "Tooltip on the popup update button when GitHub's unauthenticated API quota is exhausted."
