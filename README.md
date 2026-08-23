@@ -290,9 +290,11 @@ Install instructions for every browser, plus the checksum and signature commands
 No minimum Chrome version is declared beyond what MV3 itself requires. Chrome 148 added a `browser` namespace alongside `chrome`, which would let the Firefox compatibility shim go away, but only by refusing to run on anything older. RumbleX detects whichever namespace the browser offers instead, so it works on Chrome 148, on Chrome well below it, and on Firefox, and the page-feature core touches neither namespace directly.
 
 ### Firefox (109+)
-1. Download `RumbleX-firefox.zip` from [Releases](https://github.com/SysAdminDoc/RumbleX/releases)
+1. Download `RumbleX-firefox-amo-unsigned.zip` from [Releases](https://github.com/SysAdminDoc/RumbleX/releases) and extract it
 2. Go to `about:debugging#/runtime/this-firefox`
 3. Click **Load Temporary Add-on** and select `manifest.json` inside the extracted folder
+
+That ZIP is the reproducible AMO submission and a temporary testing package. It is not a permanently installable add-on. An installable `RumbleX-firefox.xpi` is published only after Mozilla returns a signed package and the artifact check confirms its signature entries.
 
 ### Tampermonkey (Userscript)
 Install [`RumbleX.user.js`](https://raw.githubusercontent.com/SysAdminDoc/RumbleX/main/RumbleX.user.js) directly. It is generated from the byte-identical shared page-feature core and embeds the pinned mux.js and Mediabunny media workers.
@@ -303,7 +305,7 @@ Its metadata also requests early ad cancellation through the userscript-manager 
 
 ### Verifying a download
 
-Every release ships `SHA256SUMS.txt` covering both extension ZIPs and both userscripts. Check what you downloaded against it:
+Every release ships `SHA256SUMS.txt` covering the Chrome package, the unsigned Firefox AMO submission, its source archive, and both userscripts. Check what you downloaded against it:
 
 ```bash
 sha256sum -c SHA256SUMS.txt --ignore-missing
@@ -416,7 +418,7 @@ Add the module to `features`, put new DOM contracts in `Selectors._map`, and kee
 ## Build
 ```bash
 cd extension
-./build.sh       # produces both ZIPs, the generated userscript, and SHA256SUMS.txt in the parent dir
+./build.sh       # produces browser packages, userscripts, the AMO source archive, and SHA256SUMS.txt
 ```
 Requires `zip`; on Windows without `zip`, the script falls back to the Windows-bundled bsdtar so ZIP entries keep browser-safe forward-slash paths. See `CHANGELOG.md` for per-version details.
 
@@ -437,7 +439,9 @@ RUMBLEX_SIGNING_KEY=~/.ssh/rumblex_release ./build.sh
 
 A signature that does not verify against the published key fails the build rather than shipping. Builds without the variable set are unsigned and say so. Unsigned public releases must state that on the release page.
 
-Each build also produces `RumbleX-firefox.xpi` (the AMO signing input) and `RumbleX-source.zip` (the source bundle AMO review asks for, since the package ships two minified libraries). Provenance for those libraries is recorded in `extension/lib/VENDOR.json`: package, version, npm tarball URL, SHA-256, and the command that reproduces the exact vendored bytes. `npm run test:vendor-manifest` checks that record against the files on disk and against the hashes pinned in `build.sh`, so the three cannot drift apart.
+Each build produces `RumbleX-firefox-amo-unsigned.zip` as the unsigned AMO submission and `RumbleX-source.zip` as the source bundle AMO review asks for, since the package ships two minified libraries. It never renames the unsigned ZIP to `.xpi`. Run `npm run build-for-amo` from the repository root to reproduce the Firefox submission bytes, then run `npm run test:firefox-artifacts` to verify the artifact boundary. If `RumbleX-firefox.xpi` exists, that check requires a complete Mozilla JAR or COSE signature entry set.
+
+Provenance for the vendored libraries is recorded in `extension/lib/VENDOR.json`: package, version, npm tarball URL, SHA-256, and the command that reproduces the exact bytes. `npm run test:vendor-manifest` checks that record against the files on disk and against the hashes pinned in `build.sh`, so the three cannot drift apart.
 
 `docs/updates.json` is the Firefox update feed for self-distributed signed builds, served from GitHub Pages. Regenerate it when a signed XPI exists:
 

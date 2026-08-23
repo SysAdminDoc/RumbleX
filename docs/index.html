@@ -125,11 +125,13 @@
 
 <div class="card">
   <h3>Firefox</h3>
-  <p>Firefox 109 and newer. Two ways in, depending on what the release contains:</p>
-  <ul>
-    <li><strong>Signed build</strong> (when the release includes an <code>.xpi</code>): open it in Firefox and accept the prompt. If Firefox downloads the file instead of offering to install it, go to <code>about:addons</code>, click the gear, and pick <strong>Install Add-on From File</strong>. Signed builds update themselves.</li>
-    <li><strong>Temporary install</strong>: download <code>RumbleX-firefox.zip</code>, extract it, open <code>about:debugging#/runtime/this-firefox</code>, click <strong>Load Temporary Add-on</strong>, and select <code>manifest.json</code>. This one disappears when you restart Firefox.</li>
-  </ul>
+  <p>Firefox 109 and newer. The current release provides an unsigned AMO submission for temporary testing. It is not a permanently installable add-on.</p>
+  <ol>
+    <li>Download <code>RumbleX-firefox-amo-unsigned.zip</code> from the <a href="https://github.com/SysAdminDoc/RumbleX/releases/latest">latest release</a> and extract it.</li>
+    <li>Open <code>about:debugging#/runtime/this-firefox</code> and click <strong>Load Temporary Add-on</strong>.</li>
+    <li>Select <code>manifest.json</code>. Firefox removes the temporary add-on when it restarts.</li>
+  </ol>
+  <p style="color:var(--muted);font-size:14.5px;margin-bottom:0">A permanent <code>RumbleX-firefox.xpi</code> will appear only after Mozilla signs the submission. This page does not offer an unsigned ZIP as an installable XPI.</p>
 </div>
 
 <div class="card">

@@ -4,6 +4,10 @@ All notable changes to RumbleX will be documented in this file.
 
 ## Unreleased
 
+### Changed
+- Firefox builds now emit `RumbleX-firefox-amo-unsigned.zip` as an explicitly unsigned, byte-reproducible AMO submission. `npm run build-for-amo` produces the same bytes from source, and the build still emits the separate AMO source archive.
+- Local builds no longer copy the unsigned Firefox ZIP to an `.xpi` filename. The package gate reserves `.xpi` for files with a complete Mozilla JAR or COSE signature entry set, and the project page presents the unsigned package only as a temporary test build.
+
 ## [3.53.0] - 2026-08-22
 
 ### Changed

@@ -34,7 +34,8 @@ MEDIABUNNY_VERSION="1.55.1"
 MEDIABUNNY_JS_SHA256="953110266df5e5ea4d3c339ffe24a70f795643be07ee8375093897534bad1346"
 MEDIABUNNY_LICENSE_SHA256="3f3d9e0024b1921b067d6f7f88deb4a60cbe7a78e76c64e3f1d7fc3b779b9d04"
 CHROME_ZIP="../RumbleX-chrome.zip"
-FIREFOX_ZIP="../RumbleX-firefox.zip"
+FIREFOX_UNSIGNED_ZIP="../RumbleX-firefox-amo-unsigned.zip"
+LEGACY_FIREFOX_ZIP="../RumbleX-firefox.zip"
 USERSCRIPT="../RumbleX.user.js"
 USERSCRIPT_LITE="../RumbleX.lite.user.js"
 CHECKSUMS_FILE="../SHA256SUMS.txt"
@@ -169,7 +170,7 @@ pack_extension() {
 write_release_checksums() {
     local pkg
     rm -f "$CHECKSUMS_FILE"
-    for pkg in "$CHROME_ZIP" "$FIREFOX_ZIP" "$FIREFOX_XPI" "$USERSCRIPT" "$USERSCRIPT_LITE"; do
+    for pkg in "$CHROME_ZIP" "$FIREFOX_UNSIGNED_ZIP" "$SOURCE_BUNDLE" "$USERSCRIPT" "$USERSCRIPT_LITE"; do
         if [ ! -f "$pkg" ]; then
             echo "[!] Missing package for checksum: $pkg"
             return 1
@@ -194,15 +195,6 @@ verify_release_checksums() {
         fi
     done < "$CHECKSUMS_FILE"
     echo "[*] Release package checksums verified."
-}
-
-# AMO signs an .xpi, which is just the MV2 package under a different extension.
-# Producing it here means the submission artifact is built by the same staged
-# path as everything else rather than renamed by hand at release time.
-build_firefox_xpi() {
-    rm -f "$FIREFOX_XPI"
-    cp "$FIREFOX_ZIP" "$FIREFOX_XPI" || return 1
-    echo "[*] Wrote RumbleX-firefox.xpi (AMO submission / signing input)"
 }
 
 # AMO review requires the source for anything minified in the package, plus the
@@ -324,14 +316,13 @@ rm -f "$CHROME_ZIP"
 pack_extension "$CHROME_ZIP" "manifest.json"
 echo "    Created RumbleX-chrome.zip"
 
-# Build Firefox ZIP (swap manifest)
-echo "[*] Building Firefox package..."
-rm -f "$FIREFOX_ZIP"
-pack_extension "$FIREFOX_ZIP" "manifest-firefox.json"
-echo "    Created RumbleX-firefox.zip"
-
-build_firefox_xpi
+# Build the byte-reproducible AMO submission. An .xpi is deliberately not
+# created here: Mozilla adds its signature and returns the installable XPI.
+echo "[*] Building unsigned Firefox AMO submission..."
+rm -f "$LEGACY_FIREFOX_ZIP" "$FIREFOX_XPI" "$FIREFOX_UNSIGNED_ZIP"
+node ../scripts/build-firefox-amo.js
 build_source_bundle
+node ../scripts/check-firefox-artifacts.js
 
 write_release_checksums
 verify_release_checksums
@@ -343,5 +334,6 @@ node ../scripts/build-update-manifest.js --check
 echo ""
 echo "=== Build Complete ==="
 echo "Chrome: RumbleX-chrome.zip (load unpacked from extension/ or install zip)"
-echo "Firefox: RumbleX-firefox.zip (load as temporary add-on)"
+echo "Firefox: RumbleX-firefox-amo-unsigned.zip (AMO submission or temporary testing only)"
+echo "Firefox installable XPI: not emitted until Mozilla signs the submission"
 echo "Userscript: RumbleX.user.js (Tampermonkey / Violentmonkey)"

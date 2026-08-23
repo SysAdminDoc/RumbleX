@@ -15,13 +15,13 @@
 const assert = require('assert/strict');
 const fs = require('fs');
 const path = require('path');
-const zlib = require('zlib');
+const { readArchive } = require('./zip-utils');
 
 const ROOT = path.resolve(__dirname, '..');
 const EXT = path.join(ROOT, 'extension');
 const PACKAGES = [
     { label: 'Chrome', file: path.join(ROOT, 'RumbleX-chrome.zip'), manifest: 'manifest.json' },
-    { label: 'Firefox', file: path.join(ROOT, 'RumbleX-firefox.zip'), manifest: 'manifest-firefox.json' },
+    { label: 'Firefox', file: path.join(ROOT, 'RumbleX-firefox-amo-unsigned.zip'), manifest: 'manifest-firefox.json' },
 ];
 
 const missingPackages = PACKAGES.filter((pkg) => !fs.existsSync(pkg.file));
@@ -69,61 +69,6 @@ const runtimeDirs = onDisk
 const undeclaredDirs = runtimeDirs.filter((name) => !packDirs.includes(name));
 assert.deepEqual(undeclaredDirs, [],
     `directories in extension/ that build.sh does not package: ${undeclaredDirs.join(', ')}`);
-
-// Read ZIP entries directly rather than shelling out.
-//
-// Shelling out to `tar -tf` is not portable here: the `tar` on PATH in Git Bash
-// is GNU tar, which cannot read a ZIP at all and also parses a drive-letter path
-// as a remote host. The packages use only stored or deflated entries, both of
-// which Node can decode without adding a release-only dependency.
-function readArchive(file) {
-    const buf = fs.readFileSync(file);
-
-    // Locate the End Of Central Directory record, scanning back from the tail
-    // because it is followed by a variable-length comment.
-    const EOCD_SIG = 0x06054b50;
-    let eocd = -1;
-    for (let i = buf.length - 22; i >= 0 && i >= buf.length - 22 - 0xffff; i -= 1) {
-        if (buf.readUInt32LE(i) === EOCD_SIG) { eocd = i; break; }
-    }
-    assert.ok(eocd >= 0, `${path.basename(file)} is not a valid ZIP (no end-of-central-directory record)`);
-
-    const entryCount = buf.readUInt16LE(eocd + 10);
-    let offset = buf.readUInt32LE(eocd + 16);
-
-    const entries = new Map();
-    const CENTRAL_SIG = 0x02014b50;
-    const LOCAL_SIG = 0x04034b50;
-    for (let i = 0; i < entryCount; i += 1) {
-        assert.equal(buf.readUInt32LE(offset), CENTRAL_SIG,
-            `${path.basename(file)} central directory is malformed at entry ${i}`);
-        const compression = buf.readUInt16LE(offset + 10);
-        const compressedSize = buf.readUInt32LE(offset + 20);
-        const uncompressedSize = buf.readUInt32LE(offset + 24);
-        const nameLength = buf.readUInt16LE(offset + 28);
-        const extraLength = buf.readUInt16LE(offset + 30);
-        const commentLength = buf.readUInt16LE(offset + 32);
-        const localOffset = buf.readUInt32LE(offset + 42);
-        const name = buf.toString('utf8', offset + 46, offset + 46 + nameLength).replace(/^\.\//, '');
-        assert.ok(!entries.has(name), `${path.basename(file)} contains duplicate entry ${name}`);
-
-        assert.equal(buf.readUInt32LE(localOffset), LOCAL_SIG,
-            `${path.basename(file)} local header is malformed for ${name}`);
-        const localNameLength = buf.readUInt16LE(localOffset + 26);
-        const localExtraLength = buf.readUInt16LE(localOffset + 28);
-        const dataStart = localOffset + 30 + localNameLength + localExtraLength;
-        const compressed = buf.subarray(dataStart, dataStart + compressedSize);
-        let data;
-        if (compression === 0) data = Buffer.from(compressed);
-        else if (compression === 8) data = zlib.inflateRawSync(compressed);
-        else assert.fail(`${path.basename(file)} uses unsupported ZIP compression ${compression} for ${name}`);
-        assert.equal(data.length, uncompressedSize,
-            `${path.basename(file)} has the wrong uncompressed size for ${name}`);
-        entries.set(name, data);
-        offset += 46 + nameLength + extraLength + commentLength;
-    }
-    return entries;
-}
 
 const runtimeSources = new Map(packFiles.map((name) => [name, path.join(EXT, name)]));
 const collectDirectory = (directory) => {
@@ -190,8 +135,11 @@ for (const pkg of PACKAGES) {
 }
 
 // The two packages must differ only in manifest content, never in file set.
-const chromeEntries = new Set([...archives.get('Chrome').keys()].map((entry) => entry.replace(/\/$/, '')));
-const firefoxEntries = new Set([...archives.get('Firefox').keys()].map((entry) => entry.replace(/\/$/, '')));
+// Directory records are optional ZIP metadata. Compare shipped files so a
+// deterministic writer does not have to imitate an archiver's directory-list
+// convention to prove Chrome and Firefox contain the same runtime.
+const chromeEntries = new Set([...archives.get('Chrome').keys()].filter((entry) => !entry.endsWith('/')));
+const firefoxEntries = new Set([...archives.get('Firefox').keys()].filter((entry) => !entry.endsWith('/')));
 const onlyChrome = [...chromeEntries].filter((e) => !firefoxEntries.has(e));
 const onlyFirefox = [...firefoxEntries].filter((e) => !chromeEntries.has(e));
 assert.deepEqual(onlyChrome, [], `files present only in the Chrome package: ${onlyChrome.join(', ')}`);

@@ -5,6 +5,7 @@
   "description": "RumbleX Playwright E2E harness. Runtime code is in extension/.",
   "scripts": {
     "build:userscript": "node scripts/build-userscript.js",
+    "build-for-amo": "node scripts/build-firefox-amo.js",
     "check:userscript": "node scripts/build-userscript.js --check",
     "test:e2e": "playwright test",
     "test:e2e:headed": "playwright test --headed",
@@ -21,6 +22,7 @@
     "test:settings-schema": "node scripts/test-settings-schema.js",
     "test:settings-consumers": "node scripts/check-settings-consumers.js",
     "test:package-contents": "node scripts/check-package-contents.js",
+    "test:firefox-artifacts": "node scripts/check-firefox-artifacts.js",
     "test:feature-catalog": "node scripts/test-feature-catalog.js",
     "test:firefox-extension": "node scripts/test-firefox-extension.js",
     "test:ad-blocking": "node scripts/test-ad-blocking.js",
