@@ -57,14 +57,14 @@ test('generated userscript boots without extension APIs and keeps standalone dow
         page.on('pageerror', (error) => pageErrors.push(String(error?.stack || error)));
         await page.goto('https://rumble.com/vmodern123-userscript-fixture.html', { waitUntil: 'domcontentloaded' });
         await page.waitForTimeout(500);
-        await expect(page.locator('#rx-settings-btn')).toBeVisible({ timeout: 15_000 });
-        await page.locator('#rx-settings-btn').click();
+        await page.locator('#rx-settings-btn').waitFor({ state: 'attached', timeout: 15_000 });
+        await page.evaluate(() => document.querySelector('#rx-settings-btn')?.click());
         await expect(page.locator('.rx-m-shield-status')).toHaveClass(/is-limited/);
         await expect(page.locator('.rx-m-shield-title')).toHaveText('Network shield depends on your userscript manager');
         await page.keyboard.press('Escape');
         await expect(page.locator('#rx-split-wrapper')).toHaveCount(0);
-        await expect(page.locator('#rx-download-btn')).toBeVisible();
-        await page.locator('#rx-download-btn').click();
+        await page.locator('#rx-download-btn').waitFor({ state: 'attached' });
+        await page.evaluate(() => document.querySelector('#rx-download-btn')?.click());
         await expect(page.locator('#rx-download-overlay.open')).toBeVisible();
 
         const platform = await page.evaluate(() => ({

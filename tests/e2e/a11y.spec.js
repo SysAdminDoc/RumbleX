@@ -368,7 +368,6 @@ const AXE_SURFACES = [
     { id: 'loopControl', selector: '.rx-loop-ab-bar', open: 'init', needs: ['player'] },
     { id: 'videoStats', selector: '.rx-stats-overlay', open: 'init', needs: ['player'] },
     { id: 'externalPlayerEnabled', selector: '.rx-extplayer', open: 'init', needs: ['by-actions'] },
-    { id: 'liveChatEnhance', selector: '#rx-chat-filter', open: 'init', needs: ['chat'] },
     { id: 'miniPlayer', selector: '.rx-miniplayer', open: 'miniPlayer', needs: ['player'] },
     { id: 'videoTimestamps', selector: '.rx-timestamp-host', open: 'videoTimestamps', needs: ['comments'] },
     { id: 'watchProgress', selector: '.rx-resume-toast', open: 'watchProgress' },

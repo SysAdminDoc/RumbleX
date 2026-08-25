@@ -812,7 +812,7 @@
     "description": "In-page UI string (shared core)."
   },
   "feat_loopControl_desc": {
-    "message": "Full video loop + A-B segment loop",
+    "message": "Legacy loop engine; no watch-page launcher",
     "description": "In-page UI string (shared core)."
   },
   "feat_miniPlayer_label": {
@@ -836,7 +836,7 @@
     "description": "In-page UI string (shared core)."
   },
   "feat_videoStats_desc": {
-    "message": "Resolution, codec, buffer, frames overlay",
+    "message": "Legacy stats engine; no watch-page launcher",
     "description": "In-page UI string (shared core)."
   },
   "feat_chapters_label": {
@@ -1012,7 +1012,7 @@
     "description": "In-page UI string (shared core)."
   },
   "feat_screenshotBtn_desc": {
-    "message": "Capture current video frame as PNG",
+    "message": "Legacy frame capture; no watch-page launcher",
     "description": "In-page UI string (shared core)."
   },
   "feat_shareTimestamp_label": {
@@ -1020,7 +1020,7 @@
     "description": "In-page UI string (shared core)."
   },
   "feat_shareTimestamp_desc": {
-    "message": "Copy video URL at current playback time",
+    "message": "Legacy timed-link engine; no watch-page launcher",
     "description": "In-page UI string (shared core)."
   },
   "feat_subtitleSidecar_label": {
@@ -1092,7 +1092,7 @@
     "description": "In-page UI string (shared core)."
   },
   "feat_liveChatEnhance_desc": {
-    "message": "@mention highlights, message filter bar",
+    "message": "@mention highlights without an extra filter row",
     "description": "In-page UI string (shared core)."
   },
   "feat_chatAutoScroll_label": {
@@ -1108,7 +1108,7 @@
     "description": "In-page UI string (shared core)."
   },
   "feat_uniqueChatters_desc": {
-    "message": "Live counter of unique chatters + messages",
+    "message": "Session counts without a watch-page bar",
     "description": "In-page UI string (shared core)."
   },
   "feat_chatUserBlock_label": {
@@ -1132,7 +1132,7 @@
     "description": "In-page UI string (shared core)."
   },
   "feat_chatExport_desc": {
-    "message": "Export chat as TXT (click) or JSON (shift-click)",
+    "message": "Legacy export engine; no chat-header button",
     "description": "In-page UI string (shared core)."
   },
   "feat_popoutChat_label": {
@@ -1140,7 +1140,7 @@
     "description": "In-page UI string (shared core)."
   },
   "feat_popoutChat_desc": {
-    "message": "Open chat in separate resizable window",
+    "message": "Legacy popout engine; no chat-header button",
     "description": "In-page UI string (shared core)."
   },
   "feat_videoTimestamps_label": {
@@ -1180,7 +1180,7 @@
     "description": "In-page UI string (shared core)."
   },
   "feat_rantHighlight_desc": {
-    "message": "Glow rants by tier + running $ total",
+    "message": "Glow rants without a running-total bar",
     "description": "In-page UI string (shared core)."
   },
   "feat_rantPersist_label": {
@@ -1928,7 +1928,7 @@
     "description": "In-page UI string (shared core)."
   },
   "feat_rantStatsPanel_desc": {
-    "message": "Totals and a local export of the rants captured for this video",
+    "message": "Cached totals and exports in Options; no watch-page panel",
     "description": "In-page UI string (shared core)."
   },
   "rantArchiveEmpty": {

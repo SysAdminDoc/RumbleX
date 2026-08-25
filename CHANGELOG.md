@@ -13,6 +13,25 @@ All notable changes to RumbleX will be documented in this file.
 - Store metadata and the public project page now use the package version as their checked source of truth. The same guard verifies both browser manifests, the lockfile, README badge, visible page label, and the feature-module count derived from the runtime registries.
 - `npm run verify` is now the mandatory local gate for source checks, selector contracts, headless browser coverage, packaging, and archive integrity. `npm run release:local` cleans known package outputs, runs that gate, rebuilds the final artifacts, and verifies their bytes again.
 
+## [3.56.0] - 2026-08-25
+
+### Changed
+
+- Theater Split now opens with its right panel expanded. Live streams start on Live Chat, recorded videos start on Comments, and both layouts keep the active conversation at full panel height.
+- Theater exit moved into the panel header, so leaving Theater no longer requires a control over the video.
+- Mouse-wheel and touch gestures no longer collapse the panel while someone is scrolling chat or comments.
+
+### Removed
+
+- Removed the watch-page rant archive, running rant tracker, chat filter, chatter bar, Player Tools launcher, panel reveal, and player close controls.
+- Hid Rumble's redundant chat header and RumbleX's floating site toolbar so neither one consumes chat height or covers the composer.
+- Removed the chat-header Export and Popout buttons along with stale screenshots that documented the retired surfaces.
+
+### Verified
+
+- Rechecked the supplied live stream at 1440 by 900 and 820 by 900 with full-height Live Chat, Comments, a clear player, and no overlapping toolbar.
+- Added regression checks for every removed selector, always-open Theater geometry, responsive resize behavior, and all five themes.
+
 ## [3.55.0] - 2026-08-25
 
 ### Changed

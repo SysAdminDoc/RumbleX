@@ -1,8 +1,17 @@
 # RumbleX
 
-![Version](https://img.shields.io/badge/version-v3.55.0-blue) ![License](https://img.shields.io/badge/license-MIT-green) ![Platform](https://img.shields.io/badge/platform-Extension%20%2B%20Userscript-lightgrey) ![Firefox](https://img.shields.io/badge/firefox-109%2B-orange)
+![Version](https://img.shields.io/badge/version-v3.56.0-blue) ![License](https://img.shields.io/badge/license-MIT-green) ![Platform](https://img.shields.io/badge/platform-Extension%20%2B%20Userscript-lightgrey) ![Firefox](https://img.shields.io/badge/firefox-109%2B-orange)
 
 **A large Rumble enhancement suite.** More than 130 feature modules cover ad blocking, theater mode, downloads, playback, chat, local history, feed controls, and granular page cleanup. It runs as a browser extension or userscript.
+
+### What's new in v3.56
+
+Watch pages now give the video and conversation every usable pixel.
+
+- **Theater opens ready to use.** Live streams start with Live Chat selected, recorded videos start on Comments, and the active panel fills the right side immediately.
+- **Chat has no stacked utility bars.** The native chat header, local rant archive, running rant tracker, filter field, chatter counter, and header export controls no longer consume message space.
+- **The player stays clear.** The panel reveal, player close control, Player Tools launcher, and floating site toolbar no longer sit over the video or chat composer.
+- **Exit belongs with the panel.** A compact button in the panel header leaves Theater without putting another control over the player.
 
 ### What's new in v3.55
 
@@ -182,10 +191,10 @@ Live chat got the things every other chat platform already has, and rants became
 - **Scroll Volume**. Mouse wheel volume + middle-click mute + overlay
 - **Auto Max Quality**. Auto-select highest resolution on load
 - **Autoplay Block**. Prevent auto-play of next video
-- **Loop Control**. Full video loop + A-B segment loop
+- **Loop Control**. Legacy full-video and A-B loop engine with no watch-page launcher
 - **Mini Player**. Floating draggable video when scrolling away
 - **Keyboard Nav (legacy)**. YouTube-style hotkeys (J/K/L, F, M, 0-9, arrows). Disabled by default in v2. visible controls preferred; flip on under **Core** if you still want them.
-- **Video Stats**. Resolution, codec, buffer, frames overlay
+- **Video Stats**. Legacy statistics overlay engine with no watch-page launcher
 - **Chapters**. Parse description timestamps, render tick marks on the seek bar + clickable chapter list
 - **Autoplay Queue**. FAB-pinned queue of Rumble URLs, auto-advances when current video ends
 
@@ -216,7 +225,7 @@ Live chat got the things every other chat platform already has, and rants became
 - **Live DVR**. Save the last 30 s / 1 m / 5 m / 10 m of a live stream as MP4
 - **Batch Download**. Multi-select thumbnails across feeds to bulk-download direct MP4s
 - **Channel Archive Queue**. Queue a channel for persistent background downloads, preflight selected quality and known size, pause/resume or retry failures, round-trip the queue as local JSON, and optionally stream into a persisted Chrome/Edge folder with browser Downloads as the fallback. Connectivity loss aborts selected-folder streams safely, pauses resumable browser transfers, and leaves restartable archive jobs waiting for the online event/alarm recovery pass.
-- **Screenshot**. Capture current video frame as PNG
+- **Screenshot**. Legacy frame-capture engine with no watch-page launcher
 - **Share@Time**. Copy video URL at current playback timestamp
 - **Subtitle Sidecar**. Load Rumble's own caption track when the video has one, or a local SRT/VTT, and overlay it on the player
 - **Transcripts**. Clickable, searchable transcript panel synced to the player
@@ -231,17 +240,17 @@ Live chat got the things every other chat platform already has, and rants became
 ### Comments & Chat
 - **Auto Like**. One-shot auto-click of the like button on watch pages
 - **Comment Blocking**. Per-commenter block list with inline block button on every comment (parallel to the existing chat user-block)
-- **Chat Enhance**. @mention highlights (TreeWalker-safe. no `innerHTML` round-trip), message filter bar
+- **Chat Enhance**. @mention highlights without an extra filter row (TreeWalker-safe. no `innerHTML` round-trip)
 - **Chat Scroll**. Smart auto-scroll with pause on scroll-up
-- **Unique Chatters**. Live counter of unique chatters + total messages above chat
+- **Unique Chatters**. Session participant counting without a bar above chat
 - **User Block**. Per-user chat hide with inline block button on every message
 - **Spam Dedup**. Hide recently-repeated identical messages (30-message rolling window)
-- **Chat Export**. TXT (click) or JSON (shift-click) export including rant amounts
-- **Popout Chat**. Open chat in a separate resizable window (uses Rumble's native popout where available)
+- **Chat Export**. Legacy TXT and JSON export engine without a chat-header button
+- **Popout Chat**. Legacy popout engine without a chat-header button
 - **Timestamps**. Clickable timestamps in comments and description
 - **Comment Nav**. Navigate, expand/collapse, OP-only filter
 - **Comment Sort**. Reorder comments: Top / New / Oldest / Controversial
-- **Rant Highlight**. Glow rants by tier + running $ total
+- **Rant Highlight**. Glow rants by tier without a running-total bar
 - **Rant Persist**. Keep rants visible past their expiry + per-video cache + JSON export
 
 ### Feed Controls
@@ -338,7 +347,7 @@ ssh-keygen -Y verify -f allowed_signers -I release@rumblex -n file \
 
 A `Good "file" signature` result means the checksums came from the key published in this repository. If either check fails, do not install the files. The only official sources are this repository's Releases page and the raw userscript URLs above; copies elsewhere are not ours.
 
-v3.55.0 is unsigned because the project does not yet have a published release signing identity. Its release page states that directly; use `SHA256SUMS.txt` to verify download integrity.
+v3.56.0 is unsigned because the project does not yet have a published release signing identity. Its release page states that directly; use `SHA256SUMS.txt` to verify download integrity.
 
 ### Request-shield support matrix
 

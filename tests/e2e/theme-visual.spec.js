@@ -169,7 +169,7 @@ for (const [themeId, palette] of Object.entries(THEMES)) {
             }
         });
 
-        test(`Theater ${themeId} covers collapsed, split, resize, and tools at ${viewport.name}`, async () => {
+        test(`Theater ${themeId} covers full split, resize, and a clean player at ${viewport.name}`, async () => {
             const browser = await chromium.launch({ headless: true });
             try {
                 const { context, page } = await createHarnessPage(browser);
@@ -205,27 +205,8 @@ for (const [themeId, palette] of Object.entries(THEMES)) {
                 }, { theme: themeId });
 
                 await expect(page.locator('#rx-split-wrapper')).toBeVisible();
-                await expect(page.locator('.rx-player-tool-action')).toHaveCount(5);
-
-                const collapsed = await page.evaluate(() => {
-                    const rect = (selector) => document.querySelector(selector)?.getBoundingClientRect().toJSON();
-                    const right = document.querySelector('#rx-split-right');
-                    return {
-                        close: rect('#rx-theater-close'),
-                        reveal: rect('#rx-split-reveal'),
-                        tools: rect('.rx-player-tools-trigger'),
-                        rightRect: right.getBoundingClientRect().toJSON(),
-                        horizontalOverflow: document.querySelector('#rx-split-wrapper').scrollWidth
-                            - document.querySelector('#rx-split-wrapper').clientWidth,
-                    };
-                });
-                expect(viewport.width === 860 ? collapsed.rightRect.height : collapsed.rightRect.width).toBeLessThanOrEqual(1);
-                expect(boxesOverlap(collapsed.close, collapsed.reveal)).toBe(false);
-                expect(boxesOverlap(collapsed.reveal, collapsed.tools)).toBe(false);
-                expect(collapsed.horizontalOverflow).toBeLessThanOrEqual(2);
-
-                await page.locator('#rx-split-reveal').click();
                 await expect(page.locator('#rx-split-right')).toHaveClass(/rx-expanded/);
+                await expect(page.locator('.rx-player-tools, .rx-player-tools-trigger, .rx-player-tools-menu')).toHaveCount(0);
 
                 const expanded = await page.evaluate(() => {
                     const left = document.querySelector('#rx-split-left').getBoundingClientRect();
@@ -250,6 +231,13 @@ for (const [themeId, palette] of Object.entries(THEMES)) {
                         subscribedBackground: getComputedStyle(subscribed).backgroundColor,
                         subscribedText: getComputedStyle(subscribedMessage).color,
                         signInBackground: getComputedStyle(signIn).backgroundColor,
+                        chatHeaderHidden: getComputedStyle(document.querySelector('.chat--header')).display === 'none',
+                        removedSurfaceCount: document.querySelectorAll([
+                            '.rx-rant-archive', '.rx-rant-tracker', '#rx-chat-filter',
+                            '.rx-chatter-bar', '.rx-player-tools-trigger',
+                            '#rx-split-reveal', '#rx-theater-close',
+                        ].join(',')).length,
+                        exitInsidePanel: !!document.querySelector('#rx-split-right .rx-panel-exit'),
                         clipped: document.querySelector('#rx-split-right').scrollWidth > document.querySelector('#rx-split-right').clientWidth + 1,
                         horizontalOverflow: document.querySelector('#rx-split-wrapper').scrollWidth
                             - document.querySelector('#rx-split-wrapper').clientWidth,
@@ -261,11 +249,14 @@ for (const [themeId, palette] of Object.entries(THEMES)) {
                 expect(expanded.subscribedText).toBe(rgb(palette.text));
                 expect(maxColorChannel(expanded.subscribedBackground)).toBeLessThan(96);
                 expect(expanded.signInBackground).toBe(rgb(palette.mantle));
+                expect(expanded.chatHeaderHidden).toBe(true);
+                expect(expanded.removedSurfaceCount).toBe(0);
+                expect(expanded.exitInsidePanel).toBe(true);
                 expect(expanded.right.width).toBeGreaterThan(viewport.width === 860 ? 800 : 280);
                 expect(viewport.width === 860 ? expanded.left.height : expanded.left.width).toBeGreaterThan(300);
                 expect(boxesOverlap(expanded.left, expanded.right)).toBe(false);
                 expect(boxesOverlap(expanded.info, expanded.actions)).toBe(false);
-                expect(expanded.actionCount).toBe(2);
+                expect(expanded.actionCount).toBe(3);
                 expect(expanded.duplicateDownload).toBe(false);
                 expect(expanded.clipped).toBe(false);
                 expect(expanded.horizontalOverflow).toBeLessThanOrEqual(2);
@@ -289,31 +280,8 @@ for (const [themeId, palette] of Object.entries(THEMES)) {
                 }, viewport.width === 860);
                 expect(panelSizeAfter).toBeGreaterThan(panelSizeBefore + 10);
 
-                await page.locator('.rx-player-tools-trigger').click();
-                await expect(page.locator('.rx-player-tools-menu')).toBeVisible();
-                const tools = await page.evaluate(() => {
-                    const left = document.querySelector('#rx-split-left').getBoundingClientRect();
-                    const menu = document.querySelector('.rx-player-tools-menu').getBoundingClientRect();
-                    return {
-                        left: left.toJSON(),
-                        menu: menu.toJSON(),
-                        background: getComputedStyle(document.querySelector('.rx-player-tools-menu')).backgroundColor,
-                        visibleHeading: !!document.querySelector('.rx-player-tools-heading'),
-                    };
-                });
-                expect(tools.background).toBe(rgb(palette.mantle));
-                expect(tools.visibleHeading).toBe(false);
-                expect(tools.menu.left).toBeGreaterThanOrEqual(tools.left.left);
-                expect(tools.menu.right).toBeLessThanOrEqual(tools.left.right + 1);
-                expect(tools.menu.bottom).toBeLessThanOrEqual(tools.left.bottom + 1);
-
-                await page.locator('.rx-player-tools-trigger').press('Escape');
-                await page.getByRole('button', { name: 'Collapse theater side panel' }).click();
-                await expect(page.locator('#rx-split-right')).not.toHaveClass(/rx-expanded/);
-                await expect.poll(async () => page.locator('#rx-split-right').evaluate((node, narrow) => {
-                    const rect = node.getBoundingClientRect();
-                    return narrow ? rect.height : rect.width;
-                }, viewport.width === 860)).toBeLessThanOrEqual(1);
+                await page.locator('.rx-panel-exit').click();
+                await expect(page.locator('#rx-split-wrapper')).toHaveCount(0);
 
                 await context.close();
             } finally {

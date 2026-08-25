@@ -1,4 +1,4 @@
-// RumbleX v3.55.0 - Options Page
+// RumbleX v3.56.0 - Options Page
 // Standalone settings management via chrome.storage.local (rx_settings key).
 // Mirrors Astra Deck's settings page pattern: dirty-draft workflow with
 // search, group nav, stats overview, and export/import/reset.
@@ -90,10 +90,10 @@
         defaultMaxVolume: { group: 'video-player', label: 'Default Max Volume', desc: 'Start videos at 100% volume' },
         autoMaxQuality: { group: 'video-player', label: 'Auto Max Quality', desc: 'Auto-select highest resolution on load' },
         autoplayBlock: { group: 'video-player', label: 'Autoplay Block', desc: 'Prevent auto-play of next video' },
-        loopControl: { group: 'video-player', label: 'Loop Control', desc: 'Full video loop + A-B segment loop' },
+        loopControl: { group: 'video-player', label: 'Loop Control', desc: 'Legacy loop engine; no watch-page launcher' },
         miniPlayer: { group: 'video-player', label: 'Mini Player', desc: 'Floating draggable video when scrolling away' },
         legacyKeyboardNav: { group: 'core', label: 'Keyboard Nav (legacy)', desc: 'YouTube-style hotkeys (J/K/L, F, M, 0-9). Off by default in v2 — visible controls preferred.' },
-        videoStats: { group: 'video-player', label: 'Video Stats', desc: 'Resolution, codec, buffer, frames overlay' },
+        videoStats: { group: 'video-player', label: 'Video Stats', desc: 'Legacy stats engine; no watch-page launcher' },
         timeRemaining: { group: 'video-player', label: 'Time Remaining', desc: 'Show time left at the current speed and the clock time it ends' },
         chapters: { group: 'video-player', label: 'Chapters', desc: 'Parse description timestamps + seekbar markers' },
         autoplayScheduler: { group: 'video-player', label: 'Autoplay Queue', desc: 'Queue Rumble URLs, auto-advance at end' },
@@ -116,8 +116,8 @@
         videoClips: { group: 'downloads', label: 'Video Clips', desc: 'Mark In/Out and export clip as MP4' },
         liveDVR: { group: 'downloads', label: 'Live DVR', desc: 'Save the last N seconds of a live stream' },
         batchDownload: { group: 'downloads', label: 'Batch Download', desc: 'Multi-select thumbnails from feeds' },
-        screenshotBtn: { group: 'downloads', label: 'Screenshot', desc: 'Capture current video frame as PNG' },
-        shareTimestamp: { group: 'downloads', label: 'Share @ Time', desc: 'Copy video URL at current playback time' },
+        screenshotBtn: { group: 'downloads', label: 'Screenshot', desc: 'Legacy frame capture; no watch-page launcher' },
+        shareTimestamp: { group: 'downloads', label: 'Share @ Time', desc: 'Legacy timed-link engine; no watch-page launcher' },
         subtitleSidecar: { group: 'downloads', label: 'Subtitle Sidecar', desc: 'Load local SRT/VTT and overlay captions' },
         subtitleNativeTracks: { group: 'downloads', label: "Rumble's Own Captions", desc: 'Load the creator-uploaded caption track when the video has one.' },
         transcripts: { group: 'downloads', label: 'Transcripts', desc: 'Clickable transcript panel synced to player' },
@@ -128,17 +128,17 @@
         quickBookmark: { group: 'history', label: 'Bookmarks', desc: 'Save videos locally for later (200 max)' },
         quickSave: { group: 'history', label: 'Quick Save', desc: 'Watch Later button on thumbnail hover' },
 
-        liveChatEnhance: { group: 'comments-chat', label: 'Chat Enhance', desc: '@mention highlights, message filter bar' },
+        liveChatEnhance: { group: 'comments-chat', label: 'Chat Enhance', desc: '@mention highlights without an extra filter row' },
         chatAutoScroll: { group: 'comments-chat', label: 'Chat Scroll', desc: 'Smart auto-scroll with pause on scroll-up' },
-        uniqueChatters: { group: 'comments-chat', label: 'Unique Chatters', desc: 'Live counter of unique chatters + messages' },
+        uniqueChatters: { group: 'comments-chat', label: 'Unique Chatters', desc: 'Session counts without a watch-page bar' },
         chatUserBlock: { group: 'comments-chat', label: 'User Block', desc: 'Per-user chat hide (click "block")' },
         chatSpamDedup: { group: 'comments-chat', label: 'Spam Dedup', desc: 'Hide recently-repeated identical messages' },
-        chatExport: { group: 'comments-chat', label: 'Chat Export', desc: 'Export chat as TXT (click) or JSON (shift-click)' },
-        popoutChat: { group: 'comments-chat', label: 'Popout Chat', desc: 'Open chat in separate resizable window' },
+        chatExport: { group: 'comments-chat', label: 'Chat Export', desc: 'Legacy export engine; no chat-header button' },
+        popoutChat: { group: 'comments-chat', label: 'Popout Chat', desc: 'Legacy popout engine; no chat-header button' },
         videoTimestamps: { group: 'comments-chat', label: 'Timestamps', desc: 'Clickable timestamps in comments/description' },
         commentNav: { group: 'comments-chat', label: 'Comment Nav', desc: 'Navigate, expand/collapse, OP-only filter' },
         commentSort: { group: 'comments-chat', label: 'Comment Sort', desc: 'Top / New / Oldest / Controversial' },
-        rantHighlight: { group: 'comments-chat', label: 'Rant Highlight', desc: 'Glow rants by tier + running $ total' },
+        rantHighlight: { group: 'comments-chat', label: 'Rant Highlight', desc: 'Glow rants without a running-total bar' },
         rantPersist: { group: 'comments-chat', label: 'Rant Persist', desc: 'Keep rants visible past expiry + export' },
         blockedChatters: { group: 'comments-chat', label: 'Blocked Chatters', desc: 'Usernames hidden in live chat' },
 
@@ -295,7 +295,7 @@
         chatShowDeleted: { group: 'comments-chat', label: 'Show Deleted Messages', desc: 'Keep removed chat messages visible, struck through.' },
         chatTimedMutes: { group: 'comments-chat', label: 'Timed Chat Mutes', desc: 'Per-user mute with reason and expiry.' },
         chatMuteDurations: { group: 'comments-chat', label: 'Mute Duration Presets', desc: 'Minutes — array, e.g. [15,30,60,240].' },
-        rantStatsPanel: { group: 'comments-chat', label: 'Rant Stats Panel', desc: 'RantStats-parity sidebar with cached rants, totals, exports.' },
+        rantStatsPanel: { group: 'comments-chat', label: 'Rant Stats Panel', desc: 'Cached rant totals and exports in Options; no watch-page panel.' },
         rantExportFormat: { group: 'comments-chat', label: 'Rant Export Format', desc: 'csv | json | csvJson.' },
         rantTierFilter: { group: 'comments-chat', label: 'Rant Tier Filter', desc: 'Minimum displayed tier/value (0 = show all).' },
         rantStickyHighValue: { group: 'comments-chat', label: 'Pin High-Value Rants', desc: 'Sticky rail for the largest rants.' },

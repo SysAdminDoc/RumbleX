@@ -23,7 +23,7 @@ async function setSettings(context, extensionId, patch) {
 test.describe('live site visual capture', () => {
     test.skip(!ENABLED, 'opt-in: set RUMBLEX_SITE_VISUAL_CAPTURE=1');
 
-    test('capture themed site, theater split, and player tools', async ({ context, extensionId }) => {
+    test('capture themed site and the unobstructed Theater Split layouts', async ({ context, extensionId }) => {
         test.setTimeout(180_000);
         const outputDir = path.join(__dirname, '..', '..', 'design', 'mockups', 'site-implementation');
         fs.mkdirSync(outputDir, { recursive: true });
@@ -61,21 +61,9 @@ test.describe('live site visual capture', () => {
         await setSettings(context, extensionId, { theaterSplit: true });
         await page.reload({ waitUntil: 'domcontentloaded', timeout: 60_000 });
         await expect(page.locator('#rx-split-wrapper')).toBeVisible({ timeout: 30_000 });
-        await page.waitForTimeout(1_000);
-        await page.screenshot({ path: path.join(outputDir, 'theater-collapsed-1440x900.png'), fullPage: false });
-
-        await page.locator('#rx-split-reveal').click();
         await expect(page.locator('#rx-split-right')).toHaveClass(/rx-expanded/);
-        await page.waitForTimeout(500);
+        await page.waitForTimeout(1_000);
         await page.screenshot({ path: path.join(outputDir, 'theater-split-1440x900.png'), fullPage: false });
-
-        const archiveSummary = page.locator('.rx-rant-archive__summary');
-        if (await archiveSummary.isVisible().catch(() => false)) {
-            await archiveSummary.click();
-            await expect(archiveSummary).toHaveAttribute('aria-expanded', 'true');
-            await page.screenshot({ path: path.join(outputDir, 'theater-rant-archive-1440x900.png'), fullPage: false });
-            await archiveSummary.click();
-        }
 
         const commentsTab = page.locator('#rx-tab-button-comments');
         await commentsTab.click();
@@ -108,13 +96,10 @@ test.describe('live site visual capture', () => {
         await page.setViewportSize(VIEWPORT);
         await page.waitForTimeout(300);
 
-        const tools = page.locator('.rx-player-tools-trigger:visible').first();
-        await expect(tools).toBeVisible({ timeout: 10_000 });
-        await tools.click();
-        await expect(page.locator('.rx-player-tools-menu')).toBeVisible();
-        await expect(page.locator('.rx-player-tools')).toHaveCSS('opacity', '1');
-        await expect(page.locator('.rx-player-tools-menu')).toHaveCSS('background-color', 'rgb(24, 24, 37)');
-        await page.screenshot({ path: path.join(outputDir, 'theater-player-tools-1440x900.png'), fullPage: false });
+        await expect(page.locator('.rx-rant-archive, .rx-rant-tracker, #rx-chat-filter, .rx-chatter-bar, .rx-player-tools-trigger, #rx-split-reveal, #rx-theater-close')).toHaveCount(0);
+        await expect(page.locator('.chat--header')).toBeHidden();
+        await expect(page.locator('#rx-toolbar')).toBeHidden();
+        await page.screenshot({ path: path.join(outputDir, 'theater-clean-player-1440x900.png'), fullPage: false });
 
         await page.close();
     });

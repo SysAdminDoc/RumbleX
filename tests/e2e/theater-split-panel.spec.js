@@ -61,14 +61,13 @@ async function mountLiveTheater(page, { width = 1440, height = 900 } = {}) {
     });
 
     await expect(page.locator('#rx-split-wrapper')).toBeVisible();
-    await page.locator('#rx-split-reveal').click();
     await expect(page.locator('#rx-split-right')).toHaveClass(/rx-expanded/);
     await expect(page.locator('#rx-tab-chat')).toBeVisible();
-    await expect(page.locator('.rx-rant-archive')).toBeVisible();
+    await expect(page.locator('.rx-panel-exit')).toBeVisible();
     await page.waitForTimeout(350);
 }
 
-test('live Theater Split keeps chat primary and makes its utilities compact', async () => {
+test('live Theater Split gives chat the full side-panel height with no utility bars', async () => {
     const browser = await chromium.launch({ headless: true });
     try {
         const { context, page } = await createHarnessPage(browser);
@@ -78,26 +77,28 @@ test('live Theater Split keeps chat primary and makes its utilities compact', as
             const right = document.querySelector('#rx-split-right').getBoundingClientRect();
             const panel = document.querySelector('#rx-tab-chat').getBoundingClientRect();
             const history = document.querySelector('#chat-history-list').getBoundingClientRect();
-            const archive = document.querySelector('.rx-rant-archive').getBoundingClientRect();
-            const nativeTitle = document.querySelector('.chat--header-title');
-            const nativeTitleStyle = getComputedStyle(nativeTitle);
+            const nativeHeader = document.querySelector('.chat--header');
             return {
                 panelBottomGap: Math.abs(right.bottom - panel.bottom),
                 historyShare: history.height / panel.height,
                 historyWidthShare: history.width / panel.width,
-                archiveHeight: archive.height,
-                archiveExpanded: document.querySelector('.rx-rant-archive__summary')?.getAttribute('aria-expanded'),
-                nativeTitleHidden: nativeTitleStyle.display === 'none' || nativeTitleStyle.visibility === 'hidden',
+                nativeHeaderHidden: getComputedStyle(nativeHeader).display === 'none',
+                nativeHeaderHeight: nativeHeader.getBoundingClientRect().height,
+                removedSurfaceCount: document.querySelectorAll([
+                    '.rx-rant-archive', '.rx-rant-tracker', '#rx-chat-filter',
+                    '.rx-chatter-bar', '.rx-player-tools-trigger',
+                    '#rx-split-reveal', '#rx-theater-close',
+                ].join(',')).length,
                 horizontalOverflow: document.querySelector('#rx-tab-chat').scrollWidth > document.querySelector('#rx-tab-chat').clientWidth,
             };
         });
 
         expect(layout.panelBottomGap).toBeLessThanOrEqual(1);
-        expect(layout.historyShare).toBeGreaterThan(0.5);
+        expect(layout.historyShare).toBeGreaterThan(0.6);
         expect(layout.historyWidthShare).toBeGreaterThan(0.9);
-        expect(layout.archiveHeight).toBeLessThanOrEqual(48);
-        expect(layout.archiveExpanded).toBe('false');
-        expect(layout.nativeTitleHidden).toBe(true);
+        expect(layout.nativeHeaderHidden).toBe(true);
+        expect(layout.nativeHeaderHeight).toBe(0);
+        expect(layout.removedSurfaceCount).toBe(0);
         expect(layout.horizontalOverflow).toBe(false);
 
         const chatTab = page.locator('#rx-tab-button-chat');
@@ -140,7 +141,7 @@ test('recorded Theater Split opens directly to a full-height Comments tab', asyn
         });
 
         await expect(page.locator('#rx-split-wrapper')).toBeVisible();
-        await page.locator('#rx-split-reveal').click();
+        await expect(page.locator('#rx-split-right')).toHaveClass(/rx-expanded/);
         await expect(page.locator('#rx-tab-button-comments')).toHaveAttribute('aria-selected', 'true');
         await expect(page.locator('#rx-tab-button-chat')).toHaveCount(0);
         await expect(page.locator('#video-comments')).toBeVisible();
@@ -233,11 +234,8 @@ test('narrow Theater Split keeps tabs reachable and chat attached to the panel e
         });
 
         await expect(page.locator('#rx-tab-chat #chat-history-list')).toBeVisible();
-        await expect(page.locator('#rx-tab-chat #rx-chat-filter')).toBeVisible();
-        await expect(page.locator('#rx-tab-chat .rx-chat-export-btn')).toBeVisible();
-        await expect(page.locator('#rx-tab-chat .rx-popout-chat-btn')).toBeVisible();
-        await expect(page.locator('#rx-tab-chat .rx-rant-archive')).toHaveCount(1);
-        await expect(page.locator('#rx-tab-chat .rx-chatter-bar')).toHaveCount(1);
+        await expect(page.locator('#rx-tab-chat .chat--header')).toBeHidden();
+        await expect(page.locator('#rx-chat-filter, .rx-chat-export-btn, .rx-popout-chat-btn, .rx-rant-archive, .rx-rant-tracker, .rx-chatter-bar')).toHaveCount(0);
         await context.close();
     } finally {
         await browser.close();

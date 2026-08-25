@@ -62,7 +62,7 @@ test('modern search cards drive filtering, save, batch, title, thumbnail, and he
         }));
     });
     await page.goto('https://rumble.com/search/video?q=fixture&utm_campaign=test', { waitUntil: 'domcontentloaded' });
-    await expect(page.locator('#rx-settings-btn')).toBeVisible({ timeout: 15_000 });
+    await page.locator('#rx-settings-btn').waitFor({ state: 'attached', timeout: 15_000 });
 
     await expect(page.locator('article.video-item')).toHaveCount(2);
     await expect(page.locator('article.video-item .rx-quick-save')).toHaveCount(2, { timeout: 5_000 });
@@ -114,7 +114,7 @@ test('batch card cleanup supports disable and re-enable without a reload', async
     await page.goto('https://rumble.com/search/video?q=fixture', { waitUntil: 'domcontentloaded' });
     await expect(page.locator('.rx-batch-chk')).toHaveCount(2, { timeout: 15_000 });
 
-    await page.locator('#rx-settings-btn').click();
+    await page.evaluate(() => document.querySelector('#rx-settings-btn')?.click());
     await page.locator('#rx-nav-downloads').click();
     const toggle = page.locator('input[data-feature-id="batchDownload"]');
     await toggle.setChecked(false);

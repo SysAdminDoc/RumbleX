@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         RumbleX Lite
 // @namespace    https://github.com/SysAdminDoc/RumbleX
-// @version      3.55.0
+// @version      3.56.0
 // @description  Rumble enhancement suite (Lite). The same shared feature core, without bundled transmuxers. Downloads save the raw stream; MP4 remux needs the full build or the extension.
 // @author       SysAdminDoc
 // @match        https://rumble.com/*
@@ -23,7 +23,7 @@
 // @updateURL    https://github.com/SysAdminDoc/RumbleX/raw/main/RumbleX.lite.user.js
 // ==/UserScript==
 
-// Generated from the shared extension core files. Shared runtime SHA-256: 08cc1b331081a73aa4f4bc50c9e38db47c139f62c29101d3c5c7bda545f6e607
+// Generated from the shared extension core files. Shared runtime SHA-256: dd354398f78f5c93c02fda6f130165f043fef24cf3db1013aa69491e26579db3
 // RumbleX shared settings schema. This file is the canonical source for
 // defaults and trust-boundary normalization across content, options, popup,
 // background profile/Gist restores, and the generated userscript.
@@ -793,7 +793,7 @@
 'use strict';
 
 (() => {
-    const VERSION = "3.55.0";
+    const VERSION = "3.56.0";
     const ASSETS = Object.freeze({});
     const MESSAGES = Object.freeze({
   "extName": "RumbleX",
@@ -999,13 +999,13 @@
   "feat_autoplayBlock_label": "Autoplay Block",
   "feat_autoplayBlock_desc": "Prevent auto-play of next video",
   "feat_loopControl_label": "Loop Control",
-  "feat_loopControl_desc": "Full video loop + A-B segment loop",
+  "feat_loopControl_desc": "Legacy loop engine; no watch-page launcher",
   "feat_miniPlayer_label": "Mini Player",
   "feat_miniPlayer_desc": "Floating draggable video when scrolling away",
   "feat_legacyKeyboardNav_label": "Keyboard Nav (legacy)",
   "feat_legacyKeyboardNav_desc": "YouTube-style hotkeys (J/K/L, F, M, 0-9) — off by default in v2",
   "feat_videoStats_label": "Video Stats",
-  "feat_videoStats_desc": "Resolution, codec, buffer, frames overlay",
+  "feat_videoStats_desc": "Legacy stats engine; no watch-page launcher",
   "feat_chapters_label": "Chapters",
   "feat_chapters_desc": "Parse description timestamps + seekbar markers",
   "feat_autoplayScheduler_label": "Autoplay Queue",
@@ -1049,9 +1049,9 @@
   "feat_batchDownload_label": "Batch Download",
   "feat_batchDownload_desc": "Multi-select thumbnails from feeds to download",
   "feat_screenshotBtn_label": "Screenshot",
-  "feat_screenshotBtn_desc": "Capture current video frame as PNG",
+  "feat_screenshotBtn_desc": "Legacy frame capture; no watch-page launcher",
   "feat_shareTimestamp_label": "Share@Time",
-  "feat_shareTimestamp_desc": "Copy video URL at current playback time",
+  "feat_shareTimestamp_desc": "Legacy timed-link engine; no watch-page launcher",
   "feat_subtitleSidecar_label": "Subtitle Sidecar",
   "feat_subtitleSidecar_desc": "Load local SRT/VTT and overlay captions",
   "feat_transcripts_label": "Transcripts",
@@ -1069,19 +1069,19 @@
   "feat_quickSave_label": "Quick Save",
   "feat_quickSave_desc": "Watch Later button on thumbnail hover",
   "feat_liveChatEnhance_label": "Chat Enhance",
-  "feat_liveChatEnhance_desc": "@mention highlights, message filter bar",
+  "feat_liveChatEnhance_desc": "@mention highlights without an extra filter row",
   "feat_chatAutoScroll_label": "Chat Scroll",
   "feat_chatAutoScroll_desc": "Smart auto-scroll with pause on scroll-up",
   "feat_uniqueChatters_label": "Unique Chatters",
-  "feat_uniqueChatters_desc": "Live counter of unique chatters + messages",
+  "feat_uniqueChatters_desc": "Session counts without a watch-page bar",
   "feat_chatUserBlock_label": "User Block",
   "feat_chatUserBlock_desc": "Per-user chat hide (click \"block\" on message)",
   "feat_chatSpamDedup_label": "Spam Dedup",
   "feat_chatSpamDedup_desc": "Hide recently-repeated identical messages",
   "feat_chatExport_label": "Chat Export",
-  "feat_chatExport_desc": "Export chat as TXT (click) or JSON (shift-click)",
+  "feat_chatExport_desc": "Legacy export engine; no chat-header button",
   "feat_popoutChat_label": "Popout Chat",
-  "feat_popoutChat_desc": "Open chat in separate resizable window",
+  "feat_popoutChat_desc": "Legacy popout engine; no chat-header button",
   "feat_videoTimestamps_label": "Timestamps",
   "feat_videoTimestamps_desc": "Clickable timestamps in comments/description",
   "feat_commentNav_label": "Comment Nav",
@@ -1091,7 +1091,7 @@
   "feat_commentExport_label": "Comment Export",
   "feat_commentExport_desc": "Export visible comments as JSON (click) or CSV (shift-click)",
   "feat_rantHighlight_label": "Rant Highlight",
-  "feat_rantHighlight_desc": "Glow rants by tier + running $ total",
+  "feat_rantHighlight_desc": "Glow rants without a running-total bar",
   "feat_rantPersist_label": "Rant Persist",
   "feat_rantPersist_desc": "Keep rants visible past expiry + export JSON",
   "feat_commentBlocking_label": "Comment Blocking",
@@ -1278,7 +1278,7 @@
   "chatCardNoMessages": "Nothing recorded yet this session",
   "chatCardLabel": "Chat participant",
   "feat_rantStatsPanel_label": "Rant Archive",
-  "feat_rantStatsPanel_desc": "Totals and a local export of the rants captured for this video",
+  "feat_rantStatsPanel_desc": "Cached totals and exports in Options; no watch-page panel",
   "rantArchiveEmpty": "No rants captured for this video yet",
   "rantArchiveExported": "Exported {count} rants",
   "rantArchiveTitle": "Rant archive (local)",
@@ -2497,7 +2497,7 @@ const MediaProbeCache = {
 
 
 
-// RumbleX v3.55.0 - Shared Content Core
+// RumbleX v3.56.0 - Shared Content Core
 // Rumble enhancement suite - Chrome/Firefox extension
 'use strict';
 
@@ -2507,7 +2507,7 @@ const MediaProbeCache = {
 // DOM feature ship from one canonical source.
 const RXPlatform = globalThis.RumbleXPlatform;
 if (!RXPlatform) throw new Error('RumbleX platform adapter is missing');
-const VERSION = RXPlatform.version || '3.55.0';
+const VERSION = RXPlatform.version || '3.56.0';
 /**
  * In-page translation lookup.
  *
@@ -2758,6 +2758,30 @@ const ANTI_FOUC_CSS = `
 const earlyStyle = document.createElement('style');
 earlyStyle.id = 'rumblex-antifouc';
 earlyStyle.textContent = ANTI_FOUC_CSS;
+const watchSurfaceCleanupStyle = document.createElement('style');
+watchSurfaceCleanupStyle.id = 'rumblex-watch-surface-cleanup';
+watchSurfaceCleanupStyle.textContent = `
+    html.rumblex-active .rx-rant-archive,
+    html.rumblex-active .rx-rant-tracker,
+    html.rumblex-active #rx-chat-filter,
+    html.rumblex-active .chat--header,
+    html.rumblex-active .rx-chatter-bar,
+    html.rumblex-active .rx-player-tools-trigger,
+    html.rumblex-active #rx-toolbar,
+    html.rumblex-active #rx-split-reveal,
+    html.rumblex-active #rx-theater-close {
+        display: none !important;
+        visibility: hidden !important;
+        width: 0 !important;
+        height: 0 !important;
+        min-width: 0 !important;
+        min-height: 0 !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        border: 0 !important;
+        overflow: hidden !important;
+    }
+`;
 const osMotionStyle = document.createElement('style');
 osMotionStyle.id = 'rumblex-os-reduced-motion';
 osMotionStyle.textContent = `
@@ -2778,6 +2802,7 @@ function mountDocumentStartStyles() {
     const root = document.head || document.documentElement;
     if (!root) return false;
     if (antiFoucEnabled && !earlyStyle.isConnected) root.appendChild(earlyStyle);
+    if (!watchSurfaceCleanupStyle.isConnected) root.appendChild(watchSurfaceCleanupStyle);
     if (!osMotionStyle.isConnected) root.appendChild(osMotionStyle);
     document.documentElement?.classList.add('rumblex-active');
     bootstrapRootObserver?.disconnect();
@@ -4356,23 +4381,6 @@ const TheaterSplit = {
         #rx-split-right .rx-panel-header #rx-hdr-settings svg {
             transition: transform 0.3s cubic-bezier(.4,0,.2,1);
         }
-        #rx-split-right .rx-panel-collapse {
-            min-width: 42px;
-            height: 34px;
-            padding: 0 8px;
-            border-radius: 6px;
-            border: 1px solid var(--rx-theater-border, rgba(255,255,255,0.1));
-            background: transparent;
-            color: var(--rx-theater-subtext, #a6adc8);
-            cursor: pointer;
-            font: 700 10px/1 Inter, ui-sans-serif, system-ui, sans-serif;
-        }
-        #rx-split-right .rx-panel-collapse:hover {
-            color: var(--rx-theater-text, #f5f7fb);
-            border-color: var(--rx-theater-accent, #89b4fa);
-            background: var(--rx-theater-selection, rgba(137,180,250,0.14));
-        }
-
         #rx-tab-bar {
             display: flex;
             flex-shrink: 0;
@@ -4403,9 +4411,6 @@ const TheaterSplit = {
             border-bottom-color: var(--rx-theater-accent, #89b4fa);
         }
         .rx-tab:focus-visible,
-        .rx-panel-collapse:focus-visible,
-        #rx-split-reveal:focus-visible,
-        #rx-theater-close:focus-visible,
         #rx-split-right .rx-hdr-btn:focus-visible {
             outline: 2px solid var(--rx-theater-accent, #89b4fa);
             outline-offset: 2px;
@@ -4448,48 +4453,6 @@ const TheaterSplit = {
             overflow: hidden !important;
         }
         #rx-tab-chat .media-page-chat-container-toggle-btn { display: none !important; }
-        #rx-tab-chat .chat--header {
-            min-height: 38px !important;
-            height: 38px !important;
-            padding: 4px 8px !important;
-            flex-shrink: 0;
-            display: flex !important;
-            align-items: center !important;
-            justify-content: flex-end !important;
-            gap: 6px !important;
-            overflow: hidden !important;
-            font-size: 0 !important;
-            background: var(--rx-theater-shell, #0b0b0f) !important;
-            border-color: var(--rx-theater-border, rgba(255,255,255,0.1)) !important;
-        }
-        #rx-tab-chat .chat--header h1,
-        #rx-tab-chat .chat--header h2,
-        #rx-tab-chat .chat--header h3,
-        #rx-tab-chat .chat--header h4,
-        #rx-tab-chat .chat--header-title,
-        #rx-tab-chat .chat--title { display: none !important; }
-        #rx-tab-chat .chat--header button,
-        #rx-tab-chat .chat--header a,
-        #rx-tab-chat .chat--header [role="button"] {
-            min-height: 30px !important;
-            height: 30px !important;
-            margin: 0 !important;
-            padding: 0 8px !important;
-            border-radius: 6px !important;
-            font-size: 10px !important;
-            line-height: 1 !important;
-        }
-        #rx-tab-chat #rx-chat-filter {
-            margin: 0 !important;
-            padding: 5px 8px !important;
-            flex-shrink: 0;
-            background: var(--rx-theater-panel, #111116) !important;
-        }
-        #rx-tab-chat #rx-chat-filter input {
-            min-height: 32px !important;
-            height: 32px !important;
-            padding: 0 10px !important;
-        }
         #rx-tab-chat #js-chat--height,
         #rx-tab-chat .chat--height {
             display: flex !important;
@@ -4538,43 +4501,6 @@ const TheaterSplit = {
             color: var(--rx-theater-text, #f5f7fb) !important;
             border-top-color: var(--rx-theater-border, rgba(255,255,255,0.1)) !important;
         }
-        #rx-tab-chat .rx-rant-archive {
-            flex-shrink: 0;
-            margin: 6px 8px;
-            max-height: min(280px, 35vh);
-            overflow: auto;
-            background: var(--rx-theater-raised, rgba(255,255,255,0.06));
-            border-color: var(--rx-theater-border-strong, rgba(255,255,255,0.14));
-        }
-        #rx-tab-chat .rx-rant-archive__summary {
-            min-height: 36px;
-            color: var(--rx-theater-text, #f5f7fb);
-        }
-        #rx-tab-chat .rx-rant-archive__summary-meta { color: var(--rx-theater-subtext, #a6adc8); }
-        #rx-tab-chat .rx-rant-tracker {
-            position: static !important;
-            min-height: 30px;
-            margin: 0 !important;
-            padding: 4px 10px !important;
-            gap: 8px !important;
-            border-width: 1px 0 !important;
-            border-radius: 0 !important;
-            flex-shrink: 0;
-            background: var(--rx-theater-shell, #0b0b0f) !important;
-        }
-        #rx-tab-chat .rx-rant-tracker .total { font-size: 13px !important; }
-        #rx-tab-chat .rx-rant-export-btn {
-            position: static !important;
-            margin-left: auto;
-            min-height: 24px;
-            padding: 0 8px !important;
-        }
-        #rx-tab-chat .rx-chatter-bar {
-            min-height: 28px;
-            padding: 5px 10px !important;
-            gap: 12px !important;
-            background: var(--rx-theater-panel, #111116) !important;
-        }
         #rx-tab-chat input,
         #rx-tab-chat textarea {
             background: var(--rx-theater-raised, rgba(255,255,255,0.06)) !important;
@@ -4608,40 +4534,6 @@ const TheaterSplit = {
         html.rx-theater .media-page-chat-aside-chat { display: none !important; }
         #rx-tab-chat .media-page-chat-aside-chat { display: flex !important; }
 
-        #rx-theater-close,
-        #rx-split-reveal {
-            position: absolute;
-            top: 12px;
-            z-index: 1000;
-            height: 40px;
-            border: 1px solid var(--rx-theater-border-strong, rgba(255,255,255,0.22));
-            border-radius: 8px;
-            background: color-mix(in srgb, var(--rx-theater-shell, #090c11) 88%, transparent);
-            color: var(--rx-theater-text, #fff);
-            cursor: pointer;
-            box-shadow: 0 8px 24px rgba(0,0,0,0.28);
-            transition: background-color 150ms ease, border-color 150ms ease, transform 150ms ease;
-        }
-        #rx-theater-close {
-            left: 12px;
-            width: 40px;
-            display: grid;
-            place-items: center;
-            padding: 0;
-        }
-        #rx-theater-close svg { width: 16px; height: 16px; }
-        #rx-split-reveal {
-            right: 74px;
-            padding: 0 13px;
-            font: 700 12px/1 Inter, ui-sans-serif, system-ui, sans-serif;
-        }
-        html.rx-split #rx-split-reveal { display: none; }
-        #rx-theater-close:hover,
-        #rx-split-reveal:hover {
-            background: var(--rx-theater-raised, #11141c);
-            border-color: var(--rx-theater-accent, #89b4fa);
-            transform: translateY(-1px);
-        }
         .rx-empty-state {
             padding: 32px 20px;
             color: var(--rx-theater-subtext, #a6adc8);
@@ -4670,16 +4562,10 @@ const TheaterSplit = {
                 max-height: none;
                 transform: translateY(0);
             }
-            #rx-tab-chat .rx-rant-archive[data-empty="true"],
-            #rx-tab-chat .rx-rant-tracker[data-empty="true"] { display: none !important; }
-            #rx-split-reveal { right: 74px; height: 44px; }
-            #rx-theater-close { width: 44px; height: 44px; }
         }
         @media (prefers-reduced-motion: reduce) {
             #rx-split-right,
-            #rx-split-divider,
-            #rx-theater-close,
-            #rx-split-reveal { transition: none !important; }
+            #rx-split-divider { transition: none !important; }
         }
     `,
 
@@ -4708,26 +4594,6 @@ const TheaterSplit = {
 
         const left = document.createElement('div');
         left.id = 'rx-split-left';
-
-        const close = document.createElement('button');
-        close.id = 'rx-theater-close';
-        close.type = 'button';
-        close.setAttribute('aria-label', 'Exit theater mode');
-        close.title = 'Exit theater mode';
-        close.innerHTML = '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="3" y1="3" x2="13" y2="13"/><line x1="13" y1="3" x2="3" y2="13"/></svg>';
-        close.addEventListener('click', () => this._unmount({ restoreFocus: true }));
-        left.appendChild(close);
-
-        const reveal = document.createElement('button');
-        reveal.id = 'rx-split-reveal';
-        reveal.type = 'button';
-        reveal.textContent = rxT('theaterOpenPanelLabel', 'Open panel');
-        reveal.title = rxT('theaterOpenPanel', 'Open theater side panel');
-        reveal.setAttribute('aria-label', rxT('theaterOpenPanel', 'Open theater side panel'));
-        reveal.setAttribute('aria-controls', 'rx-split-right');
-        reveal.setAttribute('aria-expanded', 'false');
-        reveal.addEventListener('click', () => this._expandSplit());
-        left.appendChild(reveal);
 
         const divider = document.createElement('div');
         divider.id = 'rx-split-divider';
@@ -4855,32 +4721,8 @@ const TheaterSplit = {
 
         this._applySplitGeometry(leftPct);
         right.classList.add('rx-expanded');
-        qs('#rx-split-reveal')?.setAttribute('aria-expanded', 'true');
 
         this._populateRight(right);
-        this._attachRightScrollHandlers(right);
-    },
-
-    _collapseSplit({ restoreFocus = false } = {}) {
-        if (!this._isSplit) return;
-        this._isSplit = false;
-        document.documentElement.classList.remove('rx-split');
-
-        const right = qs('#rx-split-right');
-        const divider = qs('#rx-split-divider');
-        if (!right || !divider) return;
-
-        right.style.flex = '0 0 0';
-        right.style.width = '0';
-        right.classList.remove('rx-expanded');
-        divider.style.flex = '0 0 0';
-        divider.style.width = '0';
-        divider.style.height = '0';
-        const reveal = qs('#rx-split-reveal');
-        reveal?.setAttribute('aria-expanded', 'false');
-
-        this._detachRightScrollHandlers();
-        if (restoreFocus) requestAnimationFrame(() => reveal?.focus({ preventScroll: true }));
     },
 
     _detectLive() {
@@ -4912,7 +4754,6 @@ const TheaterSplit = {
                 const staleShell = qsa(':scope > .chat.relative', wrapper).find((shell) => shell !== responsiveShell);
                 staleShell?.remove();
                 wrapper.appendChild(responsiveShell);
-                RantArchive.collapseForTheater();
             } finally {
                 this._rebindingChat = false;
             }
@@ -4943,7 +4784,6 @@ const TheaterSplit = {
             for (const feature of chatFeatures) {
                 try { feature.init(); } catch (err) { RxErrorLog.record(`theater-chat-init:${feature.id}`, err); }
             }
-            RantArchive.collapseForTheater();
         } finally {
             this._rebindingChat = false;
         }
@@ -5037,17 +4877,17 @@ const TheaterSplit = {
             SettingsPanel._open();
         });
 
-        const collapseBtn = document.createElement('button');
-        collapseBtn.className = 'rx-panel-collapse';
-        collapseBtn.type = 'button';
-        collapseBtn.textContent = rxT('theaterHidePanelShort', 'Hide');
-        collapseBtn.title = rxT('theaterCollapsePanel', 'Collapse theater side panel');
-        collapseBtn.setAttribute('aria-label', collapseBtn.title);
-        collapseBtn.addEventListener('click', () => this._collapseSplit({ restoreFocus: true }));
+        const exitBtn = document.createElement('button');
+        exitBtn.className = 'rx-hdr-btn rx-panel-exit';
+        exitBtn.type = 'button';
+        exitBtn.title = 'Exit theater mode';
+        exitBtn.setAttribute('aria-label', exitBtn.title);
+        exitBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>';
+        exitBtn.addEventListener('click', () => this._unmount({ restoreFocus: true }));
 
         actions.appendChild(homeBtn);
         actions.appendChild(gearBtn);
-        actions.appendChild(collapseBtn);
+        actions.appendChild(exitBtn);
 
         header.appendChild(info);
         header.appendChild(actions);
@@ -5125,7 +4965,6 @@ const TheaterSplit = {
                 this._origChatParent = chatEl.parentElement;
                 this._origChatNext = chatEl.nextSibling;
                 chatPanel.appendChild(chatEl);
-                RantArchive.collapseForTheater();
             } else {
                 const empty = document.createElement('div');
                 empty.className = 'rx-empty-state';
@@ -5184,46 +5023,6 @@ const TheaterSplit = {
         this._activeTab = defaultTab;
     },
 
-    _attachRightScrollHandlers(right) {
-        const getScrollTarget = () => {
-            if (this._activeTab === 'chat') return qs('#chat-history-list');
-            return qs('#rx-tab-' + this._activeTab) || right;
-        };
-
-        this._rightWheelHandler = (e) => {
-            const scrollTarget = getScrollTarget();
-            if (scrollTarget && scrollTarget.scrollTop <= 0 && e.deltaY < 0) {
-                this._collapseSplit();
-            }
-        };
-        this._rightTouchHandler = null;
-        let touchY = 0;
-
-        const onTouchStart = (e) => { touchY = e.touches[0].clientY; };
-        const onTouchMove = (e) => {
-            const scrollTarget = getScrollTarget();
-            const dy = e.touches[0].clientY - touchY;
-            if (scrollTarget && scrollTarget.scrollTop <= 0 && dy > 40) {
-                this._collapseSplit();
-            }
-        };
-
-        right.addEventListener('wheel', this._rightWheelHandler, { passive: true });
-        right.addEventListener('touchstart', onTouchStart, { passive: true });
-        right.addEventListener('touchmove', onTouchMove, { passive: true });
-        this._rightTouchHandler = { start: onTouchStart, move: onTouchMove };
-    },
-
-    _detachRightScrollHandlers() {
-        const right = qs('#rx-split-right');
-        if (!right) return;
-        if (this._rightWheelHandler) right.removeEventListener('wheel', this._rightWheelHandler);
-        if (this._rightTouchHandler) {
-            right.removeEventListener('touchstart', this._rightTouchHandler.start);
-            right.removeEventListener('touchmove', this._rightTouchHandler.move);
-        }
-    },
-
     _mountOverlay() {
         if (this._isActive) return;
 
@@ -5250,50 +5049,13 @@ const TheaterSplit = {
 
         left.insertBefore(player, left.firstChild);
         document.body.appendChild(wrapper);
-        PlayerActionDock.repair();
 
         if (wasPlaying && video) {
             requestAnimationFrame(() => video.play().catch(() => {}));
         }
 
         this._initDividerDrag(divider, left, right);
-
-        this._wheelHandler = (e) => {
-            if (!this._isSplit && e.deltaY > 0) {
-                this._expandSplit();
-                return;
-            }
-            if (this._isSplit) {
-                if (this._isLive && this._activeTab === 'chat') {
-                    const chatList = qs('#chat-history-list');
-                    if (chatList && chatList.scrollTop <= 0 && e.deltaY < 0) {
-                        this._collapseSplit();
-                    } else if (chatList) {
-                        chatList.scrollBy({ top: e.deltaY, behavior: 'auto' });
-                    }
-                    return;
-                }
-                const scrollTarget = this._isLive ? qs('#rx-tab-comments') : right;
-                if (scrollTarget && scrollTarget.scrollTop <= 0 && e.deltaY < 0) {
-                    this._collapseSplit();
-                } else if (scrollTarget) {
-                    scrollTarget.scrollBy({ top: e.deltaY, behavior: 'auto' });
-                }
-            }
-        };
-
-        this._touchStartY = 0;
-        const onTouchStart = (e) => { this._touchStartY = e.touches[0].clientY; };
-        const onTouchMove = (e) => {
-            if (!this._isSplit && this._touchStartY - e.touches[0].clientY > 30) {
-                this._expandSplit();
-            }
-        };
-
-        left.addEventListener('wheel', this._wheelHandler, { passive: true, capture: true });
-        left.addEventListener('touchstart', onTouchStart, { passive: true });
-        left.addEventListener('touchmove', onTouchMove, { passive: true });
-        this._touchHandler = { start: onTouchStart, move: onTouchMove };
+        this._expandSplit();
 
         this._windowResizeHandler = () => {
             if (this._isSplit) {
@@ -5308,7 +5070,7 @@ const TheaterSplit = {
 
         this._keyHandler = (e) => {
             if (e.key === 'Escape' && this._isActive) {
-                if (qs('.rx-player-tools[data-open="true"]') || document.body.classList.contains('rx-panel-open')) return;
+                if (document.body.classList.contains('rx-panel-open')) return;
                 e.preventDefault();
                 this._unmount({ restoreFocus: true });
             }
@@ -5339,7 +5101,6 @@ const TheaterSplit = {
             } else {
                 this._origPlayerParent.appendChild(player);
             }
-            PlayerActionDock.repair();
         }
 
         const chatEl = this._chatEl;
@@ -5366,12 +5127,6 @@ const TheaterSplit = {
             requestAnimationFrame(() => video.play().catch(() => {}));
         }
 
-        this._detachRightScrollHandlers();
-        if (this._leftEl && this._wheelHandler) this._leftEl.removeEventListener('wheel', this._wheelHandler, true);
-        if (this._leftEl && this._touchHandler) {
-            this._leftEl.removeEventListener('touchstart', this._touchHandler.start);
-            this._leftEl.removeEventListener('touchmove', this._touchHandler.move);
-        }
         this._dragCleanup?.();
         this._dragCleanup = null;
         qs('#rx-divider-drag-shield')?.remove();
@@ -5413,10 +5168,6 @@ const TheaterSplit = {
         this._chatEl = null;
         this._commentsEl = null;
         this._leftEl = null;
-        this._wheelHandler = null;
-        this._touchHandler = null;
-        this._rightWheelHandler = null;
-        this._rightTouchHandler = null;
         this._focusBeforeOpen = null;
         this._chatRootObs = null;
         this._rebindingChat = false;
@@ -10390,30 +10141,6 @@ const LiveChatEnhance = {
             color: var(--rx-accent, #89b4fa);
             font-weight: 600;
         }
-        #rx-chat-filter {
-            display: flex;
-            align-items: center;
-            gap: 6px;
-            padding: 4px 8px;
-            border-bottom: 1px solid rgba(255,255,255,0.06);
-            flex-shrink: 0;
-        }
-        #rx-chat-filter input {
-            flex: 1;
-            background: rgba(49,50,68,0.5);
-            border: 1px solid rgba(255,255,255,0.08);
-            border-radius: 6px;
-            padding: 4px 8px;
-            font-size: 11px;
-            color: var(--rx-text, #cdd6f4);
-            outline: none;
-        }
-        #rx-chat-filter input:focus {
-            border-color: rgba(137,180,250,0.3);
-        }
-        #rx-chat-filter input::placeholder {
-            color: rgba(255,255,255,0.25);
-        }
         .rx-chat-badge-rant {
             display: inline-block;
             padding: 1px 5px;
@@ -10424,7 +10151,6 @@ const LiveChatEnhance = {
             font-weight: 600;
             margin-left: 4px;
         }
-        .rx-chat-hidden { display: none !important; }
     `,
 
     _highlightMentions(msgEl) {
@@ -10477,48 +10203,6 @@ const LiveChatEnhance = {
             this._highlightMentions(msg);
         }
 
-        // Apply filter if active
-        this._applyFilter();
-    },
-
-    _applyFilter() {
-        const filterInput = qs('#rx-chat-filter-input');
-        if (!filterInput || !filterInput.value.trim()) return;
-
-        const term = filterInput.value.trim().toLowerCase();
-        const messages = qsa('#chat-history-list li, .chat--message-container');
-        for (const msg of messages) {
-            const text = msg.textContent.toLowerCase();
-            msg.classList.toggle('rx-chat-hidden', !text.includes(term));
-        }
-    },
-
-    _clearFilter() {
-        for (const msg of qsa('.rx-chat-hidden')) {
-            msg.classList.remove('rx-chat-hidden');
-        }
-    },
-
-    _addFilterBar() {
-        const chatHeader = qs('.chat--header') || qs('#rx-tab-chat .chat--header');
-        if (!chatHeader || qs('#rx-chat-filter')) return;
-
-        const filterBar = document.createElement('div');
-        filterBar.id = 'rx-chat-filter';
-        const input = document.createElement('input');
-        input.id = 'rx-chat-filter-input';
-        input.type = 'text';
-        input.placeholder = 'Filter chat...';
-        input.setAttribute('aria-label', 'Filter chat messages');
-        input.addEventListener('input', () => {
-            if (input.value.trim()) {
-                this._applyFilter();
-            } else {
-                this._clearFilter();
-            }
-        });
-        filterBar.appendChild(input);
-        chatHeader.after(filterBar);
     },
 
     init() {
@@ -10528,13 +10212,9 @@ const LiveChatEnhance = {
 
         // Wait for chat to appear
         const startObs = () => {
-            this._addFilterBar();
             this._processMessages();
             this._obs = new MutationObserver(() => {
-                scheduleFeatureFrame(this, 'message-scan', () => {
-                    this._processMessages();
-                    if (!qs('#rx-chat-filter')) this._addFilterBar();
-                });
+                scheduleFeatureFrame(this, 'message-scan', () => this._processMessages());
             });
             const chatList = qs('#chat-history-list') || qs('.chat--height');
             if (chatList) {
@@ -10552,6 +10232,8 @@ const LiveChatEnhance = {
     destroy() {
         this._styleEl?.remove();
         this._obs?.disconnect();
+        qs('#rx-chat-filter')?.remove();
+        for (const msg of qsa('.rx-chat-hidden')) msg.classList.remove('rx-chat-hidden');
     }
 };
 
@@ -10859,26 +10541,7 @@ const PlayerActionDock = {
     },
 
     repair() {
-        const player = qs('#videoPlayer') || qs('.video-player');
-        if (!player) return;
-        const host = this.hostFor(player);
-        if (!host || !host.isConnected) return;
-        let targetDock = Array.from(host.children).find((child) => child.classList?.contains('rx-player-tools'));
-        for (const dock of qsa('.rx-player-tools')) {
-            if (dock === targetDock || dock.parentElement === host) continue;
-            if (targetDock) {
-                const targetMenu = targetDock.querySelector('.rx-player-tools-menu');
-                for (const action of qsa('.rx-player-tool-action', dock)) targetMenu?.appendChild(action);
-                dock.remove();
-            } else {
-                host.appendChild(dock);
-                targetDock = dock;
-            }
-        }
-        for (const overlay of qsa('.rx-stats-overlay, .rx-loop-ab-bar')) {
-            const rect = overlay.parentElement?.getBoundingClientRect();
-            if ((!rect || rect.width === 0 || rect.height === 0) && overlay.parentElement !== host) host.appendChild(overlay);
-        }
+        for (const dock of qsa('.rx-player-tools')) dock.remove();
     },
 
     _scheduleRepair() {
@@ -10928,69 +10591,14 @@ const PlayerActionDock = {
     },
 
     _create(container) {
-        this._ensureStyle();
-        this._ensureGlobalHandlers();
-
-        const dock = document.createElement('div');
-        dock.className = 'rx-player-tools';
-        dock.dataset.open = 'false';
-
-        const trigger = document.createElement('button');
-        trigger.type = 'button';
-        trigger.className = 'rx-player-tools-trigger';
-        trigger.textContent = rxT('playerToolsButton', 'Tools');
-        trigger.title = rxT('playerToolsTitle', 'RumbleX player tools');
-        trigger.setAttribute('aria-label', rxT('playerToolsOpen', 'Open RumbleX player tools'));
-        trigger.setAttribute('aria-haspopup', 'menu');
-        trigger.setAttribute('aria-expanded', 'false');
-
-        const menu = document.createElement('div');
-        menu.className = 'rx-player-tools-menu';
-        menu.hidden = true;
-        menu.setAttribute('tabindex', '-1');
-        menu.setAttribute('role', 'menu');
-        menu.setAttribute('aria-label', rxT('playerToolsTitle', 'RumbleX player tools'));
-
-        trigger.addEventListener('click', (event) => {
-            event.stopPropagation();
-            const open = dock.dataset.open !== 'true';
-            this._closeAll(dock);
-            this._setOpen(dock, open);
-            if (open) menu.querySelector('.rx-player-tool-action')?.focus();
-        });
-        menu.addEventListener('keydown', (event) => {
-            if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return;
-            const actions = Array.from(menu.querySelectorAll('.rx-player-tool-action'));
-            if (!actions.length) return;
-            event.preventDefault();
-            const current = Math.max(0, actions.indexOf(document.activeElement));
-            const index = event.key === 'Home' ? 0
-                : event.key === 'End' ? actions.length - 1
-                : event.key === 'ArrowDown' ? (current + 1) % actions.length
-                : (current - 1 + actions.length) % actions.length;
-            actions[index].focus({ preventScroll: true });
-        });
-
-        dock.append(trigger, menu);
-        container.appendChild(dock);
-        return dock;
+        void container;
+        this.repair();
+        return null;
     },
 
     add(container, button) {
-        const host = this.hostFor(container);
-        host.style.position = host.style.position || 'relative';
-        const dock = host.querySelector('.rx-player-tools') || this._create(host);
-        const menu = dock.querySelector('.rx-player-tools-menu');
-        button.classList.add('rx-player-tool-action');
-        button.setAttribute('role', 'menuitem');
-        button.addEventListener('click', () => {
-            requestAnimationFrame(() => {
-                this._setOpen(dock, false);
-                dock.querySelector('.rx-player-tools-trigger')?.focus({ preventScroll: true });
-            });
-        });
-        menu.appendChild(button);
-        this._scheduleRepair();
+        void container;
+        this.repair();
         return button;
     },
 
@@ -13040,24 +12648,10 @@ const CommentNav = {
 const RantHighlight = {
     id: 'rantHighlight',
     name: 'Rant Highlight',
-    _tracker: null,
     _obs: null,
     _total: 0,
 
     _css: `
-        .rx-rant-tracker {
-            position: sticky; top: 0; z-index: 101;
-            background: linear-gradient(135deg, #1e1e2e 0%, #2a1f3d 100%);
-            border: 1px solid #45475a;
-            border-radius: 8px; padding: 8px 14px;
-            display: flex; align-items: center; gap: 12px;
-            font: 600 12px/1.4 system-ui, sans-serif;
-            color: #cdd6f4; margin-bottom: 8px;
-        }
-        .rx-rant-tracker .label { color: #f9e2af; }
-        .rx-rant-tracker .total { color: #a6e3a1; font-size: 16px; font-weight: 700; }
-        .rx-rant-tracker .rant-count { color: #a6adc8; }
-
         /* Enhance rant visibility by tier */
         .chat-history--rant[data-level="1"] { box-shadow: 0 0 8px rgba(166,227,161,0.2); }
         .chat-history--rant[data-level="2"] { box-shadow: 0 0 12px rgba(137,180,250,0.3); }
@@ -13094,11 +12688,7 @@ const RantHighlight = {
             }
         }
         this._total = total;
-        if (this._tracker) {
-            this._tracker.dataset.empty = String(count === 0);
-            this._tracker.querySelector('.total').textContent = `$${total}`;
-            this._tracker.querySelector('.rant-count').textContent = `${count} rants`;
-        }
+        void count;
     },
 
     init() {
@@ -13108,13 +12698,6 @@ const RantHighlight = {
 
         // Use waitFor instead of Page.isLive() — chat loads async, isLive() may be false at init time
         waitForFeature(this, '#chat-history-list, .chat-history').then(chatEl => {
-            // Insert tracker above chat
-            const tracker = document.createElement('div');
-            tracker.className = 'rx-rant-tracker';
-            tracker.innerHTML = `<span class="label">Rant Total:</span><span class="total">$0</span><span class="rant-count">0 rants</span>`;
-            chatEl.parentNode?.insertBefore(tracker, chatEl);
-            this._tracker = tracker;
-
             // Observe for new rants
             this._obs = new MutationObserver(() => {
                 scheduleFeatureFrame(this, 'rant-scan', () => this._scan());
@@ -13126,9 +12709,8 @@ const RantHighlight = {
 
     destroy() {
         this._styleEl?.remove();
-        this._tracker?.remove();
         this._obs?.disconnect();
-        this._tracker = null;
+        for (const tracker of qsa('.rx-rant-tracker')) tracker.remove();
         this._obs = null;
     }
 };
@@ -14045,10 +13627,10 @@ const RX_CATEGORIES = [
             { id: 'autoMaxQuality', label: 'Auto Max Quality', desc: 'Pick a rendition on load, within the ceiling and floor set in Options' },
             { id: 'stallRecovery', label: 'Stall Recovery', desc: 'Drop one rendition after three stalls in 30 seconds, and say why', parent: 'autoMaxQuality' },
             { id: 'autoplayBlock', label: 'Autoplay Block', desc: 'Prevent auto-play of next video' },
-            { id: 'loopControl', label: 'Loop Control', desc: 'Full video loop + A-B segment loop' },
+            { id: 'loopControl', label: 'Loop Control', desc: 'Legacy loop engine; no watch-page launcher' },
             { id: 'miniPlayer', label: 'Mini Player', desc: 'Floating draggable video when scrolling away' },
             { id: 'legacyKeyboardNav', label: 'Keyboard Nav (legacy)', desc: 'YouTube-style hotkeys (J/K/L, F, M, 0-9) — off by default in v2' },
-            { id: 'videoStats', label: 'Video Stats', desc: 'Resolution, codec, buffer, frames overlay' },
+            { id: 'videoStats', label: 'Video Stats', desc: 'Legacy stats engine; no watch-page launcher' },
             { id: 'timeRemaining', label: 'Time Remaining', desc: 'Show time left at the current speed and the clock time it ends' },
             { id: 'chapters', label: 'Chapters', desc: 'Parse description timestamps + seekbar markers' },
             { id: 'autoplayScheduler', label: 'Autoplay Queue', desc: 'Queue Rumble URLs, auto-advance at end' },
@@ -14088,8 +13670,8 @@ const RX_CATEGORIES = [
             { id: 'videoClips', label: 'Video Clips', desc: 'Mark In/Out and export clip as MP4' },
             { id: 'liveDVR', label: 'Live DVR', desc: 'Save the last N seconds of a live stream' },
             { id: 'batchDownload', label: 'Batch Download', desc: 'Multi-select thumbnails from feeds to download' },
-            { id: 'screenshotBtn', label: 'Screenshot', desc: 'Capture current video frame as PNG' },
-            { id: 'shareTimestamp', label: 'Share@Time', desc: 'Copy video URL at current playback time' },
+            { id: 'screenshotBtn', label: 'Screenshot', desc: 'Legacy frame capture; no watch-page launcher' },
+            { id: 'shareTimestamp', label: 'Share@Time', desc: 'Legacy timed-link engine; no watch-page launcher' },
             { id: 'subtitleSidecar', label: 'Subtitle Sidecar', desc: 'Load local SRT/VTT and overlay captions' },
             { id: 'subtitleNativeTracks', label: 'Rumble\'s Own Captions', desc: 'Load the creator-uploaded caption track when there is one', parent: 'subtitleSidecar' },
             { id: 'transcripts', label: 'Transcripts', desc: 'Clickable transcript panel synced to player' },
@@ -14112,26 +13694,26 @@ const RX_CATEGORIES = [
         id: 'comments-chat', label: 'Comments & Chat', color: '#a6e3a1',
         icon: '<path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm0 14H5.17L4 17.17V4h16v12z"/>',
         features: [
-            { id: 'liveChatEnhance', label: 'Chat Enhance', desc: '@mention highlights, message filter bar' },
+            { id: 'liveChatEnhance', label: 'Chat Enhance', desc: '@mention highlights without an extra filter row' },
             { id: 'chatMentionAutocomplete', label: 'Mention Autocomplete', desc: 'Offer names from this session after typing @ in the chat box' },
             { id: 'chatMentionHighlight', label: 'Keyword Highlight', desc: 'Highlight chat messages containing your chosen terms' },
             { id: 'chatHighlightSound', label: 'Highlight Sound', desc: 'Play a short tone when a highlighted message arrives', parent: 'chatMentionHighlight' },
-            { id: 'rantStatsPanel', label: 'Rant Archive', desc: 'Totals and a local export of the rants captured for this video' },
+            { id: 'rantStatsPanel', label: 'Rant Archive', desc: 'Cached totals and exports in Options; no watch-page panel' },
             { id: 'chatParticipantsList', label: 'Chat User Cards', desc: 'Click a chat name for their messages this session, plus mention, block and a local nickname' },
             { id: 'chatClickToMention', label: 'Click Name To Mention', desc: 'Clicking a chat name drops an @mention into the box (when user cards are off)' },
             { id: 'chatReadability', label: 'Chat Readability', desc: 'Alternating row shading and adjustable chat text size' },
             { id: 'chatShowDeleted', label: 'Show Deleted Messages', desc: 'Keep removed chat messages visible, struck through', parent: 'chatReadability' },
             { id: 'chatAutoScroll', label: 'Chat Scroll', desc: 'Smart auto-scroll with pause on scroll-up' },
-            { id: 'uniqueChatters', label: 'Unique Chatters', desc: 'Live counter of unique chatters + messages' },
+            { id: 'uniqueChatters', label: 'Unique Chatters', desc: 'Session counts without a watch-page bar' },
             { id: 'chatUserBlock', label: 'User Block', desc: 'Per-user chat hide (click "block" on message)' },
             { id: 'chatSpamDedup', label: 'Spam Dedup', desc: 'Hide recently-repeated identical messages' },
-            { id: 'chatExport', label: 'Chat Export', desc: 'Export chat as TXT (click) or JSON (shift-click)' },
-            { id: 'popoutChat', label: 'Popout Chat', desc: 'Open chat in separate resizable window' },
+            { id: 'chatExport', label: 'Chat Export', desc: 'Legacy export engine; no chat-header button' },
+            { id: 'popoutChat', label: 'Popout Chat', desc: 'Legacy popout engine; no chat-header button' },
             { id: 'videoTimestamps', label: 'Timestamps', desc: 'Clickable timestamps in comments/description' },
             { id: 'commentNav', label: 'Comment Nav', desc: 'Navigate, expand/collapse, OP-only filter' },
             { id: 'commentSort', label: 'Comment Sort', desc: 'Sort comments: Top / New / Oldest / Controversial' },
             { id: 'commentExport', label: 'Comment Export', desc: 'Export visible comments as JSON (click) or CSV (shift-click)' },
-            { id: 'rantHighlight', label: 'Rant Highlight', desc: 'Glow rants by tier + running $ total' },
+            { id: 'rantHighlight', label: 'Rant Highlight', desc: 'Glow rants without a running-total bar' },
             { id: 'rantPersist', label: 'Rant Persist', desc: 'Keep rants visible past expiry + export JSON' },
             { id: 'commentBlocking', label: 'Comment Blocking', desc: 'Block users from the comment section' },
             { id: 'autoLoadComments', label: 'Auto Load Comments', desc: 'Auto-click "Show more comments" on scroll' },
@@ -15676,18 +15258,6 @@ const UniqueChatters = {
     _users: null,
     _msgCount: 0,
 
-    _css: `
-        .rx-chatter-bar {
-            display: flex; gap: 14px; padding: 6px 10px;
-            background: rgba(30,30,46,0.85);
-            border-bottom: 1px solid rgba(255,255,255,0.05);
-            font: 600 11px/1 system-ui, sans-serif;
-            color: #cdd6f4; flex-shrink: 0;
-        }
-        .rx-chatter-bar .rx-cb-label { color: #a6adc8; font-weight: 500; }
-        .rx-chatter-bar .rx-cb-val { color: var(--rx-accent, #89b4fa); }
-    `,
-
     _msgSel: '#chat-history-list li, .chat--message-container',
 
     _rescan() {
@@ -15697,31 +15267,11 @@ const UniqueChatters = {
             const u = rxReadUsername(m);
             if (u) { this._users.add(u); this._msgCount++; }
         }
-        this._paint();
-    },
-
-    _paint() {
-        if (!this._bar) return;
-        this._bar.querySelector('.rx-cb-users').textContent = this._users?.size || 0;
-        this._bar.querySelector('.rx-cb-msgs').textContent = this._msgCount;
-    },
-
-    _mount(chatEl) {
-        if (this._bar) return;
-        const bar = document.createElement('div');
-        bar.className = 'rx-chatter-bar';
-        bar.innerHTML = `
-            <span><span class="rx-cb-label">Chatters:</span> <span class="rx-cb-val rx-cb-users">0</span></span>
-            <span><span class="rx-cb-label">Messages:</span> <span class="rx-cb-val rx-cb-msgs">0</span></span>`;
-        chatEl.parentNode?.insertBefore(bar, chatEl);
-        this._bar = bar;
     },
 
     init() {
         if (!Settings.get(this.id) || !Page.isWatch()) return;
-        this._styleEl = injectStyle(this._css, 'rx-chatters-css');
         waitForFeature(this, '#chat-history-list').then((chatEl) => {
-            this._mount(chatEl);
             this._rescan();
             // Debounce — a full re-scan on every message mutation is O(n) and
             // high-traffic streams can fire many mutations per second.
@@ -15737,7 +15287,7 @@ const UniqueChatters = {
         this._styleEl?.remove();
         this._obs?.disconnect();
         clearTimeout(this._t);
-        this._bar?.remove();
+        for (const bar of qsa('.rx-chatter-bar')) bar.remove();
         this._bar = null;
     }
 };
@@ -15948,21 +15498,13 @@ const ChatExport = {
     },
 
     _mount() {
-        const header = qs('.chat--header');
-        if (!header || qs('.rx-chat-export-btn')) return;
-        const btn = document.createElement('button');
-        btn.className = 'rx-chat-export-btn';
-        btn.textContent = 'Export';
-        btn.title = 'Export chat (click: TXT, shift-click: JSON)';
-        btn.addEventListener('click', (e) => this._download(e.shiftKey ? 'json' : 'txt'));
-        header.appendChild(btn);
-        this._btn = btn;
+        for (const button of qsa('.rx-chat-export-btn')) button.remove();
+        this._btn = null;
     },
 
     init() {
         if (!Settings.get(this.id) || !Page.isWatch()) return;
-        this._styleEl = injectStyle(this._css, 'rx-chatexport-css');
-        waitForFeature(this, '.chat--header').then(() => this._mount()).catch(() => {});
+        for (const button of qsa('.rx-chat-export-btn')) button.remove();
     },
 
     destroy() {
@@ -16244,35 +15786,18 @@ const RantArchive = {
     },
 
     collapseForTheater() {
-        if (!this._panel || this._userToggled || !this._expanded) return;
-        this._expanded = false;
-        this._renderSig = '';
-        this._render();
+        this._mount();
     },
 
     _mount() {
-        const host = Selectors.find('chat.root') || qs('aside.media-page-chat-aside-chat');
-        if (!host || (this._panel && this._panel.isConnected)) return;
-        const panel = document.createElement('section');
-        panel.className = 'rx-rant-archive';
-        panel.setAttribute('aria-label', rxT('rantArchiveTitle', 'Rant archive (local)'));
-        host.prepend(panel);
-        this._panel = panel;
-        this._expanded = !document.documentElement.classList.contains('rx-theater');
-        this._userToggled = false;
-        this._renderSig = '';
-        this._render();
+        for (const panel of qsa('.rx-rant-archive')) panel.remove();
+        this._panel = null;
     },
 
     init() {
         if (!Settings.get(this.id)) return;
         if (!Page.isWatch() && !Page.isLive()) return;
-        this._styleEl = injectStyle(this._css, 'rx-rant-archive-css');
         this._mount();
-        this._obs = new MutationObserver(() => {
-            scheduleFeatureFrame(this, 'rant-archive', () => { this._mount(); this._render(); });
-        });
-        this._obs.observe(document.documentElement, { childList: true, subtree: true });
     },
 
     destroy() {
@@ -16280,7 +15805,7 @@ const RantArchive = {
         this._obs = null;
         this._styleEl?.remove();
         this._styleEl = null;
-        this._panel?.remove();
+        this._mount();
         this._panel = null;
         this._expanded = true;
         this._userToggled = false;
@@ -16308,13 +15833,6 @@ const RantPersist = {
             background: rgba(249,226,175,0.15); color: #f9e2af;
             border-radius: 4px; font: 600 9px/1.4 system-ui, sans-serif;
         }
-        .rx-rant-export-btn {
-            position: absolute; top: 4px; right: 4px;
-            background: rgba(30,30,46,0.9); border: 1px solid rgba(249,226,175,0.3);
-            color: #f9e2af; border-radius: 5px; padding: 2px 8px; cursor: pointer;
-            font: 600 10px/1 system-ui, sans-serif; opacity: 0.8;
-        }
-        .rx-rant-export-btn:hover { opacity: 1; }
     `,
 
     _MAX_PER_VIDEO: 500,
@@ -16494,15 +16012,6 @@ const RantPersist = {
             // childList+subtree is enough — we override fade-out via !important CSS,
             // so we don't need to react to attribute/class changes (expensive).
             this._obs.observe(chatEl, { childList: true, subtree: true });
-            const tracker = qs('.rx-rant-tracker');
-            if (tracker && !tracker.querySelector('.rx-rant-export-btn')) {
-                const btn = document.createElement('button');
-                btn.className = 'rx-rant-export-btn';
-                btn.textContent = 'Export';
-                btn.addEventListener('click', () => this._export());
-                tracker.style.position = 'relative';
-                tracker.appendChild(btn);
-            }
         }).catch(() => {});
     },
 
@@ -16850,21 +16359,13 @@ const PopoutChat = {
     },
 
     _mount() {
-        const header = qs('.chat--header');
-        if (!header || qs('.rx-popout-chat-btn')) return;
-        const btn = document.createElement('button');
-        btn.className = 'rx-popout-chat-btn';
-        btn.textContent = 'Popout';
-        btn.title = 'Open chat in separate window';
-        btn.addEventListener('click', () => this._popout());
-        header.appendChild(btn);
-        this._btn = btn;
+        for (const button of qsa('.rx-popout-chat-btn')) button.remove();
+        this._btn = null;
     },
 
     init() {
         if (!Settings.get(this.id) || !Page.isWatch()) return;
-        this._styleEl = injectStyle(this._css, 'rx-popoutchat-css');
-        waitForFeature(this, '.chat--header').then(() => this._mount()).catch(() => {});
+        for (const button of qsa('.rx-popout-chat-btn')) button.remove();
     },
 
     destroy() {

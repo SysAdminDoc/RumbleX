@@ -71,7 +71,14 @@ async function inContent(serviceWorker, targetTabId, action, args = []) {
                         rightExpanded: right.classList.contains('rx-expanded'),
                         splitActive: document.documentElement.classList.contains('rx-split'),
                         separatorRole: divider.getAttribute('role'),
-                        closeLabel: document.querySelector('#rx-theater-close')?.getAttribute('aria-label'),
+                        exitLabel: document.querySelector('.rx-panel-exit')?.getAttribute('aria-label'),
+                        removedSurfaceCount: document.querySelectorAll([
+                            '.rx-rant-archive', '.rx-rant-tracker', '#rx-chat-filter',
+                            '.rx-chatter-bar', '.rx-player-tools-trigger',
+                            '#rx-split-reveal', '#rx-theater-close',
+                        ].join(',')).length,
+                        chatHeaderHidden: !document.querySelector('.chat--header')
+                            || getComputedStyle(document.querySelector('.chat--header')).display === 'none',
                         commentsCount: document.querySelectorAll('#video-comments').length,
                     };
                 }
@@ -223,17 +230,13 @@ test('modern card adapter drives related, keyword, progress, and channel feature
     expect(keyword).toEqual([true, false]);
 });
 
-test('Theater has usable geometry, keyboard semantics, exit, and route remounting', async ({ context, serviceWorker }) => {
+test('Theater opens with a usable full-height panel, keyboard semantics, exit, and route remounting', async ({ context, serviceWorker }) => {
     test.setTimeout(60_000);
     const page = await openWatch(context);
     const id = await tabId(serviceWorker, page.url());
     await expect(page.locator('#rx-split-wrapper')).toBeVisible({ timeout: 15_000 });
 
-    const reveal = page.locator('#rx-split-reveal');
-    await expect(reveal).toBeVisible();
-    await expect(reveal).toHaveAttribute('aria-expanded', 'false');
-    await reveal.click();
-    await expect(reveal).toHaveAttribute('aria-expanded', 'true');
+    await expect(page.locator('#rx-split-right')).toHaveClass(/rx-expanded/);
 
     await expect.poll(async () => (await inContent(serviceWorker, id, 'theaterGeometry')).rightWidth, {
         timeout: 2_000,
@@ -245,22 +248,12 @@ test('Theater has usable geometry, keyboard semantics, exit, and route remountin
     // on a usable divider rather than exact floating-point rasterization.
     expect(geometry.dividerWidth).toBeGreaterThanOrEqual(5.5);
     expect(geometry.separatorRole).toBe('separator');
-    expect(geometry.closeLabel).toBe('Exit theater mode');
+    expect(geometry.exitLabel).toBe('Exit theater mode');
+    expect(geometry.removedSurfaceCount).toBe(0);
+    expect(geometry.chatHeaderHidden).toBe(true);
     expect(geometry.commentsCount).toBe(1);
 
-    for (let attempt = 0; attempt < 4; attempt += 1) {
-        await page.locator('.rx-panel-collapse').click();
-        await expect(reveal).toBeFocused();
-        await expect(reveal).toHaveAttribute('aria-expanded', 'false');
-        await reveal.click();
-        await expect(reveal).toHaveAttribute('aria-expanded', 'true');
-        await expect.poll(async () => {
-            const state = await inContent(serviceWorker, id, 'theaterGeometry');
-            return state.rightWidth > 200 ? 'expanded' : JSON.stringify(state);
-        }).toBe('expanded');
-    }
-
-    await page.locator('#rx-theater-close').click();
+    await page.locator('.rx-panel-exit').click();
     await expect(page.locator('#rx-split-wrapper')).toHaveCount(0);
     await expect(page.locator('#comments-host > #video-comments[data-fixture-identity="original"]')).toHaveCount(1);
 
@@ -281,33 +274,10 @@ test('Theater has usable geometry, keyboard semantics, exit, and route remountin
     await expect(page.locator('#rx-split-left #videoPlayer')).toHaveCount(1);
 });
 
-test('player utilities share one keyboard-accessible disclosure', async ({ context }) => {
+test('player utility launchers stay off the video surface', async ({ context }) => {
     const page = await openWatch(context);
-    const dock = page.locator('.rx-player-tools');
-    const trigger = page.locator('.rx-player-tools-trigger');
-    const menu = page.locator('.rx-player-tools-menu');
-
-    await expect(dock).toHaveCount(1, { timeout: 15_000 });
-    await expect(trigger).toHaveAttribute('aria-expanded', 'false');
-    await expect(menu.locator('.rx-player-tool-action')).toHaveCount(5);
-    await expect(menu.locator('.rx-player-tool-action')).toHaveText([
-        'Snap',
-        'Stats',
-        'Loop',
-        'Bookmark',
-        'Share at time',
-    ]);
-
-    await trigger.click();
-    await expect(menu).toBeVisible();
-    await expect(trigger).toHaveAttribute('aria-expanded', 'true');
-    await expect(menu.locator('.rx-player-tool-action').first()).toBeFocused();
-
-    await page.keyboard.press('End');
-    await expect(menu.locator('.rx-player-tool-action').last()).toBeFocused();
-    await page.keyboard.press('Escape');
-    await expect(menu).toBeHidden();
-    await expect(trigger).toBeFocused();
+    await expect(page.locator('.rx-player-tools, .rx-player-tools-trigger, .rx-player-tools-menu')).toHaveCount(0, { timeout: 15_000 });
+    await expect(page.locator('#videoPlayer .rx-screenshot-btn, #videoPlayer .rx-stats-btn, #videoPlayer .rx-loop-btn, #videoPlayer .rx-bookmark-btn, #videoPlayer .rx-share-ts-btn')).toHaveCount(0);
 });
 
 test('shared trust boundaries reject malicious settings, media URLs, and modified shortcuts', async ({ context, serviceWorker }) => {
