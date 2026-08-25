@@ -13,6 +13,20 @@ All notable changes to RumbleX will be documented in this file.
 - Store metadata and the public project page now use the package version as their checked source of truth. The same guard verifies both browser manifests, the lockfile, README badge, visible page label, and the feature-module count derived from the runtime registries.
 - `npm run verify` is now the mandatory local gate for source checks, selector contracts, headless browser coverage, packaging, and archive integrity. `npm run release:local` cleans known package outputs, runs that gate, rebuilds the final artifacts, and verifies their bytes again.
 
+## [3.57.0] - 2026-08-25
+
+### Fixed
+
+- The download panel no longer offers files that are far too small to be the video. A probe that returns HTTP 200 was previously enough to earn a row, so placeholder CDN responses and the seekbar preview strip both showed up as downloadable qualities of a few hundred KB. Results are now checked against an absolute floor, against the video's own duration, and against the largest confirmed rendition, and anything that fails is dropped.
+- Rumble's seekbar preview strip is no longer harvested as a download candidate. It lives at a real `/video/` path and is a real MP4, so nothing structural distinguished it from a rendition.
+- A junk result no longer hides a real one. The deep scan closed a quality slot on the first response of any size, which meant a placeholder could block the remaining candidates for that quality even when a genuine file sat one URL later in the queue. A slot now closes only on a result that passes the size check.
+- Rows whose size the CDN withheld are labelled "size unknown" instead of looking identical to a verified result, and a later probe that does report a length replaces them.
+
+### Changed
+
+- Successful probes are cached. `MediaProbeCache` has existed since v2.2.0 for this purpose but was never called, which left the Probe Cache TTL setting doing nothing. Reopening the panel on a video you have already scanned now skips the requests that found something. Failed probes are deliberately not cached, because a video still transcoding would otherwise stay unavailable for the rest of the TTL. The cache is bounded at 2,000 entries with oldest-first eviction.
+- When results are filtered, the panel says how many and why rather than quietly showing a shorter list.
+
 ## [3.56.0] - 2026-08-25
 
 ### Changed

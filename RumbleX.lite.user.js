@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         RumbleX Lite
 // @namespace    https://github.com/SysAdminDoc/RumbleX
-// @version      3.56.0
+// @version      3.57.0
 // @description  Rumble enhancement suite (Lite). The same shared feature core, without bundled transmuxers. Downloads save the raw stream; MP4 remux needs the full build or the extension.
 // @author       SysAdminDoc
 // @match        https://rumble.com/*
@@ -23,7 +23,7 @@
 // @updateURL    https://github.com/SysAdminDoc/RumbleX/raw/main/RumbleX.lite.user.js
 // ==/UserScript==
 
-// Generated from the shared extension core files. Shared runtime SHA-256: dd354398f78f5c93c02fda6f130165f043fef24cf3db1013aa69491e26579db3
+// Generated from the shared extension core files. Shared runtime SHA-256: 800621e71bb9debada77a732f6e68c4772b9aef859b72966a6420bbafdc1f7b3
 // RumbleX shared settings schema. This file is the canonical source for
 // defaults and trust-boundary normalization across content, options, popup,
 // background profile/Gist restores, and the generated userscript.
@@ -793,7 +793,7 @@
 'use strict';
 
 (() => {
-    const VERSION = "3.56.0";
+    const VERSION = "3.57.0";
     const ASSETS = Object.freeze({});
     const MESSAGES = Object.freeze({
   "extName": "RumbleX",
@@ -1333,7 +1333,10 @@
   "dlMp4Saved": "MP4 saved directly to your selected file.",
   "dlDiskCancelled": "Download cancelled. Partial file changes were discarded.",
   "theaterHidePanelShort": "Hide",
-  "rantArchiveEmptyShort": "No rants yet"
+  "rantArchiveEmptyShort": "No rants yet",
+  "dlSizeUnknown": "size unknown",
+  "dlSuppressedStubs": "Hid {count} result(s) too small to be this video (preview strips and empty CDN responses).",
+  "dlOnlyStubsFound": "Nothing downloadable here. The {count} response(s) Rumble returned were too small to be this video."
 });
     const STORAGE_KEYS_WITH_CHANGE_EVENTS = ['rx_settings'];
     const ALLOWED_REQUEST_HOSTS = ['rumble.com', 'rumble.cloud', '1a-1791.com'];
@@ -2470,11 +2473,22 @@ const MediaProbeCache = {
         }
         return entry.val;
     },
+    // One video's deep scan writes ~40 probe entries, so the cache would grow
+    // without bound across a browsing session if only the read path GC'd.
+    // Oldest-first eviction keeps the single storage blob well inside quota.
+    _MAX_ENTRIES: 2000,
     async set(key, val) {
         if (!key) return;
         if (this._ttlMs() === 0) return; // don't persist if cache is disabled
         await this._load();
         this._mem[key] = { at: Date.now(), val };
+        const keys = Object.keys(this._mem);
+        if (keys.length > this._MAX_ENTRIES) {
+            keys.sort((a, b) => (this._mem[a]?.at || 0) - (this._mem[b]?.at || 0));
+            for (const stale of keys.slice(0, keys.length - this._MAX_ENTRIES)) {
+                delete this._mem[stale];
+            }
+        }
         this._scheduleFlush();
     },
     async clear() {
@@ -2497,7 +2511,7 @@ const MediaProbeCache = {
 
 
 
-// RumbleX v3.56.0 - Shared Content Core
+// RumbleX v3.57.0 - Shared Content Core
 // Rumble enhancement suite - Chrome/Firefox extension
 'use strict';
 
@@ -2507,7 +2521,7 @@ const MediaProbeCache = {
 // DOM feature ship from one canonical source.
 const RXPlatform = globalThis.RumbleXPlatform;
 if (!RXPlatform) throw new Error('RumbleX platform adapter is missing');
-const VERSION = RXPlatform.version || '3.56.0';
+const VERSION = RXPlatform.version || '3.57.0';
 /**
  * In-page translation lookup.
  *
@@ -5443,6 +5457,19 @@ const VideoDownloader = {
     _EMBED_UNITS: ['u0', 'u1', 'u2', 'u3', 'u4'],
     _PROBE_CONCURRENCY: 6,
     _PROBE_TIMEOUT_MS: 12000,
+    // A probe that returns 200 does not mean the URL is a video. Rumble's CDN
+    // answers plenty of synthesized candidates with a placeholder body, and the
+    // embed payload itself carries non-rendition media (the timeline preview
+    // strip) that is a valid MP4 of a few hundred KB. Both used to render as
+    // download rows. See _isPlausibleRendition for how they are rejected.
+    _MIN_MEDIA_BYTES: 256 * 1024,
+    // ~48 kbps. Rumble's lowest rendition (240p) sits an order of magnitude
+    // above this, so anything under it for a known duration is not video.
+    _MIN_BYTES_PER_SECOND: 6 * 1024,
+    // A real rendition ladder spans maybe 10x from 240p to 1080p. Something
+    // more than 50x smaller than the largest confirmed rendition is a sprite
+    // sheet or a stub, not a lower quality of the same video.
+    _MIN_LADDER_RATIO: 0.02,
     _MAX_IN_MEMORY_BYTES: 512 * 1024 * 1024,
     _MP4_STREAM_CHUNK_BYTES: 8 * 1024 * 1024,
     _MP4_STREAM_IDLE_TIMEOUT_MS: 2 * 60 * 1000,
@@ -6501,7 +6528,68 @@ const VideoDownloader = {
         return undefined;
     },
 
+    // Duration is the only cheap ground truth for "is this file big enough to
+    // be the video". schema.org carries it on every watch page; the embed
+    // payload and the player element are the fallbacks for the rare page that
+    // ships no JSON-LD.
+    _videoDurationSeconds() {
+        const structured = PageData.durationSeconds();
+        if (Number.isFinite(structured) && structured > 0) return structured;
+        const embedDuration = Number(this._embedData?.duration);
+        if (Number.isFinite(embedDuration) && embedDuration > 0) return embedDuration;
+        const player = getActiveMedia();
+        const playing = Number(player?.duration);
+        return Number.isFinite(playing) && playing > 0 ? playing : null;
+    },
+
+    // Verdict on whether a probed URL is plausibly a full rendition of this
+    // video. Three separate returns, because they mean different things to the
+    // caller: 'ok' renders and closes the slot, 'reject' is dropped outright,
+    // and 'unknown' renders but leaves the slot open so a later candidate with
+    // a real Content-Length can still replace it.
+    // `durationSeconds` is explicit rather than always read from the page,
+    // because the batch downloader judges videos it is not currently watching.
+    // Falling back to the watch page's duration there would measure one video
+    // against another's length.
+    _renditionVerdict(size, { largestKnownBytes = 0, durationSeconds } = {}) {
+        const bytes = Number(size);
+        if (!Number.isFinite(bytes) || bytes <= 0) return 'unknown';
+        if (bytes < this._MIN_MEDIA_BYTES) return 'reject';
+        const duration = durationSeconds === undefined
+            ? this._videoDurationSeconds()
+            : (Number(durationSeconds) > 0 ? Number(durationSeconds) : null);
+        if (duration && bytes < duration * this._MIN_BYTES_PER_SECOND) return 'reject';
+        if (largestKnownBytes > 0 && bytes < largestKnownBytes * this._MIN_LADDER_RATIO) return 'reject';
+        return 'ok';
+    },
+
+    _isPlausibleRendition(size, context) {
+        return this._renditionVerdict(size, context) !== 'reject';
+    },
+
+    // Probe results are stable for the lifetime of a video, and reopening the
+    // panel used to re-run ~40 CDN requests every time. MediaProbeCache has
+    // existed since v2.2.0 for exactly this and was never wired up; the
+    // downloadProbeCacheTtlHours setting was inert as a result.
+    _probeCacheKey(url) {
+        return `probe:${url}`;
+    },
+
     async _probeUrl(url) {
+        const cached = await MediaProbeCache.get(this._probeCacheKey(url)).catch(() => null);
+        if (cached && typeof cached === 'object') return { ok: !!cached.ok, size: cached.size };
+        const result = await this._probeUrlNetwork(url);
+        // Only successes are cached. A miss can be a transient 5xx or an abort
+        // from navigating away mid-scan, and pinning that for hours would hide
+        // a quality that is really there.
+        if (result.ok) {
+            void MediaProbeCache.set(this._probeCacheKey(url), { ok: true, size: result.size })
+                .catch(() => {});
+        }
+        return result;
+    },
+
+    async _probeUrlNetwork(url) {
         const signal = this._scanController?.signal;
         if (signal?.aborted) return { ok: false };
         const timed = () => {
@@ -6570,7 +6658,11 @@ const VideoDownloader = {
         const out = new Set();
         const add = (u) => { if (u && /\/video\/.+\.(?:mp4|tar)\b/i.test(u)) out.add(u); };
         try {
-            if (json.u) { add(json.u.tar?.url); add(json.u.timeline?.url); }
+            // `u.timeline` is the seekbar preview strip, not a rendition. It
+            // is a real MP4 at a real /video/ path of a few hundred KB, so it
+            // passed every structural filter here and rendered as a download
+            // row labelled "detected". It is deliberately not harvested.
+            if (json.u) add(json.u.tar?.url);
             if (json.ua) {
                 for (const group of Object.values(json.ua)) {
                     if (group && typeof group === 'object') {
@@ -6703,9 +6795,16 @@ const VideoDownloader = {
         if (!targets.length) return { done: 0, total: 0 };
 
         // Step 4: concurrent probe. Skip quality/type pairs we've already verified.
+        //
+        // A slot is only closed by a hit that is plausibly the video. Closing
+        // it on any 200 meant one placeholder response permanently blocked the
+        // remaining candidates for that quality, so a rejected stub could hide
+        // a rendition that really existed one URL later in the queue.
         const satisfied = new Set();
         const queue = [...targets];
         let done = 0;
+        let rejected = 0;
+        let largestKnownBytes = 0;
         const total = targets.length;
         const worker = async () => {
             while (queue.length && isAlive()) {
@@ -6714,19 +6813,28 @@ const VideoDownloader = {
                 if (satisfied.has(key)) { done++; onResult?.(null, done, total); continue; }
                 const result = await this._probeUrl(t.url);
                 done++;
-                if (result.ok && isAlive()) {
-                    const label = this._tokenToLabel(t.token) || 'detected';
-                    satisfied.add(key);
-                    onResult?.({ label, type: t.type, url: t.url, size: result.size, token: t.token }, done, total);
-                } else {
+                if (!result.ok || !isAlive()) { onResult?.(null, done, total); continue; }
+                const verdict = this._renditionVerdict(result.size, { largestKnownBytes });
+                if (verdict === 'reject') {
+                    rejected++;
                     onResult?.(null, done, total);
+                    continue;
                 }
+                const label = this._tokenToLabel(t.token) || 'detected';
+                if (verdict === 'ok') {
+                    satisfied.add(key);
+                    largestKnownBytes = Math.max(largestKnownBytes, Number(result.size) || 0);
+                }
+                onResult?.({
+                    label, type: t.type, url: t.url, size: result.size, token: t.token,
+                    sizeConfirmed: verdict === 'ok',
+                }, done, total);
             }
         };
         await Promise.all(
             Array.from({ length: Math.min(this._PROBE_CONCURRENCY, total) }, () => worker())
         );
-        return { done, total };
+        return { done, total, rejected };
     },
 
     _copyToClipboard(text) {
@@ -6784,6 +6892,10 @@ const VideoDownloader = {
         else if (q.label) metaParts.push(q.label);
         if (q.bitrate) metaParts.push(`${q.bitrate} kbps`);
         if (q.size) metaParts.push(`~${this._formatSize(q.size)}`);
+        // An unsized direct URL passed the probe but the CDN withheld a length,
+        // so it could not be size-checked. Saying so is better than a row that
+        // looks identical to a verified one.
+        else if (q.directUrl) metaParts.push(rxT('dlSizeUnknown', 'size unknown'));
         const meta = document.createElement('div');
         meta.className = 'rx-dl-quality-meta';
         meta.textContent = metaParts.join(' · ');
@@ -6853,9 +6965,13 @@ const VideoDownloader = {
                 if (existing) {
                     // Already have this quality. Prefer the entry with a real
                     // size — the probe result is more accurate than the API's
-                    // claimed number.
+                    // claimed number. A confirmed size also beats an unknown
+                    // one even when the unknown row came from the same probe,
+                    // because an unknown row is the one we are least sure about.
                     const prev = existing.q;
-                    const better = (q.size || 0) > (prev.size || 0) || (!prev.directUrl && q.directUrl);
+                    const better = (q.size || 0) > (prev.size || 0)
+                        || (!prev.directUrl && q.directUrl)
+                        || (q.sizeConfirmed && !prev.sizeConfirmed && !prev.size);
                     if (better) {
                         const replacement = this._makeRow(q, title);
                         existing.row.replaceWith(replacement);
@@ -6877,10 +6993,25 @@ const VideoDownloader = {
             };
 
             // ── Initial rows from the embed API ──
+            // The API's own `meta.size` is filtered on the same rule as a probe
+            // result. HLS rows carry no direct URL and often no size, so they
+            // are never rejected here: their real size is only knowable after
+            // the playlist is walked, and dropping them would remove the only
+            // option on videos Rumble serves as HLS alone.
+            let suppressed = 0;
+            const largestPublished = qualities.reduce(
+                (max, q) => Math.max(max, Number(q.size) || 0),
+                0,
+            );
             for (const q of qualities) {
                 // Normalize token (the API-provided entries don't always carry one).
                 if (q.directUrl && !q.token) q.token = String(this._extractTokenFromUrl(q.directUrl) || '').toLowerCase();
                 if (!q.type) q.type = q.directUrl ? this._typeFromUrl(q.directUrl) : 'mp4';
+                if (q.directUrl && !this._isPlausibleRendition(q.size, { largestKnownBytes: largestPublished })) {
+                    suppressed++;
+                    continue;
+                }
+                if (Number(q.size) > 0) q.sizeConfirmed = true;
                 upsert(q);
             }
 
@@ -6932,9 +7063,10 @@ const VideoDownloader = {
                         size: hit.size,
                         height: heightFromLabel,
                         token: hit.token,
+                        sizeConfirmed: !!hit.sizeConfirmed,
                     });
                 }
-            }, data).then(({ done, total }) => {
+            }, data).then(({ done, total, rejected = 0 }) => {
                 if (seq !== this._scanSeq) return;
                 scanBar.classList.add('done');
                 scanLabel.textContent = total
@@ -6942,10 +7074,32 @@ const VideoDownloader = {
                     : 'Deep scan found nothing extra to probe';
                 setTimeout(() => { if (seq === this._scanSeq) scanBar.remove(); }, 2800);
 
+                // Say what was filtered rather than silently shortening the
+                // list. A suppressed count that keeps climbing on one video is
+                // the signal that the size rule needs revisiting, and it is
+                // invisible if the rows just never appear.
+                const hidden = suppressed + rejected;
+                if (hidden > 0 && rowByKey.size > 0) {
+                    const note = document.createElement('div');
+                    note.className = 'rx-dl-tar-note';
+                    note.textContent = rxT(
+                        'dlSuppressedStubs',
+                        'Hid {count} result(s) too small to be this video (preview strips and empty CDN responses).',
+                        { count: hidden },
+                    );
+                    body.appendChild(note);
+                }
+
                 // If nothing showed up anywhere, replace the "scanning…" text
                 // with an honest dead-end message so the panel isn't empty.
                 if (rowByKey.size === 0 && emptyEl) {
-                    emptyEl.textContent = rxT('dlNoDownloads', 'No downloads found. Try playing the video first, then reopen this panel.');
+                    emptyEl.textContent = hidden > 0
+                        ? rxT(
+                            'dlOnlyStubsFound',
+                            'Nothing downloadable here. The {count} response(s) Rumble returned were too small to be this video.',
+                            { count: hidden },
+                        )
+                        : rxT('dlNoDownloads', 'No downloads found. Try playing the video first, then reopen this panel.');
                 }
 
                 // Any TAR rows present? Append a "how to play" note at the bottom.
@@ -18455,7 +18609,15 @@ const BatchDownload = {
         const qualities = VideoDownloader._parseQualities(data);
         // Prefer a direct MP4 (fastest); HLS-only variants need transmux which
         // is too expensive to run in a batch.
-        const pick = qualities.find((q) => q.directUrl);
+        //
+        // The same size check the download panel applies, so a batch cannot
+        // quietly fill a folder with stubs. Duration comes from this video's
+        // own embed payload rather than the page, because the batch runs from
+        // a feed where the page describes nothing in particular.
+        const largestKnownBytes = qualities.reduce((max, q) => Math.max(max, Number(q.size) || 0), 0);
+        const durationSeconds = Number(data?.duration) > 0 ? Number(data.duration) : null;
+        const pick = qualities.find((q) => q.directUrl
+            && VideoDownloader._renditionVerdict(q.size, { largestKnownBytes, durationSeconds }) !== 'reject');
         if (!pick) throw new Error('No direct MP4 available');
         const title = this._titleFromUrl(url);
         const filename = `${title} - ${pick.label}.mp4`;

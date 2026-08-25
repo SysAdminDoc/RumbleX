@@ -2148,5 +2148,17 @@
   "dlDiskCancelled": {
     "message": "Download cancelado. As alterações parciais do arquivo foram descartadas.",
     "description": "In-page UI string (shared core)."
+  },
+  "dlSizeUnknown": {
+    "message": "tamanho desconhecido",
+    "description": "In-page UI string (shared core)."
+  },
+  "dlSuppressedStubs": {
+    "message": "{count} resultado(s) ocultado(s) por serem pequenos demais para este vídeo (tiras de pré-visualização e respostas vazias do CDN).",
+    "description": "In-page UI string (shared core)."
+  },
+  "dlOnlyStubsFound": {
+    "message": "Não há nada para baixar aqui. As {count} resposta(s) que o Rumble retornou eram pequenas demais para ser este vídeo.",
+    "description": "In-page UI string (shared core)."
   }
 }

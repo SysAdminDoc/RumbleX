@@ -336,11 +336,22 @@ const MediaProbeCache = {
         }
         return entry.val;
     },
+    // One video's deep scan writes ~40 probe entries, so the cache would grow
+    // without bound across a browsing session if only the read path GC'd.
+    // Oldest-first eviction keeps the single storage blob well inside quota.
+    _MAX_ENTRIES: 2000,
     async set(key, val) {
         if (!key) return;
         if (this._ttlMs() === 0) return; // don't persist if cache is disabled
         await this._load();
         this._mem[key] = { at: Date.now(), val };
+        const keys = Object.keys(this._mem);
+        if (keys.length > this._MAX_ENTRIES) {
+            keys.sort((a, b) => (this._mem[a]?.at || 0) - (this._mem[b]?.at || 0));
+            for (const stale of keys.slice(0, keys.length - this._MAX_ENTRIES)) {
+                delete this._mem[stale];
+            }
+        }
         this._scheduleFlush();
     },
     async clear() {

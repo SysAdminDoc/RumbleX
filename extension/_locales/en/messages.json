@@ -2150,5 +2150,17 @@
   "rantArchiveEmptyShort": {
     "message": "No rants yet",
     "description": "In-page UI string (shared core)."
+  },
+  "dlSizeUnknown": {
+    "message": "size unknown",
+    "description": "In-page UI string (shared core)."
+  },
+  "dlSuppressedStubs": {
+    "message": "Hid {count} result(s) too small to be this video (preview strips and empty CDN responses).",
+    "description": "In-page UI string (shared core)."
+  },
+  "dlOnlyStubsFound": {
+    "message": "Nothing downloadable here. The {count} response(s) Rumble returned were too small to be this video.",
+    "description": "In-page UI string (shared core)."
   }
 }
