@@ -69,6 +69,45 @@ test.describe('live site visual capture', () => {
         await page.waitForTimeout(500);
         await page.screenshot({ path: path.join(outputDir, 'theater-split-1440x900.png'), fullPage: false });
 
+        const archiveSummary = page.locator('.rx-rant-archive__summary');
+        if (await archiveSummary.isVisible().catch(() => false)) {
+            await archiveSummary.click();
+            await expect(archiveSummary).toHaveAttribute('aria-expanded', 'true');
+            await page.screenshot({ path: path.join(outputDir, 'theater-rant-archive-1440x900.png'), fullPage: false });
+            await archiveSummary.click();
+        }
+
+        const commentsTab = page.locator('#rx-tab-button-comments');
+        await commentsTab.click();
+        await expect(page.locator('#rx-tab-comments')).toBeVisible();
+        await page.waitForTimeout(250);
+        await page.screenshot({ path: path.join(outputDir, 'theater-comments-1440x900.png'), fullPage: false });
+
+        const chatTab = page.locator('#rx-tab-button-chat');
+        if (await chatTab.isVisible().catch(() => false)) await chatTab.click();
+        await page.setViewportSize({ width: 820, height: 900 });
+        await page.waitForTimeout(300);
+        const narrowLayout = await page.evaluate(() => {
+            const left = document.querySelector('#rx-split-left').getBoundingClientRect();
+            const right = document.querySelector('#rx-split-right').getBoundingClientRect();
+            const header = document.querySelector('.rx-panel-header').getBoundingClientRect();
+            const history = document.querySelector('#rx-tab-chat #chat-history-list')?.getBoundingClientRect();
+            return {
+                leftBottom: left.bottom,
+                rightBottom: right.bottom,
+                rightHeight: right.height,
+                headerTop: header.top,
+                historyHeight: history?.height || 0,
+            };
+        });
+        expect(narrowLayout.rightHeight).toBeGreaterThan(400);
+        expect(Math.abs(narrowLayout.rightBottom - 900)).toBeLessThanOrEqual(1);
+        expect(narrowLayout.headerTop).toBeGreaterThanOrEqual(narrowLayout.leftBottom);
+        expect(narrowLayout.historyHeight, JSON.stringify(narrowLayout)).toBeGreaterThan(40);
+        await page.screenshot({ path: path.join(outputDir, 'theater-split-820x900.png'), fullPage: false });
+        await page.setViewportSize(VIEWPORT);
+        await page.waitForTimeout(300);
+
         const tools = page.locator('.rx-player-tools-trigger:visible').first();
         await expect(tools).toBeVisible({ timeout: 10_000 });
         await tools.click();

@@ -1,4 +1,4 @@
-// RumbleX v3.53.0 - Shared Content Core
+// RumbleX v3.54.0 - Shared Content Core
 // Rumble enhancement suite - Chrome/Firefox extension
 'use strict';
 
@@ -8,7 +8,7 @@
 // DOM feature ship from one canonical source.
 const RXPlatform = globalThis.RumbleXPlatform;
 if (!RXPlatform) throw new Error('RumbleX platform adapter is missing');
-const VERSION = RXPlatform.version || '3.53.0';
+const VERSION = RXPlatform.version || '3.54.0';
 /**
  * In-page translation lookup.
  *
@@ -1538,6 +1538,8 @@ const TheaterSplit = {
     _dragCleanup: null,
     _keyHandler: null,
     _focusBeforeOpen: null,
+    _chatRootObs: null,
+    _rebindingChat: false,
 
     _css: `
         html.rx-theater,
@@ -1562,11 +1564,14 @@ const TheaterSplit = {
         #rx-split-left {
             flex: 1;
             min-width: 0;
+            min-height: 0;
             display: flex;
             align-items: center;
             justify-content: center;
             background: var(--rx-theater-canvas, #020202);
             position: relative;
+            z-index: 0;
+            isolation: isolate;
             overflow: hidden;
         }
         #rx-split-left #videoPlayer,
@@ -1624,6 +1629,9 @@ const TheaterSplit = {
         #rx-split-right {
             flex: 0 0 0;
             width: 0;
+            min-height: 0;
+            position: relative;
+            z-index: 20;
             overflow: hidden;
             opacity: 0;
             transform: translateX(12px);
@@ -1637,8 +1645,7 @@ const TheaterSplit = {
         #rx-split-right.rx-expanded {
             opacity: 1;
             transform: translateX(0);
-            overflow-y: auto;
-            overflow-x: hidden;
+            overflow: hidden;
         }
         #rx-split-right.rx-tabbed { overflow: hidden !important; }
         #rx-split-right::-webkit-scrollbar { width: 5px; }
@@ -1724,30 +1731,34 @@ const TheaterSplit = {
 
 
         #rx-split-right .rx-panel-header {
-            padding: 14px 12px 12px 16px;
+            min-height: 54px;
+            padding: 7px 8px 7px 12px;
             border-bottom: 1px solid var(--rx-theater-border, rgba(255,255,255,0.1));
             background: var(--rx-theater-shell, #0b0b0f);
             flex-shrink: 0;
             display: flex;
-            align-items: flex-start;
-            gap: 10px;
+            align-items: center;
+            gap: 8px;
         }
         #rx-split-right .rx-panel-header .rx-header-info { flex: 1; min-width: 0; }
         #rx-split-right .rx-panel-header h3 {
-            margin: 0 0 4px;
-            font-size: 15px;
+            margin: 0 0 2px;
+            font-size: 13px;
             font-weight: 750;
             color: var(--rx-theater-text, #f5f7fb);
-            line-height: 1.3;
+            line-height: 1.25;
+            white-space: nowrap;
             overflow: hidden;
             text-overflow: ellipsis;
-            display: -webkit-box;
-            -webkit-line-clamp: 2;
-            -webkit-box-orient: vertical;
         }
         #rx-split-right .rx-panel-header .rx-channel {
-            font-size: 12px;
+            display: block;
+            font-size: 10px;
+            line-height: 1.2;
             color: var(--rx-theater-subtext, #a6adc8);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
         }
         #rx-split-right .rx-panel-header .rx-header-actions {
             display: flex;
@@ -1756,8 +1767,8 @@ const TheaterSplit = {
             align-items: center;
         }
         #rx-split-right .rx-panel-header .rx-hdr-btn {
-            width: 40px; height: 40px;
-            border-radius: 8px;
+            width: 34px; height: 34px;
+            border-radius: 6px;
             background: transparent;
             border: 1px solid var(--rx-theater-border, rgba(255,255,255,0.1));
             color: var(--rx-theater-subtext, rgba(255,255,255,0.68));
@@ -1779,6 +1790,22 @@ const TheaterSplit = {
         #rx-split-right .rx-panel-header #rx-hdr-settings svg {
             transition: transform 0.3s cubic-bezier(.4,0,.2,1);
         }
+        #rx-split-right .rx-panel-collapse {
+            min-width: 42px;
+            height: 34px;
+            padding: 0 8px;
+            border-radius: 6px;
+            border: 1px solid var(--rx-theater-border, rgba(255,255,255,0.1));
+            background: transparent;
+            color: var(--rx-theater-subtext, #a6adc8);
+            cursor: pointer;
+            font: 700 10px/1 Inter, ui-sans-serif, system-ui, sans-serif;
+        }
+        #rx-split-right .rx-panel-collapse:hover {
+            color: var(--rx-theater-text, #f5f7fb);
+            border-color: var(--rx-theater-accent, #89b4fa);
+            background: var(--rx-theater-selection, rgba(137,180,250,0.14));
+        }
 
         #rx-tab-bar {
             display: flex;
@@ -1788,8 +1815,8 @@ const TheaterSplit = {
         }
         .rx-tab {
             flex: 1;
-            min-height: 44px;
-            padding: 9px 6px;
+            min-height: 40px;
+            padding: 7px 6px;
             text-align: center;
             font-size: 12px;
             font-weight: 600;
@@ -1810,7 +1837,7 @@ const TheaterSplit = {
             border-bottom-color: var(--rx-theater-accent, #89b4fa);
         }
         .rx-tab:focus-visible,
-        #rx-collapse-strip:focus-visible,
+        .rx-panel-collapse:focus-visible,
         #rx-split-reveal:focus-visible,
         #rx-theater-close:focus-visible,
         #rx-split-right .rx-hdr-btn:focus-visible {
@@ -1820,7 +1847,7 @@ const TheaterSplit = {
 
         #rx-tab-chat {
             flex: 1;
-            display: flex;
+            min-height: 0;
             flex-direction: column;
             overflow: hidden;
         }
@@ -1828,23 +1855,103 @@ const TheaterSplit = {
         #rx-tab-chat .media-page-chat-aside-chat-wrapper-fixed {
             position: static !important;
             width: 100% !important;
-            height: 100% !important;
+            height: auto !important;
+            max-height: none !important;
+            min-height: 0 !important;
+            flex: 1 1 auto !important;
             top: auto !important;
             right: auto !important;
             display: flex !important;
             flex-direction: column !important;
+            overflow: hidden !important;
             background: var(--rx-theater-panel, #111116) !important;
             color: var(--rx-theater-text, #f5f7fb) !important;
         }
+        #rx-tab-chat .media-page-chat-aside-chat-wrapper-fixed > .chat,
+        #rx-tab-chat .media-page-chat-aside-chat-wrapper-fixed .chat.relative,
+        #rx-tab-chat .media-page-chat-aside-chat-wrapper-fixed .h-full.w-full,
+        #rx-tab-chat .media-page-chat-aside-chat-wrapper-fixed .chat--container {
+            display: flex !important;
+            flex: 1 1 auto !important;
+            flex-direction: column !important;
+            width: 100% !important;
+            min-width: 0 !important;
+            min-height: 0 !important;
+            height: auto !important;
+            max-height: none !important;
+            overflow: hidden !important;
+        }
         #rx-tab-chat .media-page-chat-container-toggle-btn { display: none !important; }
         #rx-tab-chat .chat--header {
+            min-height: 38px !important;
+            height: 38px !important;
+            padding: 4px 8px !important;
             flex-shrink: 0;
+            display: flex !important;
+            align-items: center !important;
+            justify-content: flex-end !important;
+            gap: 6px !important;
+            overflow: hidden !important;
+            font-size: 0 !important;
             background: var(--rx-theater-shell, #0b0b0f) !important;
             border-color: var(--rx-theater-border, rgba(255,255,255,0.1)) !important;
         }
+        #rx-tab-chat .chat--header h1,
+        #rx-tab-chat .chat--header h2,
+        #rx-tab-chat .chat--header h3,
+        #rx-tab-chat .chat--header h4,
+        #rx-tab-chat .chat--header-title,
+        #rx-tab-chat .chat--title { display: none !important; }
+        #rx-tab-chat .chat--header button,
+        #rx-tab-chat .chat--header a,
+        #rx-tab-chat .chat--header [role="button"] {
+            min-height: 30px !important;
+            height: 30px !important;
+            margin: 0 !important;
+            padding: 0 8px !important;
+            border-radius: 6px !important;
+            font-size: 10px !important;
+            line-height: 1 !important;
+        }
+        #rx-tab-chat #rx-chat-filter {
+            margin: 0 !important;
+            padding: 5px 8px !important;
+            flex-shrink: 0;
+            background: var(--rx-theater-panel, #111116) !important;
+        }
+        #rx-tab-chat #rx-chat-filter input {
+            min-height: 32px !important;
+            height: 32px !important;
+            padding: 0 10px !important;
+        }
+        #rx-tab-chat #js-chat--height,
+        #rx-tab-chat .chat--height {
+            display: flex !important;
+            flex: 1 1 auto !important;
+            flex-direction: column !important;
+            min-height: 0 !important;
+            height: auto !important;
+            max-height: none !important;
+            overflow: hidden !important;
+        }
+        #rx-tab-chat .chat-history:not(#chat-history-list) {
+            display: flex !important;
+            flex: 1 1 auto !important;
+            flex-direction: column !important;
+            width: 100% !important;
+            min-width: 0 !important;
+            min-height: 0 !important;
+            height: auto !important;
+            max-height: none !important;
+            overflow: hidden !important;
+        }
         #rx-tab-chat #chat-history-list {
-            flex: 1;
+            flex: 1 1 auto !important;
+            min-height: 0 !important;
+            height: auto !important;
+            max-height: none !important;
             overflow-y: auto !important;
+            overflow-x: hidden !important;
             background: var(--rx-theater-panel, #111116) !important;
             scrollbar-width: thin;
             scrollbar-color: rgba(255,255,255,0.15) transparent;
@@ -1859,6 +1966,43 @@ const TheaterSplit = {
             background: var(--rx-theater-shell, #0b0b0f) !important;
             border-color: var(--rx-theater-border, rgba(255,255,255,0.1)) !important;
         }
+        #rx-tab-chat .rx-rant-archive {
+            flex-shrink: 0;
+            margin: 6px 8px;
+            max-height: min(280px, 35vh);
+            overflow: auto;
+            background: var(--rx-theater-raised, rgba(255,255,255,0.06));
+            border-color: var(--rx-theater-border-strong, rgba(255,255,255,0.14));
+        }
+        #rx-tab-chat .rx-rant-archive__summary {
+            min-height: 36px;
+            color: var(--rx-theater-text, #f5f7fb);
+        }
+        #rx-tab-chat .rx-rant-archive__summary-meta { color: var(--rx-theater-subtext, #a6adc8); }
+        #rx-tab-chat .rx-rant-tracker {
+            position: static !important;
+            min-height: 30px;
+            margin: 0 !important;
+            padding: 4px 10px !important;
+            gap: 8px !important;
+            border-width: 1px 0 !important;
+            border-radius: 0 !important;
+            flex-shrink: 0;
+            background: var(--rx-theater-shell, #0b0b0f) !important;
+        }
+        #rx-tab-chat .rx-rant-tracker .total { font-size: 13px !important; }
+        #rx-tab-chat .rx-rant-export-btn {
+            position: static !important;
+            margin-left: auto;
+            min-height: 24px;
+            padding: 0 8px !important;
+        }
+        #rx-tab-chat .rx-chatter-bar {
+            min-height: 28px;
+            padding: 5px 10px !important;
+            gap: 12px !important;
+            background: var(--rx-theater-panel, #111116) !important;
+        }
         #rx-tab-chat input,
         #rx-tab-chat textarea {
             background: var(--rx-theater-raised, rgba(255,255,255,0.06)) !important;
@@ -1869,8 +2013,16 @@ const TheaterSplit = {
 
         #rx-tab-comments {
             flex: 1;
+            min-height: 0;
+            flex-direction: column;
             overflow-y: auto;
             overflow-x: hidden;
+        }
+        #rx-tab-comments > .media-page-comments-container,
+        #rx-tab-comments > #video-comments {
+            box-sizing: border-box;
+            width: 100%;
+            min-height: 100%;
         }
         #rx-tab-comments::-webkit-scrollbar { width: 5px; }
         #rx-tab-comments::-webkit-scrollbar-thumb {
@@ -1878,29 +2030,12 @@ const TheaterSplit = {
             border-radius: 3px;
         }
 
-        .rx-tab-content { display: none; }
+        .rx-tab-content { display: none; min-height: 0; }
         .rx-tab-content.rx-tab-visible { display: flex; }
 
         html.rx-theater .media-page-chat-aside-chat { display: none !important; }
         #rx-tab-chat .media-page-chat-aside-chat { display: flex !important; }
 
-        #rx-collapse-strip {
-            height: 38px;
-            width: 100%;
-            border: 0;
-            border-bottom: 1px solid var(--rx-theater-border, rgba(255,255,255,0.1));
-            background: var(--rx-theater-raised, rgba(255,255,255,0.04));
-            color: var(--rx-theater-subtext, #a6adc8);
-            transition: background 0.2s, color 0.2s;
-            cursor: pointer;
-            flex-shrink: 0;
-            font: 700 11px/1 Inter, ui-sans-serif, system-ui, sans-serif;
-            letter-spacing: 0.02em;
-        }
-        #rx-collapse-strip:hover {
-            color: var(--rx-theater-text, #f5f7fb);
-            background: var(--rx-theater-selection, rgba(137,180,250,0.14));
-        }
         #rx-theater-close,
         #rx-split-reveal {
             position: absolute;
@@ -1960,9 +2095,12 @@ const TheaterSplit = {
                 transform: translateY(10px);
             }
             #rx-split-right.rx-expanded {
-                min-height: 280px;
+                min-height: 0;
+                max-height: none;
                 transform: translateY(0);
             }
+            #rx-tab-chat .rx-rant-archive[data-empty="true"],
+            #rx-tab-chat .rx-rant-tracker[data-empty="true"] { display: none !important; }
             #rx-split-reveal { right: 74px; height: 44px; }
             #rx-theater-close { width: 44px; height: 44px; }
         }
@@ -2040,25 +2178,34 @@ const TheaterSplit = {
     },
 
     _applySplitGeometry(leftPct, persist = false) {
-        const left = Math.max(30, Math.min(80, Number(leftPct) || 75));
+        const requestedLeft = Math.max(30, Math.min(80, Number(leftPct) || 75));
+        const narrow = this._isNarrow();
+        const side = narrow
+            ? (requestedLeft > 54 ? 60 : Math.max(46, Math.min(68, 100 - requestedLeft)))
+            : 100 - requestedLeft;
+        const left = 100 - side;
         const right = qs('#rx-split-right');
         const divider = qs('#rx-split-divider');
         if (!right || !divider) return;
-        right.style.flex = `0 0 ${100 - left}%`;
+        right.style.flex = `0 0 ${side}%`;
         divider.style.flex = '0 0 6px';
-        if (this._isNarrow()) {
+        if (narrow) {
             right.style.width = '100%';
             divider.style.width = '100%';
             divider.style.height = '6px';
             divider.setAttribute('aria-orientation', 'horizontal');
+            divider.setAttribute('aria-valuemin', '32');
+            divider.setAttribute('aria-valuemax', '54');
         } else {
             right.style.width = '0';
             divider.style.width = '6px';
             divider.style.height = '';
             divider.setAttribute('aria-orientation', 'vertical');
+            divider.setAttribute('aria-valuemin', '30');
+            divider.setAttribute('aria-valuemax', '80');
         }
         divider.setAttribute('aria-valuenow', String(Math.round(left)));
-        divider.setAttribute('aria-valuetext', `${Math.round(100 - left)} percent side panel`);
+        divider.setAttribute('aria-valuetext', `${Math.round(side)} percent side panel`);
         if (persist) Settings.set('splitRatio', Math.round(left));
     },
 
@@ -2165,6 +2312,92 @@ const TheaterSplit = {
         return !!qs('.media-page-chat-aside-chat') || !!qs('#chat-history-list');
     },
 
+    _chatFeatures() {
+        return [
+            LiveChatEnhance, ChatComposerAssist, ChatHighlights, ChatUserCards,
+            ChatClickToMention, ChatReadability, RantArchive, RantHighlight,
+            ChatAutoScroll, UniqueChatters, ChatUserBlock, ChatSpamDedup,
+            ChatExport, RantPersist, PopoutChat, RantTierFilter, ChatUsernameColors,
+        ];
+    },
+
+    _syncLiveChatRoot() {
+        if (this._rebindingChat || !this._isActive || !this._isSplit) return;
+        const chatPanel = qs('#rx-tab-chat');
+        if (!chatPanel) return;
+
+        const currentRoot = this._chatEl && chatPanel.contains(this._chatEl) ? this._chatEl : null;
+        const outsideList = qsa('#chat-history-list').find((list) => !chatPanel.contains(list));
+        const outsideRoot = outsideList?.closest('.media-page-chat-aside-chat');
+        const responsiveShell = outsideRoot ? null : outsideList?.closest('.chat.relative');
+        if (currentRoot && responsiveShell) {
+            this._rebindingChat = true;
+            try {
+                const wrapper = currentRoot.querySelector('.media-page-chat-aside-chat-wrapper-fixed') || currentRoot;
+                const staleShell = qsa(':scope > .chat.relative', wrapper).find((shell) => shell !== responsiveShell);
+                staleShell?.remove();
+                wrapper.appendChild(responsiveShell);
+                RantArchive.collapseForTheater();
+            } finally {
+                this._rebindingChat = false;
+            }
+            return;
+        }
+
+        const replacement = qsa('.media-page-chat-aside-chat')
+            .find((root) => !chatPanel.contains(root) && root.querySelector('#chat-history-list'));
+        if (!replacement) return;
+
+        this._rebindingChat = true;
+        try {
+            const originalParent = replacement.parentElement;
+            const originalNext = replacement.nextSibling;
+            const current = this._chatEl;
+            const chatFeatures = this._chatFeatures();
+
+            for (const feature of chatFeatures) {
+                try { feature.destroy(); } catch (err) { RxErrorLog.record(`theater-chat-destroy:${feature.id}`, err); }
+            }
+
+            current?.remove();
+            chatPanel.appendChild(replacement);
+            this._chatEl = replacement;
+            this._origChatParent = originalParent;
+            this._origChatNext = originalNext;
+
+            for (const feature of chatFeatures) {
+                try { feature.init(); } catch (err) { RxErrorLog.record(`theater-chat-init:${feature.id}`, err); }
+            }
+            RantArchive.collapseForTheater();
+        } finally {
+            this._rebindingChat = false;
+        }
+    },
+
+    _observeChatRootReplacements() {
+        this._chatRootObs?.disconnect();
+        this._chatRootObs = new MutationObserver((records) => {
+            if (this._rebindingChat || !this._isActive || !this._isSplit) return;
+            let shouldSync = !this._chatEl?.querySelector('#chat-history-list');
+            if (!shouldSync) {
+                outer: for (const record of records) {
+                    for (const node of record.addedNodes) {
+                        if (!(node instanceof Element)) continue;
+                        if (node.matches('.media-page-chat-aside-chat, #chat-history-list')
+                            || node.querySelector('.media-page-chat-aside-chat, #chat-history-list')) {
+                            shouldSync = true;
+                            break outer;
+                        }
+                    }
+                }
+            }
+            if (shouldSync) {
+                scheduleFeatureFrame(this, 'theater-chat-root-rebind', () => this._syncLiveChatRoot());
+            }
+        });
+        this._chatRootObs.observe(document.body, { childList: true, subtree: true });
+    },
+
     _switchTab(tabName) {
         this._activeTab = tabName;
         const right = qs('#rx-split-right');
@@ -2229,21 +2462,17 @@ const TheaterSplit = {
             SettingsPanel._open();
         });
 
+        const collapseBtn = document.createElement('button');
+        collapseBtn.className = 'rx-panel-collapse';
+        collapseBtn.type = 'button';
+        collapseBtn.textContent = rxT('theaterHidePanelShort', 'Hide');
+        collapseBtn.title = rxT('theaterCollapsePanel', 'Collapse theater side panel');
+        collapseBtn.setAttribute('aria-label', collapseBtn.title);
+        collapseBtn.addEventListener('click', () => this._collapseSplit({ restoreFocus: true }));
+
         actions.appendChild(homeBtn);
-
-        if (Settings.get('videoDownload')) {
-            const dlBtn = document.createElement('button');
-            dlBtn.id = 'rx-hdr-download';
-            dlBtn.className = 'rx-hdr-btn';
-            dlBtn.type = 'button';
-            dlBtn.title = 'Download Video';
-            dlBtn.setAttribute('aria-label', 'Download video');
-            dlBtn.innerHTML = VideoDownloader._downloadSVG;
-            dlBtn.addEventListener('click', () => VideoDownloader._showDownloadTab());
-            actions.appendChild(dlBtn);
-        }
-
         actions.appendChild(gearBtn);
+        actions.appendChild(collapseBtn);
 
         header.appendChild(info);
         header.appendChild(actions);
@@ -2255,14 +2484,6 @@ const TheaterSplit = {
 
         right.innerHTML = '';
         this._isLive = this._detectLive();
-
-        const strip = document.createElement('button');
-        strip.id = 'rx-collapse-strip';
-        strip.type = 'button';
-        strip.textContent = rxT('theaterHidePanelLabel', 'Hide side panel');
-        strip.setAttribute('aria-label', rxT('theaterCollapsePanel', 'Collapse theater side panel'));
-        strip.addEventListener('click', () => this._collapseSplit({ restoreFocus: true }));
-        right.appendChild(strip);
 
         right.appendChild(this._buildHeader());
 
@@ -2329,6 +2550,7 @@ const TheaterSplit = {
                 this._origChatParent = chatEl.parentElement;
                 this._origChatNext = chatEl.nextSibling;
                 chatPanel.appendChild(chatEl);
+                RantArchive.collapseForTheater();
             } else {
                 const empty = document.createElement('div');
                 empty.className = 'rx-empty-state';
@@ -2337,6 +2559,7 @@ const TheaterSplit = {
                 chatPanel.appendChild(empty);
             }
             right.appendChild(chatPanel);
+            this._observeChatRootReplacements();
         }
 
         const commentsPanel = document.createElement('div');
@@ -2501,6 +2724,9 @@ const TheaterSplit = {
             if (this._isSplit) {
                 const leftPct = Settings.get('splitRatio') || 75;
                 this._applySplitGeometry(leftPct);
+                if (this._isLive) {
+                    setFeatureTimeout(this, () => this._syncLiveChatRoot(), 250);
+                }
             }
         };
         window.addEventListener('resize', this._windowResizeHandler);
@@ -2523,6 +2749,10 @@ const TheaterSplit = {
 
     _unmount({ restoreFocus = false } = {}) {
         if (!this._isActive) return;
+
+        this._chatRootObs?.disconnect();
+        this._chatRootObs = null;
+        this._rebindingChat = false;
 
         const player = this._playerEl;
         const video = this._videoEl || (player ? getActiveMedia(player) : null);
@@ -2613,6 +2843,8 @@ const TheaterSplit = {
         this._rightWheelHandler = null;
         this._rightTouchHandler = null;
         this._focusBeforeOpen = null;
+        this._chatRootObs = null;
+        this._rebindingChat = false;
         this._positionedEls = [];
     },
 
@@ -10284,6 +10516,7 @@ const RantHighlight = {
         }
         this._total = total;
         if (this._tracker) {
+            this._tracker.dataset.empty = String(count === 0);
             this._tracker.querySelector('.total').textContent = `$${total}`;
             this._tracker.querySelector('.rant-count').textContent = `${count} rants`;
         }
@@ -13178,19 +13411,38 @@ const RantArchive = {
     _styleEl: null,
     _panel: null,
     _obs: null,
+    _expanded: true,
+    _userToggled: false,
+    _renderSig: '',
 
     _css: `
         .rx-rant-archive {
-            margin: 8px 0; padding: 10px;
+            margin: 8px 0; padding: 0;
             background: rgba(249,226,175,0.07);
             border: 1px solid rgba(249,226,175,0.22);
             border-radius: 8px;
             color: #cdd6f4; font: 12px/1.45 system-ui, sans-serif;
+            overflow: hidden;
+        }
+        .rx-rant-archive__summary {
+            width: 100%; min-height: 38px; padding: 7px 10px;
+            display: flex; align-items: center; justify-content: space-between; gap: 10px;
+            border: 0; background: transparent; color: #cdd6f4; cursor: pointer;
+            text-align: left; font: inherit;
+        }
+        .rx-rant-archive__summary:hover { background: rgba(249,226,175,0.07); }
+        .rx-rant-archive__summary:focus-visible {
+            outline: 2px solid var(--rx-accent, #89b4fa); outline-offset: -2px;
         }
         .rx-rant-archive__title {
             font: 700 11px/1 system-ui, sans-serif; color: #f9e2af;
-            text-transform: uppercase; margin-bottom: 8px;
+            text-transform: uppercase;
         }
+        .rx-rant-archive__summary-meta {
+            color: #a6adc8; font: 600 10px/1 system-ui, sans-serif;
+            white-space: nowrap;
+        }
+        .rx-rant-archive__body { padding: 9px 10px 10px; border-top: 1px solid rgba(249,226,175,0.14); }
         .rx-rant-archive__totals { display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 8px; }
         .rx-rant-archive__stat strong { display: block; font-size: 15px; color: #f9e2af; }
         .rx-rant-archive__stat span { font-size: 10px; color: #a6adc8; }
@@ -13319,18 +13571,56 @@ const RantArchive = {
         if (!panel) return;
         const entries = this._entries();
         const totals = this.totals(entries);
+        panel.dataset.empty = String(entries.length === 0);
+
+        const signature = [
+            this._expanded,
+            totals.count,
+            totals.amount,
+            totals.supporters,
+            ...totals.top.flatMap((row) => [row.user, row.total]),
+        ].join('|');
+        if (signature === this._renderSig) return;
+        this._renderSig = signature;
 
         panel.textContent = '';
-        const title = document.createElement('div');
+        panel.dataset.expanded = String(this._expanded);
+
+        const summary = document.createElement('button');
+        summary.type = 'button';
+        summary.className = 'rx-rant-archive__summary';
+        summary.setAttribute('aria-expanded', String(this._expanded));
+        summary.setAttribute('aria-controls', 'rx-rant-archive-body');
+
+        const title = document.createElement('span');
         title.className = 'rx-rant-archive__title';
         title.textContent = rxT('rantArchiveTitle', 'Rant archive (local)');
-        panel.appendChild(title);
+
+        const meta = document.createElement('span');
+        meta.className = 'rx-rant-archive__summary-meta';
+        meta.textContent = entries.length
+            ? `$${totals.amount.toFixed(2)} · ${totals.count} ${totals.count === 1 ? 'rant' : 'rants'}`
+            : rxT('rantArchiveEmptyShort', 'No rants yet');
+        summary.append(title, meta);
+        summary.addEventListener('click', () => {
+            this._userToggled = true;
+            this._expanded = !this._expanded;
+            this._renderSig = '';
+            this._render();
+        });
+        panel.appendChild(summary);
+
+        const body = document.createElement('div');
+        body.id = 'rx-rant-archive-body';
+        body.className = 'rx-rant-archive__body';
+        body.hidden = !this._expanded;
+        panel.appendChild(body);
 
         if (!entries.length) {
             const empty = document.createElement('div');
             empty.className = 'rx-rant-archive__empty';
             empty.textContent = rxT('rantArchiveEmpty', 'No rants captured for this video yet');
-            panel.appendChild(empty);
+            body.appendChild(empty);
             return;
         }
 
@@ -13349,7 +13639,7 @@ const RantArchive = {
         addStat(String(totals.count), rxT('rantArchiveCount', 'rants'));
         addStat(totals.amount.toFixed(2), rxT('rantArchiveAmount', 'total'));
         addStat(String(totals.supporters), rxT('rantArchiveSupporters', 'supporters'));
-        panel.appendChild(stats);
+        body.appendChild(stats);
 
         const top = document.createElement('div');
         top.className = 'rx-rant-archive__top';
@@ -13362,7 +13652,7 @@ const RantArchive = {
             line.append(who, amount);
             top.appendChild(line);
         }
-        panel.appendChild(top);
+        body.appendChild(top);
 
         const actions = document.createElement('div');
         actions.className = 'rx-rant-archive__actions';
@@ -13371,7 +13661,14 @@ const RantArchive = {
         exportBtn.textContent = rxT('rantArchiveExport', 'Export');
         exportBtn.addEventListener('click', () => this._export());
         actions.appendChild(exportBtn);
-        panel.appendChild(actions);
+        body.appendChild(actions);
+    },
+
+    collapseForTheater() {
+        if (!this._panel || this._userToggled || !this._expanded) return;
+        this._expanded = false;
+        this._renderSig = '';
+        this._render();
     },
 
     _mount() {
@@ -13382,6 +13679,9 @@ const RantArchive = {
         panel.setAttribute('aria-label', rxT('rantArchiveTitle', 'Rant archive (local)'));
         host.prepend(panel);
         this._panel = panel;
+        this._expanded = !document.documentElement.classList.contains('rx-theater');
+        this._userToggled = false;
+        this._renderSig = '';
         this._render();
     },
 
@@ -13403,6 +13703,9 @@ const RantArchive = {
         this._styleEl = null;
         this._panel?.remove();
         this._panel = null;
+        this._expanded = true;
+        this._userToggled = false;
+        this._renderSig = '';
     }
 };
 

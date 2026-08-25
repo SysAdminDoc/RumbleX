@@ -2142,5 +2142,13 @@
   "dlDiskCancelled": {
     "message": "Download cancelled. Partial file changes were discarded.",
     "description": "In-page UI string (shared core)."
+  },
+  "theaterHidePanelShort": {
+    "message": "Hide",
+    "description": "In-page UI string (shared core)."
+  },
+  "rantArchiveEmptyShort": {
+    "message": "No rants yet",
+    "description": "In-page UI string (shared core)."
   }
 }

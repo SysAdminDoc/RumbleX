@@ -13,6 +13,21 @@ All notable changes to RumbleX will be documented in this file.
 - Store metadata and the public project page now use the package version as their checked source of truth. The same guard verifies both browser manifests, the lockfile, README badge, visible page label, and the feature-module count derived from the runtime registries.
 - `npm run verify` is now the mandatory local gate for source checks, selector contracts, headless browser coverage, packaging, and archive integrity. `npm run release:local` cleans known package outputs, runs that gate, rebuilds the final artifacts, and verifies their bytes again.
 
+## [3.54.0] - 2026-08-25
+
+### Fixed
+
+- Theater Split now keeps live messages across the full side-panel width instead of letting chat counters force the history into a narrow column.
+- Switching between Live Chat and Comments fully hides the previous surface, so the selected tab owns the panel.
+- Rumble's desktop and mobile chat handoff no longer strands the active chat inside its hidden mobile drawer after a resize.
+- Recorded comments and live comments keep the remaining panel height, including the narrow stacked layout.
+
+### Changed
+
+- The video header, panel control, native chat toolbar, filter, rant summary, and counters use less vertical space.
+- Rant Archive starts collapsed in Theater Split and remains available from its summary row.
+- Live visual coverage now captures chat, comments, expanded Rant Archive, and the 820-pixel stacked layout.
+
 ## [3.53.0] - 2026-08-22
 
 ### Changed

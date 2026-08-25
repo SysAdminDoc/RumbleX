@@ -1,8 +1,17 @@
 # RumbleX
 
-![Version](https://img.shields.io/badge/version-v3.53.0-blue) ![License](https://img.shields.io/badge/license-MIT-green) ![Platform](https://img.shields.io/badge/platform-Extension%20%2B%20Userscript-lightgrey) ![Firefox](https://img.shields.io/badge/firefox-109%2B-orange)
+![Version](https://img.shields.io/badge/version-v3.54.0-blue) ![License](https://img.shields.io/badge/license-MIT-green) ![Platform](https://img.shields.io/badge/platform-Extension%20%2B%20Userscript-lightgrey) ![Firefox](https://img.shields.io/badge/firefox-109%2B-orange)
 
 **A large Rumble enhancement suite.** More than 130 feature modules cover ad blocking, theater mode, downloads, playback, chat, local history, feed controls, and granular page cleanup. It runs as a browser extension or userscript.
+
+### What's new in v3.54
+
+Theater Split's side panel now behaves like one workspace instead of several stacked widgets.
+
+- **Live messages use the full panel width.** Chat counters stay above the history instead of squeezing every message into a narrow column.
+- **Tabs replace the active surface cleanly.** Choosing Comments hides Live Chat completely, and recorded videos open directly to Comments.
+- **Rumble's responsive chat move is handled in place.** If the site shifts chat into its mobile drawer, RumbleX brings the live shell back without losing filters or export controls.
+- **Narrow windows get a useful stacked split.** The video remains above a full-width panel with enough height for the active conversation.
 
 ### What's new in v3.53
 
@@ -156,7 +165,7 @@ Live chat got the things every other chat platform already has, and rants became
 - **SponsorBlock**. Per-video local segments with auto-skip (sponsor / intro / outro / selfpromo / interaction), progress-bar markers, JSON import + export, and an opt-in trim that keeps marked segments out of downloads
 
 ### Video Player
-- **Theater Split**. Fullscreen video with scroll-to-reveal side panel (chat/comments/download)
+- **Theater Split**. Fullscreen video with a resizable side panel. Live Chat or Comments fills the panel, with Download available in its own tab.
 - **Auto Theater**. Auto-enter native theater mode on load
 - **Full-Width Player**. Maximize player width; on live streams, side-by-side chat layout with responsive stacking ≤ 1100 px
 - **Adaptive Live Layout**. Expand main content whenever chat is visible on live streams
@@ -320,7 +329,7 @@ ssh-keygen -Y verify -f allowed_signers -I release@rumblex -n file \
 
 A `Good "file" signature` result means the checksums came from the key published in this repository. If either check fails, do not install the files. The only official sources are this repository's Releases page and the raw userscript URLs above; copies elsewhere are not ours.
 
-v3.53.0 is unsigned because the project does not yet have a published release signing identity. Its release page states that directly; use `SHA256SUMS.txt` to verify download integrity.
+v3.54.0 is unsigned because the project does not yet have a published release signing identity. Its release page states that directly; use `SHA256SUMS.txt` to verify download integrity.
 
 ### Request-shield support matrix
 

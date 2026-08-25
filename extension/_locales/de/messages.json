@@ -1935,6 +1935,10 @@
     "message": "Fuer dieses Video wurden noch keine Rants erfasst",
     "description": "In-page UI string (shared core)."
   },
+  "rantArchiveEmptyShort": {
+    "message": "Noch keine Rants",
+    "description": "In-page UI string (shared core)."
+  },
   "rantArchiveExported": {
     "message": "{count} Rants exportiert",
     "description": "In-page UI string (shared core)."
@@ -2043,6 +2047,10 @@
   },
   "theaterHidePanelLabel": {
     "message": "Seitenpanel ausblenden",
+    "description": "In-page UI string (shared core)."
+  },
+  "theaterHidePanelShort": {
+    "message": "Ausblenden",
     "description": "In-page UI string (shared core)."
   },
   "theaterCollapsePanel": {

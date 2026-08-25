@@ -249,7 +249,7 @@ test('Theater has usable geometry, keyboard semantics, exit, and route remountin
     expect(geometry.commentsCount).toBe(1);
 
     for (let attempt = 0; attempt < 4; attempt += 1) {
-        await page.locator('#rx-collapse-strip').click();
+        await page.locator('.rx-panel-collapse').click();
         await expect(reveal).toBeFocused();
         await expect(reveal).toHaveAttribute('aria-expanded', 'false');
         await reveal.click();
