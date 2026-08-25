@@ -58,7 +58,6 @@ function stageExtension(baseUrl) {
     const runtimeEntry = manifest.content_scripts.find((entry) =>
         entry.matches?.some((match) => match.includes('rumble.com')));
     if (!runtimeEntry?.js?.length) throw new Error('Firefox manifest has no Rumble runtime script list');
-    manifest.background.scripts.push('pages/github-permission.js', 'firefox-smoke-permission-background.js');
     manifest.content_scripts.push({
         matches: [originPattern],
         js: ['firefox-smoke-bootstrap.js', ...runtimeEntry.js, 'firefox-smoke-probe.js'],
@@ -112,20 +111,6 @@ function stageExtension(baseUrl) {
 })();
 `;
     fs.writeFileSync(path.join(stage, 'firefox-smoke-bootstrap.js'), bootstrap);
-    const permissionBackground = `
-'use strict';
-browser.runtime.onMessage.addListener((message) => {
-    if (message?.action !== 'firefoxSmokeGithubPermission') return undefined;
-    return (async () => {
-        return {
-            api: typeof browser.permissions?.request === 'function'
-                && typeof browser.permissions?.contains === 'function',
-            granted: await globalThis.RumbleXGithubPermission.containsGithubApi(),
-        };
-    })();
-});
-`;
-    fs.writeFileSync(path.join(stage, 'firefox-smoke-permission-background.js'), permissionBackground);
     fs.writeFileSync(path.join(stage, 'firefox-smoke-permission.html'), `<!doctype html>
 <html lang="en">
 <head><meta charset="utf-8"><title>RumbleX optional permission smoke</title></head>
@@ -137,6 +122,23 @@ browser.runtime.onMessage.addListener((message) => {
 </html>\n`);
     fs.writeFileSync(path.join(stage, 'firefox-smoke-permission-page.js'), `
 'use strict';
+(async () => {
+    try {
+        const response = await browser.runtime.sendMessage({ action: 'getSettings' });
+        document.documentElement.dataset.rxFirefoxRuntimeMessage = JSON.stringify({
+            ok: response?.ok !== false && response?.schemaVersion === 4,
+            schemaVersion: response?.schemaVersion || null,
+            permissionApi: typeof browser.permissions?.request === 'function'
+                && typeof browser.permissions?.contains === 'function',
+            permissionInitiallyAbsent: !(await globalThis.RumbleXGithubPermission.containsGithubApi()),
+        });
+    } catch (error) {
+        document.documentElement.dataset.rxFirefoxRuntimeMessage = JSON.stringify({
+            ok: false,
+            error: String(error?.stack || error),
+        });
+    }
+})();
 document.querySelector('#request-github').addEventListener('click', async () => {
     document.documentElement.dataset.rxFirefoxPermissionState = 'requesting';
     try {
@@ -179,10 +181,6 @@ document.querySelector('#request-github').addEventListener('click', async () => 
             'https://hugh.cdn.rumble.cloud/firefox-smoke/360.m3u8',
         ].join('\\n'), location.href).length === 1;
         result.contentRegistry = Array.isArray(features) && features.length >= 86;
-        const githubPermission = await platform.sendMessage({ action: 'firefoxSmokeGithubPermission' });
-        result.githubPermissionApi = githubPermission?.api === true;
-        result.githubPermissionInitiallyAbsent = githubPermission?.granted === false;
-
         const key = 'rx_firefox_smoke_value';
         const value = 'firefox-mv2-' + Date.now();
         await platform.storage.set({ [key]: value });
@@ -193,7 +191,8 @@ document.querySelector('#request-github').addEventListener('click', async () => 
         result.storageRemove = !Object.prototype.hasOwnProperty.call(removed || {}, key);
 
         const response = await platform.sendMessage({ action: 'getSettings' });
-        result.responseMessage = !!response && typeof response === 'object';
+        result.untrustedMessageRejected = response?.ok === false
+            && response?.reason === 'sender-not-allowed';
 
         const asset = await platform.assetText('lib/mux.min.js');
         result.packagedAsset = typeof asset === 'string' && asset.length > 1000;
@@ -333,6 +332,21 @@ async function runOptionalPermissionSmoke(stage, baseUrl) {
             },
         ), 'the staged permission page URL');
         await webdriverRequest(port, 'POST', `${sessionRoute}/url`, { url: permissionPage });
+
+        const runtimeSerialized = await waitForValue(() => webdriverRequest(
+            port,
+            'POST',
+            `${sessionRoute}/execute/sync`,
+            {
+                script: 'return document.documentElement?.dataset.rxFirefoxRuntimeMessage || null;',
+                args: [],
+            },
+        ), 'the permitted runtime-message result');
+        const runtimeResult = JSON.parse(runtimeSerialized);
+        if (!runtimeResult.ok || runtimeResult.schemaVersion !== 4
+            || !runtimeResult.permissionApi || !runtimeResult.permissionInitiallyAbsent) {
+            throw new Error(`Firefox permitted runtime message failed: ${runtimeSerialized}`);
+        }
 
         const element = await webdriverRequest(port, 'POST', `${sessionRoute}/element`, {
             using: 'css selector',
@@ -477,10 +491,10 @@ async function main() {
         const expectedVersion = JSON.parse(fs.readFileSync(path.join(EXTENSION, 'manifest-firefox.json'), 'utf8')).version;
         const failures = [];
         for (const key of [
-            'injected', 'storageRoundTrip', 'storageRemove', 'responseMessage',
+            'injected', 'storageRoundTrip', 'storageRemove', 'untrustedMessageRejected',
             'packagedAsset', 'requestBlocking', 'settingsSchema', 'coreRuntime',
             'routeBoundary', 'selectorBoundary', 'cardBoundary', 'mediaBoundary',
-            'contentRegistry', 'githubPermissionApi', 'githubPermissionInitiallyAbsent',
+            'contentRegistry',
         ]) {
             if (result[key] !== 'true') failures.push(`${key}=${result[key] || 'missing'}`);
         }
@@ -491,7 +505,7 @@ async function main() {
         if (failures.length) throw new Error(`Firefox MV2 smoke failed: ${failures.join(', ')}\n${runnerLog}`);
         stopProcessTree(child);
         await runOptionalPermissionSmoke(stage, baseUrl);
-        console.log(`Firefox MV2 smoke passed (v${expectedVersion}): production core order, routing, selectors, cards, media, registry, storage, messaging, optional GitHub permission, and packaged assets.`);
+        console.log(`Firefox MV2 smoke passed (v${expectedVersion}): production core order, routing, selectors, cards, media, registry, storage, sender-aware messaging, optional GitHub permission, and packaged assets.`);
     } finally {
         clearTimeout(timer);
         stopProcessTree(child);

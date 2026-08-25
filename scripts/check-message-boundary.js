@@ -40,6 +40,16 @@ assert.match(
 );
 assert.match(
     background,
+    /Object\.hasOwn\(RX_MESSAGE_ACTIONS, message\.action\)/,
+    'background message lookup does not reject inherited action names',
+);
+assert.match(
+    background,
+    /u\.protocol !== 'https:' \|\| u\.username \|\| u\.password/,
+    'privileged download URLs do not require credential-free HTTPS',
+);
+assert.match(
+    background,
     /authorization\.senderClass === RX_MESSAGE_SENDER\.CONTENT_SCRIPT[\s\S]*?sanitizeSettingsForTransport\(normalized\)/,
     'content-script settings reads are not stripped of extension-page credentials',
 );

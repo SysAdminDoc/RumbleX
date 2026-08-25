@@ -242,7 +242,7 @@ async function rxBuildDownloadDiagnosticsBundle() {
 function isAllowedDownloadUrl(url) {
     try {
         const u = new URL(url);
-        if (u.protocol !== 'https:' && u.protocol !== 'http:') return false;
+        if (u.protocol !== 'https:' || u.username || u.password) return false;
         const host = u.hostname.toLowerCase();
         return ALLOWED_DOWNLOAD_HOSTS.some((h) => host === h || host.endsWith('.' + h));
     } catch {
@@ -2219,8 +2219,10 @@ function rxAuthorizeRuntimeMessage(message, sender) {
     if (!rxIsPlainMessageObject(message) || typeof message.action !== 'string') {
         return { handled: false, ok: false };
     }
+    if (!Object.hasOwn(RX_MESSAGE_ACTIONS, message.action)) {
+        return { handled: true, ok: false, reason: 'unknown-action' };
+    }
     const rule = RX_MESSAGE_ACTIONS[message.action];
-    if (!rule) return { handled: false, ok: false };
     const senderClass = rxClassifyMessageSender(sender);
     if (!senderClass || !rule.senders.includes(senderClass)) {
         return { handled: true, ok: false, reason: 'sender-not-allowed' };
@@ -2239,6 +2241,7 @@ function rxAuthorizeRuntimeMessage(message, sender) {
 }
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    if (message?.target === 'offscreen') return false;
     const authorization = rxAuthorizeRuntimeMessage(message, sender);
     if (!authorization.handled) return false;
     if (!authorization.ok) {

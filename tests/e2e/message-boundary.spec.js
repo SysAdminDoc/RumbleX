@@ -49,6 +49,10 @@ test('registry rejects unknown fields and unsafe extension-page URLs', async ({ 
         .toMatchObject({ ok: true });
     expect(await options.evaluate(() => chrome.runtime.sendMessage({ action: 'listProfiles', surprise: true })))
         .toEqual({ ok: false, reason: 'invalid-payload', field: 'surprise' });
+    for (const action of ['constructor', 'toString', '__proto__', 'missingAction']) {
+        expect(await options.evaluate((value) => chrome.runtime.sendMessage({ action: value }), action))
+            .toEqual({ ok: false, reason: 'unknown-action', field: null });
+    }
     expect(await options.evaluate(() => chrome.runtime.sendMessage({
         action: 'addWatchedChannel',
         url: 'https://example.invalid/c/not-rumble',
@@ -65,6 +69,15 @@ test('registry rejects unknown fields and unsafe extension-page URLs', async ({ 
             }],
         },
     }))).toEqual({ ok: false, reason: 'invalid-payload', field: 'payload' });
+    for (const url of [
+        'http://rumble.com/file.mp4',
+        'https://user:pass@rumble.com/file.mp4',
+    ]) {
+        expect(await options.evaluate((value) => chrome.runtime.sendMessage({
+            action: 'hashBlobOffscreen',
+            url: value,
+        }), url)).toEqual({ ok: false, reason: 'invalid-payload', field: 'url' });
+    }
 });
 
 test('Rumble content scripts cannot invoke extension-only or secret-bearing actions', async ({ context, extensionId, serviceWorker }) => {
@@ -121,6 +134,15 @@ test('Rumble content scripts cannot invoke extension-only or secret-bearing acti
             action: 'download',
             data: { url: 'javascript://rumble.com/bad', filename: 'bad.mp4', extra: true },
         })).toEqual({ ok: false, reason: 'invalid-payload', field: 'data' });
+        for (const url of [
+            'http://rumble.com/file.mp4',
+            'https://user:pass@rumble.com/file.mp4',
+        ]) {
+            expect(await contentMessage(options, tabId, {
+                action: 'download',
+                data: { url, filename: 'blocked.mp4' },
+            })).toEqual({ ok: false, reason: 'invalid-payload', field: 'data' });
+        }
         expect(await contentMessage(options, tabId, {
             action: 'archiveEnqueueChannel',
             channelUrl: 'https://example.invalid/c/nope',
