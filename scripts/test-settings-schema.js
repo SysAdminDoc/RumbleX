@@ -19,6 +19,12 @@ const schema = context.RumbleXSettingsSchema;
 assert.ok(schema, 'schema global was not installed');
 assert.equal(schema.SCHEMA_VERSION, 4);
 assert.ok(Object.keys(schema.DEFAULTS).length >= 208, 'canonical defaults catalog unexpectedly shrank');
+for (const id of ['videoClips', 'subtitleSidecar', 'transcripts']) {
+    assert.equal(schema.DEFAULTS[id], false, `${id} must not add an open workspace on a new install`);
+}
+for (const id of ['screenshotBtn', 'videoStats', 'loopControl', 'quickBookmark', 'shareTimestamp']) {
+    assert.equal(schema.DEFAULTS[id], true, `${id} must remain available through the compact Player Tools menu`);
+}
 
 const migrated = plain(evaluate(`RumbleXSettingsSchema.normalizeStored({
     keyboardNav: true,

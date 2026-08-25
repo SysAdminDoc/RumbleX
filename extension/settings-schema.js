@@ -66,13 +66,16 @@
         autoplayScheduler: false,
         chapters: true,
         sponsorBlock: true,
-        videoClips: true,
+        // Large below-player workspaces stay opt-in. The compact Player Tools
+        // disclosure remains available by default without pushing the native
+        // watch actions and description below a stack of RumbleX panels.
+        videoClips: false,
         liveDVR: false,
-        subtitleSidecar: true,
+        subtitleSidecar: false,
         // Read Rumble's own caption tracks off the embed payload. One extra
         // request per watch page, on an endpoint the downloader already calls.
         subtitleNativeTracks: true,
-        transcripts: true,
+        transcripts: false,
         audioOnly: true,
         batchDownload: false,
         blockedChatters: [],

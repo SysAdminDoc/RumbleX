@@ -236,14 +236,14 @@ async function reserveLoopbackPort() {
     return port;
 }
 
-async function webdriverRequest(port, method, route, body) {
+async function webdriverRequest(port, method, route, body, timeoutMs = 30000) {
     let response;
     try {
         response = await fetch(`http://127.0.0.1:${port}${route}`, {
             method,
             headers: body === undefined ? undefined : { 'Content-Type': 'application/json' },
             body: body === undefined ? undefined : JSON.stringify(body),
-            signal: AbortSignal.timeout(30000),
+            signal: AbortSignal.timeout(timeoutMs),
         });
     } catch (error) {
         throw new Error(`WebDriver ${method} ${route} request failed: ${error.message}`);
@@ -314,7 +314,7 @@ async function runOptionalPermissionSmoke(stage, baseUrl) {
                     },
                 },
             },
-        });
+        }, TIMEOUT_MS);
         sessionId = session.sessionId;
         const sessionRoute = `/session/${sessionId}`;
         await webdriverRequest(port, 'POST', `${sessionRoute}/moz/addon/install`, {

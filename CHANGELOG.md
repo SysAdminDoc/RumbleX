@@ -13,6 +13,26 @@ All notable changes to RumbleX will be documented in this file.
 - Store metadata and the public project page now use the package version as their checked source of truth. The same guard verifies both browser manifests, the lockfile, README badge, visible page label, and the feature-module count derived from the runtime registries.
 - `npm run verify` is now the mandatory local gate for source checks, selector contracts, headless browser coverage, packaging, and archive integrity. `npm run release:local` cleans known package outputs, runs that gate, rebuilds the final artifacts, and verifies their bytes again.
 
+## [3.55.0] - 2026-08-25
+
+### Changed
+
+- Search results and channel listings now use the same framed card language, focus treatment, and responsive rhythm as the home feed.
+- All five palettes now carry their own success, warning, danger, selection, Theater, downloader, and Player Tools colors instead of falling back to Catppuccin values.
+- New installs keep the larger Clips, Subtitle Sidecar, and Transcript workspaces closed by default. Their compact Player Tools actions remain available when enabled.
+
+### Fixed
+
+- Escape now closes Player Tools without also leaving Theater, regardless of feature initialization order.
+- Theater resize coverage now follows the correct separator range in desktop and stacked layouts, and collapse coverage targets the visible Hide control.
+- Subscriber-highlighted chat rows and the signed-out chat footer now keep themed dark surfaces and readable text instead of inheriting Rumble's pale native backgrounds.
+- Firefox's optional-permission smoke now gives session startup the same 90-second budget as the smoke itself instead of aborting at 30 seconds on a slow headless launch.
+
+### Verified
+
+- Added a 20-case visual contract matrix across five themes, four primary site surfaces, and desktop plus 860-pixel Theater layouts.
+- Rechecked live chat, comments, downloads, collapsed Theater, the narrow stack, and regular-video comments in the in-app browser.
+
 ## [3.54.0] - 2026-08-25
 
 ### Fixed

@@ -1,8 +1,17 @@
 # RumbleX
 
-![Version](https://img.shields.io/badge/version-v3.54.0-blue) ![License](https://img.shields.io/badge/license-MIT-green) ![Platform](https://img.shields.io/badge/platform-Extension%20%2B%20Userscript-lightgrey) ![Firefox](https://img.shields.io/badge/firefox-109%2B-orange)
+![Version](https://img.shields.io/badge/version-v3.55.0-blue) ![License](https://img.shields.io/badge/license-MIT-green) ![Platform](https://img.shields.io/badge/platform-Extension%20%2B%20Userscript-lightgrey) ![Firefox](https://img.shields.io/badge/firefox-109%2B-orange)
 
 **A large Rumble enhancement suite.** More than 130 feature modules cover ad blocking, theater mode, downloads, playback, chat, local history, feed controls, and granular page cleanup. It runs as a browser extension or userscript.
+
+### What's new in v3.55
+
+This pass finishes the visual work around watch pages and keeps secondary tools from crowding the native video details.
+
+- **Search and channel cards now match the main feed.** The same border, spacing, hover, and focus treatment carries across every major video listing.
+- **Every palette owns its full state system.** Success, warning, danger, selection, Theater, download, and Player Tools colors now follow the active theme.
+- **Live chat stays readable in every theme.** Subscriber rows and the signed-out footer no longer inherit pale native backgrounds, and the same fix holds in narrow Theater layouts.
+- **Player Tools closes cleanly.** Escape dismisses the menu without also leaving Theater. Clips, Subtitle Sidecar, and Transcripts are opt-in on new installs so the watch page opens with a compact tool set.
 
 ### What's new in v3.54
 
@@ -329,7 +338,7 @@ ssh-keygen -Y verify -f allowed_signers -I release@rumblex -n file \
 
 A `Good "file" signature` result means the checksums came from the key published in this repository. If either check fails, do not install the files. The only official sources are this repository's Releases page and the raw userscript URLs above; copies elsewhere are not ours.
 
-v3.54.0 is unsigned because the project does not yet have a published release signing identity. Its release page states that directly; use `SHA256SUMS.txt` to verify download integrity.
+v3.55.0 is unsigned because the project does not yet have a published release signing identity. Its release page states that directly; use `SHA256SUMS.txt` to verify download integrity.
 
 ### Request-shield support matrix
 

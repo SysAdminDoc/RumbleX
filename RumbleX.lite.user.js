@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         RumbleX Lite
 // @namespace    https://github.com/SysAdminDoc/RumbleX
-// @version      3.54.0
+// @version      3.55.0
 // @description  Rumble enhancement suite (Lite). The same shared feature core, without bundled transmuxers. Downloads save the raw stream; MP4 remux needs the full build or the extension.
 // @author       SysAdminDoc
 // @match        https://rumble.com/*
@@ -23,7 +23,7 @@
 // @updateURL    https://github.com/SysAdminDoc/RumbleX/raw/main/RumbleX.lite.user.js
 // ==/UserScript==
 
-// Generated from the shared extension core files. Shared runtime SHA-256: 088cdb8c6b827740a4a26605745463ae1c9393779facaf3184c6f719a069d6e7
+// Generated from the shared extension core files. Shared runtime SHA-256: 08cc1b331081a73aa4f4bc50c9e38db47c139f62c29101d3c5c7bda545f6e607
 // RumbleX shared settings schema. This file is the canonical source for
 // defaults and trust-boundary normalization across content, options, popup,
 // background profile/Gist restores, and the generated userscript.
@@ -92,13 +92,16 @@
         autoplayScheduler: false,
         chapters: true,
         sponsorBlock: true,
-        videoClips: true,
+        // Large below-player workspaces stay opt-in. The compact Player Tools
+        // disclosure remains available by default without pushing the native
+        // watch actions and description below a stack of RumbleX panels.
+        videoClips: false,
         liveDVR: false,
-        subtitleSidecar: true,
+        subtitleSidecar: false,
         // Read Rumble's own caption tracks off the embed payload. One extra
         // request per watch page, on an endpoint the downloader already calls.
         subtitleNativeTracks: true,
-        transcripts: true,
+        transcripts: false,
         audioOnly: true,
         batchDownload: false,
         blockedChatters: [],
@@ -790,7 +793,7 @@
 'use strict';
 
 (() => {
-    const VERSION = "3.54.0";
+    const VERSION = "3.55.0";
     const ASSETS = Object.freeze({});
     const MESSAGES = Object.freeze({
   "extName": "RumbleX",
@@ -2494,7 +2497,7 @@ const MediaProbeCache = {
 
 
 
-// RumbleX v3.54.0 - Shared Content Core
+// RumbleX v3.55.0 - Shared Content Core
 // Rumble enhancement suite - Chrome/Firefox extension
 'use strict';
 
@@ -2504,7 +2507,7 @@ const MediaProbeCache = {
 // DOM feature ship from one canonical source.
 const RXPlatform = globalThis.RumbleXPlatform;
 if (!RXPlatform) throw new Error('RumbleX platform adapter is missing');
-const VERSION = RXPlatform.version || '3.54.0';
+const VERSION = RXPlatform.version || '3.55.0';
 /**
  * In-page translation lookup.
  *
@@ -3641,6 +3644,10 @@ const DarkEnhance = {
             --rx-site-radius-md: 8px;
             --rx-site-radius-lg: 12px;
             --rx-site-focus: 0 0 0 2px ${t.crust}, 0 0 0 4px ${t.accent};
+            --rx-site-success: ${t.green};
+            --rx-site-danger: ${t.red};
+            --rx-site-warning: ${t.yellow};
+            --rx-site-selection: ${t.selectionBg};
             color-scheme: dark;
         }
         html.rumblex-active body {
@@ -3831,6 +3838,40 @@ const DarkEnhance = {
             outline-offset: 3px !important;
         }
 
+        /* Search and channel results use the same card language as the feed. */
+        html.rumblex-active .video-listing-entry {
+            list-style: none !important;
+        }
+        html.rumblex-active .video-listing-entry .video-item {
+            box-sizing: border-box !important;
+            overflow: hidden !important;
+            padding: 12px !important;
+            background: var(--rx-site-panel) !important;
+            border: 1px solid var(--rx-site-border) !important;
+            border-radius: var(--rx-site-radius-lg) !important;
+            transition: background-color 180ms ease, border-color 180ms ease, box-shadow 180ms ease, transform 180ms ease !important;
+        }
+        html.rumblex-active .video-listing-entry .video-item:hover {
+            background: var(--rx-site-raised) !important;
+            border-color: var(--rx-site-border-strong) !important;
+            box-shadow: var(--rx-site-shadow-soft) !important;
+            transform: translateY(-2px);
+        }
+        html.rumblex-active .video-listing-entry .video-item:focus-within {
+            outline: 2px solid var(--rx-accent) !important;
+            outline-offset: 3px !important;
+        }
+        html.rumblex-active .video-item--title,
+        html.rumblex-active .channel-header--title {
+            color: var(--rx-text) !important;
+            font-weight: 720 !important;
+            line-height: 1.2 !important;
+            letter-spacing: -0.02em !important;
+        }
+        html.rumblex-active .video-listing-entry [rel="author"] {
+            color: var(--rx-subtext) !important;
+        }
+
         /* Watch-page hierarchy */
         html.rumblex-active .video-header-container__title h1,
         html.rumblex-active .video-header-container__title {
@@ -3944,7 +3985,19 @@ const DarkEnhance = {
         html.rumblex-active #chat-history-list .chat-history--row {
             padding: 8px 10px !important;
             border-radius: var(--rx-site-radius-sm) !important;
+            color: var(--rx-theater-text, var(--rx-text)) !important;
             transition: background-color 150ms ease !important;
+        }
+        html.rumblex-active #chat-history-list .chat-history--row.chat-history--subscribed {
+            background: color-mix(
+                in srgb,
+                var(--rx-theater-accent, var(--rx-accent)) 10%,
+                var(--rx-theater-panel, var(--rx-site-panel))
+            ) !important;
+        }
+        html.rumblex-active #chat-history-list .chat-history--row .chat-history--message,
+        html.rumblex-active #chat-history-list .chat-history--row .js-chat-message {
+            color: var(--rx-theater-text, var(--rx-text)) !important;
         }
         html.rumblex-active #chat-history-list .chat-history--row:hover {
             background: ${t.hoverBg} !important;
@@ -3954,10 +4007,25 @@ const DarkEnhance = {
             color: var(--rx-accent) !important;
             font-weight: 700 !important;
         }
+        html.rumblex-active .chat--signin-container {
+            background: var(--rx-theater-shell, var(--rx-site-shell)) !important;
+            color: var(--rx-theater-text, var(--rx-text)) !important;
+            border-top: 1px solid var(--rx-theater-border, var(--rx-site-border)) !important;
+        }
 
         html.rumblex-active :where(a, button, input, select, textarea, [tabindex]):focus-visible {
             outline: 0 !important;
             box-shadow: var(--rx-site-focus) !important;
+        }
+
+        @media (max-width: 900px) {
+            html.rumblex-active .media-page-related-media-desktop-sidebar,
+            html.rumblex-active .media-page-related-media-mobile {
+                padding-top: 18px !important;
+                padding-left: 0 !important;
+                border-top: 1px solid var(--rx-site-border) !important;
+                border-left: 0 !important;
+            }
         }
 
         @media (max-width: 760px) {
@@ -3965,7 +4033,8 @@ const DarkEnhance = {
             html.rumblex-active .main-menu-item-channel { margin-inline: 4px !important; }
             html.rumblex-active .rum-featured-pills-row__pill { min-height: 44px !important; }
             html.rumblex-active rum-video-thumbnail[role="listitem"]:hover,
-            html.rumblex-active .videostream:hover { transform: none; }
+            html.rumblex-active .videostream:hover,
+            html.rumblex-active .video-listing-entry .video-item:hover { transform: none; }
         }
 
         @media (prefers-reduced-motion: reduce) {
@@ -4116,7 +4185,7 @@ const TheaterSplit = {
             transform: translate(-50%,-50%);
             width: 4px; height: 32px;
             border-radius: 2px;
-            background: rgba(255,255,255,0.25);
+            background: var(--rx-theater-subtext, rgba(255,255,255,0.25));
             opacity: 0;
             transition: opacity 0.2s;
         }
@@ -4130,11 +4199,9 @@ const TheaterSplit = {
             z-index: 20;
             overflow: hidden;
             opacity: 0;
-            transform: translateX(12px);
             background: var(--rx-theater-panel, #111116);
             border-left: 1px solid var(--rx-theater-border, rgba(255,255,255,0.1));
-            transition: opacity 0.22s ease,
-                        transform 0.28s cubic-bezier(.2,.8,.2,1);
+            transition: opacity 0.22s ease;
             display: flex;
             flex-direction: column;
         }
@@ -4147,10 +4214,10 @@ const TheaterSplit = {
         #rx-split-right::-webkit-scrollbar { width: 5px; }
         #rx-split-right::-webkit-scrollbar-track { background: transparent; }
         #rx-split-right::-webkit-scrollbar-thumb {
-            background: rgba(255,255,255,0.14);
+            background: var(--rx-theater-border-strong, rgba(255,255,255,0.14));
             border-radius: 3px;
         }
-        #rx-split-right::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.28); }
+        #rx-split-right::-webkit-scrollbar-thumb:hover { background: var(--rx-theater-accent, rgba(255,255,255,0.28)); }
 
         #rx-split-right .media-page-comments-container,
         #rx-split-right #video-comments,
@@ -4282,7 +4349,10 @@ const TheaterSplit = {
             color: var(--rx-theater-text, #fff);
         }
         #rx-split-right .rx-panel-header .rx-hdr-btn svg { width: 16px; height: 16px; }
-        #rx-split-right .rx-panel-header #rx-hdr-home:hover { border-color: rgba(133,213,81,0.5); }
+        #rx-split-right .rx-panel-header #rx-hdr-home {
+            color: var(--rx-theater-success, #85c742);
+        }
+        #rx-split-right .rx-panel-header #rx-hdr-home:hover { border-color: var(--rx-theater-success, #85c742); }
         #rx-split-right .rx-panel-header #rx-hdr-settings svg {
             transition: transform 0.3s cubic-bezier(.4,0,.2,1);
         }
@@ -4450,17 +4520,23 @@ const TheaterSplit = {
             overflow-x: hidden !important;
             background: var(--rx-theater-panel, #111116) !important;
             scrollbar-width: thin;
-            scrollbar-color: rgba(255,255,255,0.15) transparent;
+            scrollbar-color: var(--rx-theater-border-strong, rgba(255,255,255,0.15)) transparent;
         }
         #rx-tab-chat #chat-history-list::-webkit-scrollbar { width: 5px; }
         #rx-tab-chat #chat-history-list::-webkit-scrollbar-thumb {
-            background: rgba(255,255,255,0.14);
+            background: var(--rx-theater-border-strong, rgba(255,255,255,0.14));
             border-radius: 3px;
         }
         #rx-tab-chat .chat-form-overflow-wrapper {
             flex-shrink: 0;
             background: var(--rx-theater-shell, #0b0b0f) !important;
             border-color: var(--rx-theater-border, rgba(255,255,255,0.1)) !important;
+        }
+        #rx-tab-chat .chat--signin-container {
+            flex-shrink: 0;
+            background: var(--rx-theater-shell, #0b0b0f) !important;
+            color: var(--rx-theater-text, #f5f7fb) !important;
+            border-top-color: var(--rx-theater-border, rgba(255,255,255,0.1)) !important;
         }
         #rx-tab-chat .rx-rant-archive {
             flex-shrink: 0;
@@ -4522,7 +4598,7 @@ const TheaterSplit = {
         }
         #rx-tab-comments::-webkit-scrollbar { width: 5px; }
         #rx-tab-comments::-webkit-scrollbar-thumb {
-            background: rgba(255,255,255,0.14);
+            background: var(--rx-theater-border-strong, rgba(255,255,255,0.14));
             border-radius: 3px;
         }
 
@@ -4540,7 +4616,7 @@ const TheaterSplit = {
             height: 40px;
             border: 1px solid var(--rx-theater-border-strong, rgba(255,255,255,0.22));
             border-radius: 8px;
-            background: rgba(7,9,13,0.82);
+            background: color-mix(in srgb, var(--rx-theater-shell, #090c11) 88%, transparent);
             color: var(--rx-theater-text, #fff);
             cursor: pointer;
             box-shadow: 0 8px 24px rgba(0,0,0,0.28);
@@ -4562,7 +4638,7 @@ const TheaterSplit = {
         html.rx-split #rx-split-reveal { display: none; }
         #rx-theater-close:hover,
         #rx-split-reveal:hover {
-            background: rgba(17,20,28,0.96);
+            background: var(--rx-theater-raised, #11141c);
             border-color: var(--rx-theater-accent, #89b4fa);
             transform: translateY(-1px);
         }
@@ -4588,7 +4664,6 @@ const TheaterSplit = {
             #rx-split-right {
                 width: 100% !important;
                 min-width: 0 !important;
-                transform: translateY(10px);
             }
             #rx-split-right.rx-expanded {
                 min-height: 0;
@@ -4623,6 +4698,10 @@ const TheaterSplit = {
             '--rx-theater-subtext': theme.subtext,
             '--rx-theater-accent': theme.accent,
             '--rx-theater-selection': theme.selectionBg,
+            '--rx-theater-success': theme.green,
+            '--rx-theater-danger': theme.red,
+            '--rx-theater-warning': theme.yellow,
+            '--rx-theater-hover': theme.surface1,
         };
         for (const [name, value] of Object.entries(theaterTokens)) wrapper.style.setProperty(name, value);
         wrapper.dataset.theme = Settings.get('theme') || 'catppuccin';
@@ -4944,7 +5023,7 @@ const TheaterSplit = {
         homeBtn.href = Settings.get('logoToFeed') ? 'https://rumble.com/subscriptions' : 'https://rumble.com/';
         homeBtn.title = Settings.get('logoToFeed') ? 'My Feed' : 'Rumble Home';
         homeBtn.setAttribute('aria-label', homeBtn.title);
-        homeBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none"><path d="M6.5 3C4.015 3 2 5.015 2 7.5v9C2 18.985 4.015 21 6.5 21h11c2.485 0 4.5-2.015 4.5-4.5v-9C22 5.015 19.985 3 17.5 3h-11zm3.25 4.5c.69 0 1.25.56 1.25 1.25v1.5l2.5-2.25c.33-.3.76-.5 1.22-.5h.78c.97 0 1.45 1.17.77 1.85L13.5 12l2.72 2.65c.68.68.2 1.85-.77 1.85h-.78c-.46 0-.89-.18-1.22-.5L11 13.75v1.5c0 .69-.56 1.25-1.25 1.25S8.5 15.94 8.5 15.25v-7.5c0-.69.56-1.25 1.25-1.25z" fill="#85d551"/></svg>';
+        homeBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none"><path d="M6.5 3C4.015 3 2 5.015 2 7.5v9C2 18.985 4.015 21 6.5 21h11c2.485 0 4.5-2.015 4.5-4.5v-9C22 5.015 19.985 3 17.5 3h-11zm3.25 4.5c.69 0 1.25.56 1.25 1.25v1.5l2.5-2.25c.33-.3.76-.5 1.22-.5h.78c.97 0 1.45 1.17.77 1.85L13.5 12l2.72 2.65c.68.68.2 1.85-.77 1.85h-.78c-.46 0-.89-.18-1.22-.5L11 13.75v1.5c0 .69-.56 1.25-1.25 1.25S8.5 15.94 8.5 15.25v-7.5c0-.69.56-1.25 1.25-1.25z" fill="currentColor"/></svg>';
 
         const gearBtn = document.createElement('button');
         gearBtn.id = 'rx-hdr-settings';
@@ -5409,8 +5488,7 @@ const VideoDownloader = {
     _lastMuxerContext: null,
 
     _css: `
-        #rx-download-btn:hover { border-color: rgba(166,227,161,0.6) !important; }
-        #rx-hdr-download:hover { border-color: rgba(166,227,161,0.6) !important; }
+        #rx-download-btn:hover { border-color: var(--rx-theater-success, var(--rx-green, #a6e3a1)) !important; }
 
         #rx-tab-download {
             flex-direction: column;
@@ -5426,62 +5504,62 @@ const VideoDownloader = {
             padding: 10px 14px;
             margin: 4px 0;
             border-radius: 10px;
-            background: rgba(49,50,68,0.4);
-            border: 1px solid rgba(255,255,255,0.04);
+            background: color-mix(in srgb, var(--rx-theater-raised, var(--rx-site-raised, var(--rx-surface0, #313244))) 58%, transparent);
+            border: 1px solid var(--rx-theater-border, var(--rx-site-border, rgba(255,255,255,0.08)));
             cursor: pointer;
             transition: background 0.15s, border-color 0.15s;
         }
         .rx-dl-quality:hover {
-            background: rgba(49,50,68,0.7);
-            border-color: rgba(137,180,250,0.2);
+            background: var(--rx-theater-raised, var(--rx-site-raised, var(--rx-surface0, #313244)));
+            border-color: var(--rx-theater-accent, var(--rx-accent, #89b4fa));
         }
         .rx-dl-quality-label {
             font-size: 14px;
             font-weight: 600;
-            color: var(--rx-text, #cdd6f4);
+            color: var(--rx-theater-text, var(--rx-text, #cdd6f4));
         }
         .rx-dl-quality-meta {
             font-size: 11px;
-            color: var(--rx-subtext, #a6adc8);
+            color: var(--rx-theater-subtext, var(--rx-subtext, #a6adc8));
         }
 
         .rx-dl-progress-wrap { margin-top: 12px; }
         .rx-dl-status {
             font-size: 12px;
-            color: var(--rx-subtext, #a6adc8);
+            color: var(--rx-theater-subtext, var(--rx-subtext, #a6adc8));
             margin-bottom: 8px;
         }
         .rx-dl-bar-bg {
             width: 100%;
             height: 6px;
-            background: rgba(49,50,68,0.6);
+            background: var(--rx-theater-raised, var(--rx-site-raised, var(--rx-surface0, #313244)));
             border-radius: 3px;
             overflow: hidden;
         }
         .rx-dl-bar-fill {
             height: 100%;
             width: 0%;
-            background: linear-gradient(90deg, var(--rx-accent, #89b4fa), #a6e3a1);
+            background: linear-gradient(90deg, var(--rx-theater-accent, var(--rx-accent, #89b4fa)), var(--rx-theater-success, var(--rx-green, #a6e3a1)));
             border-radius: 3px;
             transition: width 0.15s ease;
         }
         .rx-dl-cancel {
             min-height: 36px; margin-top: 12px; padding: 7px 14px;
-            border: 1px solid rgba(243,139,168,0.35); border-radius: 7px;
-            background: rgba(243,139,168,0.10); color: #f38ba8;
+            border: 1px solid color-mix(in srgb, var(--rx-theater-danger, var(--rx-red, #f38ba8)) 45%, transparent); border-radius: 7px;
+            background: color-mix(in srgb, var(--rx-theater-danger, var(--rx-red, #f38ba8)) 10%, transparent); color: var(--rx-theater-danger, var(--rx-red, #f38ba8));
             cursor: pointer; font: 600 12px/1 system-ui, sans-serif;
         }
-        .rx-dl-cancel:hover { background: rgba(243,139,168,0.18); }
-        .rx-dl-cancel:focus-visible { outline: 3px solid #f38ba8; outline-offset: 2px; }
+        .rx-dl-cancel:hover { background: color-mix(in srgb, var(--rx-theater-danger, var(--rx-red, #f38ba8)) 18%, transparent); }
+        .rx-dl-cancel:focus-visible { outline: 3px solid var(--rx-theater-danger, var(--rx-red, #f38ba8)); outline-offset: 2px; }
         .rx-dl-done {
             text-align: center;
             padding: 20px 0;
-            color: #a6e3a1;
+            color: var(--rx-theater-success, var(--rx-green, #a6e3a1));
             font-weight: 600;
             font-size: 14px;
         }
         .rx-dl-error {
-            color: #f38ba8;
+            color: var(--rx-theater-danger, var(--rx-red, #f38ba8));
             font-size: 12px;
             margin-top: 8px;
             word-break: break-word;
@@ -5490,12 +5568,12 @@ const VideoDownloader = {
         .rx-dl-sponsor-trim {
             display: flex; align-items: center; gap: 8px;
             margin-top: 10px; padding: 8px 10px;
-            background: rgba(243,139,168,0.08);
-            border: 1px solid rgba(243,139,168,0.2); border-radius: 8px;
-            font: 600 12px/1.4 system-ui, sans-serif; color: #cdd6f4;
+            background: color-mix(in srgb, var(--rx-theater-danger, var(--rx-red, #f38ba8)) 8%, transparent);
+            border: 1px solid color-mix(in srgb, var(--rx-theater-danger, var(--rx-red, #f38ba8)) 24%, transparent); border-radius: 8px;
+            font: 600 12px/1.4 system-ui, sans-serif; color: var(--rx-theater-text, var(--rx-text, #cdd6f4));
             cursor: pointer;
         }
-        .rx-dl-sponsor-trim input { accent-color: #f38ba8; min-width: 16px; min-height: 16px; }
+        .rx-dl-sponsor-trim input { accent-color: var(--rx-theater-danger, var(--rx-red, #f38ba8)); min-width: 16px; min-height: 16px; }
 
         .rx-dl-format-row {
             display: flex;
@@ -5506,9 +5584,9 @@ const VideoDownloader = {
             flex: 1;
             padding: 8px;
             border-radius: 8px;
-            border: 1px solid rgba(137,180,250,0.15);
-            background: rgba(49,50,68,0.4);
-            color: var(--rx-text, #cdd6f4);
+            border: 1px solid var(--rx-theater-border, var(--rx-site-border, rgba(137,180,250,0.15)));
+            background: color-mix(in srgb, var(--rx-theater-raised, var(--rx-site-raised, var(--rx-surface0, #313244))) 58%, transparent);
+            color: var(--rx-theater-text, var(--rx-text, #cdd6f4));
             font-size: 12px;
             font-weight: 600;
             cursor: pointer;
@@ -5516,14 +5594,14 @@ const VideoDownloader = {
             transition: background 0.15s, border-color 0.15s;
         }
         .rx-dl-format-btn:hover {
-            background: rgba(49,50,68,0.7);
-            border-color: rgba(137,180,250,0.3);
+            background: var(--rx-theater-raised, var(--rx-site-raised, var(--rx-surface0, #313244)));
+            border-color: var(--rx-theater-accent, var(--rx-accent, #89b4fa));
         }
         .rx-dl-format-btn small {
             display: block;
             font-weight: 400;
             font-size: 10px;
-            color: var(--rx-subtext, #a6adc8);
+            color: var(--rx-theater-subtext, var(--rx-subtext, #a6adc8));
             margin-top: 2px;
         }
 
@@ -5531,30 +5609,30 @@ const VideoDownloader = {
         .rx-dl-scan-bar {
             display: flex; align-items: center; gap: 8px;
             padding: 6px 10px; margin-bottom: 8px;
-            background: rgba(137,180,250,0.08); border: 1px solid rgba(137,180,250,0.18);
+            background: color-mix(in srgb, var(--rx-theater-accent, var(--rx-accent, #89b4fa)) 8%, transparent); border: 1px solid color-mix(in srgb, var(--rx-theater-accent, var(--rx-accent, #89b4fa)) 20%, transparent);
             border-radius: 8px;
-            font: 11px system-ui, sans-serif; color: var(--rx-subtext, #a6adc8);
+            font: 11px system-ui, sans-serif; color: var(--rx-theater-subtext, var(--rx-subtext, #a6adc8));
         }
         .rx-dl-scan-bar .rx-dl-scan-label { flex: 1; }
         .rx-dl-scan-bar .rx-dl-scan-counter {
-            font-variant-numeric: tabular-nums; color: var(--rx-text, #cdd6f4); font-weight: 600;
+            font-variant-numeric: tabular-nums; color: var(--rx-theater-text, var(--rx-text, #cdd6f4)); font-weight: 600;
         }
         .rx-dl-scan-bar .rx-dl-scan-mini {
-            width: 60px; height: 3px; background: rgba(255,255,255,0.08); border-radius: 2px; overflow: hidden;
+            width: 60px; height: 3px; background: var(--rx-theater-border, var(--rx-site-border, rgba(255,255,255,0.08))); border-radius: 2px; overflow: hidden;
         }
         .rx-dl-scan-bar .rx-dl-scan-mini > div {
-            height: 100%; width: 0%; background: var(--rx-accent, #89b4fa);
+            height: 100%; width: 0%; background: var(--rx-theater-accent, var(--rx-accent, #89b4fa));
             transition: width 0.2s ease;
         }
         .rx-dl-scan-bar.done {
-            background: rgba(166,227,161,0.08);
-            border-color: rgba(166,227,161,0.18);
-            color: #a6e3a1;
+            background: color-mix(in srgb, var(--rx-theater-success, var(--rx-green, #a6e3a1)) 8%, transparent);
+            border-color: color-mix(in srgb, var(--rx-theater-success, var(--rx-green, #a6e3a1)) 22%, transparent);
+            color: var(--rx-theater-success, var(--rx-green, #a6e3a1));
         }
 
         .rx-dl-group-title {
             font: 700 10px/1 system-ui, sans-serif;
-            color: var(--rx-subtext, #a6adc8);
+            color: var(--rx-theater-subtext, var(--rx-subtext, #a6adc8));
             text-transform: uppercase; letter-spacing: 0.08em;
             padding: 8px 4px 4px;
         }
@@ -5569,7 +5647,7 @@ const VideoDownloader = {
             text-align: left; cursor: pointer;
         }
         .rx-dl-quality-row-inner:focus-visible,
-        .rx-dl-copy-btn:focus-visible { outline: 3px solid var(--rx-accent, #89b4fa); outline-offset: 2px; }
+        .rx-dl-copy-btn:focus-visible { outline: 3px solid var(--rx-theater-accent, var(--rx-accent, #89b4fa)); outline-offset: 2px; }
         .rx-dl-quality-main {
             flex: 1; min-width: 0;
         }
@@ -5577,30 +5655,30 @@ const VideoDownloader = {
             display: inline-block; padding: 1px 6px; margin-left: 6px;
             font: 600 9px/1.4 system-ui, sans-serif; letter-spacing: 0.04em; text-transform: uppercase;
             border-radius: 6px;
-            background: rgba(255,255,255,0.06); color: var(--rx-subtext, #a6adc8);
+            background: var(--rx-theater-raised, var(--rx-site-raised, rgba(255,255,255,0.06))); color: var(--rx-theater-subtext, var(--rx-subtext, #a6adc8));
         }
         .rx-dl-type-badge.type-tar {
-            background: rgba(249,226,175,0.14); color: #f9e2af;
+            background: color-mix(in srgb, var(--rx-theater-warning, var(--rx-yellow, #f9e2af)) 14%, transparent); color: var(--rx-theater-warning, var(--rx-yellow, #f9e2af));
         }
         .rx-dl-copy-btn {
             background: transparent; border: 0; padding: 4px; margin: 0;
-            color: var(--rx-subtext, #a6adc8); cursor: pointer; opacity: 0;
+            color: var(--rx-theater-subtext, var(--rx-subtext, #a6adc8)); cursor: pointer; opacity: 0;
             transition: opacity 0.12s, color 0.12s;
             border-radius: 4px; display: flex; align-items: center; justify-content: center;
         }
         .rx-dl-quality:hover .rx-dl-copy-btn,
         .rx-dl-copy-btn:focus-visible { opacity: 0.7; }
-        .rx-dl-copy-btn:hover { opacity: 1; color: var(--rx-text, #cdd6f4); background: rgba(255,255,255,0.06); }
-        .rx-dl-copy-btn.copied { color: #a6e3a1; opacity: 1; }
+        .rx-dl-copy-btn:hover { opacity: 1; color: var(--rx-theater-text, var(--rx-text, #cdd6f4)); background: var(--rx-theater-raised, var(--rx-site-raised, rgba(255,255,255,0.06))); }
+        .rx-dl-copy-btn.copied { color: var(--rx-theater-success, var(--rx-green, #a6e3a1)); opacity: 1; }
         .rx-dl-copy-btn svg { width: 12px; height: 12px; }
 
         .rx-dl-tar-note {
             margin-top: 6px; padding: 8px 10px;
-            background: rgba(249,226,175,0.06); border: 1px solid rgba(249,226,175,0.16);
+            background: color-mix(in srgb, var(--rx-theater-warning, var(--rx-yellow, #f9e2af)) 6%, transparent); border: 1px solid color-mix(in srgb, var(--rx-theater-warning, var(--rx-yellow, #f9e2af)) 18%, transparent);
             border-radius: 6px;
-            font: 10px/1.5 system-ui, sans-serif; color: var(--rx-subtext, #a6adc8);
+            font: 10px/1.5 system-ui, sans-serif; color: var(--rx-theater-subtext, var(--rx-subtext, #a6adc8));
         }
-        .rx-dl-tar-note strong { color: #f9e2af; }
+        .rx-dl-tar-note strong { color: var(--rx-theater-warning, var(--rx-yellow, #f9e2af)); }
     `,
 
     _downloadSVG: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>',
@@ -9830,8 +9908,13 @@ const ChatHighlights = {
 
     _css: `
         .rx-chat-kw {
-            background: rgba(249,226,175,0.14) !important;
-            border-left: 2px solid #f9e2af !important;
+            background: color-mix(
+                in srgb,
+                var(--rx-theater-warning, var(--rx-site-warning, #f9e2af)) 14%,
+                transparent
+            ) !important;
+            border-left: 2px solid var(--rx-theater-warning, var(--rx-site-warning, #f9e2af)) !important;
+            color: var(--rx-theater-text, var(--rx-text, #cdd6f4)) !important;
         }
     `,
 
@@ -10650,6 +10733,16 @@ const PlayerActionDock = {
             transform: translate3d(0,0,0);
             transition: opacity 160ms ease, transform 160ms ease;
             font-family: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+            --rx-tools-shell: var(--rx-theater-shell, var(--rx-site-shell, #090c11));
+            --rx-tools-panel: var(--rx-theater-panel, var(--rx-site-panel, #111116));
+            --rx-tools-raised: var(--rx-theater-raised, var(--rx-site-raised, #1e1e2e));
+            --rx-tools-hover: var(--rx-theater-hover, var(--rx-site-hover, #313244));
+            --rx-tools-border: var(--rx-theater-border, var(--rx-site-border, rgba(255,255,255,0.14)));
+            --rx-tools-border-strong: var(--rx-theater-border-strong, var(--rx-site-border-strong, rgba(255,255,255,0.22)));
+            --rx-tools-text: var(--rx-theater-text, var(--rx-text, #f5f7fb));
+            --rx-tools-subtext: var(--rx-theater-subtext, var(--rx-subtext, rgba(255,255,255,0.72)));
+            --rx-tools-accent: var(--rx-theater-accent, var(--rx-accent, #89b4fa));
+            --rx-tools-success: var(--rx-theater-success, var(--rx-site-success, var(--rx-green, #a6e3a1)));
         }
         .videoPlayer-Rumble-cls:hover .rx-player-tools,
         #videoPlayer:hover .rx-player-tools,
@@ -10661,10 +10754,10 @@ const PlayerActionDock = {
             min-width: 54px;
             height: 40px;
             padding: 0 12px;
-            border: 1px solid rgba(255,255,255,0.22);
+            border: 1px solid var(--rx-tools-border-strong);
             border-radius: 8px;
-            background: rgba(7,9,13,0.82);
-            color: #f5f7fb;
+            background: color-mix(in srgb, var(--rx-tools-shell) 88%, transparent);
+            color: var(--rx-tools-text);
             box-shadow: 0 8px 24px rgba(0,0,0,0.28);
             cursor: pointer;
             font: 700 12px/1 Inter, ui-sans-serif, system-ui, sans-serif;
@@ -10673,13 +10766,13 @@ const PlayerActionDock = {
         }
         .rx-player-tools-trigger:hover,
         .rx-player-tools[data-open="true"] .rx-player-tools-trigger {
-            background: rgba(17,20,28,0.96);
-            border-color: var(--rx-accent, #89b4fa);
+            background: var(--rx-tools-raised);
+            border-color: var(--rx-tools-accent);
             transform: translateY(-1px);
         }
         .rx-player-tools-trigger:focus-visible,
         .rx-player-tool-action:focus-visible {
-            outline: 2px solid var(--rx-accent, #89b4fa);
+            outline: 2px solid var(--rx-tools-accent);
             outline-offset: 2px;
         }
         .rx-player-tools-menu {
@@ -10688,21 +10781,14 @@ const PlayerActionDock = {
             right: 0;
             width: 196px;
             padding: 6px;
-            border: 1px solid rgba(255,255,255,0.14);
+            border: 1px solid var(--rx-tools-border-strong);
             border-radius: 10px;
-            background: #090c11;
+            background: var(--rx-tools-shell);
             box-shadow: 0 18px 46px rgba(0,0,0,0.5);
             transform: translateZ(0);
             backface-visibility: hidden;
         }
         .rx-player-tools-menu[hidden] { display: none !important; }
-        .rx-player-tools-heading {
-            padding: 7px 10px 6px;
-            color: rgba(255,255,255,0.5);
-            font: 750 10px/1 Inter, ui-sans-serif, system-ui, sans-serif;
-            letter-spacing: 0.12em;
-            text-transform: uppercase;
-        }
         .rx-player-tool-action {
             position: static !important;
             width: 100% !important;
@@ -10712,7 +10798,7 @@ const PlayerActionDock = {
             border: 1px solid transparent !important;
             border-radius: 7px !important;
             background: transparent !important;
-            color: rgba(255,255,255,0.78) !important;
+            color: var(--rx-tools-subtext) !important;
             box-shadow: none !important;
             opacity: 1 !important;
             transform: none !important;
@@ -10726,14 +10812,14 @@ const PlayerActionDock = {
             transition: color 140ms ease, background-color 140ms ease, border-color 140ms ease !important;
         }
         .rx-player-tool-action:hover {
-            background: rgba(255,255,255,0.07) !important;
-            border-color: rgba(255,255,255,0.09) !important;
-            color: #fff !important;
+            background: var(--rx-tools-raised) !important;
+            border-color: var(--rx-tools-border) !important;
+            color: var(--rx-tools-text) !important;
         }
         .rx-player-tool-action.active {
-            background: rgba(166,227,161,0.1) !important;
-            border-color: rgba(166,227,161,0.28) !important;
-            color: #a6e3a1 !important;
+            background: color-mix(in srgb, var(--rx-tools-success) 12%, transparent) !important;
+            border-color: color-mix(in srgb, var(--rx-tools-success) 36%, transparent) !important;
+            color: var(--rx-tools-success) !important;
         }
         .rx-player-tool-action svg {
             width: 16px !important;
@@ -10832,6 +10918,8 @@ const PlayerActionDock = {
                 if (event.key !== 'Escape') return;
                 const openDock = qs('.rx-player-tools[data-open="true"]');
                 if (!openDock) return;
+                event.preventDefault();
+                event.stopImmediatePropagation();
                 this._setOpen(openDock, false);
                 openDock.querySelector('.rx-player-tools-trigger')?.focus();
             };
@@ -10862,11 +10950,6 @@ const PlayerActionDock = {
         menu.setAttribute('tabindex', '-1');
         menu.setAttribute('role', 'menu');
         menu.setAttribute('aria-label', rxT('playerToolsTitle', 'RumbleX player tools'));
-
-        const heading = document.createElement('div');
-        heading.className = 'rx-player-tools-heading';
-        heading.textContent = rxT('playerToolsHeading', 'Player tools');
-        menu.appendChild(heading);
 
         trigger.addEventListener('click', (event) => {
             event.stopPropagation();

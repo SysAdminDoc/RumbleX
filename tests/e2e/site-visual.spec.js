@@ -113,7 +113,7 @@ test.describe('live site visual capture', () => {
         await tools.click();
         await expect(page.locator('.rx-player-tools-menu')).toBeVisible();
         await expect(page.locator('.rx-player-tools')).toHaveCSS('opacity', '1');
-        await expect(page.locator('.rx-player-tools-menu')).toHaveCSS('background-color', 'rgb(9, 12, 17)');
+        await expect(page.locator('.rx-player-tools-menu')).toHaveCSS('background-color', 'rgb(24, 24, 37)');
         await page.screenshot({ path: path.join(outputDir, 'theater-player-tools-1440x900.png'), fullPage: false });
 
         await page.close();
