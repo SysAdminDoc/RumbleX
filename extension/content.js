@@ -18470,7 +18470,7 @@ const RX_LOCAL_STORAGE_PREFIXES = ['rx_rants_'];
 // wipe because it has the extension origin, but the list lives here beside the
 // modules that write the keys so `scripts/check-local-storage-keys.js` can hold
 // both directions from one place.
-const RX_EXTENSION_STORAGE_RESET_KEYS = ['rx_rant_stats_mirror'];
+const RX_EXTENSION_STORAGE_RESET_KEYS = ['rx_rant_stats_mirror', 'rx_probe_cache'];
 
 // Runtime `rx_` keys the reset deliberately does not drop here, and why. The
 // guard reads this so a new key cannot be quietly omitted: leaving one out

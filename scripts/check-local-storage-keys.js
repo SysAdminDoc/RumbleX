@@ -30,6 +30,19 @@ const read = (relative) => fs.readFileSync(path.join(ROOT, relative), 'utf8');
 const core = read('extension/content.js');
 const optionsSource = read('extension/pages/options.js');
 
+// The content runtime is every file the manifest injects, not just content.js.
+// Scanning content.js alone missed `rx_probe_cache` in core-media.js, which is
+// written to extension storage and cleared by nothing.
+const manifest = JSON.parse(read('extension/manifest.json'));
+const RUNTIME_FILES = (manifest.content_scripts || [])
+    .flatMap((entry) => entry.js || [])
+    .map((file) => `extension/${file}`)
+    .filter((relative) => fs.existsSync(path.join(ROOT, relative)));
+assert.ok(RUNTIME_FILES.includes('extension/content.js'),
+    'manifest content_scripts no longer injects content.js — the scan would miss the main runtime');
+assert.ok(RUNTIME_FILES.length >= 5,
+    `expected the manifest to inject the shared core files, found only: ${RUNTIME_FILES.join(', ')}`);
+
 // Pull an array or object literal out of the runtime by name. Parsed rather
 // than executed: content.js is a browser bundle and cannot be run under Node.
 function literalBody(source, name, open, close) {
@@ -63,12 +76,36 @@ const registryBlocks = [
     /const RX_EXTENSION_STORAGE_RESET_KEYS = \[[\s\S]*?\];/,
     /const RX_RESET_EXCLUSIONS = \{[\s\S]*?\};/,
 ];
-const scanned = registryBlocks.reduce((text, block) => text.replace(block, ''), core);
-const runtimeKeys = [...new Set([...scanned.matchAll(/'(rx_[a-z0-9_]*)'/g)].map((match) => match[1]))].sort();
+const scannedCore = registryBlocks.reduce((text, block) => text.replace(block, ''), core);
+const scanned = [scannedCore, ...RUNTIME_FILES.filter((f) => f !== 'extension/content.js').map(read)].join('\n');
+
+// Prose mentions a key without creating one. A line whose first non-space
+// characters open a comment is documentation, so a key that appears on no other
+// kind of line is not a key. Erring this way is deliberate: a stray comment
+// mention would otherwise fail the build, while a trailing comment on a real
+// code line still counts as code and fails loudly if it names something new.
+const KEY_LITERAL = /['"`](rx_[A-Za-z0-9_]+)['"`]/g;
+const isCommentLine = (line) => /^\s*(\/\/|\*|\/\*)/.test(line);
+const candidates = new Map();
+for (const line of scanned.split('\n')) {
+    const comment = isCommentLine(line);
+    for (const [, key] of line.matchAll(KEY_LITERAL)) {
+        if (!candidates.has(key)) candidates.set(key, false);
+        if (!comment) candidates.set(key, true);
+    }
+}
+// Single quotes, double quotes and template literals all occur in this tree,
+// and keys are not guaranteed lowercase. Matching only one shape let a key slip
+// past the whole check.
+const runtimeKeys = [...candidates].filter(([, inCode]) => inCode).map(([key]) => key).sort();
 assert.ok(runtimeKeys.length > 0, 'found no rx_ storage keys in the content runtime — the scan is broken');
 
+const exactlyCovered = new Set([...localKeys, ...extensionKeys]);
+// A prefix covers everything beneath it. Treating prefixes as whole keys failed
+// the guard on keys the reset demonstrably clears.
+const isCovered = (key) => exactlyCovered.has(key) || localPrefixes.some((prefix) => key.startsWith(prefix));
 const covered = new Set([...localKeys, ...localPrefixes, ...extensionKeys]);
-const uncovered = runtimeKeys.filter((key) => !covered.has(key) && !excludedKeys.has(key));
+const uncovered = runtimeKeys.filter((key) => !isCovered(key) && !excludedKeys.has(key));
 assert.deepEqual(uncovered, [],
     `content-runtime storage keys that Reset All Data does not clear and that carry no documented exclusion: ${uncovered.join(', ')}. `
     + 'Add each to RX_LOCAL_STORAGE_KEYS, RX_LOCAL_STORAGE_PREFIXES or RX_EXTENSION_STORAGE_RESET_KEYS, '

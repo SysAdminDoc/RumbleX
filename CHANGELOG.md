@@ -14,6 +14,7 @@ All notable changes to RumbleX will be documented in this file.
 
 ### Fixed
 
+- Reset All Data also drops the download probe cache, which is written by the shared media core and had been surviving the wipe.
 - Reset All Data now clears everything it says it clears. Per-channel volume, speed and quality-ceiling preferences were stored under a key the reset list never named, so they survived a wipe that reported "All settings cleared", and Export Backup missed them for the same reason. The rant panel's cross-video mirror was left behind too. A new build check reads every storage key the page code writes and fails if one is neither cleared nor documented as deliberately kept, so this cannot happen again quietly. Snapshot history is still kept on purpose: it is the undo for the reset itself.
 - Clicking a channel-notifier notification now opens the video it is about. On Chrome it had been doing nothing at all: the target URL was held in the service worker's memory, Chrome shuts that worker down after about thirty seconds of inactivity, and the notifier runs on a timer, so the worker was almost always gone by the time anyone opened the notification centre. The click resolved to nothing and returned without a tab, a message, or an error. Targets now live in session storage, which lasts exactly as long as the browser session, and are re-checked as Rumble addresses every time they are read back. Firefox keeps a background page running and was never affected.
 

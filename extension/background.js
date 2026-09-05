@@ -648,19 +648,58 @@ function rxPruneNotificationTargets(stored, now) {
     return Object.fromEntries(kept);
 }
 
+// The Map is subject to the same TTL and cap as the store. Without this a
+// notifier pass that fires more than the cap, or an entry older than the TTL,
+// would be refused by the store and then served out of worker memory anyway,
+// so "bounded in count and age" would only be true of half the lookup.
+function rxPruneNotificationMap(now = Date.now()) {
+    for (const [id, entry] of rxNotificationUrlMap) {
+        if (!entry || !Number.isFinite(entry.at) || now - entry.at >= RX_NOTIFICATION_TARGET_TTL_MS) {
+            rxNotificationUrlMap.delete(id);
+        }
+    }
+    // Map iteration is insertion order and ids are only ever inserted once, so
+    // the first key is the oldest.
+    while (rxNotificationUrlMap.size > RX_NOTIFICATION_TARGETS_MAX) {
+        rxNotificationUrlMap.delete(rxNotificationUrlMap.keys().next().value);
+    }
+}
+
+// Distinguishes "there is no store to consult" from "the store answered and
+// the answer was nothing". Only the former may fall back to worker memory.
+const RX_NO_SESSION_STORE = Symbol('rx-no-session-store');
+
 async function rxMutateNotificationTargets(mutate) {
     const area = rxSessionStorageArea();
-    if (!area) return null;
+    if (!area) return RX_NO_SESSION_STORE;
     const mutation = rxNotificationTargetQueue.then(async () => {
         const now = Date.now();
         let stored = null;
         try {
             const got = await area.get(RX_NOTIFICATION_TARGETS_KEY);
             stored = got?.[RX_NOTIFICATION_TARGETS_KEY] || null;
-        } catch { stored = null; }
+        } catch (error) {
+            // A failed read says nothing about what is stored. Treating it as
+            // an empty map and writing the result back would destroy every
+            // other pending target, which is the exact failure this whole path
+            // exists to prevent. Leave the store untouched.
+            console.warn('[RumbleX] notification target read failed:', error);
+            return RX_NO_SESSION_STORE;
+        }
         const entries = rxPruneNotificationTargets(stored, now);
         const result = mutate(entries, now);
-        await area.set({ [RX_NOTIFICATION_TARGETS_KEY]: rxPruneNotificationTargets(entries, now) });
+        const next = rxPruneNotificationTargets(entries, now);
+        try {
+            await area.set({ [RX_NOTIFICATION_TARGETS_KEY]: next });
+        } catch (error) {
+            // A write that never lands leaves a consumed target clickable a
+            // second time, so try once more before giving up.
+            try {
+                await area.set({ [RX_NOTIFICATION_TARGETS_KEY]: next });
+            } catch {
+                console.warn('[RumbleX] notification target write failed:', error);
+            }
+        }
         return result;
     });
     rxNotificationTargetQueue = mutation.catch(() => {});
@@ -668,30 +707,38 @@ async function rxMutateNotificationTargets(mutate) {
         return await mutation;
     } catch (e) {
         console.warn('[RumbleX] notification target store failed:', e);
-        return null;
+        return RX_NO_SESSION_STORE;
     }
 }
 
 async function rxRememberNotificationTarget(id, url) {
     const safeUrl = rxSafeRumbleUrl(url);
     if (!id || !safeUrl) return;
-    rxNotificationUrlMap.set(id, safeUrl);
-    await rxMutateNotificationTargets((entries, now) => {
-        entries[id] = { url: safeUrl, at: now };
+    const now = Date.now();
+    rxNotificationUrlMap.set(id, { url: safeUrl, at: now });
+    rxPruneNotificationMap(now);
+    await rxMutateNotificationTargets((entries, at) => {
+        entries[id] = { url: safeUrl, at };
         return null;
     });
 }
 
 async function rxTakeNotificationTarget(id) {
     if (!id) return null;
-    const cached = rxSafeRumbleUrl(rxNotificationUrlMap.get(id));
+    rxPruneNotificationMap();
+    const cached = rxSafeRumbleUrl(rxNotificationUrlMap.get(id)?.url);
     rxNotificationUrlMap.delete(id);
     const stored = await rxMutateNotificationTargets((entries) => {
         const entry = entries[id];
         delete entries[id];
         return entry ? rxSafeRumbleUrl(entry.url) : null;
     });
-    return stored || cached;
+    // Worker memory is the fallback whenever the store had no answer, including
+    // when a write never landed. It cannot smuggle an aged-out or over-cap
+    // entry back in, because rxPruneNotificationMap applies the same TTL and
+    // cap to the Map before the lookup. Refusing to open a tab we still hold a
+    // valid target for would be the same silent nothing this item exists to fix.
+    return (stored === RX_NO_SESSION_STORE ? null : stored) || cached;
 }
 
 async function rxFireNotification({ title, message, url }) {
@@ -733,10 +780,16 @@ async function rxHandleNotificationClick(id) {
     return url;
 }
 
+// Named and kept on the module so a test can invoke exactly what Chrome
+// invokes, and assert the registration itself is still in place. The event
+// object has no dispatch() outside the browser's own plumbing, so registration
+// plus the listener body is as close to a real click as a test can get.
+const rxNotificationClickListener = (id) => {
+    void rxHandleNotificationClick(id);
+};
+
 if (chrome.notifications?.onClicked) {
-    chrome.notifications.onClicked.addListener((id) => {
-        void rxHandleNotificationClick(id);
-    });
+    chrome.notifications.onClicked.addListener(rxNotificationClickListener);
 }
 
 async function rxRunNotifierPass() {

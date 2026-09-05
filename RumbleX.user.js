@@ -23,7 +23,7 @@
 // @updateURL    https://github.com/SysAdminDoc/RumbleX/raw/main/RumbleX.user.js
 // ==/UserScript==
 
-// Generated from the shared extension core files. Shared runtime SHA-256: 60de38ad762009b6a93c16c2d168074d98715d91123c2345d9a95c76476f6342
+// Generated from the shared extension core files. Shared runtime SHA-256: deccbb135a0b219fa87e095467845befcbd4ff9ed1c13b7dbff20b2b912f10d9
 // RumbleX shared settings schema. This file is the canonical source for
 // defaults and trust-boundary normalization across content, options, popup,
 // background profile/Gist restores, and the generated userscript.
@@ -20983,7 +20983,7 @@ const RX_LOCAL_STORAGE_PREFIXES = ['rx_rants_'];
 // wipe because it has the extension origin, but the list lives here beside the
 // modules that write the keys so `scripts/check-local-storage-keys.js` can hold
 // both directions from one place.
-const RX_EXTENSION_STORAGE_RESET_KEYS = ['rx_rant_stats_mirror'];
+const RX_EXTENSION_STORAGE_RESET_KEYS = ['rx_rant_stats_mirror', 'rx_probe_cache'];
 
 // Runtime `rx_` keys the reset deliberately does not drop here, and why. The
 // guard reads this so a new key cannot be quietly omitted: leaving one out

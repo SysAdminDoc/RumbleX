@@ -15,7 +15,7 @@
     // Mirrors RX_EXTENSION_STORAGE_RESET_KEYS in content.js. The two lists are
     // held in sync by `npm run test:local-storage-keys`, which fails if either
     // side drifts — this page cannot import from the content runtime.
-    const EXTENSION_STORAGE_RESET_KEYS = ['rx_rant_stats_mirror'];
+    const EXTENSION_STORAGE_RESET_KEYS = ['rx_rant_stats_mirror', 'rx_probe_cache'];
     const GROUP_MESSAGE_KEYS = {
         all: 'groupAll',
         core: 'groupCore',
