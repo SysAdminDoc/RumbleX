@@ -17,7 +17,7 @@ const os = require('os');
 
 const ROOT = path.join(__dirname, '..', '..');
 const EXTENSION_PATH = path.join(ROOT, 'extension');
-const OFFLINE_RUMBLE_FIXTURE = fs.readFileSync(path.join(ROOT, 'rumble_decoded.html'), 'utf8');
+const OFFLINE_RUMBLE_FIXTURE = fs.readFileSync(path.join(__dirname, '..', 'fixtures', 'platform', 'offline-watch.html'), 'utf8');
 
 const catalog = (locale) => JSON.parse(
     fs.readFileSync(path.join(EXTENSION_PATH, '_locales', locale, 'messages.json'), 'utf8'),

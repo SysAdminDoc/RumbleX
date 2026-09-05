@@ -5,7 +5,7 @@ const path = require('path');
 const zlib = require('zlib');
 const { webcrypto } = require('crypto');
 
-const OFFLINE_RUMBLE_FIXTURE = fs.readFileSync(path.join(__dirname, '..', '..', 'rumble_decoded.html'), 'utf8');
+const OFFLINE_RUMBLE_FIXTURE = fs.readFileSync(path.join(__dirname, '..', 'fixtures', 'platform', 'offline-watch.html'), 'utf8');
 const SECRETS = Object.freeze({
     webhook: 'https://discord.com/api/webhooks/123456789/discord-secret-token',
     token: 'github_pat_gist-secret-token-value',
@@ -254,4 +254,49 @@ test('encrypted Gist payloads omit local credentials before encryption', async (
         expect(decrypted).not.toHaveProperty(key);
     }
     expectSecretsAbsent(decryptedText);
+});
+
+// The offline fixture is a reduced capture of a real signed-in session that is
+// committed to the repository so `npm run verify` runs on a clean clone. That
+// only stays acceptable while it carries nothing identifying, so the same suite
+// that proves exports are secret-free proves the fixture is too.
+test('the committed offline fixture carries no identities, credentials or capture artifacts', async () => {
+    const fixture = OFFLINE_RUMBLE_FIXTURE;
+    expect(fixture.length).toBeGreaterThan(100_000);
+
+    // Positive control: the checks below have to be able to see something.
+    // If the fixture ever stops containing chat rows, these greps go quiet and
+    // would pass on an empty file.
+    expect(fixture).toContain('data-username=');
+    expect(fixture).toContain('rumble.com');
+
+    const forbidden = [
+        [/\bdarkreader\b/i, 'Dark Reader artifacts from the capturing browser'],
+        [/cid:[A-Za-z0-9._-]+@mhtml\.blink/i, 'MHTML content-id references'],
+        [/\b(authorization|set-cookie|csrf[_-]?token|session[_-]?id|access[_-]?token|refresh[_-]?token|api[_-]?key|bearer)\s*[:=]\s*["']?[A-Za-z0-9._~+/-]{8,}/i, 'credential-shaped values'],
+        [/\bgithub_pat_[A-Za-z0-9_]+/i, 'GitHub tokens'],
+        [/discord\.com\/api\/webhooks\//i, 'Discord webhooks'],
+    ];
+    for (const [pattern, label] of forbidden) {
+        expect(fixture, `offline fixture still contains ${label}`).not.toMatch(pattern);
+    }
+
+    // Every address must be a synthetic one. Real addresses were replaced with
+    // an invalid-TLD placeholder rather than removed, so the shape survives.
+    const addresses = [...fixture.matchAll(/\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/g)].map((m) => m[0]);
+    expect(addresses.filter((address) => address !== 'fixture@example.invalid')).toEqual([]);
+
+    // Channel and viewer identities are hashed to a fixed shape by
+    // scripts/build-offline-fixture.js. Anything else is an original.
+    const channels = [...new Set([...fixture.matchAll(/\/(?:user|c)\/([A-Za-z0-9_-]+)/g)].map((m) => m[1]))];
+    expect(channels.length).toBeGreaterThan(0);
+    expect(channels.filter((name) => !/^channel[0-9a-f]{10}$/.test(name))).toEqual([]);
+
+    const viewers = [...new Set([...fixture.matchAll(/data-username="([^"]*)"/g)].map((m) => m[1]))];
+    expect(viewers.length).toBeGreaterThan(0);
+    expect(viewers.filter((name) => !/^viewer[0-9a-f]{10}$/.test(name))).toEqual([]);
+
+    // CDN media paths carried opaque signed-looking segments.
+    const mediaPaths = [...fixture.matchAll(/\/video\/([^"'\s&)]+)\.[a-z0-9]{2,5}(?=["'\s&)])/gi)].map((m) => m[1]);
+    expect(mediaPaths.filter((segment) => !/^fx\/[0-9a-f]{10}$/.test(segment))).toEqual([]);
 });

@@ -30,6 +30,7 @@ const SOURCE_STEPS = Object.freeze([
     nodeStep('store-listing', 'Store and public metadata', 'scripts/check-store-listing.js'),
     nodeStep('update-manifest', 'Firefox update manifest', 'scripts/build-update-manifest.js', ['--check']),
     nodeStep('vendor-manifest', 'Vendored library provenance', 'scripts/check-vendor-manifest.js'),
+    nodeStep('offline-fixture', 'Committed offline capture', 'scripts/build-offline-fixture.js', ['--check']),
     nodeStep('release-gate', 'Release gate regression', 'scripts/test-release-gate.js'),
     pythonStep(),
     nodeStep('firefox-smoke', 'Headless Firefox extension smoke', 'scripts/test-firefox-extension.js'),

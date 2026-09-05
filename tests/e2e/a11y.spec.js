@@ -22,7 +22,7 @@ const fs = require('fs');
 const path = require('path');
 
 const FAIL_IMPACTS = new Set(['critical', 'serious']);
-const OFFLINE_RUMBLE_FIXTURE = fs.readFileSync(path.join(__dirname, '..', '..', 'rumble_decoded.html'), 'utf8');
+const OFFLINE_RUMBLE_FIXTURE = fs.readFileSync(path.join(__dirname, '..', 'fixtures', 'platform', 'offline-watch.html'), 'utf8');
 
 test.setTimeout(90_000);
 

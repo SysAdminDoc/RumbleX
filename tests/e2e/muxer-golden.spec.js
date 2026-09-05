@@ -9,7 +9,7 @@ const path = require('path');
 const GOLDEN_PATH = path.join(__dirname, '..', 'fixtures', 'mux-golden.ts');
 const GOLDEN_BYTES = fs.readFileSync(GOLDEN_PATH);
 const GOLDEN_SHA256 = 'fa71748692f843d52a9f21c3336b57983c8015f0b375a5fbb11009c598ef6bd2';
-const OFFLINE_RUMBLE_FIXTURE = fs.readFileSync(path.join(__dirname, '..', '..', 'rumble_decoded.html'), 'utf8');
+const OFFLINE_RUMBLE_FIXTURE = fs.readFileSync(path.join(__dirname, '..', 'fixtures', 'platform', 'offline-watch.html'), 'utf8');
 
 test.setTimeout(120_000);
 

@@ -38,6 +38,8 @@
     "test:store-listing": "node scripts/check-store-listing.js",
     "test:update-manifest": "node scripts/build-update-manifest.js --check",
     "test:vendor-manifest": "node scripts/check-vendor-manifest.js",
+    "test:offline-fixture": "node scripts/build-offline-fixture.js --check",
+    "build:offline-fixture": "node scripts/build-offline-fixture.js",
     "check:vendor-drift": "node scripts/check-vendor-drift.js",
     "build:update-manifest": "node scripts/build-update-manifest.js"
   },

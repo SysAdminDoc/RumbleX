@@ -485,7 +485,13 @@ npm run release:local
 
 The release command removes known old package outputs, runs `npm run verify`, rebuilds the final files from a clean package state, and checks the archive bytes again. A failed guard stops before packaging. Requires `zip`; on Windows without `zip`, the build uses the Windows-bundled bsdtar so ZIP entries keep browser-safe forward-slash paths.
 
-The selector harness uses checked-in, synthetic desktop captures. Private MHTML captures in `Sample Pages/` are optional local evidence and never enter release packages. Live-site checks remain opt-in because network and account state are not deterministic release inputs.
+The selector harness uses checked-in, synthetic desktop captures. Private MHTML captures in `Sample Pages/` are optional local evidence and never enter release packages: `test_selectors.py` reports their absence and carries on. Live-site checks remain opt-in because network and account state are not deterministic release inputs.
+
+Five specs need a page rich enough for every injected surface to mount, so they use `tests/fixtures/platform/offline-watch.html`, a reduced capture that is committed. `npm run verify` therefore runs on a clean clone with nothing but `npm ci` and `npm run test:e2e:install`. The fixture keeps the real structure and nothing else: channel and viewer names, message and video ids, CDN path segments, and every asset URL are replaced with synthetic values of the same shape, and the capturing browser's own extension artifacts are stripped. `tests/e2e/secret-policy.spec.js` asserts all of that on the committed bytes. Regenerate it from a local capture rather than hand-editing, and `npm run test:offline-fixture` fails if the two disagree:
+
+```bash
+npm run build:offline-fixture -- path/to/capture.html
+```
 
 Release builds can sign the checksums after a public identity exists. Point `RUMBLEX_SIGNING_KEY` at the matching private key and the build writes `SHA256SUMS.txt.sig`, then verifies it against `allowed_signers` before finishing:
 
