@@ -23,7 +23,7 @@
 // @updateURL    https://github.com/SysAdminDoc/RumbleX/raw/main/RumbleX.user.js
 // ==/UserScript==
 
-// Generated from the shared extension core files. Shared runtime SHA-256: e2ab5a66ceb3953afa3824d79b24e6ade9cd696e7f45467e07799e2ada3d92d7
+// Generated from the shared extension core files. Shared runtime SHA-256: d8272a641e51d89bcaece0aacafa34b084de8ef47ec88479f98ceb72d48510b1
 // RumbleX shared settings schema. This file is the canonical source for
 // defaults and trust-boundary normalization across content, options, popup,
 // background profile/Gist restores, and the generated userscript.
@@ -13170,6 +13170,16 @@ const ExactCounts = {
         return n.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',');
     },
 
+    // The viewer's own locale and timezone. An invalid or missing stamp returns
+    // null so the host text is left exactly as Rumble wrote it.
+    _formatUploadDate(iso) {
+        const parsed = new Date(iso);
+        if (Number.isNaN(parsed.getTime())) return null;
+        try {
+            return new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(parsed);
+        } catch { return null; }
+    },
+
     _setExactText(target, text, marker = target, addClass = true) {
         if (!target || !marker) return;
         this._originals = this._originals || new Map();
@@ -13179,6 +13189,7 @@ const ExactCounts = {
                 marker,
                 markerValue: marker.dataset.rxExact,
                 hadClass: target.classList.contains('rx-exact-count'),
+                ariaLabel: target.getAttribute('aria-label'),
             });
         }
         target.textContent = text;
@@ -13239,6 +13250,27 @@ const ExactCounts = {
             }
         }
 
+        // Watch page upload label. Rumble shows "3 days ago" and nothing else,
+        // so the only way to know when a video was actually published is the
+        // schema.org VideoObject the page already carries. The relative phrase
+        // is kept as the accessible name, because "3 days ago" is the useful
+        // answer to a different question and a screen reader should still have
+        // it. Nothing here depends on the phrase's wording: the absolute date
+        // comes from structured data, not from parsing the label.
+        if (Page.isWatch()) {
+            const uploaded = PageData.uploadDate();
+            const absolute = uploaded ? this._formatUploadDate(uploaded) : null;
+            if (absolute) {
+                for (const label of qsa('.media-description-info-stream-time')) {
+                    if (label.dataset.rxExact) continue;
+                    const original = (label.textContent || '').trim();
+                    if (!original) continue;
+                    this._setExactText(label, absolute, label);
+                    label.setAttribute('aria-label', `${absolute} (${original})`);
+                }
+            }
+        }
+
         // Video page: expand vote counts
         const upVotes = qs('[data-js="rumbles_up_votes"]');
         const downVotes = qs('[data-js="rumbles_down_votes"]');
@@ -13270,6 +13302,8 @@ const ExactCounts = {
         for (const [target, original] of this._originals || []) {
             target.textContent = original.text;
             if (!original.hadClass) target.classList.remove('rx-exact-count');
+            if (original.ariaLabel === null) target.removeAttribute('aria-label');
+            else target.setAttribute('aria-label', original.ariaLabel);
             if (original.markerValue === undefined) delete original.marker.dataset.rxExact;
             else original.marker.dataset.rxExact = original.markerValue;
         }

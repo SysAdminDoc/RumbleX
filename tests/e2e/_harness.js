@@ -208,8 +208,10 @@ function routeFor(id) {
     return '/vfeature123-catalog-fixture.html';
 }
 
-async function createHarnessPage(browser) {
-    const context = await browser.newContext();
+async function createHarnessPage(browser, contextOptions = {}) {
+    // A caller that asserts on a locale-formatted date has to pin the locale
+    // and the timezone, or the expected string depends on the machine.
+    const context = await browser.newContext(contextOptions);
     await context.route('https://rumble.com/**', (route) => route.fulfill({
         status: 200,
         contentType: 'text/html',
