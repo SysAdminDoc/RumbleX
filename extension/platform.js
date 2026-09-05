@@ -77,6 +77,10 @@
             requestBlockingMode: manifest.manifest_version === 2 ? 'firefox-webrequest' : 'chromium-dnr',
             requestBlockingRules: 7,
             streamingFileSave: typeof globalThis.showSaveFilePicker === 'function',
+            // The service worker holds the CDN host permissions; a content
+            // script does not, whatever the manifest declares. Probes route
+            // through it so they do not depend on the CDN CORS headers.
+            proxiedMediaProbe: true,
         }),
         storage,
         fetch: (...args) => fetch(...args),

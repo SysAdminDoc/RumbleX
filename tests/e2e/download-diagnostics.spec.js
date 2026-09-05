@@ -147,3 +147,144 @@ test('failed watch-page discovery exposes copy and export diagnostics beside the
         .analyze();
     expect(accessibility.violations).toEqual([]);
 });
+
+test('probes survive a content-script CORS refusal by going through the service worker', async ({ context, serviceWorker }) => {
+    // Chrome treats a content-script fetch as cross-origin even where the
+    // extension holds the host permission, so every probe used to live or die
+    // by the CDN's own CORS headers. Make the page-origin path fail the way a
+    // CORS refusal does; the worker path must still answer.
+    const page = await context.newPage();
+    await page.route('**/*', (route) => {
+        const request = route.request();
+        if (request.isNavigationRequest() && request.url().startsWith('https://rumble.com/')) {
+            return route.fulfill({ status: 200, contentType: 'text/html', body: OFFLINE_RUMBLE_FIXTURE });
+        }
+        return route.abort();
+    });
+    await page.goto('https://rumble.com/vprobe-transport.html', { waitUntil: 'domcontentloaded' });
+    await page.waitForSelector('#rx-download-btn', { state: 'attached', timeout: 15_000 });
+
+    const tabId = await serviceWorker.evaluate(async (url) => {
+        const tab = (await chrome.tabs.query({})).find((entry) => entry.url === url);
+        if (!tab?.id) throw new Error('fixture tab not found');
+        return tab.id;
+    }, page.url());
+
+    const result = await serviceWorker.evaluate(async (target) => {
+        // Stub the worker's own fetch so the probe never leaves the machine. A
+        // real CDN request would make this test depend on the network and on
+        // Rumble's edge, which is the thing the whole item is about.
+        const workerFetch = globalThis.fetch;
+        const seen = [];
+        globalThis.fetch = async (input, init) => {
+            seen.push({ url: String(input), method: init?.method || 'GET' });
+            return new Response(null, { status: 200, headers: { 'content-length': '4194304' } });
+        };
+        try {
+            const executions = await chrome.scripting.executeScript({
+                target: { tabId: target },
+                world: 'ISOLATED',
+                func: async () => {
+                    const probeUrl = 'https://1a-1791.com/video/fx/probe-transport.mp4';
+                    const originalFetch = globalThis.fetch;
+                    // Exactly what a CORS refusal looks like from a content
+                    // script: the request goes out, the response is unreadable.
+                    globalThis.fetch = async () => { throw new TypeError('Failed to fetch'); };
+                    try {
+                        // The path a userscript takes: page origin, no worker.
+                        // RXPlatform is frozen, so exercise it directly rather
+                        // than trying to flip the capability flag.
+                        VideoDownloader._scanId = null;
+                        VideoDownloader._probeStats = null;
+                        const direct = await VideoDownloader._probeUrlDirect(probeUrl, undefined);
+
+                        // The path this build takes, with the page origin still
+                        // refusing. capabilities.proxiedMediaProbe is genuinely
+                        // true here; nothing is stubbed to make it so.
+                        VideoDownloader._scanId = null;
+                        VideoDownloader._probeStats = null;
+                        // _probeUrl is the entry point the scan actually calls,
+                        // so this exercises the cache and the tally as well.
+                        const proxied = await VideoDownloader._probeUrl(probeUrl);
+                        return {
+                            direct,
+                            proxied,
+                            proxyCapability: RXPlatform.capabilities.proxiedMediaProbe,
+                            stats: VideoDownloader.probeDiagnostics(),
+                        };
+                    } finally {
+                        globalThis.fetch = originalFetch;
+                        VideoDownloader._scanId = null;
+                        VideoDownloader._probeStats = null;
+                    }
+                },
+            });
+            return { ...executions[0]?.result, seen };
+        } finally {
+            globalThis.fetch = workerFetch;
+        }
+    }, tabId);
+
+    // The userscript path names the refusal instead of reporting the file
+    // missing, which is the difference between "no such quality" and "this CDN
+    // stopped letting the page read it".
+    expect(result.direct).toMatchObject({ ok: false, reason: 'cors', via: 'direct' });
+
+    // The extension path reaches the CDN through the worker, which does hold
+    // the host permission, and comes back with a real size.
+    expect(result.proxied).toMatchObject({ ok: true, via: 'background', size: 4194304 });
+    expect(result.seen.map((entry) => entry.method)).toEqual(['HEAD']);
+    expect(result.seen[0].url).toBe('https://1a-1791.com/video/fx/probe-transport.mp4');
+
+    // And the tally says which transport answered, without carrying any URL.
+    expect(result.proxyCapability).toBe(true);
+    expect(result.stats).toMatchObject({ total: 1, ok: 1, proxied: true });
+    expect(result.stats.via).toEqual({ background: 1 });
+});
+
+test('the service-worker probe refuses off-allowlist hosts and caps a runaway scan', async ({ serviceWorker }) => {
+    const result = await serviceWorker.evaluate(async () => {
+        const workerFetch = globalThis.fetch;
+        let networkCalls = 0;
+        globalThis.fetch = async () => { networkCalls += 1; return new Response(null, { status: 404 }); };
+        try {
+            // Refused before any budget is spent, so a hostile page cannot
+            // exhaust a scan's allowance with URLs that were never eligible.
+            const offsite = await rxProbeMedia({ url: 'https://evil.example.com/a.mp4', scanId: 'allow-test' });
+            const insecure = await rxProbeMedia({ url: 'http://1a-1791.com/a.mp4', scanId: 'allow-test' });
+            const credentialed = await rxProbeMedia({ url: 'https://user:pass@1a-1791.com/a.mp4', scanId: 'allow-test' });
+            const spentOnBlocked = networkCalls;
+
+            // Spend the budget without touching the network, then prove the
+            // next allowed URL is refused before it can make a request.
+            for (let i = 0; i < RX_PROBE_SCAN_CAP; i += 1) rxCountProbe('cap-run');
+            const callsBeforeCap = networkCalls;
+            const capped = await rxProbeMedia({ url: 'https://1a-1791.com/video/fx/capped.mp4', scanId: 'cap-run' });
+            const callsAfterCap = networkCalls;
+
+            // A different scan starts with a fresh budget.
+            const freshScan = await rxProbeMedia({ url: 'https://1a-1791.com/video/fx/fresh.mp4', scanId: 'cap-run-2' });
+            return {
+                offsite,
+                insecure,
+                credentialed,
+                capped,
+                freshScan,
+                spentOnBlocked,
+                cappedMadeNoRequest: callsAfterCap === callsBeforeCap,
+                cap: RX_PROBE_SCAN_CAP,
+            };
+        } finally {
+            globalThis.fetch = workerFetch;
+        }
+    });
+
+    for (const refused of [result.offsite, result.insecure, result.credentialed]) {
+        expect(refused).toMatchObject({ ok: false, reason: 'blocked' });
+    }
+    expect(result.spentOnBlocked).toBe(0);
+    expect(result.capped).toMatchObject({ ok: false, reason: 'scan-cap' });
+    expect(result.cappedMadeNoRequest).toBe(true);
+    expect(result.freshScan.reason).toBe('http');
+    expect(result.cap).toBe(250);
+});

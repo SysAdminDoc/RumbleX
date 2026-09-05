@@ -239,6 +239,82 @@ async function rxBuildDownloadDiagnosticsBundle() {
     };
 }
 
+// v3.58.0 — Media probes run here, not in the content script.
+//
+// Chrome's own wording: "Cross-origin requests are always treated as such in
+// content scripts, even if the extension has host permissions." The deep scan
+// HEAD-probes 1a-1791.com and rumble.cloud, and doing that from content.js
+// meant the three CDN entries in host_permissions bought it nothing: every
+// probe succeeded only for as long as those CDNs returned permissive CORS
+// headers. Rumble hardened its edge around 2026-08-17, and the failure mode
+// there is an empty quality list with nothing to explain it. The service
+// worker does hold the host grant, so the same request works here and the
+// answer carries a reason the panel can report.
+const RX_PROBE_SCAN_CAP = 250;
+const RX_PROBE_SCAN_TTL_MS = 10 * 60 * 1000;
+const RX_PROBE_DEFAULT_TIMEOUT_MS = 12_000;
+const rxProbeScanCounts = new Map();
+
+function rxCountProbe(scanId, now = Date.now()) {
+    for (const [id, entry] of rxProbeScanCounts) {
+        if (now - entry.at >= RX_PROBE_SCAN_TTL_MS) rxProbeScanCounts.delete(id);
+    }
+    const entry = rxProbeScanCounts.get(scanId) || { count: 0, at: now };
+    entry.count += 1;
+    entry.at = now;
+    rxProbeScanCounts.set(scanId, entry);
+    // Bound the map itself, not just each scan: a page that keeps minting scan
+    // ids would otherwise grow it without limit.
+    while (rxProbeScanCounts.size > 64) {
+        rxProbeScanCounts.delete(rxProbeScanCounts.keys().next().value);
+    }
+    return entry.count;
+}
+
+// One probe. HEAD first because it is cheapest and most accurate, then a
+// 1-byte ranged GET for hosts that refuse HEAD. The reason is the point: an
+// empty quality list should be able to say whether the CDN refused, timed out,
+// or simply does not have that file.
+async function rxProbeMedia({ url, scanId, timeoutMs }) {
+    if (!isAllowedDownloadUrl(url)) return { ok: false, reason: 'blocked' };
+    const used = rxCountProbe(String(scanId));
+    if (used > RX_PROBE_SCAN_CAP) {
+        return { ok: false, reason: 'scan-cap', detail: `probe cap ${RX_PROBE_SCAN_CAP} reached for this scan` };
+    }
+    const budget = Number.isInteger(timeoutMs) ? timeoutMs : RX_PROBE_DEFAULT_TIMEOUT_MS;
+
+    const attempt = async (init) => {
+        try {
+            const response = await fetch(url, { ...init, credentials: 'omit', signal: AbortSignal.timeout(budget) });
+            response.body?.cancel?.();
+            if (response.ok || response.status === 206) {
+                const length = Number.parseInt(
+                    response.headers.get('content-range')?.split('/')?.[1]
+                    || response.headers.get('content-length')
+                    || '',
+                    10,
+                );
+                return { ok: true, size: Number.isFinite(length) && length > 0 ? length : undefined, status: response.status };
+            }
+            return { ok: false, reason: 'http', status: response.status };
+        } catch (error) {
+            const name = error?.name || '';
+            if (name === 'TimeoutError') return { ok: false, reason: 'timeout' };
+            if (name === 'AbortError') return { ok: false, reason: 'aborted' };
+            // A TypeError from fetch in a worker that already holds the host
+            // permission is a transport failure, not a CORS refusal. Content
+            // scripts are where CORS bites, and that path reports it itself.
+            return { ok: false, reason: 'network', detail: rxSanitizeDiagnosticString(error?.message || String(error)) };
+        }
+    };
+
+    const head = await attempt({ method: 'HEAD' });
+    if (head.ok || head.reason === 'timeout' || head.reason === 'aborted') return head;
+    const ranged = await attempt({ method: 'GET', headers: { Range: 'bytes=0-0' } });
+    // Prefer whichever answer is more specific about why it failed.
+    return ranged.ok ? ranged : (ranged.reason === 'http' ? ranged : head);
+}
+
 function isAllowedDownloadUrl(url) {
     try {
         const u = new URL(url);
@@ -2166,6 +2242,11 @@ const RX_MESSAGE_ACTIONS = Object.freeze({
     saveSettings: rxMessageRule(RX_EXTENSION_ONLY, {
         data: rxMessageField('json-object', { required: true, maxBytes: 2 * 1024 * 1024 }),
     }),
+    probeMedia: rxMessageRule(RX_EXTENSION_OR_CONTENT, {
+        url: rxMessageField('download-url', { required: true }),
+        scanId: rxMessageField('id', { required: true }),
+        timeoutMs: rxMessageField('integer', { min: 1000, max: 60_000 }),
+    }),
     recordDownloadDiagnostic: rxMessageRule(RX_EXTENSION_OR_CONTENT, {
         diagnostic: rxMessageField('json-object', { required: true, maxBytes: 256 * 1024 }),
     }),
@@ -2420,6 +2501,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         chrome.storage.local.set({ rx_settings: rxNormalizeSettings(message.data) }, () => {
             sendResponse({ success: true });
         });
+        return true;
+    }
+
+    if (message.action === 'probeMedia') {
+        rxProbeMedia(message)
+            .then((result) => sendResponse(result))
+            .catch((e) => sendResponse({ ok: false, reason: 'network', detail: rxSanitizeDiagnosticString(e?.message || e) }));
         return true;
     }
 

@@ -310,6 +310,9 @@
             requestBlockingMode: 'userscript-manager-dependent',
             requestBlockingRules: 7,
             streamingFileSave: typeof globalThis.showSaveFilePicker === 'function',
+            // No privileged background, so probes stay on the page origin
+            // and live or die by the CDN CORS headers.
+            proxiedMediaProbe: false,
         }),
         storage,
         fetch: platformFetch,

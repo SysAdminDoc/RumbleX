@@ -23,7 +23,7 @@
 // @updateURL    https://github.com/SysAdminDoc/RumbleX/raw/main/RumbleX.lite.user.js
 // ==/UserScript==
 
-// Generated from the shared extension core files. Shared runtime SHA-256: 831f18bf4988bd8dc867f5c57158b25228d01cbd0699a383420b9bfa601c8edc
+// Generated from the shared extension core files. Shared runtime SHA-256: 28b7f1394c3dd1585fd07c35aa8eb7cea07011ee34aa015c7d9baa2e8bbab2c6
 // RumbleX shared settings schema. This file is the canonical source for
 // defaults and trust-boundary normalization across content, options, popup,
 // background profile/Gist restores, and the generated userscript.
@@ -1643,6 +1643,9 @@
             requestBlockingMode: 'userscript-manager-dependent',
             requestBlockingRules: 7,
             streamingFileSave: typeof globalThis.showSaveFilePicker === 'function',
+            // No privileged background, so probes stay on the page origin
+            // and live or die by the CDN CORS headers.
+            proxiedMediaProbe: false,
         }),
         storage,
         fetch: platformFetch,
@@ -6577,8 +6580,9 @@ const VideoDownloader = {
 
     async _probeUrl(url) {
         const cached = await MediaProbeCache.get(this._probeCacheKey(url)).catch(() => null);
-        if (cached && typeof cached === 'object') return { ok: !!cached.ok, size: cached.size };
+        if (cached && typeof cached === 'object') return { ok: !!cached.ok, size: cached.size, via: 'cache' };
         const result = await this._probeUrlNetwork(url);
+        this._recordProbeOutcome(result);
         // Only successes are cached. A miss can be a transient 5xx or an abort
         // from navigating away mid-scan, and pinning that for hours would hide
         // a quality that is really there.
@@ -6589,9 +6593,81 @@ const VideoDownloader = {
         return result;
     },
 
+    // Which path answered, and why it said no. An empty quality list is the
+    // symptom of half a dozen different causes, and "every probe was refused
+    // by the CDN" and "the CDN has no such file" need opposite responses.
+    _probeStats: null,
+
+    _recordProbeOutcome(result) {
+        if (!this._probeStats) this._probeStats = { via: {}, reasons: {}, ok: 0, total: 0 };
+        const stats = this._probeStats;
+        stats.total += 1;
+        if (result?.ok) stats.ok += 1;
+        const via = result?.via || 'unknown';
+        stats.via[via] = (stats.via[via] || 0) + 1;
+        if (!result?.ok) {
+            const reason = result?.reason || 'unknown';
+            stats.reasons[reason] = (stats.reasons[reason] || 0) + 1;
+        }
+    },
+
+    probeDiagnostics() {
+        const stats = this._probeStats;
+        if (!stats || !stats.total) return null;
+        return {
+            total: stats.total,
+            ok: stats.ok,
+            via: { ...stats.via },
+            reasons: { ...stats.reasons },
+            proxied: !!RXPlatform.capabilities.proxiedMediaProbe,
+        };
+    },
+
+    // One id per deep scan, so the service worker can cap a scan's probe count
+    // without having to guess where one scan ends and the next begins.
+    _probeScanId() {
+        if (!this._scanId) this._scanId = `scan-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+        return this._scanId;
+    },
+
     async _probeUrlNetwork(url) {
         const signal = this._scanController?.signal;
-        if (signal?.aborted) return { ok: false };
+        if (signal?.aborted) return { ok: false, reason: 'aborted', via: 'none' };
+        if (RXPlatform.capabilities.proxiedMediaProbe) {
+            const proxied = await this._probeViaBackground(url, signal);
+            // A worker that never answered is a broken message path, not a
+            // verdict on the URL, so the direct path still gets its turn.
+            if (proxied) return proxied;
+        }
+        return this._probeUrlDirect(url, signal);
+    },
+
+    async _probeViaBackground(url, signal) {
+        try {
+            const response = await RXPlatform.sendMessage({
+                action: 'probeMedia',
+                url,
+                scanId: this._probeScanId(),
+                timeoutMs: this._PROBE_TIMEOUT_MS,
+            });
+            if (!response || typeof response !== 'object') return null;
+            // The registry refuses unknown actions and malformed payloads with
+            // these reasons. Either means this build cannot proxy, so fall back
+            // rather than reporting the URL unavailable.
+            if (response.reason === 'unknown-action' || response.reason === 'sender-not-allowed'
+                || response.reason === 'invalid-payload') {
+                return null;
+            }
+            if (signal?.aborted) return { ok: false, reason: 'aborted', via: 'background' };
+            return { ...response, via: 'background' };
+        } catch {
+            return null;
+        }
+    },
+
+    // The userscript path, and the extension's fallback. Subject to the page
+    // origin's CORS, which is exactly why the extension prefers the worker.
+    async _probeUrlDirect(url, signal) {
         const timed = () => {
             // Compose per-probe timeout with the scan-wide abort signal.
             if (typeof AbortSignal?.any === 'function' && signal) {
@@ -6599,24 +6675,34 @@ const VideoDownloader = {
             }
             return AbortSignal.timeout(this._PROBE_TIMEOUT_MS);
         };
+        const attempt = async (init) => {
+            try {
+                const r = await RXPlatform.fetch(url, { ...init, signal: timed() });
+                // Release the body immediately; we only wanted the headers.
+                r.body?.cancel?.();
+                if (r.ok || r.status === 206) {
+                    return { ok: true, size: this._parseSize(r.headers), status: r.status, via: 'direct' };
+                }
+                return { ok: false, reason: 'http', status: r.status, via: 'direct' };
+            } catch (error) {
+                const name = error?.name || '';
+                if (name === 'TimeoutError') return { ok: false, reason: 'timeout', via: 'direct' };
+                if (name === 'AbortError') return { ok: false, reason: 'aborted', via: 'direct' };
+                // A TypeError here is what a CORS refusal looks like from a
+                // content script: the request went out, the response was not
+                // readable. Naming it separately is the difference between "no
+                // such file" and "this CDN stopped letting the page read it".
+                if (error instanceof TypeError) return { ok: false, reason: 'cors', via: 'direct' };
+                return { ok: false, reason: 'network', via: 'direct' };
+            }
+        };
         // HEAD first — cheapest and most accurate.
-        try {
-            const r = await RXPlatform.fetch(url, { method: 'HEAD', signal: timed() });
-            if (r.ok || r.status === 206) return { ok: true, size: this._parseSize(r.headers) };
-        } catch {}
-        if (signal?.aborted) return { ok: false };
+        const head = await attempt({ method: 'HEAD' });
+        if (head.ok || head.reason === 'aborted' || head.reason === 'timeout') return head;
+        if (signal?.aborted) return { ok: false, reason: 'aborted', via: 'direct' };
         // HEAD may be blocked or unsupported — fall back to a 1-byte Range GET.
-        try {
-            const r = await RXPlatform.fetch(url, {
-                method: 'GET',
-                headers: { Range: 'bytes=0-0' },
-                signal: timed(),
-            });
-            // Release the body immediately; we only wanted the headers.
-            r.body?.cancel?.();
-            if (r.ok || r.status === 206) return { ok: true, size: this._parseSize(r.headers) };
-        } catch {}
-        return { ok: false };
+        const ranged = await attempt({ method: 'GET', headers: { Range: 'bytes=0-0' } });
+        return ranged.ok ? ranged : (ranged.reason === 'http' ? ranged : head);
     },
 
     // Try every known embedJS endpoint. Each returns slightly different
@@ -6944,6 +7030,9 @@ const VideoDownloader = {
         // Cancel any previous scan before starting a new one.
         this._scanController?.abort();
         this._scanController = new AbortController();
+        // New scan, new probe budget in the service worker, new tally.
+        this._scanId = null;
+        this._probeStats = null;
         const seq = ++this._scanSeq;
 
         try {
@@ -20540,8 +20629,16 @@ const RxDownloadDiagnostics = {
                     && typeof URL !== 'undefined' && typeof URL.createObjectURL === 'function',
                 webCodecs: typeof VideoDecoder === 'function',
                 online: navigator.onLine !== false,
+                proxiedMediaProbe: !!RXPlatform.capabilities.proxiedMediaProbe,
             },
         };
+        // Counts only: which transport answered and how each probe failed.
+        // No URLs, so nothing new reaches the ring that the redactor would
+        // otherwise have to strip.
+        const probes = (typeof VideoDownloader !== 'undefined' && VideoDownloader.probeDiagnostics)
+            ? VideoDownloader.probeDiagnostics()
+            : null;
+        if (probes) payload.probes = probes;
         return this._message('recordDownloadDiagnostic', { diagnostic: payload });
     },
 
