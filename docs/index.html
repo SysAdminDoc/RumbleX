@@ -145,6 +145,17 @@
   <p style="color:var(--muted);font-size:14.5px;margin-bottom:0">Userscripts get most of the suite. The pieces that need a privileged background process stay out: the channel archive queue, alarms, native notifications, context menus, and the side panel.</p>
 </div>
 
+<div class="note caution">
+  <strong>Chrome and Edge need user scripts switched on.</strong>
+  <p>A correctly installed userscript can sit there doing nothing until you give the manager permission to run user scripts. Nothing warns you on the page, so it looks exactly like RumbleX being broken.</p>
+  <ul>
+    <li><strong>Chrome 138 and newer</strong>: open <code>chrome://extensions/?id=&lt;your manager's ID&gt;</code>, or right-click the Tampermonkey icon and pick <strong>Manage extension</strong>, then turn on <strong>Allow User Scripts</strong>. It is per-extension and off by default on a new install. Chrome 137 and older use the global <strong>Developer mode</strong> switch at the top of <code>chrome://extensions</code>.</li>
+    <li><strong>Edge</strong>: Edge has not shipped the per-extension toggle, and people still report it missing as recently as Edge 143. Use the <strong>Developer mode</strong> switch at the top of <code>edge://extensions</code>.</li>
+  </ul>
+  <p>Reload the Rumble tab afterwards. If the RumbleX button still isn't there, a gated manager and a broken install look identical from the page. Open DevTools on any <code>rumble.com</code> page and run <code>Object.keys(localStorage).filter(k =&gt; k.startsWith('rx_'))</code>. If it returns anything, RumbleX has run here before, so the match rules are fine and the problem is the toggle or a disabled script. An empty array proves nothing by itself, so check the manager's dashboard to see whether RumbleX is listed at all.</p>
+  <p style="margin-bottom:0">None of this applies to the extension builds. They have no userscript manager in the path.</p>
+</div>
+
 <h2>Check what you downloaded</h2>
 <p class="lead">Every release ships <code>SHA256SUMS.txt</code>. This confirms the file arrived in one piece.</p>
 <pre><code>sha256sum -c SHA256SUMS.txt --ignore-missing</code></pre>

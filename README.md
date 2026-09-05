@@ -330,6 +330,31 @@ The userscript supports settings, themes, page cleanup, selectors/routes, screen
 
 Its metadata also requests early ad cancellation through the userscript-manager `@webRequest` facility. Manager/browser support is not uniform: current Chromium MV3 Tampermonkey does not expose that request hook, so the userscript UI and Privacy Report mark the shield as manager-dependent and do not claim extension-level network blocking there. Ad Nuker still performs document-start and reinsertion cleanup.
 
+#### Chrome and Edge need user scripts switched on
+
+On Chromium browsers a correctly installed userscript can sit there doing nothing until you grant the manager permission to run user scripts. Nothing warns you on the page, so this looks exactly like RumbleX being broken.
+
+**Chrome 138 and newer**: open `chrome://extensions/?id=<your manager's ID>` (or right-click the Tampermonkey icon and pick **Manage extension**) and turn on **Allow User Scripts**. It is a per-extension toggle and it is off by default on a new install. Chrome 137 and older use the global **Developer mode** switch at the top of `chrome://extensions` instead.
+
+**Edge**: Edge builds have not shipped the per-extension toggle. Users still report it missing as recently as Edge 143, so the working answer there is the **Developer mode** switch at the top of `edge://extensions`.
+
+Once it is on, reload the Rumble tab. If the RumbleX button still does not appear, see the next section before assuming a match failure.
+
+#### Telling a gated manager apart from a match failure
+
+Both faults look identical from the page: no RumbleX button, no toast, no console error. They need opposite fixes, and there is a way to tell them apart.
+
+Open any `rumble.com` page, open DevTools, and run:
+
+```js
+Object.keys(localStorage).filter((k) => k.startsWith('rx_'))
+```
+
+- **Anything comes back.** RumbleX has run in this browser before, so its `@match` rules are fine and the script is reaching the page. What changed is permission or state: check the **Allow User Scripts** toggle above, then check the script is still enabled in the manager dashboard.
+- **An empty array.** This tells you nothing on its own, because a browser that has never run RumbleX and a browser that is blocking it both look this way. Open the manager dashboard: if RumbleX is listed and enabled, the manager is being blocked from injecting it, which is the toggle again. If the manager reports zero scripts running on the tab, the install did not take.
+
+The extension builds are not affected by any of this. They have no userscript manager in the path.
+
 ### Verifying a download
 
 Every release ships `SHA256SUMS.txt` covering the Chrome package, the unsigned Firefox AMO submission, its source archive, and both userscripts. Check what you downloaded against it:

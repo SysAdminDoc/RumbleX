@@ -4,6 +4,10 @@ All notable changes to RumbleX will be documented in this file.
 
 ## Unreleased
 
+### Added
+
+- Install docs now cover the Chromium switch that silently stops userscripts from running. Chrome 138 moved user-script permission to a per-extension **Allow User Scripts** toggle that is off on a fresh install, Edge has not shipped that toggle at all and still needs Developer mode, and neither browser tells you on the page. The README and the project page name the exact toggle and path for both, plus a one-line check you can paste into DevTools that separates a blocked manager from a script that never matched the page. A build check fails if either surface loses that guidance.
+
 ### Fixed
 
 - Reset All Data now clears everything it says it clears. Per-channel volume, speed and quality-ceiling preferences were stored under a key the reset list never named, so they survived a wipe that reported "All settings cleared", and Export Backup missed them for the same reason. The rant panel's cross-video mirror was left behind too. A new build check reads every storage key the page code writes and fails if one is neither cleared nor documented as deliberately kept, so this cannot happen again quietly. Snapshot history is still kept on purpose: it is the undo for the reset itself.

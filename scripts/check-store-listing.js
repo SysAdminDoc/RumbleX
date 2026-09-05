@@ -116,6 +116,27 @@ function main() {
         errors.push(`project page visible feature count is ${Number.isFinite(visibleFeatureCount) ? visibleFeatureCount : 'missing'}, expected ${featureCount}`);
     }
 
+    // 1b. Both public surfaces keep the userscript remediation. A Chromium
+    //     browser can leave a correctly installed userscript silent until the
+    //     manager is granted user-script permission, and nothing on the page
+    //     says so, so the install reads as a RumbleX failure. If either the
+    //     toggle name, the browser path, or the way to tell a gated manager
+    //     apart from a match failure is dropped from README.md or the project
+    //     page, the remaining copy sends people to debug the wrong thing.
+    const USERSCRIPT_GATE_REQUIREMENTS = [
+        ['Allow User Scripts', 'the Chrome toggle name'],
+        ['chrome://extensions/?id=', 'the per-extension Chrome path'],
+        ['edge://extensions', 'the Edge fallback path'],
+        ['Developer mode', 'the Developer mode fallback'],
+        ["startsWith('rx_')", 'the gated-manager vs match-failure check'],
+    ];
+    for (const [snippet, label] of USERSCRIPT_GATE_REQUIREMENTS) {
+        const inReadme = readme.includes(snippet);
+        const inLanding = landing.includes(snippet) || landing.includes(snippet.replace(/'/g, '&#39;').replace(/>/g, '&gt;'));
+        if (!inReadme) errors.push(`README.md no longer documents ${label} (missing: ${snippet})`);
+        if (!inLanding) errors.push(`docs/index.html no longer documents ${label} (missing: ${snippet})`);
+    }
+
     // 2. Every requested permission is justified, and nothing is justified
     //    that is no longer requested (a stale entry reads as a live claim).
     const requestedHosts = [
