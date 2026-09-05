@@ -380,3 +380,101 @@ test('abandoning a scan cancels the probes already running in the service worker
     expect(cleared.aborts).toBe(false);
     expect(cleared.secondCancelIsNoop).toBe(false);
 });
+
+// Rumble names its own formats in the embed payload's `ua` map. Harvesting
+// every group and then sorting the results out by byte count meant taking the
+// seekbar preview strip only to reject it, and rejecting a genuine audio-only
+// rendition for being small next to the video it belongs to.
+const EMBED_PAYLOAD = {
+    u: { tar: { url: 'https://1a-1791.com/video/fx/aaaaaaaaaa.tar' } },
+    ua: {
+        mp4: {
+            360: { url: 'https://1a-1791.com/video/fx/bbbbbbbbbb.mp4', meta: { h: 360 } },
+            1080: { url: 'https://1a-1791.com/video/fx/cccccccccc.mp4', meta: { h: 1080 } },
+        },
+        // Present on some videos and absent on others; roughly 21 MB for a
+        // quarter-hour at 192 kbps, which is about one per cent of a 2 GB
+        // 1080p rendition and therefore under the ladder ratio.
+        audio: { 192: { url: 'https://1a-1791.com/video/fx/dddddddddd.mp4', meta: { h: 192 } } },
+        // The seekbar preview strip. A real MP4 at a real /video/ path.
+        timeline: { 0: { url: 'https://1a-1791.com/video/fx/eeeeeeeeee.mp4' } },
+    },
+};
+
+test('the embed payload names each format, and the harvester keeps that name', async ({ context, serviceWorker }) => {
+    test.setTimeout(120_000);
+    const page = await context.newPage();
+    await page.route('**/*', (route) => {
+        const request = route.request();
+        if (request.isNavigationRequest() && request.url().startsWith('https://rumble.com/')) {
+            return route.fulfill({ status: 200, contentType: 'text/html', body: OFFLINE_RUMBLE_FIXTURE });
+        }
+        return route.abort();
+    });
+    await page.goto('https://rumble.com/vua-kinds.html', { waitUntil: 'domcontentloaded' });
+    await page.waitForSelector('#rx-download-btn', { state: 'attached', timeout: 15_000 });
+    const tabId = await serviceWorker.evaluate(async (url) => {
+        const tab = (await chrome.tabs.query({})).find((entry) => entry.url === url);
+        if (!tab?.id) throw new Error('fixture tab not found');
+        return tab.id;
+    }, page.url());
+
+    const result = await serviceWorker.evaluate(async ({ target, embed }) => {
+        const executions = await chrome.scripting.executeScript({
+            target: { tabId: target },
+            world: 'ISOLATED',
+            func: (embed) => {
+                const harvested = VideoDownloader._collectMediaUrlsFromEmbed(embed);
+                const byKind = Object.fromEntries(harvested.map((entry) => [entry.uaKind, entry.url]));
+
+                // A 2 GB video sets the bar; the audio track is one per cent of
+                // it and the preview strip is a few hundred KB.
+                const twoGb = 2 * 1024 * 1024 * 1024;
+                const verdict = (size, uaKind) => VideoDownloader._renditionVerdict(size, {
+                    largestKnownBytes: twoGb,
+                    durationSeconds: 900,
+                    uaKind,
+                });
+                return {
+                    kinds: harvested.map((entry) => entry.uaKind).sort(),
+                    urls: harvested.map((entry) => entry.url),
+                    byKind,
+                    audioKept: verdict(21 * 1024 * 1024, 'audio'),
+                    audioWithoutName: verdict(21 * 1024 * 1024, null),
+                    videoKept: verdict(twoGb, 'mp4'),
+                    smallVideoRejected: verdict(21 * 1024 * 1024, 'mp4'),
+                    placeholderRejected: verdict(300 * 1024, null),
+                    // Even named audio has to clear the absolute floor, so a
+                    // placeholder cannot ride in by claiming to be audio.
+                    tinyAudioRejected: verdict(1024, 'audio'),
+                };
+            },
+            args: [embed],
+        });
+        return executions[0]?.result;
+    }, { target: tabId, embed: EMBED_PAYLOAD });
+
+    // Positive control: the payload really did carry several named formats.
+    expect(result.urls.length).toBeGreaterThan(2);
+
+    // The preview strip is skipped by name, never probed, never size-judged.
+    expect(result.kinds).not.toContain('timeline');
+    expect(result.urls).not.toContain('https://1a-1791.com/video/fx/eeeeeeeeee.mp4');
+
+    // Everything else keeps the name Rumble gave it.
+    expect(result.kinds).toEqual(['audio', 'mp4', 'mp4', 'tar']);
+    expect(result.byKind.audio).toBe('https://1a-1791.com/video/fx/dddddddddd.mp4');
+    expect(result.byKind.tar).toBe('https://1a-1791.com/video/fx/aaaaaaaaaa.tar');
+
+    // A 21 MB audio rendition survives next to a 2 GB video because it is named
+    // audio, and would not survive on size alone.
+    expect(result.audioKept).toBe('ok');
+    expect(result.audioWithoutName).toBe('reject');
+    expect(result.videoKept).toBe('ok');
+    expect(result.smallVideoRejected).toBe('reject');
+
+    // The size floors still do their job where no name exists, and the
+    // absolute floor still applies to named audio.
+    expect(result.placeholderRejected).toBe('reject');
+    expect(result.tinyAudioRejected).toBe('reject');
+});

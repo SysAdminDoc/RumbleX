@@ -2176,5 +2176,9 @@
   "feat_commentDrafts_desc": {
     "message": "Ungesendeten Kommentartext über Neuladen und Autoplay hinweg behalten",
     "description": "In-page UI string (shared core)."
+  },
+  "downloadAudioOnlyRow": {
+    "message": "Nur Audio",
+    "description": "In-page UI string (shared core)."
   }
 }

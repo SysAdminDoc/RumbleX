@@ -2176,5 +2176,9 @@
   "feat_commentDrafts_desc": {
     "message": "Mantém o texto não enviado entre recarregamentos e reprodução automática",
     "description": "In-page UI string (shared core)."
+  },
+  "downloadAudioOnlyRow": {
+    "message": "Somente áudio",
+    "description": "In-page UI string (shared core)."
   }
 }

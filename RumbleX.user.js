@@ -23,7 +23,7 @@
 // @updateURL    https://github.com/SysAdminDoc/RumbleX/raw/main/RumbleX.user.js
 // ==/UserScript==
 
-// Generated from the shared extension core files. Shared runtime SHA-256: d8272a641e51d89bcaece0aacafa34b084de8ef47ec88479f98ceb72d48510b1
+// Generated from the shared extension core files. Shared runtime SHA-256: 87b820d46172ac12b54061e750ad310c97b479ebf601b46b4c19d2362f419622
 // RumbleX shared settings schema. This file is the canonical source for
 // defaults and trust-boundary normalization across content, options, popup,
 // background profile/Gist restores, and the generated userscript.
@@ -1341,7 +1341,8 @@
   "feat_commentDrafts_label": "Comment Drafts",
   "feat_commentDrafts_desc": "Keep unsent comment text through reloads and autoplay",
   "commentDraftRestored": "Unsent draft restored.",
-  "commentDraftSaved": "Draft saved locally."
+  "commentDraftSaved": "Draft saved locally.",
+  "downloadAudioOnlyRow": "Audio only"
 });
     const STORAGE_KEYS_WITH_CHANGE_EVENTS = ['rx_settings'];
     const ALLOWED_REQUEST_HOSTS = ['rumble.com', 'rumble.cloud', '1a-1791.com'];
@@ -6635,7 +6636,14 @@ const VideoDownloader = {
     // because the batch downloader judges videos it is not currently watching.
     // Falling back to the watch page's duration there would measure one video
     // against another's length.
-    _renditionVerdict(size, { largestKnownBytes = 0, durationSeconds } = {}) {
+    // `uaKind` is Rumble's own name for the format, where the embed payload gave
+    // one. The size floors exist because a synthesized candidate has no name and
+    // a placeholder CDN response looks structurally identical to a rendition.
+    // Where a name exists it outranks the heuristics: an audio-only rendition is
+    // legitimately a fraction of the video it belongs to, and the ladder ratio
+    // measures every candidate against the largest confirmed one, so a 21 MB
+    // audio track next to a 2 GB video was being rejected for being audio.
+    _renditionVerdict(size, { largestKnownBytes = 0, durationSeconds, uaKind } = {}) {
         const bytes = Number(size);
         if (!Number.isFinite(bytes) || bytes <= 0) return 'unknown';
         if (bytes < this._MIN_MEDIA_BYTES) return 'reject';
@@ -6643,6 +6651,7 @@ const VideoDownloader = {
             ? this._videoDurationSeconds()
             : (Number(durationSeconds) > 0 ? Number(durationSeconds) : null);
         if (duration && bytes < duration * this._MIN_BYTES_PER_SECOND) return 'reject';
+        if (uaKind === 'audio') return 'ok';
         if (largestKnownBytes > 0 && bytes < largestKnownBytes * this._MIN_LADDER_RATIO) return 'reject';
         return 'ok';
     },
@@ -6836,24 +6845,39 @@ const VideoDownloader = {
         return results;
     },
 
+    // Rumble names its own formats. `ua` is keyed by type — mp4, hls, tar,
+    // audio, timeline — and the key is a better answer than any size heuristic.
+    // Walking every group and then sorting the results out by byte count meant
+    // harvesting the seekbar preview strip only to reject it, and rejecting a
+    // genuine audio-only rendition for being small next to the video.
+    //
+    // `timeline` is the preview strip: a real MP4 at a real /video/ path of a
+    // few hundred KB, which nothing structural distinguishes from a rendition.
+    // Skipped by name here rather than by size later.
+    _EMBED_SKIP_KINDS: new Set(['timeline']),
+
     _collectMediaUrlsFromEmbed(json) {
-        const out = new Set();
-        const add = (u) => { if (u && /\/video\/.+\.(?:mp4|tar)\b/i.test(u)) out.add(u); };
+        const out = new Map();
+        const add = (url, uaKind) => {
+            if (!url || !/\/video\/.+\.(?:mp4|tar)\b/i.test(url)) return;
+            if (this._EMBED_SKIP_KINDS.has(uaKind)) return;
+            // First naming wins, so a URL that also turns up in an untyped
+            // position keeps the type Rumble gave it.
+            if (!out.has(url)) out.set(url, uaKind || null);
+        };
         try {
-            // `u.timeline` is the seekbar preview strip, not a rendition. It
-            // is a real MP4 at a real /video/ path of a few hundred KB, so it
-            // passed every structural filter here and rendered as a download
-            // row labelled "detected". It is deliberately not harvested.
-            if (json.u) add(json.u.tar?.url);
+            if (json.u) add(json.u.tar?.url, 'tar');
             if (json.ua) {
-                for (const group of Object.values(json.ua)) {
+                for (const [kind, group] of Object.entries(json.ua)) {
+                    const uaKind = String(kind).toLowerCase();
+                    if (this._EMBED_SKIP_KINDS.has(uaKind)) continue;
                     if (group && typeof group === 'object') {
-                        for (const v of Object.values(group)) add(v?.url);
-                    } else if (typeof group === 'string') add(group);
+                        for (const v of Object.values(group)) add(v?.url, uaKind);
+                    } else if (typeof group === 'string') add(group, uaKind);
                 }
             }
         } catch {}
-        return [...out];
+        return [...out].map(([url, uaKind]) => ({ url, uaKind }));
     },
 
     _collectMediaUrlsFromDom() {
@@ -6950,9 +6974,15 @@ const VideoDownloader = {
         // Step 1: harvest URLs from every embedJS endpoint and the live DOM.
         const jsons = await this._fetchAllEmbeds(embedId, primedJson);
         if (!isAlive()) return { done: 0, total: 0 };
-        const embedUrls = jsons.flatMap((j) => this._collectMediaUrlsFromEmbed(j));
+        const embedEntries = jsons.flatMap((j) => this._collectMediaUrlsFromEmbed(j));
+        // Rumble's own name for each URL, where it gave one. Candidates the
+        // deep scan synthesizes have no name and fall back to the size floors.
+        const uaKinds = new Map();
+        for (const entry of embedEntries) {
+            if (entry.uaKind && !uaKinds.has(entry.url)) uaKinds.set(entry.url, entry.uaKind);
+        }
         const domUrls = this._collectMediaUrlsFromDom();
-        const directUrls = [...new Set([...embedUrls, ...domUrls])]
+        const directUrls = [...new Set([...embedEntries.map((entry) => entry.url), ...domUrls])]
             .filter((u) => /\/video\/.+\.(?:mp4|tar)\b/i.test(u));
 
         // Step 2: derive base pattern and generate every candidate.
@@ -6963,6 +6993,7 @@ const VideoDownloader = {
         const directTargets = directUrls.map((u) => ({
             url: u,
             type: this._typeFromUrl(u),
+            uaKind: uaKinds.get(u) || null,
             token: String(this._extractTokenFromUrl(u) || '').toLowerCase(),
             pri: u.includes('hugh.cdn.rumble.cloud') ? 0 : 4,
         })).filter((t) => t.token !== 'faa');
@@ -6996,19 +7027,26 @@ const VideoDownloader = {
                 const result = await this._probeUrl(t.url);
                 done++;
                 if (!result.ok || !isAlive()) { onResult?.(null, done, total); continue; }
-                const verdict = this._renditionVerdict(result.size, { largestKnownBytes });
+                const verdict = this._renditionVerdict(result.size, { largestKnownBytes, uaKind: t.uaKind });
                 if (verdict === 'reject') {
                     rejected++;
                     onResult?.(null, done, total);
                     continue;
                 }
-                const label = this._tokenToLabel(t.token) || 'detected';
+                const label = t.uaKind === 'audio'
+                    ? rxT('downloadAudioOnlyRow', 'Audio only')
+                    : (this._tokenToLabel(t.token) || 'detected');
                 if (verdict === 'ok') {
                     satisfied.add(key);
-                    largestKnownBytes = Math.max(largestKnownBytes, Number(result.size) || 0);
+                    // An audio track is not part of the video ladder, so it must
+                    // not raise the bar every video rendition is measured by.
+                    if (t.uaKind !== 'audio') {
+                        largestKnownBytes = Math.max(largestKnownBytes, Number(result.size) || 0);
+                    }
                 }
                 onResult?.({
                     label, type: t.type, url: t.url, size: result.size, token: t.token,
+                    uaKind: t.uaKind || null,
                     sizeConfirmed: verdict === 'ok',
                 }, done, total);
             }
