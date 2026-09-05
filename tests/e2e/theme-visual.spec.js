@@ -77,6 +77,46 @@ function boxesOverlap(a, b) {
     return a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top;
 }
 
+// The THEMES constant above is a five-key summary used for the token
+// assertions. Uniqueness has to be computed against the complete palettes or a
+// colour that two themes genuinely share looks exclusive to whichever one the
+// summary happens to list it under: rumbleGreen.crust and oledGreen.surface0
+// are both #0a0f06, and only the full registry says so.
+const FULL_PALETTES = (() => {
+    const source = fs.readFileSync(path.join(__dirname, '..', '..', 'extension', 'content.js'), 'utf8');
+    const registry = source.match(/const THEMES = \{([\s\S]*?)\n\};/);
+    if (!registry) throw new Error('THEMES registry not found in extension/content.js');
+    const palettes = {};
+    for (const block of registry[1].split(/\n {4}(?=[a-zA-Z]+: \{)/)) {
+        const id = block.match(/^\s*([a-zA-Z]+): \{/)?.[1];
+        if (!id) continue;
+        palettes[id] = [...block.matchAll(/#([0-9a-f]{6})\b/gi)].map((match) => `#${match[1]}`);
+    }
+    if (Object.keys(palettes).length !== Object.keys(THEMES).length) {
+        throw new Error(`parsed ${Object.keys(palettes).length} palettes, expected ${Object.keys(THEMES).length}`);
+    }
+    return palettes;
+})();
+
+// Every distinctive colour in each palette, as the rgb() string a computed
+// style reports. Only colours unique to one palette count: the greens share an
+// accent and every dark theme shares pure black, so a shared value proves
+// nothing about which palette painted it.
+const PALETTE_COLORS = Object.fromEntries(
+    Object.entries(FULL_PALETTES).map(([id, colors]) => [id, new Set(colors.map(rgb))]),
+);
+const UNIQUE_PALETTE_COLORS = Object.fromEntries(
+    Object.entries(PALETTE_COLORS).map(([id, colors]) => [id, new Set([...colors].filter((color) => (
+        Object.entries(PALETTE_COLORS).every(([other, otherColors]) => other === id || !otherColors.has(color))
+    )))]),
+);
+
+function foreignPalette(value, activeTheme) {
+    if (!value || value === 'rgba(0, 0, 0, 0)' || value === 'transparent') return false;
+    return Object.entries(UNIQUE_PALETTE_COLORS)
+        .some(([id, colors]) => id !== activeTheme && colors.has(value));
+}
+
 for (const [themeId, palette] of Object.entries(THEMES)) {
     for (const viewport of VIEWPORTS) {
         test(`main-site ${themeId} theme stays coherent at ${viewport.name}`, async () => {
@@ -153,6 +193,7 @@ for (const [themeId, palette] of Object.entries(THEMES)) {
                     expect(state.targetRect.right, `${surface.name} right edge`).toBeLessThanOrEqual(viewport.width + 1);
                     expect(state.targetClipped, `${surface.name} clipping`).toBe(false);
                     expect(state.horizontalScroll, `${surface.name} horizontal scroll`).toBe(false);
+
 
                     if (surface.name === 'watch' && viewport.width === 860) {
                         const related = await page.locator('.media-page-related-media-desktop-sidebar').evaluate((node) => {
@@ -238,6 +279,21 @@ for (const [themeId, palette] of Object.entries(THEMES)) {
                             '#rx-split-reveal', '#rx-theater-close',
                         ].join(',')).length,
                         exitInsidePanel: !!document.querySelector('#rx-split-right .rx-panel-exit'),
+                        // Spot-checking five elements says nothing about the
+                        // rest of the panel. Collect every RumbleX-owned node
+                        // that actually renders, so an unthemed one can be
+                        // named rather than guessed at.
+                        painted: [...document.querySelectorAll('[class^="rx-"], [class*=" rx-"], [id^="rx-"]')]
+                            .filter((node) => node.getClientRects().length)
+                            .map((node) => {
+                                const style = getComputedStyle(node);
+                                return {
+                                    id: node.id || String(node.className).slice(0, 48),
+                                    background: style.backgroundColor,
+                                    color: style.color,
+                                    borderColor: style.borderTopColor,
+                                };
+                            }),
                         clipped: document.querySelector('#rx-split-right').scrollWidth > document.querySelector('#rx-split-right').clientWidth + 1,
                         horizontalOverflow: document.querySelector('#rx-split-wrapper').scrollWidth
                             - document.querySelector('#rx-split-wrapper').clientWidth,
@@ -260,6 +316,20 @@ for (const [themeId, palette] of Object.entries(THEMES)) {
                 expect(expanded.duplicateDownload).toBe(false);
                 expect(expanded.clipped).toBe(false);
                 expect(expanded.horizontalOverflow).toBeLessThanOrEqual(2);
+
+                // No RumbleX surface may paint a colour that belongs to a
+                // palette other than the active one. This is the runtime half
+                // of scripts/check-theme-tokens.js: the guard proves the source
+                // carries no hardcoded palette hex, this proves nothing
+                // resolves to one anyway through a stale token or an inherited
+                // rule. Positive control first, or an empty panel would pass.
+                expect(expanded.painted.length, `${themeId} rendered no RumbleX surfaces`)
+                    .toBeGreaterThan(5);
+                const foreignPaint = expanded.painted.filter((node) => (
+                    [node.background, node.color, node.borderColor]
+                        .some((value) => foreignPalette(value, themeId))
+                ));
+                expect(foreignPaint, `${themeId} surfaces painted from another palette`).toEqual([]);
 
                 const panelSizeBefore = viewport.width === 860 ? expanded.right.height : expanded.right.width;
                 const divider = page.locator('#rx-split-divider');
