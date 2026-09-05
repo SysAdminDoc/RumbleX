@@ -23,7 +23,7 @@
 // @updateURL    https://github.com/SysAdminDoc/RumbleX/raw/main/RumbleX.user.js
 // ==/UserScript==
 
-// Generated from the shared extension core files. Shared runtime SHA-256: ddcdb6136874ed2944bc1829708b84524d8808ece09befcdd4d995d0fe6d88db
+// Generated from the shared extension core files. Shared runtime SHA-256: 224a2300f16f1851872c36af8249d55406530478376a0ff2e2a85892bd052229
 // RumbleX shared settings schema. This file is the canonical source for
 // defaults and trust-boundary normalization across content, options, popup,
 // background profile/Gist restores, and the generated userscript.
@@ -6523,8 +6523,7 @@ const VideoDownloader = {
     _closeDownloadOverlay() {
         // Aborts in-flight deep scan so probes don't keep firing in the
         // background after the user closes the dialog.
-        this._scanController?.abort();
-        this._scanController = null;
+        this._abortScan();
         this._downloadController?.abort();
         this._downloadController = null;
         this._scanSeq++;
@@ -6686,6 +6685,21 @@ const VideoDownloader = {
             reasons: { ...stats.reasons },
             proxied: !!RXPlatform.capabilities.proxiedMediaProbe,
         };
+    },
+
+    // Aborting the local controller stops this side using the results; the
+    // worker is a separate context and has to be told, or its fetches run on
+    // until each one times out. Direct-path probes are cancelled by the
+    // controller alone, so this is a no-op there.
+    _abortScan() {
+        const scanId = this._scanId;
+        this._scanController?.abort();
+        this._scanController = null;
+        this._scanId = null;
+        this._probeStats = null;
+        if (scanId && RXPlatform.capabilities.proxiedMediaProbe) {
+            void RXPlatform.sendMessage({ action: 'cancelProbeScan', scanId }).catch(() => {});
+        }
     },
 
     // One id per deep scan, so the service worker can cap a scan's probe count
@@ -7092,12 +7106,10 @@ const VideoDownloader = {
             return;
         }
 
-        // Cancel any previous scan before starting a new one.
-        this._scanController?.abort();
+        // Cancel any previous scan before starting a new one, in the worker as
+        // well as here, so its budget and its in-flight fetches both end.
+        this._abortScan();
         this._scanController = new AbortController();
-        // New scan, new probe budget in the service worker, new tally.
-        this._scanId = null;
-        this._probeStats = null;
         const seq = ++this._scanSeq;
 
         try {
@@ -7904,8 +7916,7 @@ const VideoDownloader = {
     destroy() {
         // Cancel any deep-scan probes in flight so they don't resolve into
         // a now-detached DOM and so we stop pinging the CDN after disable.
-        this._scanController?.abort();
-        this._scanController = null;
+        this._abortScan();
         this._downloadController?.abort();
         this._downloadController = null;
         this._scanSeq++;

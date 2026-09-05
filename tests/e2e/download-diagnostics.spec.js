@@ -288,3 +288,95 @@ test('the service-worker probe refuses off-allowlist hosts and caps a runaway sc
     expect(result.freshScan.reason).toBe('http');
     expect(result.cap).toBe(250);
 });
+
+test('abandoning a scan cancels the probes already running in the service worker', async ({ context, serviceWorker }) => {
+    // Two page loads plus a deliberate wait for the worker to start fetching;
+    // the 30s default is not enough on a loaded machine.
+    test.setTimeout(120_000);
+    // Moving the fetch into the worker put it in a context the page's abort
+    // controller cannot reach. Closing the download panel would stop this side
+    // using the results while the worker kept fetching until each probe timed
+    // out, which is exactly what the panel's abort existed to prevent.
+    const page = await context.newPage();
+    await page.route('**/*', (route) => {
+        const request = route.request();
+        if (request.isNavigationRequest() && request.url().startsWith('https://rumble.com/')) {
+            return route.fulfill({ status: 200, contentType: 'text/html', body: OFFLINE_RUMBLE_FIXTURE });
+        }
+        return route.abort();
+    });
+    await page.goto('https://rumble.com/vprobe-abort.html', { waitUntil: 'domcontentloaded' });
+    await page.waitForSelector('#rx-download-btn', { state: 'attached', timeout: 15_000 });
+
+    const tabId = await serviceWorker.evaluate(async (url) => {
+        const tab = (await chrome.tabs.query({})).find((entry) => entry.url === url);
+        if (!tab?.id) throw new Error('fixture tab not found');
+        return tab.id;
+    }, page.url());
+
+    const result = await serviceWorker.evaluate(async (target) => {
+        const workerFetch = globalThis.fetch;
+        let aborted = false;
+        let started = 0;
+        // A probe that never settles on its own, so the only way it can finish
+        // is the scan's abort reaching this context.
+        globalThis.fetch = (input, init) => {
+            started += 1;
+            return new Promise((_resolve, reject) => {
+                init?.signal?.addEventListener('abort', () => {
+                    aborted = true;
+                    const error = new Error('aborted');
+                    error.name = 'AbortError';
+                    reject(error);
+                });
+            });
+        };
+        try {
+            const executions = await chrome.scripting.executeScript({
+                target: { tabId: target },
+                world: 'ISOLATED',
+                func: async () => {
+                    const probeUrl = 'https://1a-1791.com/video/fx/never-settles.mp4';
+                    VideoDownloader._scanId = null;
+                    VideoDownloader._probeStats = null;
+                    VideoDownloader._scanController = new AbortController();
+                    const scanId = VideoDownloader._probeScanId();
+                    const inFlight = VideoDownloader._probeUrlNetwork(probeUrl);
+                    // Give the message time to reach the worker and start the
+                    // fetch, then abandon the scan the way closing the panel does.
+                    await new Promise((resolve) => setTimeout(resolve, 250));
+                    VideoDownloader._abortScan();
+                    const settled = await Promise.race([
+                        inFlight.then((value) => ({ settled: true, value })),
+                        new Promise((resolve) => setTimeout(() => resolve({ settled: false }), 3000)),
+                    ]);
+                    return { scanId, settled };
+                },
+            });
+            return { ...executions[0]?.result, aborted, started };
+        } finally {
+            globalThis.fetch = workerFetch;
+        }
+    }, tabId);
+
+    // Positive control: the worker really did start a fetch, so the abort below
+    // has something to cancel.
+    expect(result.started).toBeGreaterThan(0);
+    expect(result.scanId).toBeTruthy();
+
+    // The worker's own fetch saw the abort, and the probe resolved rather than
+    // hanging until its timeout.
+    expect(result.aborted).toBe(true);
+    expect(result.settled.settled).toBe(true);
+
+    // The scan's budget and controller are gone from the worker, so a stale id
+    // cannot keep consuming either.
+    const cleared = await serviceWorker.evaluate((scanId) => ({
+        counts: rxProbeScanCounts.has(scanId),
+        aborts: rxProbeScanAborts.has(scanId),
+        secondCancelIsNoop: rxCancelProbeScan(scanId),
+    }), result.scanId);
+    expect(cleared.counts).toBe(false);
+    expect(cleared.aborts).toBe(false);
+    expect(cleared.secondCancelIsNoop).toBe(false);
+});

@@ -255,9 +255,33 @@ const RX_PROBE_SCAN_TTL_MS = 10 * 60 * 1000;
 const RX_PROBE_DEFAULT_TIMEOUT_MS = 12_000;
 const rxProbeScanCounts = new Map();
 
+// One controller per scan, so closing the download panel actually cancels the
+// requests already in flight here. Before this the content script composed the
+// scan's abort signal into every fetch itself; moving the fetch to the worker
+// would otherwise have left it running until each probe timed out, which is a
+// regression the panel's own abort was written to prevent.
+const rxProbeScanAborts = new Map();
+
+function rxProbeScanSignal(scanId) {
+    if (!rxProbeScanAborts.has(scanId)) rxProbeScanAborts.set(scanId, new AbortController());
+    return rxProbeScanAborts.get(scanId).signal;
+}
+
+function rxCancelProbeScan(scanId) {
+    const controller = rxProbeScanAborts.get(scanId);
+    if (!controller) return false;
+    controller.abort();
+    rxProbeScanAborts.delete(scanId);
+    rxProbeScanCounts.delete(scanId);
+    return true;
+}
+
 function rxCountProbe(scanId, now = Date.now()) {
     for (const [id, entry] of rxProbeScanCounts) {
-        if (now - entry.at >= RX_PROBE_SCAN_TTL_MS) rxProbeScanCounts.delete(id);
+        if (now - entry.at >= RX_PROBE_SCAN_TTL_MS) {
+            rxProbeScanCounts.delete(id);
+            rxProbeScanAborts.delete(id);
+        }
     }
     const entry = rxProbeScanCounts.get(scanId) || { count: 0, at: now };
     entry.count += 1;
@@ -266,7 +290,9 @@ function rxCountProbe(scanId, now = Date.now()) {
     // Bound the map itself, not just each scan: a page that keeps minting scan
     // ids would otherwise grow it without limit.
     while (rxProbeScanCounts.size > 64) {
-        rxProbeScanCounts.delete(rxProbeScanCounts.keys().next().value);
+        const oldest = rxProbeScanCounts.keys().next().value;
+        rxProbeScanCounts.delete(oldest);
+        rxProbeScanAborts.delete(oldest);
     }
     return entry.count;
 }
@@ -283,9 +309,17 @@ async function rxProbeMedia({ url, scanId, timeoutMs }) {
     }
     const budget = Number.isInteger(timeoutMs) ? timeoutMs : RX_PROBE_DEFAULT_TIMEOUT_MS;
 
+    const scanSignal = rxProbeScanSignal(String(scanId));
+    if (scanSignal.aborted) return { ok: false, reason: 'aborted' };
+
     const attempt = async (init) => {
         try {
-            const response = await fetch(url, { ...init, credentials: 'omit', signal: AbortSignal.timeout(budget) });
+            // The scan's own signal has to be in here, not just the timeout, or
+            // closing the panel leaves these running to completion.
+            const signal = typeof AbortSignal.any === 'function'
+                ? AbortSignal.any([scanSignal, AbortSignal.timeout(budget)])
+                : AbortSignal.timeout(budget);
+            const response = await fetch(url, { ...init, credentials: 'omit', signal });
             response.body?.cancel?.();
             if (response.ok || response.status === 206) {
                 const length = Number.parseInt(
@@ -2247,6 +2281,9 @@ const RX_MESSAGE_ACTIONS = Object.freeze({
         scanId: rxMessageField('id', { required: true }),
         timeoutMs: rxMessageField('integer', { min: 1000, max: 60_000 }),
     }),
+    cancelProbeScan: rxMessageRule(RX_EXTENSION_OR_CONTENT, {
+        scanId: rxMessageField('id', { required: true }),
+    }),
     recordDownloadDiagnostic: rxMessageRule(RX_EXTENSION_OR_CONTENT, {
         diagnostic: rxMessageField('json-object', { required: true, maxBytes: 256 * 1024 }),
     }),
@@ -2509,6 +2546,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             .then((result) => sendResponse(result))
             .catch((e) => sendResponse({ ok: false, reason: 'network', detail: rxSanitizeDiagnosticString(e?.message || e) }));
         return true;
+    }
+
+    if (message.action === 'cancelProbeScan') {
+        sendResponse({ ok: true, cancelled: rxCancelProbeScan(String(message.scanId)) });
+        return false;
     }
 
     if (message.action === 'recordDownloadDiagnostic') {
