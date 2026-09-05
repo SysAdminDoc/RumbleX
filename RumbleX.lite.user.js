@@ -23,7 +23,7 @@
 // @updateURL    https://github.com/SysAdminDoc/RumbleX/raw/main/RumbleX.lite.user.js
 // ==/UserScript==
 
-// Generated from the shared extension core files. Shared runtime SHA-256: a1c48f2833bf7930e405c80bc319921cf2b9bf5d82053512313f089729f8dc2e
+// Generated from the shared extension core files. Shared runtime SHA-256: a66e79201f78e56e87da3f12ce2c4efc2ea5927b173f260c186e6867b6f87fee
 // RumbleX shared settings schema. This file is the canonical source for
 // defaults and trust-boundary normalization across content, options, popup,
 // background profile/Gist restores, and the generated userscript.
@@ -21452,7 +21452,20 @@ const RX_LOCAL_STORAGE_PREFIXES = ['rx_rants_'];
 // wipe because it has the extension origin, but the list lives here beside the
 // modules that write the keys so `scripts/check-local-storage-keys.js` can hold
 // both directions from one place.
-const RX_EXTENSION_STORAGE_RESET_KEYS = ['rx_rant_stats_mirror', 'rx_probe_cache'];
+const RX_EXTENSION_STORAGE_RESET_KEYS = [
+    'rx_rant_stats_mirror',
+    'rx_probe_cache',
+    // v3.58.0 — Written from the service worker rather than here. The registry
+    // and its guard only ever looked at the content scripts, so these five
+    // survived a wipe the options page reported as complete: saved settings
+    // profiles, the archive queue, the diagnostics ring, interrupted-download
+    // resume state, and the first-run flag.
+    'rx_settings_profiles',
+    'rx_archive_queue',
+    'rx_download_diagnostics',
+    'rx_download_recovery',
+    'rx_welcome_seen',
+];
 
 // Runtime `rx_` keys the reset deliberately does not drop here, and why. The
 // guard reads this so a new key cannot be quietly omitted: leaving one out
@@ -21460,6 +21473,8 @@ const RX_EXTENSION_STORAGE_RESET_KEYS = ['rx_rant_stats_mirror', 'rx_probe_cache
 const RX_RESET_EXCLUSIONS = {
     rx_settings: 'Cleared by the options page as STORAGE_KEY before this list is consulted.',
     rx_settings_snapshots: 'The pre-reset snapshot is the undo. Wiping it would make Reset All Data irreversible.',
+    rx_pending_local_data_op: 'The reset itself stages one of these for the next Rumble tab. Clearing it would cancel the per-site wipe the reset just queued.',
+    rx_notification_targets: 'Lives in chrome.storage.session, which the browser discards at the end of the session on its own.',
 };
 
 function rxClearLocalStorage() {

@@ -15,7 +15,15 @@
     // Mirrors RX_EXTENSION_STORAGE_RESET_KEYS in content.js. The two lists are
     // held in sync by `npm run test:local-storage-keys`, which fails if either
     // side drifts — this page cannot import from the content runtime.
-    const EXTENSION_STORAGE_RESET_KEYS = ['rx_rant_stats_mirror', 'rx_probe_cache'];
+    const EXTENSION_STORAGE_RESET_KEYS = [
+        'rx_rant_stats_mirror',
+        'rx_probe_cache',
+        'rx_settings_profiles',
+        'rx_archive_queue',
+        'rx_download_diagnostics',
+        'rx_download_recovery',
+        'rx_welcome_seen',
+    ];
     // Extension-storage keys worth carrying in a backup. Deliberately narrower
     // than the reset list: rx_probe_cache is a CDN probe cache that rebuilds
     // itself and would only bloat the file, while the rant mirror is the only

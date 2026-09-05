@@ -81,13 +81,23 @@ test('Reset All Data clears every rx_ key the runtime writes', async ({ context,
 
     const options = await context.newPage();
     await options.goto(`chrome-extension://${extensionId}/pages/options.html`);
-    await options.evaluate(() => chrome.storage.local.set({
+    // Extension-storage records, including the five the service worker owns.
+    // The registry and its guard only ever scanned the content scripts, so
+    // those five survived a wipe the options page called complete.
+    const extensionSeeded = {
         rx_rant_stats_mirror: { videos: { v1: { title: 'Seeded', lastTs: 1 } } },
-    }));
-    expect(await options.evaluate(async () => {
-        const got = await chrome.storage.local.get('rx_rant_stats_mirror');
-        return Boolean(got.rx_rant_stats_mirror);
-    })).toBe(true);
+        rx_probe_cache: { 'probe:https://example.invalid/a.mp4': { ok: true } },
+        rx_settings_profiles: [{ id: 'p1', name: 'Seeded profile', settings: {} }],
+        rx_archive_queue: [{ id: 'job-1', url: 'https://rumble.com/v1-a.html' }],
+        rx_download_diagnostics: [{ id: 'd1', stage: 'probe' }],
+        rx_download_recovery: { 'job-1': { resumeAt: 5 } },
+        rx_welcome_seen: true,
+    };
+    await options.evaluate((seed) => chrome.storage.local.set(seed), extensionSeeded);
+    expect(await options.evaluate(async (keys) => {
+        const got = await chrome.storage.local.get(keys);
+        return keys.filter((key) => got[key] === undefined);
+    }, Object.keys(extensionSeeded))).toEqual([]);
 
     await options.click('#reset-btn');
     await expect(options.locator('#status')).toContainText(/cleared/i, { timeout: 15000 });
@@ -98,12 +108,12 @@ test('Reset All Data clears every rx_ key the runtime writes', async ({ context,
     ).toEqual([]);
 
     await expect.poll(
-        () => options.evaluate(async () => {
-            const got = await chrome.storage.local.get('rx_rant_stats_mirror');
-            return got.rx_rant_stats_mirror ?? null;
-        }),
-        { message: 'Reset All Data left the rant mirror in extension storage', timeout: 15000 },
-    ).toBeNull();
+        () => options.evaluate(async (keys) => {
+            const got = await chrome.storage.local.get(keys);
+            return keys.filter((key) => got[key] !== undefined);
+        }, Object.keys(extensionSeeded)),
+        { message: 'Reset All Data left extension-storage records behind', timeout: 15000 },
+    ).toEqual([]);
 
     // The pre-reset snapshot is the undo and must survive its own reset.
     expect(await options.evaluate(async () => {

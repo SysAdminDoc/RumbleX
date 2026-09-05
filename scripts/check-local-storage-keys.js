@@ -33,11 +33,19 @@ const optionsSource = read('extension/pages/options.js');
 // The content runtime is every file the manifest injects, not just content.js.
 // Scanning content.js alone missed `rx_probe_cache` in core-media.js, which is
 // written to extension storage and cleared by nothing.
+// The privileged files count too. Scanning only the content scripts let five
+// service-worker keys survive a wipe the options page reported as complete:
+// saved settings profiles, the archive queue, the diagnostics ring,
+// interrupted-download resume state, and the first-run flag.
+const PRIVILEGED_FILES = ['extension/background.js', 'extension/offscreen.js'];
 const manifest = JSON.parse(read('extension/manifest.json'));
-const RUNTIME_FILES = (manifest.content_scripts || [])
-    .flatMap((entry) => entry.js || [])
-    .map((file) => `extension/${file}`)
-    .filter((relative) => fs.existsSync(path.join(ROOT, relative)));
+const RUNTIME_FILES = [
+    ...(manifest.content_scripts || []).flatMap((entry) => entry.js || []).map((file) => `extension/${file}`),
+    ...PRIVILEGED_FILES,
+].filter((relative) => fs.existsSync(path.join(ROOT, relative)));
+for (const relative of PRIVILEGED_FILES) {
+    assert.ok(RUNTIME_FILES.includes(relative), `expected ${relative} in the scanned set`);
+}
 assert.ok(RUNTIME_FILES.includes('extension/content.js'),
     'manifest content_scripts no longer injects content.js — the scan would miss the main runtime');
 assert.ok(RUNTIME_FILES.length >= 5,

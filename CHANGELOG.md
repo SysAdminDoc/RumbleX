@@ -10,6 +10,7 @@ All notable changes to RumbleX will be documented in this file.
 
 ### Fixed
 
+- Reset All Data now also clears the records the background process owns: saved settings profiles, the channel archive queue, the download diagnostics ring, interrupted-download resume state, and the first-run flag. The check that was added to stop this happening only ever looked at the page-side code, so those five kept surviving a wipe the options page called complete. Snapshot history is still kept on purpose, and so is the staged per-site clear the reset itself queues.
 - Keyboard focus is visible again in Windows High Contrast. RumbleX replaces the browser's focus outline with a glow, and High Contrast throws glows away, so anyone using it had no focus indicator anywhere in the extension's in-page interface. Panels, menus and toasts also lost their only edge and blended into the page behind them, and the settings switches stopped showing which way they were set. All of it now paints from the system palette in that mode.
 
 ### Changed
