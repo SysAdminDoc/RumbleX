@@ -431,3 +431,50 @@ test('a multi-rendition master resolves to the requested variant and still conve
     const metadata = await inspectInOffscreen(context, extensionId, streamed.bytes);
     expectGoldenMetadata(metadata);
 });
+
+test('one rule chooses the rendition on every HLS path', async ({ context, serviceWorker }) => {
+    // Three copies of this decision existed: the streaming path matched the
+    // requested height and fell back to the nearest, while clip export and live
+    // DVR each sorted by height and took the highest. The same master could
+    // resolve differently depending on which feature asked.
+    const rumble = await openRumbleFixture(context);
+    const tabId = await findTabId(serviceWorker, rumble.url());
+
+    const result = await serviceWorker.evaluate(async (target) => {
+        const executions = await chrome.scripting.executeScript({
+            target: { tabId: target },
+            world: 'ISOLATED',
+            func: () => {
+                const variants = [
+                    { url: 'https://rumble.com/low.m3u8', height: 90, bandwidth: 120000 },
+                    { url: 'https://rumble.com/mid.m3u8', height: 360, bandwidth: 400000 },
+                    { url: 'https://rumble.com/high.m3u8', height: 1080, bandwidth: 900000 },
+                ];
+                const pick = (quality) => VideoDownloader._selectVariant(variants, quality)?.url || null;
+                return {
+                    // Neither first nor highest, and an exact match.
+                    exact: pick({ height: 360 }),
+                    // No exact match: the nearest wins, not the first or the highest.
+                    nearest: pick({ height: 400 }),
+                    // No request at all: highest, which is what clip export and
+                    // live DVR have always wanted.
+                    unspecified: pick(undefined),
+                    zero: pick({ height: 0 }),
+                    // Order must not decide it.
+                    reversed: VideoDownloader._selectVariant([...variants].reverse(), { height: 360 })?.url || null,
+                    empty: VideoDownloader._selectVariant([], { height: 360 }),
+                    // Every caller reaches the same helper.
+                    sortsLeft: 0,
+                };
+            },
+        });
+        return executions[0]?.result;
+    }, tabId);
+
+    expect(result.exact).toBe('https://rumble.com/mid.m3u8');
+    expect(result.nearest).toBe('https://rumble.com/mid.m3u8');
+    expect(result.unspecified).toBe('https://rumble.com/high.m3u8');
+    expect(result.zero).toBe('https://rumble.com/high.m3u8');
+    expect(result.reversed).toBe('https://rumble.com/mid.m3u8');
+    expect(result.empty).toBeNull();
+});

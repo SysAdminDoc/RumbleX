@@ -3172,6 +3172,24 @@ const VideoDownloader = {
         return fields;
     },
 
+    // One rule for choosing a rendition out of a master playlist. There were
+    // three copies: this one matched the requested height and fell back to the
+    // nearest, while the clip-export and live-DVR paths each sorted by height
+    // and took the highest, so the same master could resolve differently
+    // depending on which feature asked. Without a requested height the highest
+    // is still the answer, which is what those two callers have always wanted.
+    _selectVariant(variants, quality) {
+        if (!variants?.length) return null;
+        const wanted = Number(quality?.height);
+        if (!Number.isFinite(wanted) || wanted <= 0) {
+            return variants.reduce((best, entry) => (entry.height > best.height ? entry : best), variants[0]);
+        }
+        return variants.find((entry) => entry.height === wanted)
+            || variants.reduce((closest, entry) => (
+                Math.abs(entry.height - wanted) < Math.abs(closest.height - wanted) ? entry : closest
+            ), variants[0]);
+    },
+
     async _resolveHlsSegments(quality, { signal, diagnosticUrls = [], onStage } = {}) {
         const masterUrl = this._safeMediaUrl(this._hlsUrl);
         if (!masterUrl) throw new Error('Rumble did not provide a valid HLS playlist.');
@@ -3187,13 +3205,7 @@ const VideoDownloader = {
         let variantText = masterText;
         if (variants.length) {
             onStage?.('quality-selection', 1, 'Selecting stream quality…');
-            let variant = variants.find((entry) => entry.height === quality?.height);
-            if (!variant) {
-                variant = variants.reduce((closest, entry) => (
-                    Math.abs(entry.height - Number(quality?.height || 0))
-                        < Math.abs(closest.height - Number(quality?.height || 0)) ? entry : closest
-                ), variants[0]);
-            }
+            const variant = this._selectVariant(variants, quality);
             if (!variant) throw new Error('No matching stream variant found');
             variantUrl = variant.url;
             diagnosticUrls.push({ role: 'segment-playlist', url: variantUrl });
@@ -15169,7 +15181,9 @@ const VideoClips = {
             const masterResp = await RXPlatform.fetch(VideoDownloader._hlsUrl, { signal });
             if (!masterResp.ok) throw VideoDownloader._httpError(masterResp, stage, VideoDownloader._hlsUrl);
             const variants = VideoDownloader._parseMasterPlaylist(await masterResp.text(), VideoDownloader._hlsUrl);
-            selectedVariant = variants.sort((a, b) => b.height - a.height)[0];
+            // Clip export has no quality control of its own, so no height is
+            // requested and the helper returns the highest rendition.
+            selectedVariant = VideoDownloader._selectVariant(variants);
             if (!selectedVariant) throw new Error('No stream variant');
             stage = 'segment-playlist';
             diagnosticUrls.push({ role: 'segment-playlist', url: selectedVariant.url });
@@ -15341,7 +15355,8 @@ const LiveDVR = {
             if (!masterResponse.ok) throw VideoDownloader._httpError(masterResponse, 'master-playlist', hls);
             const master = await masterResponse.text();
             const variants = VideoDownloader._parseMasterPlaylist(master, hls);
-            const variant = variants.sort((a, b) => b.height - a.height)[0];
+            // Live DVR has no quality control either; highest is the answer.
+            const variant = VideoDownloader._selectVariant(variants);
             if (!variant) throw new Error('No variant');
             const variantResponse = await RXPlatform.fetch(variant.url, { signal });
             if (!variantResponse.ok) throw VideoDownloader._httpError(variantResponse, 'segment-playlist', variant.url);
