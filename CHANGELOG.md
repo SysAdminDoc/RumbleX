@@ -4,6 +4,10 @@ All notable changes to RumbleX will be documented in this file.
 
 ## Unreleased
 
+### Fixed
+
+- Clicking a channel-notifier notification now opens the video it is about. On Chrome it had been doing nothing at all: the target URL was held in the service worker's memory, Chrome shuts that worker down after about thirty seconds of inactivity, and the notifier runs on a timer, so the worker was almost always gone by the time anyone opened the notification centre. The click resolved to nothing and returned without a tab, a message, or an error. Targets now live in session storage, which lasts exactly as long as the browser session, and are re-checked as Rumble addresses every time they are read back. Firefox keeps a background page running and was never affected.
+
 ### Changed
 - Firefox builds now emit `RumbleX-firefox-amo-unsigned.zip` as an explicitly unsigned, byte-reproducible AMO submission. `npm run build-for-amo` produces the same bytes from source, and the build still emits the separate AMO source archive.
 - Local builds no longer copy the unsigned Firefox ZIP to an `.xpi` filename. The package gate reserves `.xpi` for files with a complete Mozilla JAR or COSE signature entry set, and the project page presents the unsigned package only as a temporary test build.

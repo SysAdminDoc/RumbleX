@@ -591,32 +591,6 @@ async function rxPostDiscordWebhook(url, payload) {
     }
 }
 
-async function rxFireNotification({ title, message, url }) {
-    if (!chrome.notifications) return null;
-    return new Promise((resolve) => {
-        try {
-            chrome.notifications.create('', {
-                type: 'basic',
-                iconUrl: chrome.runtime.getURL('icons/128.png'),
-                title: title || 'RumbleX',
-                message: message || '',
-                contextMessage: url || '',
-                priority: 0,
-            }, (id) => {
-                void chrome.runtime.lastError;
-                // Stash the URL so the click handler can navigate to it.
-                if (id && url) rxNotificationUrlMap.set(id, url);
-                resolve(id || null);
-            });
-        } catch (e) {
-            console.warn('[RumbleX] notification create failed:', e);
-            resolve(null);
-        }
-    });
-}
-
-const rxNotificationUrlMap = new Map();
-
 function rxSafeRumbleUrl(value) {
     if (typeof value !== 'string') return null;
     try {
@@ -627,14 +601,141 @@ function rxSafeRumbleUrl(value) {
     } catch { return null; }
 }
 
+// v3.58.0 — Notification targets have to outlive the service worker.
+//
+// Chrome evicts an MV3 service worker after roughly 30 seconds idle, and the
+// notifier fires from a chrome.alarms period, so the worker is almost always
+// gone by the time someone opens the notification centre and clicks. Holding
+// the target URL only in a module-scope Map meant onClicked read `undefined`
+// and returned without a tab, an error, or any other sign — the whole
+// notify-click-open path silently did nothing on Chrome. Firefox MV2 has a
+// persistent background page and never showed the bug, which is why testing
+// there hid it.
+//
+// chrome.storage.session is the right home: it is cleared when the browser
+// session ends, which is exactly as long as a notification can still be
+// clicked, and it is not exposed to content scripts at the default access
+// level. The Map stays as a same-wakeup fast path, never as the source of
+// truth. Where session storage is unavailable (Firefox before 115, whose
+// background page is persistent anyway) the Map alone still answers.
+const RX_NOTIFICATION_TARGETS_KEY = 'rx_notification_targets';
+const RX_NOTIFICATION_TARGETS_MAX = 100;
+const RX_NOTIFICATION_TARGET_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+
+const rxNotificationUrlMap = new Map();
+let rxNotificationTargetQueue = Promise.resolve();
+
+function rxSessionStorageArea() {
+    return chrome.storage?.session || null;
+}
+
+// Drop expired, malformed and off-site entries, then keep only the newest
+// RX_NOTIFICATION_TARGETS_MAX. Runs on write and on read, so a stored map that
+// outlived the code that wrote it cannot smuggle a non-Rumble destination into
+// chrome.tabs.create.
+function rxPruneNotificationTargets(stored, now) {
+    const kept = Object.entries(stored && typeof stored === 'object' ? stored : {})
+        .map(([id, entry]) => {
+            if (!id || !entry || typeof entry !== 'object') return null;
+            const at = Number(entry.at);
+            if (!Number.isFinite(at) || now - at >= RX_NOTIFICATION_TARGET_TTL_MS) return null;
+            const url = rxSafeRumbleUrl(entry.url);
+            return url ? [id, { url, at }] : null;
+        })
+        .filter(Boolean)
+        .sort((a, b) => a[1].at - b[1].at)
+        .slice(-RX_NOTIFICATION_TARGETS_MAX);
+    return Object.fromEntries(kept);
+}
+
+async function rxMutateNotificationTargets(mutate) {
+    const area = rxSessionStorageArea();
+    if (!area) return null;
+    const mutation = rxNotificationTargetQueue.then(async () => {
+        const now = Date.now();
+        let stored = null;
+        try {
+            const got = await area.get(RX_NOTIFICATION_TARGETS_KEY);
+            stored = got?.[RX_NOTIFICATION_TARGETS_KEY] || null;
+        } catch { stored = null; }
+        const entries = rxPruneNotificationTargets(stored, now);
+        const result = mutate(entries, now);
+        await area.set({ [RX_NOTIFICATION_TARGETS_KEY]: rxPruneNotificationTargets(entries, now) });
+        return result;
+    });
+    rxNotificationTargetQueue = mutation.catch(() => {});
+    try {
+        return await mutation;
+    } catch (e) {
+        console.warn('[RumbleX] notification target store failed:', e);
+        return null;
+    }
+}
+
+async function rxRememberNotificationTarget(id, url) {
+    const safeUrl = rxSafeRumbleUrl(url);
+    if (!id || !safeUrl) return;
+    rxNotificationUrlMap.set(id, safeUrl);
+    await rxMutateNotificationTargets((entries, now) => {
+        entries[id] = { url: safeUrl, at: now };
+        return null;
+    });
+}
+
+async function rxTakeNotificationTarget(id) {
+    if (!id) return null;
+    const cached = rxSafeRumbleUrl(rxNotificationUrlMap.get(id));
+    rxNotificationUrlMap.delete(id);
+    const stored = await rxMutateNotificationTargets((entries) => {
+        const entry = entries[id];
+        delete entries[id];
+        return entry ? rxSafeRumbleUrl(entry.url) : null;
+    });
+    return stored || cached;
+}
+
+async function rxFireNotification({ title, message, url }) {
+    if (!chrome.notifications) return null;
+    const id = await new Promise((resolve) => {
+        try {
+            chrome.notifications.create('', {
+                type: 'basic',
+                iconUrl: chrome.runtime.getURL('icons/128.png'),
+                title: title || 'RumbleX',
+                message: message || '',
+                contextMessage: url || '',
+                priority: 0,
+            }, (created) => {
+                void chrome.runtime.lastError;
+                resolve(created || null);
+            });
+        } catch (e) {
+            console.warn('[RumbleX] notification create failed:', e);
+            resolve(null);
+        }
+    });
+    // Persist before returning, so a worker evicted immediately after the
+    // notifier pass still leaves a click target behind.
+    if (id) await rxRememberNotificationTarget(id, url);
+    return id;
+}
+
+// Named rather than inlined into the listener so the click path itself is
+// reachable from a test; the listener is then only event plumbing.
+async function rxHandleNotificationClick(id) {
+    const url = await rxTakeNotificationTarget(id);
+    if (!url) return null;
+    try { await chrome.tabs.create({ url }); } catch (e) {
+        console.warn('[RumbleX] notification click could not open a tab:', e);
+        return null;
+    }
+    try { await chrome.notifications.clear(id); } catch {}
+    return url;
+}
+
 if (chrome.notifications?.onClicked) {
     chrome.notifications.onClicked.addListener((id) => {
-        const url = rxNotificationUrlMap.get(id);
-        rxNotificationUrlMap.delete(id);
-        if (url) {
-            chrome.tabs.create({ url }).catch(() => {});
-            chrome.notifications.clear(id).catch(() => {});
-        }
+        void rxHandleNotificationClick(id);
     });
 }
 
