@@ -276,6 +276,38 @@ function rxCancelProbeScan(scanId) {
     return true;
 }
 
+// AbortSignal.any shipped in Firefox 124, and manifest-firefox.json still
+// declares strict_min_version 109. Falling back to the timeout alone there
+// meant closing the panel cancelled nothing and every probe ran to its full
+// budget, which is the exact behaviour the scan controller exists to stop.
+// The abort reason is passed along so the caller can still tell a timeout
+// (TimeoutError) apart from a cancellation (AbortError).
+function rxAnySignal(signals) {
+    if (typeof AbortSignal.any === 'function') return AbortSignal.any(signals);
+    const controller = new AbortController();
+    const listeners = [];
+    const detach = () => {
+        for (const off of listeners.splice(0)) off();
+    };
+    for (const signal of signals) {
+        if (signal.aborted) {
+            detach();
+            controller.abort(signal.reason);
+            return controller.signal;
+        }
+        const onAbort = () => {
+            detach();
+            controller.abort(signal.reason);
+        };
+        signal.addEventListener('abort', onAbort, { once: true });
+        listeners.push(() => signal.removeEventListener('abort', onAbort));
+    }
+    // The composite outliving its sources would keep them alive through the
+    // listeners; once it aborts on its own there is nothing left to relay.
+    controller.signal.addEventListener('abort', detach, { once: true });
+    return controller.signal;
+}
+
 function rxCountProbe(scanId, now = Date.now()) {
     for (const [id, entry] of rxProbeScanCounts) {
         if (now - entry.at >= RX_PROBE_SCAN_TTL_MS) {
@@ -316,9 +348,7 @@ async function rxProbeMedia({ url, scanId, timeoutMs }) {
         try {
             // The scan's own signal has to be in here, not just the timeout, or
             // closing the panel leaves these running to completion.
-            const signal = typeof AbortSignal.any === 'function'
-                ? AbortSignal.any([scanSignal, AbortSignal.timeout(budget)])
-                : AbortSignal.timeout(budget);
+            const signal = rxAnySignal([scanSignal, AbortSignal.timeout(budget)]);
             const response = await fetch(url, { ...init, credentials: 'omit', signal });
             response.body?.cancel?.();
             if (response.ok || response.status === 206) {

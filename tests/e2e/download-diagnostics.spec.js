@@ -478,3 +478,110 @@ test('the embed payload names each format, and the harvester keeps that name', a
     expect(result.placeholderRejected).toBe('reject');
     expect(result.tinyAudioRejected).toBe('reject');
 });
+
+// AbortSignal.any shipped in Firefox 124; manifest-firefox.json still declares
+// strict_min_version 109. The composite was built with a `typeof` check whose
+// fallback kept only the timeout, so on those builds closing the download panel
+// cancelled nothing and every probe ran its full budget. Chromium always has
+// the native method, so the fallback is only reachable here by hiding it.
+test('scan cancellation still reaches the fetch where AbortSignal.any is missing', async ({ serviceWorker }) => {
+    test.setTimeout(120_000);
+    const result = await serviceWorker.evaluate(async () => {
+        const native = AbortSignal.any;
+        const workerFetch = globalThis.fetch;
+        const nameOf = (signal) => signal.reason?.name || String(signal.reason);
+        const settle = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+        const exercise = async (label) => {
+            // Cancellation: the scan's own controller has to reach the fetch.
+            const scan = new AbortController();
+            const composite = rxAnySignal([scan.signal, AbortSignal.timeout(60_000)]);
+            const beforeAbort = composite.aborted;
+            scan.abort();
+            const cancelled = { aborted: composite.aborted, reason: nameOf(composite) };
+
+            // Timeout: the other source still works, and stays distinguishable
+            // from a cancellation by its reason.
+            const timed = rxAnySignal([new AbortController().signal, AbortSignal.timeout(20)]);
+            await settle(200);
+            const expired = { aborted: timed.aborted, reason: nameOf(timed) };
+
+            // A source that has already aborted produces a composite that is
+            // aborted on arrival, not one waiting for an event that has been.
+            const spent = new AbortController();
+            spent.abort();
+            const already = rxAnySignal([spent.signal, AbortSignal.timeout(60_000)]);
+
+            // End to end through the probe itself: a fetch that never settles
+            // on its own, cancelled by the scan.
+            let sawAbort = false;
+            let started = 0;
+            globalThis.fetch = (input, init) => {
+                started += 1;
+                return new Promise((_resolve, reject) => {
+                    init?.signal?.addEventListener('abort', () => {
+                        sawAbort = true;
+                        const error = new Error('aborted');
+                        error.name = 'AbortError';
+                        reject(error);
+                    });
+                });
+            };
+            const scanId = `fallback-${label}-${Date.now()}`;
+            const inFlight = rxProbeMedia({
+                url: 'https://1a-1791.com/video/fx/never-settles.mp4',
+                scanId,
+                timeoutMs: 60_000,
+            });
+            await settle(150);
+            rxCancelProbeScan(scanId);
+            const probe = await Promise.race([
+                inFlight,
+                settle(4000).then(() => ({ ok: false, reason: 'never-settled' })),
+            ]);
+            globalThis.fetch = workerFetch;
+
+            return {
+                hasNative: typeof AbortSignal.any === 'function',
+                beforeAbort,
+                cancelled,
+                expired,
+                alreadyAborted: already.aborted,
+                started,
+                sawAbort,
+                probeReason: probe.reason,
+            };
+        };
+
+        try {
+            delete AbortSignal.any;
+            const fallback = await exercise('fallback');
+            AbortSignal.any = native;
+            const nativePath = await exercise('native');
+            return { fallback, nativePath };
+        } finally {
+            AbortSignal.any = native;
+            globalThis.fetch = workerFetch;
+        }
+    });
+
+    // Positive control: the fallback branch was actually the one under test,
+    // and the native branch really did have the method back.
+    expect(result.fallback.hasNative).toBe(false);
+    expect(result.nativePath.hasNative).toBe(true);
+
+    for (const [label, path] of Object.entries(result)) {
+        // The composite does not start life aborted.
+        expect(path.beforeAbort, label).toBe(false);
+        // Cancelling the scan aborts the composite, and reads as a cancellation.
+        expect(path.cancelled, label).toEqual({ aborted: true, reason: 'AbortError' });
+        // The timeout source still fires, and stays tellable apart.
+        expect(path.expired, label).toEqual({ aborted: true, reason: 'TimeoutError' });
+        expect(path.alreadyAborted, label).toBe(true);
+        // The probe really started a fetch, that fetch saw the abort, and the
+        // probe resolved as cancelled rather than running out its 60s budget.
+        expect(path.started, label).toBeGreaterThan(0);
+        expect(path.sawAbort, label).toBe(true);
+        expect(path.probeReason, label).toBe('aborted');
+    }
+});
