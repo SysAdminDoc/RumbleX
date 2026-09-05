@@ -31,4 +31,14 @@ assert.equal(failedReleaseStatus, 1, 'A failed mandatory verification must fail 
 assert.equal(cleanCalls, 1, 'The release must clean stale packages before verification');
 assert.deepEqual(releaseCalls, ['verify'], 'A failed verification must prevent the final build and archive checks');
 
+
+// The selector harness exits 2 when the private Sample Pages/ captures are
+// absent unless it is told they are optional, which is every machine except
+// the maintainer's. Without the flag the mandatory gate cannot pass on a clone,
+// while the README says it can.
+const { pythonStep } = require('./local-workflow');
+const selectorStep = pythonStep();
+assert.ok(selectorStep.args.includes('--allow-missing-fixtures'),
+    'the selector-contracts step must tolerate a missing Sample Pages/, or npm run verify cannot pass on a clean clone');
+
 console.log('Release gate OK: a deliberately failing guard prevents verification and release packaging.');

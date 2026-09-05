@@ -51,7 +51,14 @@ function pythonStep() {
         id: 'selector-contracts',
         label: 'Selector contracts',
         command: process.env.RUMBLEX_PYTHON || (process.platform === 'win32' ? 'python' : 'python3'),
-        args: ['test_selectors.py'],
+        // The private MHTML captures in Sample Pages/ are gitignored, so a
+        // clone does not have them and the gate has to run without them.
+        // Without this flag the step exits 2 on any machine but the
+        // maintainer's, which made `npm run verify` unpassable for everyone
+        // else while the README claimed the opposite. The checked-in platform
+        // contracts still run either way; only the private replay is skipped,
+        // and the harness says so on stdout.
+        args: ['test_selectors.py', '--allow-missing-fixtures'],
     });
 }
 

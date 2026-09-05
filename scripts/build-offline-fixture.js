@@ -32,6 +32,18 @@ const path = require('path');
 const ROOT = path.resolve(__dirname, '..');
 const DEFAULT_SOURCE = path.join(ROOT, 'rumble_decoded.html');
 const OUTPUT = path.join(ROOT, 'tests', 'fixtures', 'platform', 'offline-watch.html');
+// The recorded hash is what makes --check meaningful in a clone, where there
+// is no capture to regenerate from and existence alone proves nothing.
+const HASH_FILE = path.join(ROOT, 'tests', 'fixtures', 'platform', 'offline-watch.sha256');
+
+function fileHash(file) {
+    return crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex');
+}
+
+function recordedHash() {
+    assert.ok(fs.existsSync(HASH_FILE), `fixture hash record is missing: ${HASH_FILE}`);
+    return fs.readFileSync(HASH_FILE, 'utf8').trim().split(/\s+/)[0];
+}
 
 // Stable synthetic identities. Hashing the original keeps every reference to
 // the same person consistent across the page (chat rows, avatars, links) while
@@ -86,12 +98,86 @@ function sanitize(source) {
 
     // 3. Third-party identities. Values are replaced, attributes are kept, so
     //    every selector the extension relies on still resolves.
-    html = html.replace(/(\/(?:user|c)\/)([A-Za-z0-9_-]+)/g, (_, lead, name) => lead + fakeName(name, 'channel'));
-    html = html.replace(/(data-username=")([^"]*)(")/g, (_, a, name, b) => a + fakeName(name, 'viewer') + b);
-    html = html.replace(/(data-message-user-id=")(\d+)(")/g, (_, a, id, b) => a + fakeDigits(id, 'user', id.length) + b);
-    html = html.replace(/(data-message-id=")(\d+)(")/g, (_, a, id, b) => a + fakeDigits(id, 'msg', id.length) + b);
-    html = html.replace(/(data-video-fid=")(\d+)(")/g, (_, a, id, b) => a + fakeDigits(id, 'vid', id.length) + b);
-    html = html.replace(/(data-video-id=")(\d+)(")/g, (_, a, id, b) => a + fakeDigits(id, 'vid', id.length) + b);
+    //
+    //    An earlier pass rewrote only /user/ and /c/ URL segments and
+    //    data-username. That left the uploader's name and the whole related
+    //    list in visible element text, the capturing account's follow list in
+    //    data-slug/data-title/data-id, and real numeric ids inside hx-vals,
+    //    which also made the page internally inconsistent: the same id was
+    //    hashed in one attribute and verbatim in another. Collect every
+    //    identity first, then replace it everywhere it appears.
+    const identities = new Map();
+    const remember = (value, prefix) => {
+        const trimmed = String(value || '').trim();
+        if (trimmed.length < 2) return;
+        if (!identities.has(trimmed)) identities.set(trimmed, fakeName(trimmed, prefix));
+    };
+    for (const [, name] of html.matchAll(/\/(?:user|c)\/([A-Za-z0-9_-]+)/g)) remember(name, 'rxname');
+    for (const [, name] of html.matchAll(/data-(?:username|slug|title)="([^"]*)"/g)) remember(name, 'rxname');
+    for (const [, name] of html.matchAll(/<h4 class="mediaList-by-heading"[^>]*>([^<]*)</g)) remember(name, 'rxname');
+    for (const [, name] of html.matchAll(/class="media-heading-name truncate"[^>]*>([^<]*)</g)) remember(name, 'rxname');
+    for (const [, name] of html.matchAll(/class="channel-header--title"[^>]*>([^<]*)</g)) remember(name, 'rxname');
+
+    // Longest first, so a name that contains another name is replaced whole.
+    for (const original of [...identities.keys()].sort((a, b) => b.length - a.length)) {
+        const escaped = original.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        html = html.replace(new RegExp(`(?<![A-Za-z0-9_-])${escaped}(?![A-Za-z0-9_-])`, 'g'), identities.get(original));
+    }
+
+    // Numeric ids, everywhere rather than per-attribute. hx-vals carries them
+    // as HTML-escaped JSON, which no attribute-specific rule reaches.
+    const numericIds = new Set();
+    const collectIds = (pattern, group = 1) => {
+        for (const match of html.matchAll(pattern)) numericIds.add(match[group]);
+    };
+    collectIds(/data-(?:message-user-id|message-id|video-fid|video-id|id|entity-id)="(\d{6,})"/g);
+    collectIds(/&quot;(?:creator_id|channel_id|collection_id|video_id|user_id|playlist_id)&quot;\s*:\s*&quot;?(\d{6,})/g);
+    collectIds(/\b(?:creator_id|channel_id|collection_id|video_id|user_id)"\s*:\s*"?(\d{6,})/g);
+    for (const id of [...numericIds].sort((a, b) => b.length - a.length)) {
+        html = html.replace(new RegExp(`(?<!\\d)${id}(?!\\d)`, 'g'), fakeDigits(id, 'id', id.length));
+    }
+
+    // 3b. Opaque server-signed values. data-epk and the hx-vals event blobs are
+    //     base64url tokens minted for the capturing session, and no keyword
+    //     precedes them, so the credential rule below never sees them.
+    html = html.replace(/(data-epk=")([A-Za-z0-9_-]{16,})(")/g,
+        (_, a, token, b) => a + fakeName(token, 'epk').padEnd(token.length, '0').slice(0, token.length) + b);
+    html = html.replace(/(&quot;(?:event_data|encoded|payload|signature|sig)&quot;\s*:\s*&quot;)([A-Za-z0-9_-]{24,})(&quot;)/g,
+        (_, a, token, b) => a + fakeName(token, 'blob').padEnd(token.length, '0').slice(0, token.length) + b);
+
+    // 3c. The page's own subject. The title, description, social metadata and
+    //     canonical slug name the exact video, which names the channel and
+    //     pins the session date.
+    html = html.replace(/(https:\/\/rumble\.com\/)(v[a-z0-9]+)-[a-z0-9-]+(\.html)/gi, '$1$2-fixture$3');
+    html = html.replace(/(<title>)([^<]*)(<\/title>)/i, '$1Fixture watch page$3');
+    html = html.replace(/(<meta[^>]+(?:property|name)="(?:og:title|twitter:title)"[^>]*content=")([^"]*)(")/gi, '$1Fixture watch page$3');
+    html = html.replace(/(<meta[^>]+(?:property|name)="(?:og:description|twitter:description|description)"[^>]*content=")([^"]*)(")/gi, '$1Synthetic fixture page for the RumbleX test suite.$3');
+    html = html.replace(/(<meta[^>]+(?:property|name)="(?:og:url|twitter:url)"[^>]*content=")([^"]*)(")/gi, '$1https://rumble.com/vfixture-offline-watch.html$3');
+    html = html.replace(/(<link[^>]+rel="canonical"[^>]*href=")([^"]*)(")/gi, '$1https://rumble.com/vfixture-offline-watch.html$3');
+    // oEmbed discovery links repeat the title in an attribute of their own.
+    html = html.replace(/(<link[^>]+type="application\/(?:json|xml)\+oembed"[^>]*)/gi,
+        (tag) => tag.replace(/title="[^"]*"/i, 'title="Fixture watch page"'));
+    // The visible heading and description are the same strings again.
+    html = html.replace(/(<h1 class="[^"]*"[^>]*>)([\s\S]*?)(<\/h1>)/i, '$1Fixture watch page$3');
+    html = html.replace(/(<p class="media-description"[^>]*>)([\s\S]*?)(<\/p>)/i,
+        '$1Synthetic fixture page for the RumbleX test suite.$3');
+
+    // Embed ids name the video as surely as the slug did. Replace them with a
+    // synthetic id of the same shape so the media parsers still resolve one.
+    // The id shows up percent-encoded in oEmbed discovery URLs and as the
+    // player element's own id, not only as a clean /embed/ path.
+    const embedIds = new Set([
+        ...[...html.matchAll(/\/embed\/(v[a-z0-9]{4,12})\b/gi)].map((match) => match[1]),
+        ...[...html.matchAll(/%2Fembed%2F(v[a-z0-9]{4,12})(?:%2F|\b)/gi)].map((match) => match[1]),
+        ...[...html.matchAll(/\bid="vid_(v[a-z0-9]{4,12})"/gi)].map((match) => match[1]),
+    ]);
+    for (const id of embedIds) {
+        const replacement = `v${fakeName(id, 'e').replace(/^e/, '').slice(0, id.length - 1)}`;
+        // Percent-encoded first: in %2Fv74uy6i%2F the preceding character is F,
+        // so the word-boundary form below refuses to match.
+        html = html.replace(new RegExp(`(%2F)${id}(%2F)`, 'gi'), `$1${replacement}$2`);
+        html = html.replace(new RegExp(`(?<![A-Za-z0-9])${id}(?![A-Za-z0-9])`, 'g'), replacement);
+    }
 
     // 4. Remote assets. Every spec that uses this fixture aborts non-Rumble
     //    routes, so a live URL is dead weight that also carries CDN path
@@ -120,10 +206,19 @@ function main() {
     const sourcePath = args.find((arg) => !arg.startsWith('--')) || DEFAULT_SOURCE;
 
     if (check && !fs.existsSync(sourcePath)) {
-        // The private capture is not part of a clone. Nothing to compare
-        // against, and the committed fixture is what the suite actually uses.
+        // The private capture is not part of a clone, so there is nothing to
+        // regenerate from. Comparing against the recorded hash still catches a
+        // hand-edited fixture, which is the failure that matters here: without
+        // it this branch asserted only that the file exists, and a clone is
+        // every machine but the maintainer's.
         assert.ok(fs.existsSync(OUTPUT), `committed fixture is missing: ${OUTPUT}`);
-        console.log('Offline fixture check skipped: no local capture to regenerate from; committed fixture present.');
+        const actual = fileHash(OUTPUT);
+        const expected = recordedHash();
+        assert.equal(actual, expected,
+            'tests/fixtures/platform/offline-watch.html does not match the hash recorded in '
+            + `${path.basename(HASH_FILE)}. It was edited by hand, or regenerated without updating the record. `
+            + `Run: node scripts/build-offline-fixture.js\n  recorded: ${expected}\n  on disk:  ${actual}`);
+        console.log(`Offline fixture check OK: no local capture to regenerate from; committed fixture matches ${expected.slice(0, 16)}.`);
         return;
     }
 
@@ -131,15 +226,19 @@ function main() {
     const generated = sanitize(fs.readFileSync(sourcePath, 'utf8'));
 
     if (check) {
-        const committed = fs.readFileSync(OUTPUT, 'utf8');
+        const committed = fs.existsSync(OUTPUT) ? fs.readFileSync(OUTPUT, 'utf8') : '';
         assert.equal(generated, committed,
             'tests/fixtures/platform/offline-watch.html differs from what this script produces. '
             + 'Regenerate it rather than hand-editing: node scripts/build-offline-fixture.js');
-        console.log(`Offline fixture check OK: ${OUTPUT.replace(ROOT + path.sep, '')} matches the generator.`);
+        assert.equal(fileHash(OUTPUT), recordedHash(),
+            'the committed fixture matches the generator but not its recorded hash. Run: node scripts/build-offline-fixture.js');
+        console.log(`Offline fixture check OK: ${OUTPUT.replace(ROOT + path.sep, '')} matches the generator and its recorded hash.`);
         return;
     }
 
     fs.writeFileSync(OUTPUT, generated);
+    fs.writeFileSync(HASH_FILE, `${fileHash(OUTPUT)}  offline-watch.html
+`);
     console.log(`Wrote ${OUTPUT.replace(ROOT + path.sep, '')} (${generated.length} bytes) from ${path.basename(sourcePath)}.`);
 }
 

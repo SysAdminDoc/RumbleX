@@ -853,13 +853,17 @@
 
             const localKeys = Object.keys(localData).length;
             const sizeSuffix = ext === '.json.gz' ? ` (gzip, ${Math.round(blob.size / 1024)} KB)` : '';
+            const activityKeys = Object.keys(extensionData).length;
+            const activitySuffix = activityKeys
+                ? ` Included  stored activity ${activityKeys === 1 ? 'record' : 'records'} (rant history). The download probe cache is left out on purpose; it rebuilds itself.`
+                : ' No stored activity records were present. The download probe cache is never exported; it rebuilds itself.';
             const suffix = localKeys
                 ? ` Included ${localKeys} per-site ${localKeys === 1 ? 'key' : 'keys'} from your open Rumble tab.`
                 : (tabsTouched === 0 ? ' Tip: open a Rumble tab first to include watch history, bookmarks, etc.' : '');
             const credentialSuffix = includeCredentials
                 ? ' This file contains usable credentials. Store it securely.'
                 : ' Credentials were excluded.';
-            showStatus('Settings exported' + sizeSuffix + '.' + suffix + credentialSuffix, 'success');
+            showStatus('Settings exported' + sizeSuffix + '.' + suffix + activitySuffix + credentialSuffix, 'success');
         } catch (err) {
             showStatus('Export failed: ' + err.message, 'error');
         }
@@ -870,14 +874,23 @@
     }
 
     async function createSettingsSnapshot(reason) {
-        const cur = await chrome.storage.local.get([STORAGE_KEY, 'rx_settings_snapshots']);
+        const cur = await chrome.storage.local.get([STORAGE_KEY, 'rx_settings_snapshots', ...EXTENSION_STORAGE_BACKUP_KEYS]);
         const settings = normaliseImported(cur[STORAGE_KEY] || {});
         if (settings.backupHistory === false) return { ok: false, reason: 'disabled' };
         const limit = Math.max(1, Number(settings.backupHistoryLimit ?? DEFAULTS.backupHistoryLimit) || 10);
+        // Activity kept in extension storage is replaced wholesale by an import
+        // and dropped by a reset, so a snapshot carrying only rx_settings could
+        // undo neither. Capture it here as well.
+        const activity = Object.fromEntries(
+            EXTENSION_STORAGE_BACKUP_KEYS
+                .filter((key) => cur[key] !== undefined)
+                .map((key) => [key, cur[key]]),
+        );
         const snapshot = {
             at: Date.now(),
             reason: typeof reason === 'string' ? reason.slice(0, 80) : 'manual',
             settings,
+            activity,
         };
         const next = Array.isArray(cur.rx_settings_snapshots) ? cur.rx_settings_snapshots.slice() : [];
         next.push(snapshot);
@@ -901,6 +914,16 @@
         if (!snap) return { ok: false, reason: 'not-found' };
         await createSettingsSnapshot('pre-restore');
         await chrome.storage.local.set({ [STORAGE_KEY]: normaliseImported(snap.settings || {}) });
+        // Snapshots taken before activity was captured carry no `activity` key,
+        // and restore settings only, exactly as they always did.
+        if (snap.activity && typeof snap.activity === 'object') {
+            const activity = Object.fromEntries(
+                EXTENSION_STORAGE_BACKUP_KEYS
+                    .filter((key) => snap.activity[key] !== undefined)
+                    .map((key) => [key, snap.activity[key]]),
+            );
+            if (Object.keys(activity).length) await chrome.storage.local.set(activity);
+        }
         return { ok: true, restored: { at: snap.at, reason: snap.reason } };
     }
 

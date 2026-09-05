@@ -59,6 +59,14 @@ function newestInLine(versions, pinned) {
         .pop() || null;
 }
 
+// Staying inside the pinned major keeps mux.js from reporting a downgrade,
+// but on its own it would go permanently quiet the day upstream ships a new
+// major: "current for its 1.x line" forever while 2.x exists. Report the newer
+// line as well, since that is exactly the gap that goes months wide.
+function newestOverall(versions) {
+    return versions.filter((version) => !/-/.test(version)).sort(compareVersions).pop() || null;
+}
+
 // The abbreviated metadata format is small and carries every published
 // version, but it omits publish times.
 async function registryVersions(name) {
@@ -88,8 +96,11 @@ async function main() {
 
     for (const [name, { version, paths }] of packages) {
         let latest;
+        let newestLine;
         try {
-            latest = newestInLine(await registryVersions(name), version);
+            const versions = await registryVersions(name);
+            latest = newestInLine(versions, version);
+            newestLine = newestOverall(versions);
         } catch (error) {
             console.log(`[?] ${name}: could not reach the registry (${error.message}). Not treated as a failure.`);
             continue;
@@ -104,6 +115,13 @@ async function main() {
             lines.push(`[!] ${name} is pinned at ${version}; ${latest} is available${stamp ? ` (published ${stamp})` : ''}. Files: ${paths.join(', ')}`);
         } else {
             lines.push(`[*] ${name} ${version} is current for its ${version.split('.')[0]}.x line.`);
+        }
+        // A newer major is not automatically a defect, but silence about it is:
+        // staying inside the pinned line alone would report "current" forever
+        // the day upstream ships 2.0.0.
+        if (newestLine && compareVersions(newestLine, latest) > 0) {
+            behind.push(`${name} (${newestLine.split('.')[0]}.x line)`);
+            lines.push(`[!] ${name} has a newer major line: ${newestLine}. Decide whether the pin should move off ${version.split('.')[0]}.x.`);
         }
     }
 

@@ -290,13 +290,47 @@ test('the committed offline fixture carries no identities, credentials or captur
     // scripts/build-offline-fixture.js. Anything else is an original.
     const channels = [...new Set([...fixture.matchAll(/\/(?:user|c)\/([A-Za-z0-9_-]+)/g)].map((m) => m[1]))];
     expect(channels.length).toBeGreaterThan(0);
-    expect(channels.filter((name) => !/^channel[0-9a-f]{10}$/.test(name))).toEqual([]);
+    expect(channels.filter((name) => !/^rxname[0-9a-f]{10}$/.test(name))).toEqual([]);
 
     const viewers = [...new Set([...fixture.matchAll(/data-username="([^"]*)"/g)].map((m) => m[1]))];
     expect(viewers.length).toBeGreaterThan(0);
-    expect(viewers.filter((name) => !/^viewer[0-9a-f]{10}$/.test(name))).toEqual([]);
+    expect(viewers.filter((name) => !/^rxname[0-9a-f]{10}$/.test(name))).toEqual([]);
 
     // CDN media paths carried opaque signed-looking segments.
     const mediaPaths = [...fixture.matchAll(/\/video\/([^"'\s&)]+)\.[a-z0-9]{2,5}(?=["'\s&)])/gi)].map((m) => m[1]);
     expect(mediaPaths.filter((segment) => !/^fx\/[0-9a-f]{10}$/.test(segment))).toEqual([]);
+
+    // The capturing account's own state. data-slug/data-title/data-id on a
+    // followed-channel row is the follow list; hx-vals carries the same ids as
+    // escaped JSON, which no attribute-specific rule reaches.
+    const slugs = [...new Set([...fixture.matchAll(/data-(?:slug|title)="([^"]+)"/g)].map((m) => m[1]))];
+    expect(slugs.filter((value) => !/^rxname[0-9a-f]{10}$/.test(value))).toEqual([]);
+
+    const embeddedIds = [...new Set([
+        ...[...fixture.matchAll(/data-(?:id|entity-id|message-user-id|message-id|video-id|video-fid)="(\d{6,})"/g)].map((m) => m[1]),
+        ...[...fixture.matchAll(/&quot;(?:creator_id|channel_id|collection_id|video_id|user_id)&quot;\s*:\s*&quot;?(\d{6,})/g)].map((m) => m[1]),
+    ])];
+    expect(embeddedIds.length).toBeGreaterThan(0);
+    // Every id is hashed from the original, so none of them may be a real one.
+    // The generator derives them from a fixed salt, so this is stable.
+    const hashed = new Set([...fixture.matchAll(/\b(\d{6,})\b/g)].map((m) => m[1]));
+    expect(embeddedIds.filter((id) => !hashed.has(id))).toEqual([]);
+
+    // Server-minted opaque values. No keyword precedes these, so the
+    // credential patterns above cannot see them.
+    const epks = [...new Set([...fixture.matchAll(/data-epk="([^"]*)"/g)].map((m) => m[1]))];
+    expect(epks.filter((value) => !/^epk[0-9a-f]+0*$/.test(value))).toEqual([]);
+    const blobs = [...new Set([...fixture.matchAll(/&quot;(?:event_data|encoded|payload|signature|sig)&quot;\s*:\s*&quot;([^&]{24,})&quot;/g)].map((m) => m[1]))];
+    expect(blobs.filter((value) => !/^blob[0-9a-f]+0*$/.test(value))).toEqual([]);
+
+    // The page's own subject names the video, the channel and the session date.
+    expect(fixture).toMatch(/<title>Fixture watch page<\/title>/);
+    const subjects = [
+        ...[...fixture.matchAll(/<meta[^>]+(?:property|name)="(?:og:title|twitter:title)"[^>]*content="([^"]*)"/gi)].map((m) => m[1]),
+        ...[...fixture.matchAll(/<link[^>]+type="application\/(?:json|xml)\+oembed"[^>]*title="([^"]*)"/gi)].map((m) => m[1]),
+    ];
+    expect(subjects.length).toBeGreaterThan(0);
+    expect(subjects.filter((value) => value !== 'Fixture watch page')).toEqual([]);
+    const canonicals = [...fixture.matchAll(/(?:og:url|twitter:url)"[^>]*content="([^"]*)"/gi)].map((m) => m[1]);
+    expect(canonicals.filter((url) => !url.includes('vfixture-offline-watch'))).toEqual([]);
 });
