@@ -25,6 +25,7 @@
     "test:message-boundary": "node scripts/check-message-boundary.js",
     "test:settings-schema": "node scripts/test-settings-schema.js",
     "test:settings-consumers": "node scripts/check-settings-consumers.js",
+    "test:local-storage-keys": "node scripts/check-local-storage-keys.js",
     "test:package-contents": "node scripts/check-package-contents.js",
     "test:firefox-artifacts": "node scripts/check-firefox-artifacts.js",
     "test:feature-catalog": "node scripts/test-feature-catalog.js",

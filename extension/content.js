@@ -18458,9 +18458,27 @@ const RX_LOCAL_STORAGE_KEYS = [
     'rx_watch_history',
     'rx_search_history',
     'rx_bookmarks',
+    // v3.58.0 — PerChannelPrefs stores per-channel volume, speed and quality
+    // ceiling here. It was missing from this list, so Reset All Data reported a
+    // complete wipe and left it behind, and Export Backup never carried it.
+    'rx_channel_prefs',
 ];
 // Plus any key starting with these prefixes (per-video caches).
 const RX_LOCAL_STORAGE_PREFIXES = ['rx_rants_'];
+
+// Extension-storage keys the reset must also drop. The options page owns that
+// wipe because it has the extension origin, but the list lives here beside the
+// modules that write the keys so `scripts/check-local-storage-keys.js` can hold
+// both directions from one place.
+const RX_EXTENSION_STORAGE_RESET_KEYS = ['rx_rant_stats_mirror'];
+
+// Runtime `rx_` keys the reset deliberately does not drop here, and why. The
+// guard reads this so a new key cannot be quietly omitted: leaving one out
+// fails the build rather than shipping a reset that over-claims.
+const RX_RESET_EXCLUSIONS = {
+    rx_settings: 'Cleared by the options page as STORAGE_KEY before this list is consulted.',
+    rx_settings_snapshots: 'The pre-reset snapshot is the undo. Wiping it would make Reset All Data irreversible.',
+};
 
 function rxClearLocalStorage() {
     let cleared = 0;

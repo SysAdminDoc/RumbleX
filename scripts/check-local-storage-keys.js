@@ -1,0 +1,120 @@
+#!/usr/bin/env node
+'use strict';
+
+// Every `rx_` storage key the content runtime writes must be accounted for by
+// Reset All Data.
+//
+// The failure this prevents: PerChannelPrefs wrote `rx_channel_prefs` to
+// Rumble-origin localStorage and the key was never added to
+// RX_LOCAL_STORAGE_KEYS, so Reset All Data reported "All settings cleared" and
+// left per-channel volume, speed and quality ceilings behind. Export Backup
+// reads the same list, so the key was missing from backups too. Nothing failed;
+// the wipe simply under-delivered while claiming otherwise.
+//
+// The check runs both ways. A runtime key that is in no reset list and carries
+// no documented exclusion fails, and a listed key that no runtime code writes
+// also fails — so removing a feature forces its key out of the list in the same
+// change, and the list cannot rot into stale entries that make the reset look
+// more thorough than it is.
+//
+// It also proves the extension-storage half is not decorative: the options page
+// has to actually remove those keys, or the list is a comment.
+
+const assert = require('assert/strict');
+const fs = require('fs');
+const path = require('path');
+
+const ROOT = path.resolve(__dirname, '..');
+const read = (relative) => fs.readFileSync(path.join(ROOT, relative), 'utf8');
+
+const core = read('extension/content.js');
+const optionsSource = read('extension/pages/options.js');
+
+// Pull an array or object literal out of the runtime by name. Parsed rather
+// than executed: content.js is a browser bundle and cannot be run under Node.
+function literalBody(source, name, open, close) {
+    // Single-line and multi-line declarations both occur in content.js.
+    const match = source.match(new RegExp(`const ${name} = \\${open}([\\s\\S]*?)\\${close};`));
+    assert.ok(match, `${name} is missing from extension/content.js`);
+    return match[1];
+}
+
+function arrayLiteral(source, name) {
+    return [...literalBody(source, name, '[', ']').matchAll(/'([^']+)'/g)].map((entry) => entry[1]);
+}
+
+function objectKeys(source, name) {
+    return [...literalBody(source, name, '{', '}').matchAll(/^\s{4}([A-Za-z0-9_]+):\s*'([^']*)'/gm)]
+        .map(([, key, reason]) => [key, reason]);
+}
+
+const localKeys = arrayLiteral(core, 'RX_LOCAL_STORAGE_KEYS');
+const localPrefixes = arrayLiteral(core, 'RX_LOCAL_STORAGE_PREFIXES');
+const extensionKeys = arrayLiteral(core, 'RX_EXTENSION_STORAGE_RESET_KEYS');
+const exclusions = objectKeys(core, 'RX_RESET_EXCLUSIONS');
+const excludedKeys = new Set(exclusions.map(([key]) => key));
+
+// Every `rx_` string literal in the content runtime is a candidate key. The
+// registries themselves are excluded from the scan so a key does not count as
+// "written" merely by appearing in the list that is supposed to cover it.
+const registryBlocks = [
+    /const RX_LOCAL_STORAGE_KEYS = \[[\s\S]*?\];/,
+    /const RX_LOCAL_STORAGE_PREFIXES = \[[\s\S]*?\];/,
+    /const RX_EXTENSION_STORAGE_RESET_KEYS = \[[\s\S]*?\];/,
+    /const RX_RESET_EXCLUSIONS = \{[\s\S]*?\};/,
+];
+const scanned = registryBlocks.reduce((text, block) => text.replace(block, ''), core);
+const runtimeKeys = [...new Set([...scanned.matchAll(/'(rx_[a-z0-9_]*)'/g)].map((match) => match[1]))].sort();
+assert.ok(runtimeKeys.length > 0, 'found no rx_ storage keys in the content runtime — the scan is broken');
+
+const covered = new Set([...localKeys, ...localPrefixes, ...extensionKeys]);
+const uncovered = runtimeKeys.filter((key) => !covered.has(key) && !excludedKeys.has(key));
+assert.deepEqual(uncovered, [],
+    `content-runtime storage keys that Reset All Data does not clear and that carry no documented exclusion: ${uncovered.join(', ')}. `
+    + 'Add each to RX_LOCAL_STORAGE_KEYS, RX_LOCAL_STORAGE_PREFIXES or RX_EXTENSION_STORAGE_RESET_KEYS, '
+    + 'or record why the reset keeps it in RX_RESET_EXCLUSIONS.');
+
+const runtimeKeySet = new Set(runtimeKeys);
+const orphaned = [...localKeys, ...extensionKeys].filter((key) => !runtimeKeySet.has(key));
+assert.deepEqual(orphaned, [],
+    `reset lists name keys no content-runtime code writes: ${orphaned.join(', ')}. `
+    + 'Remove them — a reset list padded with dead keys reports more thoroughness than it delivers.');
+
+const orphanedPrefixes = localPrefixes.filter((prefix) => !runtimeKeys.some((key) => key.startsWith(prefix)) && !scanned.includes(`'${prefix}'`));
+assert.deepEqual(orphanedPrefixes, [], `reset prefixes that match nothing in the runtime: ${orphanedPrefixes.join(', ')}`);
+
+const staleExclusions = exclusions.filter(([key]) => !runtimeKeySet.has(key));
+assert.deepEqual(staleExclusions.map(([key]) => key), [],
+    `RX_RESET_EXCLUSIONS names keys the runtime no longer uses: ${staleExclusions.map(([key]) => key).join(', ')}`);
+
+const bothWays = exclusions.filter(([key]) => covered.has(key));
+assert.deepEqual(bothWays.map(([key]) => key), [],
+    `keys both cleared and excluded: ${bothWays.map(([key]) => key).join(', ')}. Pick one.`);
+
+for (const [key, reason] of exclusions) {
+    assert.ok(reason.trim().length >= 20, `RX_RESET_EXCLUSIONS.${key} needs a real reason, got: ${JSON.stringify(reason)}`);
+}
+
+// The extension-storage half is the options page's job. Without this the list
+// above could name keys that nothing ever removes and the guard would still be
+// green.
+const mirror = optionsSource.match(/const EXTENSION_STORAGE_RESET_KEYS = \[([\s\S]*?)\];/);
+assert.ok(mirror, 'options.js no longer declares EXTENSION_STORAGE_RESET_KEYS');
+const mirrored = [...mirror[1].matchAll(/'([^']+)'/g)].map((entry) => entry[1]);
+assert.deepEqual(mirrored.slice().sort(), extensionKeys.slice().sort(),
+    `options.js EXTENSION_STORAGE_RESET_KEYS drifted from content.js RX_EXTENSION_STORAGE_RESET_KEYS: `
+    + `${mirrored.join(', ')} vs ${extensionKeys.join(', ')}`);
+assert.ok(/storage\.local\.remove\(EXTENSION_STORAGE_RESET_KEYS\)/.test(optionsSource),
+    'options.js declares EXTENSION_STORAGE_RESET_KEYS but never removes them, so the list clears nothing');
+
+// The localStorage half runs in the content script. Same reasoning.
+assert.ok(/for \(const k of RX_LOCAL_STORAGE_KEYS\)/.test(core),
+    'rxClearLocalStorage no longer iterates RX_LOCAL_STORAGE_KEYS');
+assert.ok(core.includes('RX_LOCAL_STORAGE_PREFIXES.some'),
+    'rxClearLocalStorage no longer honours RX_LOCAL_STORAGE_PREFIXES');
+
+console.log(
+    `Local storage key guard OK: ${localKeys.length} localStorage keys + ${localPrefixes.length} prefix, `
+    + `${extensionKeys.length} extension-storage key(s), ${exclusions.length} documented exclusion(s), `
+    + `across ${runtimeKeys.length} runtime rx_ keys.`,
+);

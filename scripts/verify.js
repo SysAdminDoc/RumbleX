@@ -21,6 +21,7 @@ const SOURCE_STEPS = Object.freeze([
     nodeStep('message-boundary', 'Runtime message boundary', 'scripts/check-message-boundary.js'),
     nodeStep('settings-schema', 'Settings schema contract', 'scripts/test-settings-schema.js'),
     nodeStep('settings-consumers', 'Settings consumer registry', 'scripts/check-settings-consumers.js'),
+    nodeStep('local-storage-keys', 'Reset All Data key coverage', 'scripts/check-local-storage-keys.js'),
     nodeStep('feature-catalog', 'Feature catalog integrity', 'scripts/test-feature-catalog.js'),
     nodeStep('ad-blocking', 'Ad-blocking contract', 'scripts/test-ad-blocking.js'),
     nodeStep('a11y-controls', 'Injected control accessibility', 'scripts/check-a11y-controls.js'),
