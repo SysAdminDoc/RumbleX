@@ -84,6 +84,11 @@ const registryBlocks = [
     /const RX_LOCAL_STORAGE_PREFIXES = \[[\s\S]*?\];/,
     /const RX_EXTENSION_STORAGE_RESET_KEYS = \[[\s\S]*?\];/,
     /const RX_RESET_EXCLUSIONS = \{[\s\S]*?\};/,
+    // This one is a registry too. Leaving it in the scan let a key count as
+    // "written by the runtime" purely because it was named in the list of keys
+    // to hold out of backups, which is the reverse-direction hole: delete the
+    // feature and its key stays in RX_LOCAL_STORAGE_KEYS looking alive.
+    /const RX_BACKUP_EXCLUDED_KEYS = \[[\s\S]*?\];/,
 ];
 const scannedCore = registryBlocks.reduce((text, block) => text.replace(block, ''), core);
 const scanned = [scannedCore, ...RUNTIME_FILES.filter((f) => f !== 'extension/content.js').map(read)].join('\n');
