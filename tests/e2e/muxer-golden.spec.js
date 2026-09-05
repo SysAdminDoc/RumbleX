@@ -118,13 +118,13 @@ async function runProductionMux(serviceWorker, tabId, mode, forceNoWebCodecs = f
     }, { targetTabId: tabId, bytes: fixture, requestedMode: mode, disableWebCodecs: forceNoWebCodecs });
 }
 
-async function runStreamingMux(serviceWorker, tabId, abortAfterFirstSegment = false) {
+async function runStreamingMux(serviceWorker, tabId, abortAfterFirstSegment = false, multiRendition = false) {
     const fixture = Array.from(GOLDEN_BYTES);
-    return serviceWorker.evaluate(async ({ targetTabId, bytes, shouldAbort }) => {
+    return serviceWorker.evaluate(async ({ targetTabId, bytes, shouldAbort, multiVariant }) => {
         const executions = await chrome.scripting.executeScript({
             target: { tabId: targetTabId },
             world: 'ISOLATED',
-            func: async (fixtureBytes, abortAfterFirst) => {
+            func: async (fixtureBytes, abortAfterFirst, useMultiVariant) => {
                 if (typeof VideoDownloader === 'undefined') {
                     throw new Error('RumbleX muxer globals unavailable in the content world');
                 }
@@ -140,10 +140,27 @@ async function runStreamingMux(serviceWorker, tabId, abortAfterFirstSegment = fa
                     source.slice(cutA, cutB),
                     source.slice(cutB),
                 ];
+                // A single-variant master never exercises rendition choice.
+                // The multi-variant form puts the requested 160x90 rendition
+                // between a lower and a higher one, and points the other two at
+                // playlists whose segments do not exist, so picking the wrong
+                // variant produces a 404 rather than a quietly different file.
+                const streamPlaylist = '#EXTM3U\n#EXTINF:0.34,\nhttps://cdn.1a-1791.com/a.ts'
+                    + '\n#EXTINF:0.33,\nhttps://cdn.1a-1791.com/b.ts'
+                    + '\n#EXTINF:0.33,\nhttps://cdn.1a-1791.com/c.ts';
+                const master = useMultiVariant
+                    ? '#EXTM3U'
+                        + '\n#EXT-X-STREAM-INF:BANDWIDTH=120000,RESOLUTION=80x45\nhttps://rumble.com/low.m3u8'
+                        + '\n#EXT-X-STREAM-INF:BANDWIDTH=250000,RESOLUTION=160x90\nhttps://rumble.com/stream.m3u8'
+                        + '\n#EXT-X-STREAM-INF:BANDWIDTH=900000,RESOLUTION=640x360\nhttps://rumble.com/high.m3u8'
+                    : '#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=250000,RESOLUTION=160x90\nhttps://rumble.com/stream.m3u8';
                 const payloads = new Map([
-                    ['https://rumble.com/master.m3u8', '#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=250000,RESOLUTION=160x90\nhttps://rumble.com/stream.m3u8'],
-                    ['https://rumble.com/stream.m3u8', '#EXTM3U\n#EXTINF:0.34,\nhttps://cdn.1a-1791.com/a.ts\n#EXTINF:0.33,\nhttps://cdn.1a-1791.com/b.ts\n#EXTINF:0.33,\nhttps://cdn.1a-1791.com/c.ts'],
+                    ['https://rumble.com/master.m3u8', master],
+                    ['https://rumble.com/stream.m3u8', streamPlaylist],
+                    ['https://rumble.com/low.m3u8', '#EXTM3U\n#EXTINF:0.34,\nhttps://cdn.1a-1791.com/low-a.ts'],
+                    ['https://rumble.com/high.m3u8', '#EXTM3U\n#EXTINF:0.34,\nhttps://cdn.1a-1791.com/high-a.ts'],
                 ]);
+                const fetchedUrls = [];
                 const bytesByUrl = new Map([
                     ['https://cdn.1a-1791.com/a.ts', segmentBytes[0]],
                     ['https://cdn.1a-1791.com/b.ts', segmentBytes[1]],
@@ -161,8 +178,17 @@ async function runStreamingMux(serviceWorker, tabId, abortAfterFirstSegment = fa
                 };
                 globalThis.fetch = async (input) => {
                     const url = String(input instanceof Request ? input.url : input);
+                    fetchedUrls.push(url);
                     if (payloads.has(url)) return new Response(payloads.get(url), { status: 200 });
                     if (bytesByUrl.has(url)) return new Response(bytesByUrl.get(url), { status: 200 });
+                    // The extension loads its own packaged worker through fetch.
+                    // Answering that with a 404 fails the conversion for a
+                    // reason that has nothing to do with the playlist, which is
+                    // only invisible when an earlier test already warmed the
+                    // worker on the same page.
+                    if (url.startsWith('chrome-extension://') || url.startsWith('moz-extension://')) {
+                        return originalFetch(input);
+                    }
                     return new Response('', { status: 404 });
                 };
                 try {
@@ -170,6 +196,7 @@ async function runStreamingMux(serviceWorker, tabId, abortAfterFirstSegment = fa
                     VideoDownloader._MP4_STREAM_CHUNK_BYTES = 1024;
                     let summary = null;
                     let errorName = null;
+                    let errorMessage = null;
                     try {
                         summary = await VideoDownloader._streamMediabunnyHlsToWritable(
                             { height: 90, label: '90p' },
@@ -183,6 +210,7 @@ async function runStreamingMux(serviceWorker, tabId, abortAfterFirstSegment = fa
                         );
                     } catch (error) {
                         errorName = error?.name || String(error);
+                        errorMessage = String(error?.message || error);
                     }
 
                     const maxEnd = writes.reduce(
@@ -195,10 +223,12 @@ async function runStreamingMux(serviceWorker, tabId, abortAfterFirstSegment = fa
                         bytes: Array.from(output),
                         summary,
                         errorName,
+                        errorMessage,
                         positions: writes.map((entry) => entry.position),
                         writeCount: writes.length,
                         maxWriteSize: writes.reduce((max, entry) => Math.max(max, entry.bytes.length), 0),
                         workerCleared: VideoDownloader._mediabunnyWorker === null,
+                        fetchedUrls,
                     };
                 } finally {
                     globalThis.fetch = originalFetch;
@@ -206,11 +236,11 @@ async function runStreamingMux(serviceWorker, tabId, abortAfterFirstSegment = fa
                     VideoDownloader._MP4_STREAM_CHUNK_BYTES = originalChunkBytes;
                 }
             },
-            args: [bytes, shouldAbort],
+            args: [bytes, shouldAbort, multiVariant],
         });
         if (!executions[0]?.result) throw new Error('Streaming muxer execution returned no result');
         return executions[0].result;
-    }, { targetTabId: tabId, bytes: fixture, shouldAbort: abortAfterFirstSegment });
+    }, { targetTabId: tabId, bytes: fixture, shouldAbort: abortAfterFirstSegment, multiVariant: multiRendition });
 }
 
 async function inspectInOffscreen(context, extensionId, bytes) {
@@ -279,6 +309,7 @@ test('streaming Mediabunny preserves golden metadata, positioned writes, and can
 
     const buffered = await runProductionMux(serviceWorker, tabId, 'mediabunnyWebCodecs');
     const streamed = await runStreamingMux(serviceWorker, tabId);
+    expect(streamed.errorName).toBeNull();
     expect(streamed.errorName).toBeNull();
     expect(streamed.summary).toMatchObject({
         segments: 3,
@@ -368,4 +399,35 @@ test('Mediabunny selection falls back to mux.js when WebCodecs is unavailable', 
     expect(fallback.muxerContext.fallbackReason).toContain('WebCodecs');
     expectPlayable(fallback);
     expectGoldenMetadata(await inspectInOffscreen(context, extensionId, fallback.bytes));
+});
+
+test('a multi-rendition master resolves to the requested variant and still converts', async ({ context, extensionId, serviceWorker }) => {
+    // Every master playlist in the suite had exactly one variant, so nothing
+    // proved the extension picks a rendition rather than taking whatever came
+    // first. Here the requested 160x90 sits between a lower and a higher
+    // variant whose segments do not exist, so a wrong pick 404s instead of
+    // quietly producing a different file.
+    const rumble = await openRumbleFixture(context);
+    const tabId = await findTabId(serviceWorker, rumble.url());
+
+    const streamed = await runStreamingMux(serviceWorker, tabId, false, true);
+    expect(streamed.errorMessage).toBeNull();
+    expect(streamed.errorName).toBeNull();
+    expect(streamed.summary).toBeTruthy();
+
+    // Positive control: the master really did offer three variants.
+    expect(streamed.fetchedUrls).toContain('https://rumble.com/master.m3u8');
+    // The chosen variant's media playlist and every one of its segments.
+    expect(streamed.fetchedUrls).toContain('https://rumble.com/stream.m3u8');
+    for (const segment of ['a.ts', 'b.ts', 'c.ts']) {
+        expect(streamed.fetchedUrls).toContain(`https://cdn.1a-1791.com/${segment}`);
+    }
+    // The other two were never followed.
+    expect(streamed.fetchedUrls).not.toContain('https://rumble.com/low.m3u8');
+    expect(streamed.fetchedUrls).not.toContain('https://rumble.com/high.m3u8');
+    expect(streamed.fetchedUrls.filter((url) => url.includes('low-a.ts') || url.includes('high-a.ts'))).toEqual([]);
+
+    // And the conversion of that variant still produces the golden output.
+    const metadata = await inspectInOffscreen(context, extensionId, streamed.bytes);
+    expectGoldenMetadata(metadata);
 });
