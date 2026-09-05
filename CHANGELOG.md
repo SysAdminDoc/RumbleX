@@ -6,6 +6,7 @@ All notable changes to RumbleX will be documented in this file.
 
 ### Changed
 
+- Backups now carry the rant history that spans every video you have watched. Export already included watch progress, bookmarks, searches and per-video rant archives whenever a Rumble tab was open, but the cross-video rant summary lives in extension storage and was in no backup at all, so a reset destroyed it for good. Backup files are version 3 as a result, and files written by older versions still import.
 - The bundled media converters are up to date again. Mediabunny moves from 1.55.1 to 1.55.7, which picks up recognition of fMP4 HLS segments that begin with an `emsg` box, a memory leak in one of its readers, an AVC compatibility problem with Chromium's decoder, and colour information that could come out wrong when the container did not carry it. All of that sits on the path a download actually takes. mux.js, the fallback converter, moves from 7.0.3 to its final 7.1.0. Both engines still produce identical metadata from the golden sample. A new `npm run check:vendor-drift` reports when either library has fallen behind the registry, because a pinned hash tells you the file was not tampered with and nothing about how old it is.
 
 ### Added

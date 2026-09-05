@@ -1,6 +1,10 @@
 // @ts-check
 // Regression coverage for no-open-Rumble-tab import/reset localStorage recovery.
 const { test, expect } = require('./_fixtures');
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
+const zlib = require('zlib');
 
 test('staged per-site data restores and clears on the next Rumble tab', async ({ context, extensionId, serviceWorker }) => {
     const payload = {
@@ -136,4 +140,124 @@ test('reset aborts and preserves settings when the pre-reset snapshot fails', as
         chrome.storage.local.get('rx_settings', (got) => resolve(got.rx_settings));
     }));
     expect(after).toMatchObject({ adNuker: false });
+});
+
+test('a backup round-trips every kind of user activity, not just settings', async ({ context, extensionId }) => {
+    // Export had been documented as settings-only. It is not: per-site data has
+    // gone through getLocalData since v2. What it missed was extension-storage
+    // activity, so the rant mirror never survived a wipe. This drives the real
+    // Export and Import controls end to end and compares field by field.
+    const perSite = {
+        rx_volume: '0.42',
+        rx_watch_progress: '{"v1":{"time":1234}}',
+        rx_watch_history: '[{"id":"v1","title":"Seeded history"}]',
+        rx_search_history: '["round trip"]',
+        rx_bookmarks: '[{"id":"v1","t":99}]',
+        rx_channel_prefs: '{"seeded":{"volume":0.31,"speed":1.75}}',
+        rx_rants_v1: '{"items":[{"amount":42}]}',
+    };
+    const rantMirror = { videos: { v1: { title: 'Seeded rant video', lastTs: 1700000000000, read: false } } };
+
+    await context.route('https://rumble.com/**', (route) => route.fulfill({
+        status: 200,
+        contentType: 'text/html',
+        body: '<!doctype html><html><head><title>Rumble fixture</title></head><body><main><video></video></main></body></html>',
+    }));
+
+    const rumble = await context.newPage();
+    await rumble.goto('https://rumble.com/vtest-round-trip');
+    await rumble.evaluate((data) => {
+        for (const [key, value] of Object.entries(data)) localStorage.setItem(key, value);
+    }, perSite);
+
+    const options = await context.newPage();
+    await options.goto(`chrome-extension://${extensionId}/pages/options.html`);
+    await options.evaluate((mirror) => chrome.storage.local.set({ rx_rant_stats_mirror: mirror }), rantMirror);
+
+    // Export with a Rumble tab open, so per-site data is reachable.
+    const [download] = await Promise.all([
+        options.waitForEvent('download', { timeout: 30000 }),
+        options.click('#export-btn'),
+    ]);
+    const filePath = await download.path();
+    expect(filePath).toBeTruthy();
+    const raw = fs.readFileSync(filePath);
+    const text = download.suggestedFilename().endsWith('.gz')
+        ? zlib.gunzipSync(raw).toString('utf8')
+        : raw.toString('utf8');
+    const payload = JSON.parse(text);
+
+    expect(payload.exportVersion).toBeGreaterThanOrEqual(3);
+    expect(payload.localData).toMatchObject(perSite);
+    expect(payload.extensionData?.rx_rant_stats_mirror).toEqual(rantMirror);
+    // Credentials stay out unless explicitly opted in.
+    expect(payload.settings).not.toHaveProperty('discordWebhookUrl');
+    expect(payload.settings).not.toHaveProperty('encryptedGistSyncToken');
+
+    // Wipe everything the backup is supposed to be able to restore.
+    await options.click('#reset-btn');
+    await expect(options.locator('#status')).toContainText(/cleared/i, { timeout: 15000 });
+    await expect.poll(() => rumble.evaluate(() => Object.keys(localStorage).filter((k) => k.startsWith('rx_'))))
+        .toEqual([]);
+    await expect.poll(() => options.evaluate(async () => {
+        const got = await chrome.storage.local.get('rx_rant_stats_mirror');
+        return got.rx_rant_stats_mirror ?? null;
+    })).toBeNull();
+
+    // Restore from the exported file through the real import control.
+    const restorePath = path.join(os.tmpdir(), `rumblex-roundtrip-${Date.now()}.json`);
+    fs.writeFileSync(restorePath, text);
+    await options.setInputFiles('#import-file', restorePath);
+    await expect(options.locator('#status')).toContainText(/imported/i, { timeout: 30000 });
+
+    for (const [key, value] of Object.entries(perSite)) {
+        await expect.poll(
+            () => rumble.evaluate((k) => localStorage.getItem(k), key),
+            { message: `per-site key ${key} did not survive the round trip`, timeout: 15000 },
+        ).toBe(value);
+    }
+    await expect.poll(
+        () => options.evaluate(async () => {
+            const got = await chrome.storage.local.get('rx_rant_stats_mirror');
+            return got.rx_rant_stats_mirror ?? null;
+        }),
+        { message: 'the rant mirror did not survive the round trip', timeout: 15000 },
+    ).toEqual(rantMirror);
+
+    fs.rmSync(restorePath, { force: true });
+});
+
+test('a version 2 backup written before extensionData existed still restores', async ({ context, extensionId }) => {
+    const legacy = {
+        settings: { darkEnhance: true, theaterSplit: false },
+        localData: { rx_bookmarks: '[{"id":"legacy","t":7}]' },
+        exportVersion: 2,
+        exportDate: '2026-08-01T00:00:00.000Z',
+        rumblexVersion: '3.52.0',
+    };
+
+    await context.route('https://rumble.com/**', (route) => route.fulfill({
+        status: 200,
+        contentType: 'text/html',
+        body: '<!doctype html><html><head><title>Rumble fixture</title></head><body><main><video></video></main></body></html>',
+    }));
+    const rumble = await context.newPage();
+    await rumble.goto('https://rumble.com/vtest-legacy-import');
+
+    const options = await context.newPage();
+    await options.goto(`chrome-extension://${extensionId}/pages/options.html`);
+
+    const legacyPath = path.join(os.tmpdir(), `rumblex-legacy-${Date.now()}.json`);
+    fs.writeFileSync(legacyPath, JSON.stringify(legacy));
+    await options.setInputFiles('#import-file', legacyPath);
+    await expect(options.locator('#status')).toContainText(/imported/i, { timeout: 30000 });
+
+    await expect.poll(() => rumble.evaluate(() => localStorage.getItem('rx_bookmarks')))
+        .toBe(legacy.localData.rx_bookmarks);
+    expect(await options.evaluate(async () => {
+        const got = await chrome.storage.local.get('rx_settings');
+        return got.rx_settings?.theaterSplit;
+    })).toBe(false);
+
+    fs.rmSync(legacyPath, { force: true });
 });

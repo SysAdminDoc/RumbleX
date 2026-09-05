@@ -16,6 +16,11 @@
     // held in sync by `npm run test:local-storage-keys`, which fails if either
     // side drifts — this page cannot import from the content runtime.
     const EXTENSION_STORAGE_RESET_KEYS = ['rx_rant_stats_mirror', 'rx_probe_cache'];
+    // Extension-storage keys worth carrying in a backup. Deliberately narrower
+    // than the reset list: rx_probe_cache is a CDN probe cache that rebuilds
+    // itself and would only bloat the file, while the rant mirror is the only
+    // record of rants across every video the user has watched.
+    const EXTENSION_STORAGE_BACKUP_KEYS = ['rx_rant_stats_mirror'];
     const GROUP_MESSAGE_KEYS = {
         all: 'groupAll',
         core: 'groupCore',
@@ -795,10 +800,24 @@
                 }
             } catch { /* no tabs / no receiver → settings-only export */ }
 
+            // Extension-storage activity that lives outside rx_settings. The
+            // rant mirror is the only cross-video record of rants and no tab
+            // has to be open to read it, unlike localData.
+            let extensionData = {};
+            try {
+                const stored = await chrome.storage.local.get(EXTENSION_STORAGE_BACKUP_KEYS);
+                extensionData = Object.fromEntries(
+                    EXTENSION_STORAGE_BACKUP_KEYS
+                        .filter((key) => stored[key] !== undefined)
+                        .map((key) => [key, stored[key]]),
+                );
+            } catch { /* storage unavailable → settings and per-site data only */ }
+
             const data = {
                 settings: RXSettingsSchema.sanitizeSettingsForTransport(settings, { includeCredentials }),
                 localData, // empty object when no Rumble tab was available
-                exportVersion: 2,
+                extensionData,
+                exportVersion: 3,
                 exportDate: new Date().toISOString(),
                 rumblexVersion: manifest.version,
                 credentialsIncluded: includeCredentials,
@@ -958,6 +977,26 @@
             // imported file after this return, so the user should reimport
             // after opening a Rumble tab. We tell them so in the toast.
             let restoreSummary = '';
+
+            // v3+: extension-storage activity restores without needing a tab.
+            // Only the allowlisted keys are written, so a crafted file cannot
+            // reach arbitrary extension storage.
+            const extensionData = isPlainObject(data.extensionData) ? data.extensionData : null;
+            if (extensionData) {
+                const restorable = Object.fromEntries(
+                    EXTENSION_STORAGE_BACKUP_KEYS
+                        .filter((key) => extensionData[key] !== undefined)
+                        .map((key) => [key, extensionData[key]]),
+                );
+                if (Object.keys(restorable).length) {
+                    try {
+                        await chrome.storage.local.set(restorable);
+                        restoreSummary += ` Restored ${Object.keys(restorable).length} stored activity `
+                            + `${Object.keys(restorable).length === 1 ? 'record' : 'records'}.`;
+                    } catch { /* storage write refused → settings still imported */ }
+                }
+            }
+
             const localData = isPlainObject(data.localData) ? data.localData : null;
             if (localData && Object.keys(localData).length) {
                 try {
@@ -965,11 +1004,11 @@
                     if (resp?.ok) {
                         if (resp.pending) {
                             const staged = resp.pendingKeys || Object.keys(localData).length;
-                            restoreSummary = ` Staged ${staged} per-site ${staged === 1 ? 'key' : 'keys'}; it will restore automatically next time a Rumble tab opens.`;
+                            restoreSummary += ` Staged ${staged} per-site ${staged === 1 ? 'key' : 'keys'}; it will restore automatically next time a Rumble tab opens.`;
                         } else if (resp.tabs === 0) {
-                            restoreSummary = ' No Rumble tab was open; per-site data restore was skipped.';
+                            restoreSummary += ' No Rumble tab was open; per-site data restore was skipped.';
                         } else {
-                            restoreSummary = ` Restored ${resp.written} per-site ${resp.written === 1 ? 'key' : 'keys'} to ${resp.tabs} open ${resp.tabs === 1 ? 'tab' : 'tabs'}.`;
+                            restoreSummary += ` Restored ${resp.written} per-site ${resp.written === 1 ? 'key' : 'keys'} to ${resp.tabs} open ${resp.tabs === 1 ? 'tab' : 'tabs'}.`;
                         }
                     }
                 } catch { /* no receiver — silently skip */ }
