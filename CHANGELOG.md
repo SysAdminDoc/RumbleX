@@ -4,6 +4,10 @@ All notable changes to RumbleX will be documented in this file.
 
 ## Unreleased
 
+### Changed
+
+- The bundled media converters are up to date again. Mediabunny moves from 1.55.1 to 1.55.7, which picks up recognition of fMP4 HLS segments that begin with an `emsg` box, a memory leak in one of its readers, an AVC compatibility problem with Chromium's decoder, and colour information that could come out wrong when the container did not carry it. All of that sits on the path a download actually takes. mux.js, the fallback converter, moves from 7.0.3 to its final 7.1.0. Both engines still produce identical metadata from the golden sample. A new `npm run check:vendor-drift` reports when either library has fallen behind the registry, because a pinned hash tells you the file was not tampered with and nothing about how old it is.
+
 ### Added
 
 - Install docs now cover the Chromium switch that silently stops userscripts from running. Chrome 138 moved user-script permission to a per-extension **Allow User Scripts** toggle that is off on a fresh install, Edge has not shipped that toggle at all and still needs Developer mode, and neither browser tells you on the page. The README and the project page name the exact toggle and path for both, plus a one-line check you can paste into DevTools that separates a blocked manager from a script that never matched the page. A build check fails if either surface loses that guidance.

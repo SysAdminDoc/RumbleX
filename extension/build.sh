@@ -22,16 +22,18 @@ fi
 # Fetch mux.js if not present.
 # v3.1.0 — SHA-256 pin so a compromised CDN can't silently swap the bundle.
 # Bump MUX_JS_SHA256 when intentionally upgrading mux.js. Verify on a clean
-# machine: `curl -sL https://cdn.jsdelivr.net/npm/mux.js@7.0.3/dist/mux.min.js \
+# machine: `curl -sL https://cdn.jsdelivr.net/npm/mux.js@7.1.0/dist/mux.min.js \
 #   | shasum -a 256` against the pinned value before changing.
-# Source: mux.js is in maintenance mode (npm "this module is in maintenance
-# mode and will not have further major development"). v3.27 adds an opt-in
-# Mediabunny path, but mux.js remains the default fallback until proven stable.
-MUX_JS_VERSION="7.0.3"
+# Source: mux.js is finished. 7.1.0 (2024-10-11) is both its last release and
+# its last commit, and npm still carries the maintenance-mode notice. Mediabunny
+# has been the default engine since v3.47; mux.js is the fallback for browsers
+# and inputs WebCodecs cannot handle, so it stays pinned rather than removed.
+# Run `npm run check:vendor-drift` before a release to see if either has moved.
+MUX_JS_VERSION="7.1.0"
 MUX_JS_URL="https://cdn.jsdelivr.net/npm/mux.js@${MUX_JS_VERSION}/dist/mux.min.js"
-MUX_JS_SHA256="79da5742f8985d9362b14a3ca4d705eea726cea6d513d0d019c359bf4eec856b"
-MEDIABUNNY_VERSION="1.55.1"
-MEDIABUNNY_JS_SHA256="953110266df5e5ea4d3c339ffe24a70f795643be07ee8375093897534bad1346"
+MUX_JS_SHA256="eb088a07f954554db7c38114487b21df6d1f28c4a84d53003644e962c7567b5b"
+MEDIABUNNY_VERSION="1.55.7"
+MEDIABUNNY_JS_SHA256="0f4b0b9485dfafa0c1c534df896eaa12d1bb523a42d18d9e3bc83004a684d34c"
 MEDIABUNNY_LICENSE_SHA256="3f3d9e0024b1921b067d6f7f88deb4a60cbe7a78e76c64e3f1d7fc3b779b9d04"
 CHROME_ZIP="../RumbleX-chrome.zip"
 FIREFOX_UNSIGNED_ZIP="../RumbleX-firefox-amo-unsigned.zip"
