@@ -290,3 +290,93 @@ for (const [themeId, palette] of Object.entries(THEMES)) {
         });
     }
 }
+
+// RumbleX-owned surfaces used to pin Catppuccin hexes, so the watch-progress
+// bar, the resume toast and the toast stack rendered in Catppuccin pink and
+// blue on all five themes. They read var(--rx-token, #hex) now, which follows
+// the palette when the theme engine is on and keeps the readable Catppuccin
+// value when it is off.
+test('RumbleX-owned surfaces repaint when the palette changes, with no reload', async () => {
+    const browser = await chromium.launch({ headless: true });
+    try {
+        const { context, page } = await createHarnessPage(browser);
+
+        const paint = async (theme) => page.evaluate((themeId) => {
+            const harness = globalThis.__RumbleXFeatureHarness;
+            const feature = harness.features.find((candidate) => candidate.id === 'darkEnhance');
+            feature.destroy();
+            const settings = harness.resetSettings();
+            Object.assign(settings, { darkEnhance: true, theme: themeId, watchProgress: true });
+            feature.init();
+            // WatchProgress owns the progress-bar and resume-toast rules, so it
+            // has to be mounted for the probe to be styled at all.
+            const progress = harness.features.find((candidate) => candidate.id === 'watchProgress');
+            progress.destroy();
+            progress.init();
+
+            // One node per surface the item names, styled by the same injected
+            // rules the real features use.
+            document.querySelector('#rx-token-probe')?.remove();
+            const probe = document.createElement('div');
+            probe.id = 'rx-token-probe';
+            probe.innerHTML = '<div class="rx-progress-bar"><div class="rx-progress-fill"></div></div>'
+                + '<div class="rx-resume-toast"><button type="button">Resume</button></div>'
+                ;
+            document.body.appendChild(probe);
+
+            const read = (selector, property) => {
+                const node = document.querySelector(selector);
+                return node ? getComputedStyle(node).getPropertyValue(property).trim() : null;
+            };
+            return {
+                token: getComputedStyle(document.documentElement).getPropertyValue('--rx-red').trim(),
+                progressFill: read('.rx-progress-fill', 'background-color'),
+                resumeText: read('.rx-resume-toast', 'color'),
+                resumeOutline: read('.rx-resume-toast button', 'outline-color'),
+            };
+        }, theme);
+
+        // Settle in real time: a computed colour read mid-transition is the
+        // old value, not the new one.
+        const settle = () => page.waitForTimeout(400);
+
+        const catppuccin = await paint('catppuccin');
+        await settle();
+        const after = await paint('rumbleGreen');
+        await settle();
+        const green = await paint('rumbleGreen');
+
+        // Positive control: the probe must actually be styled by our rules, or
+        // every comparison below is between two empty strings.
+        expect(catppuccin.progressFill).toBeTruthy();
+        expect(catppuccin.resumeText).toBeTruthy();
+        expect(catppuccin.token).toBe('#f38ba8');
+        expect(green.token).toBe('#e55c5c');
+
+        // Catppuccin red vs Rumble Green red, and Catppuccin text vs its text.
+        expect(catppuccin.progressFill).toBe('rgb(243, 139, 168)');
+        expect(green.progressFill).toBe('rgb(229, 92, 92)');
+        expect(catppuccin.resumeText).toBe('rgb(205, 214, 244)');
+        expect(green.resumeText).toBe('rgb(214, 232, 196)');
+        expect(catppuccin.resumeOutline).not.toBe(green.resumeOutline);
+        expect(after.token).toBe(green.token);
+
+        // With the theme engine off, no tokens exist and the fallbacks keep the
+        // surfaces readable rather than transparent.
+        const unthemed = await page.evaluate(() => {
+            const harness = globalThis.__RumbleXFeatureHarness;
+            harness.features.find((candidate) => candidate.id === 'darkEnhance').destroy();
+            const node = document.querySelector('.rx-progress-fill');
+            return {
+                token: getComputedStyle(document.documentElement).getPropertyValue('--rx-red').trim(),
+                progressFill: node ? getComputedStyle(node).backgroundColor : null,
+            };
+        });
+        expect(unthemed.token).toBe('');
+        expect(unthemed.progressFill).toBe('rgb(243, 139, 168)');
+
+        await context.close();
+    } finally {
+        await browser.close();
+    }
+});

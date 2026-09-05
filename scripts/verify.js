@@ -25,6 +25,7 @@ const SOURCE_STEPS = Object.freeze([
     nodeStep('feature-catalog', 'Feature catalog integrity', 'scripts/test-feature-catalog.js'),
     nodeStep('ad-blocking', 'Ad-blocking contract', 'scripts/test-ad-blocking.js'),
     nodeStep('a11y-controls', 'Injected control accessibility', 'scripts/check-a11y-controls.js'),
+    nodeStep('theme-tokens', 'Theme token policy', 'scripts/check-theme-tokens.js'),
     nodeStep('content-literals', 'Content literal policy', 'scripts/check-content-literals.js'),
     nodeStep('content-locale', 'Content locale synchronization', 'scripts/sync-content-locale.js'),
     nodeStep('store-listing', 'Store and public metadata', 'scripts/check-store-listing.js'),
