@@ -65,6 +65,7 @@ const localKeys = arrayLiteral(core, 'RX_LOCAL_STORAGE_KEYS');
 const localPrefixes = arrayLiteral(core, 'RX_LOCAL_STORAGE_PREFIXES');
 const extensionKeys = arrayLiteral(core, 'RX_EXTENSION_STORAGE_RESET_KEYS');
 const exclusions = objectKeys(core, 'RX_RESET_EXCLUSIONS');
+const backupExcluded = arrayLiteral(core, 'RX_BACKUP_EXCLUDED_KEYS');
 const excludedKeys = new Set(exclusions.map(([key]) => key));
 
 // Every `rx_` string literal in the content runtime is a candidate key. The
@@ -132,6 +133,20 @@ for (const [key, reason] of exclusions) {
     assert.ok(reason.trim().length >= 20, `RX_RESET_EXCLUSIONS.${key} needs a real reason, got: ${JSON.stringify(reason)}`);
 }
 
+// A key held out of backups must still be a key the reset clears, and both the
+// read and the write side have to honour the list. Otherwise it is a comment:
+// the reader keeps exporting private drafts and the writer keeps accepting them
+// from a crafted file.
+for (const key of backupExcluded) {
+    assert.ok(localKeys.includes(key),
+        `RX_BACKUP_EXCLUDED_KEYS names ${key}, which RX_LOCAL_STORAGE_KEYS does not. `
+        + 'Excluding a key the reset does not clear leaves it stranded on the origin.');
+}
+assert.ok(core.includes('if (RX_BACKUP_EXCLUDED_KEYS.includes(k)) continue;'),
+    'rxReadLocalStorage no longer skips RX_BACKUP_EXCLUDED_KEYS, so excluded keys are back in every backup');
+assert.ok(core.includes('const allowed = (k) => !RX_BACKUP_EXCLUDED_KEYS.includes(k)'),
+    'rxWriteLocalStorage no longer refuses RX_BACKUP_EXCLUDED_KEYS, so an imported file can restore them');
+
 // The extension-storage half is the options page's job. Without this the list
 // above could name keys that nothing ever removes and the guard would still be
 // green.
@@ -152,6 +167,6 @@ assert.ok(core.includes('RX_LOCAL_STORAGE_PREFIXES.some'),
 
 console.log(
     `Local storage key guard OK: ${localKeys.length} localStorage keys + ${localPrefixes.length} prefix, `
-    + `${extensionKeys.length} extension-storage key(s), ${exclusions.length} documented exclusion(s), `
+    + `${extensionKeys.length} extension-storage key(s), ${backupExcluded.length} backup-excluded, ${exclusions.length} documented exclusion(s), `
     + `across ${runtimeKeys.length} runtime rx_ keys.`,
 );

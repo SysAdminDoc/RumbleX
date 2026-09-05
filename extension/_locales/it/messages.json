@@ -2160,5 +2160,21 @@
   "dlOnlyStubsFound": {
     "message": "Non c'è nulla da scaricare. Le {count} risposta/e restituite da Rumble erano troppo piccole per essere questo video.",
     "description": "In-page UI string (shared core)."
+  },
+  "commentDraftRestored": {
+    "message": "Bozza non inviata ripristinata.",
+    "description": "In-page UI string (shared core)."
+  },
+  "commentDraftSaved": {
+    "message": "Bozza salvata in locale.",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_commentDrafts_label": {
+    "message": "Bozze dei commenti",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_commentDrafts_desc": {
+    "message": "Mantiene il testo non inviato tra ricaricamenti e riproduzione automatica",
+    "description": "In-page UI string (shared core)."
   }
 }

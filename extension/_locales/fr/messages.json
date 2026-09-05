@@ -2160,5 +2160,21 @@
   "dlOnlyStubsFound": {
     "message": "Rien à télécharger ici. Les {count} réponse(s) renvoyées par Rumble étaient trop petites pour être cette vidéo.",
     "description": "In-page UI string (shared core)."
+  },
+  "commentDraftRestored": {
+    "message": "Brouillon non envoyé restauré.",
+    "description": "In-page UI string (shared core)."
+  },
+  "commentDraftSaved": {
+    "message": "Brouillon enregistré localement.",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_commentDrafts_label": {
+    "message": "Brouillons de commentaires",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_commentDrafts_desc": {
+    "message": "Conserve le texte non envoyé malgré les rechargements et la lecture automatique",
+    "description": "In-page UI string (shared core)."
   }
 }

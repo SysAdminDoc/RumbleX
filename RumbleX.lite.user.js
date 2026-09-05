@@ -23,7 +23,7 @@
 // @updateURL    https://github.com/SysAdminDoc/RumbleX/raw/main/RumbleX.lite.user.js
 // ==/UserScript==
 
-// Generated from the shared extension core files. Shared runtime SHA-256: 224a2300f16f1851872c36af8249d55406530478376a0ff2e2a85892bd052229
+// Generated from the shared extension core files. Shared runtime SHA-256: a1c48f2833bf7930e405c80bc319921cf2b9bf5d82053512313f089729f8dc2e
 // RumbleX shared settings schema. This file is the canonical source for
 // defaults and trust-boundary normalization across content, options, popup,
 // background profile/Gist restores, and the generated userscript.
@@ -64,6 +64,7 @@
         loopControl: true,
         quickBookmark: true,
         commentNav: true,
+        commentDrafts: true,
         rantHighlight: true,
         relatedFilter: true,
         exactCounts: true,
@@ -1336,7 +1337,11 @@
   "rantArchiveEmptyShort": "No rants yet",
   "dlSizeUnknown": "size unknown",
   "dlSuppressedStubs": "Hid {count} result(s) too small to be this video (preview strips and empty CDN responses).",
-  "dlOnlyStubsFound": "Nothing downloadable here. The {count} response(s) Rumble returned were too small to be this video."
+  "dlOnlyStubsFound": "Nothing downloadable here. The {count} response(s) Rumble returned were too small to be this video.",
+  "feat_commentDrafts_label": "Comment Drafts",
+  "feat_commentDrafts_desc": "Keep unsent comment text through reloads and autoplay",
+  "commentDraftRestored": "Unsent draft restored.",
+  "commentDraftSaved": "Draft saved locally."
 });
     const STORAGE_KEYS_WITH_CHANGE_EVENTS = ['rx_settings'];
     const ALLOWED_REQUEST_HOSTS = ['rumble.com', 'rumble.cloud', '1a-1791.com'];
@@ -14030,6 +14035,7 @@ const RX_CATEGORIES = [
             { id: 'popoutChat', label: 'Popout Chat', desc: 'Legacy popout engine; no chat-header button' },
             { id: 'videoTimestamps', label: 'Timestamps', desc: 'Clickable timestamps in comments/description' },
             { id: 'commentNav', label: 'Comment Nav', desc: 'Navigate, expand/collapse, OP-only filter' },
+            { id: 'commentDrafts', label: 'Comment Drafts', desc: 'Keep unsent comment text through reloads and autoplay' },
             { id: 'commentSort', label: 'Comment Sort', desc: 'Sort comments: Top / New / Oldest / Controversial' },
             { id: 'commentExport', label: 'Comment Export', desc: 'Export visible comments as JSON (click) or CSV (shift-click)' },
             { id: 'rantHighlight', label: 'Rant Highlight', desc: 'Glow rants without a running-total bar' },
@@ -21014,6 +21020,288 @@ const CreatorProgram = {
     }
 };
 
+// ═══════════════════════════════════════════
+//  FEATURE: Comment Drafts
+// ═══════════════════════════════════════════
+// A long comment is the most expensive thing a viewer types on this site, and
+// the two ways it disappears are both ordinary: the player reaches the end and
+// autoplay swaps the page out, or an SPA navigation replaces the comment
+// section. Nothing on Rumble keeps the text.
+//
+// Drafts are keyed by video plus the parent comment being replied to, so a
+// top-level draft and three reply drafts on the same video are separate
+// records. A draft is cleared only after the comment is seen in the list, not
+// when the form is submitted: a submission that fails is exactly when the text
+// is worth keeping.
+const CommentDrafts = {
+    id: 'commentDrafts',
+    name: 'Comment Drafts',
+    _KEY: 'rx_comment_drafts',
+    _MAX_ENTRIES: 200,
+    _TTL_MS: 30 * 24 * 60 * 60 * 1000,
+    _SAVE_DEBOUNCE_MS: 500,
+    _SUBMIT_WATCH_MS: 15000,
+
+    _styleEl: null,
+    _handlers: null,
+    _saveTimers: null,
+    _routeOff: null,
+    _restoreTimer: null,
+    _pendingSubmits: null,
+
+    _css: `
+        .rx-draft-note {
+            display: block;
+            margin: 4px 0 0;
+            font: 500 11px/1.4 system-ui, sans-serif;
+            color: var(--rx-subtext, #a6adc8);
+        }
+        .rx-draft-note[hidden] { display: none; }
+    `,
+
+    _videoId() {
+        const match = location.pathname.match(/\/(v[a-z0-9]+)/i);
+        if (match) return match[1];
+        const player = qs('[id^="vid_v"]');
+        return player ? player.id.replace('vid_', '') : null;
+    },
+
+    // A reply box lives inside the comment it answers; a top-level box does
+    // not. Anything else would merge two different drafts onto one key.
+    _parentId(field) {
+        const item = field?.closest?.('li.comment-item[data-comment-id], .comment-item[data-comment-id]');
+        return item?.getAttribute('data-comment-id') || '';
+    },
+
+    _keyFor(field) {
+        const video = this._videoId();
+        if (!video) return null;
+        return `${video}|${this._parentId(field)}`;
+    },
+
+    _load() {
+        try {
+            const raw = localStorage.getItem(this._KEY);
+            const parsed = raw ? JSON.parse(raw) : null;
+            if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {};
+            return this._prune(parsed);
+        } catch { return {}; }
+    },
+
+    // Expiry and the entry cap are applied on every read and every write, so a
+    // store written by an older build cannot outlive the policy either.
+    _prune(store, now = Date.now()) {
+        const kept = Object.entries(store)
+            .filter(([key, entry]) => (
+                typeof key === 'string'
+                && entry && typeof entry === 'object'
+                && typeof entry.text === 'string'
+                && entry.text.length > 0
+                && Number.isFinite(entry.at)
+                && now - entry.at < this._TTL_MS
+            ))
+            .sort((a, b) => a[1].at - b[1].at)
+            .slice(-this._MAX_ENTRIES);
+        return Object.fromEntries(kept);
+    },
+
+    _write(store) {
+        try {
+            const pruned = this._prune(store);
+            if (Object.keys(pruned).length) localStorage.setItem(this._KEY, JSON.stringify(pruned));
+            else localStorage.removeItem(this._KEY);
+        } catch (e) {
+            console.warn('[RumbleX] comment draft save failed:', e);
+        }
+    },
+
+    _get(key) {
+        return key ? this._load()[key] || null : null;
+    },
+
+    _set(key, text) {
+        if (!key) return;
+        const store = this._load();
+        if (text) store[key] = { text, at: Date.now() };
+        else delete store[key];
+        this._write(store);
+    },
+
+    // Consulted from event handlers that can outlive a hot toggle, so the
+    // setting is read here rather than only at mount.
+    hasDirtyDraft() {
+        if (!Settings.get(this.id)) return false;
+        return Object.keys(this._load()).length > 0;
+    },
+
+    _COMPOSER_SELECTOR: '[data-js*="comment"] textarea, .comments-create-textarea, textarea[name*="comment"]',
+
+    _composers(root = document) {
+        return qsa(this._COMPOSER_SELECTOR, root);
+    },
+
+    // Matched structurally rather than by membership in a document-wide query.
+    // This runs in a capture-phase listener on every input event on the page,
+    // so a querySelectorAll per keystroke is not affordable, and a snapshot
+    // would also miss a composer Rumble added after it was taken.
+    _isComposer(node) {
+        return node instanceof HTMLTextAreaElement && node.matches(this._COMPOSER_SELECTOR);
+    },
+
+    _noteFor(field) {
+        let note = field.parentElement?.querySelector(':scope > .rx-draft-note');
+        if (!note) {
+            note = document.createElement('small');
+            note.className = 'rx-draft-note';
+            note.setAttribute('role', 'status');
+            field.parentElement?.appendChild(note);
+        }
+        return note;
+    },
+
+    _showNote(field, message) {
+        const note = this._noteFor(field);
+        if (!note) return;
+        note.textContent = message || '';
+        note.hidden = !message;
+    },
+
+    _restore() {
+        for (const field of this._composers()) {
+            if (field.value) continue;
+            if (field.dataset.rxDraftRestored === '1') continue;
+            const entry = this._get(this._keyFor(field));
+            if (!entry) continue;
+            field.value = entry.text;
+            field.dataset.rxDraftRestored = '1';
+            // Rumble's own form state is driven by input events, so a silent
+            // value assignment leaves its submit button disabled.
+            field.dispatchEvent(new Event('input', { bubbles: true }));
+            this._showNote(field, rxT('commentDraftRestored', 'Unsent draft restored.'));
+        }
+    },
+
+    // Clearing on submit would throw the text away exactly when the request
+    // failed. Wait until the comment is actually in the list.
+    _watchForSubmission(key, text) {
+        if (!key || !text || this._pendingSubmits.has(key)) return;
+        const normalized = text.trim().replace(/\s+/g, ' ');
+        const root = Selectors.find('comments.root') || document;
+        const seen = () => qsa('.comment-text, [class*="comment"] [class*="text"]', root)
+            .some((node) => (node.textContent || '').trim().replace(/\s+/g, ' ') === normalized);
+
+        const observer = new MutationObserver(() => {
+            if (!seen()) return;
+            stop();
+            this._set(key, '');
+        });
+        const timer = setFeatureTimeout(this, () => stop(), this._SUBMIT_WATCH_MS);
+        const stop = () => {
+            observer.disconnect();
+            clearTimeout(timer);
+            this._pendingSubmits.delete(key);
+        };
+        this._pendingSubmits.set(key, stop);
+        observer.observe(root, { childList: true, subtree: true });
+        // The comment can already be there by the time we start watching.
+        if (seen()) { stop(); this._set(key, ''); }
+    },
+
+    init() {
+        this._styleEl = injectStyle(this._css, 'rx-comment-drafts');
+        this._saveTimers = new Map();
+        this._pendingSubmits = new Map();
+
+        const onInput = (event) => {
+            const field = event.target;
+            if (!this._isComposer(field)) return;
+            const key = this._keyFor(field);
+            if (!key) return;
+            // One timer per draft, not per module. A single shared timer meant
+            // typing in the reply box cancelled the top-level box's pending
+            // save, so only whichever field was touched last was ever stored.
+            clearTimeout(this._saveTimers.get(key));
+            this._saveTimers.set(key, setFeatureTimeout(this, () => {
+                this._saveTimers.delete(key);
+                this._set(key, field.value.trim());
+                this._showNote(field, field.value.trim()
+                    ? rxT('commentDraftSaved', 'Draft saved locally.')
+                    : '');
+            }, this._SAVE_DEBOUNCE_MS));
+        };
+
+        const onSubmit = (event) => {
+            const field = event.target?.querySelector?.('textarea')
+                || (this._isComposer(event.target) ? event.target : null);
+            if (!field) return;
+            const key = this._keyFor(field);
+            const text = field.value.trim();
+            if (key && text) this._watchForSubmission(key, text);
+        };
+
+        // While a draft is dirty the page must not navigate itself away. This
+        // is deliberately independent of Autoplay Block: the text is at risk
+        // whether or not that feature is on.
+        const onEnded = (event) => {
+            if (!(event.target instanceof HTMLMediaElement)) return;
+            if (!this.hasDirtyDraft()) return;
+            event.stopImmediatePropagation();
+            event.preventDefault();
+            try { event.target.pause(); } catch {}
+        };
+
+        // Flush synchronously on the way out, because the debounced save may
+        // not have run yet. Deliberately no preventDefault and no returnValue:
+        // that would raise the browser's "Leave site?" prompt, and this project
+        // does not put confirmation dialogs in front of people. Saving the text
+        // is the whole point; asking about it is not.
+        const onBeforeUnload = () => {
+            if (!Settings.get(this.id)) return;
+            for (const field of this._composers()) {
+                const key = this._keyFor(field);
+                const text = field.value.trim();
+                if (key && text) this._set(key, text);
+            }
+        };
+
+        this._handlers = { onInput, onSubmit, onEnded, onBeforeUnload };
+        document.addEventListener('input', onInput, true);
+        document.addEventListener('submit', onSubmit, true);
+        document.addEventListener('ended', onEnded, true);
+        window.addEventListener('beforeunload', onBeforeUnload);
+
+        this._restore();
+        this._restoreTimer = setFeatureTimeout(this, () => this._restore(), 1200);
+        this._routeOff = Router.onChange(() => {
+            for (const field of this._composers()) delete field.dataset.rxDraftRestored;
+            this._restore();
+        });
+    },
+
+    destroy() {
+        const h = this._handlers;
+        if (h) {
+            document.removeEventListener('input', h.onInput, true);
+            document.removeEventListener('submit', h.onSubmit, true);
+            document.removeEventListener('ended', h.onEnded, true);
+            window.removeEventListener('beforeunload', h.onBeforeUnload);
+        }
+        this._handlers = null;
+        for (const timer of this._saveTimers?.values() || []) clearTimeout(timer);
+        this._saveTimers = null;
+        clearTimeout(this._restoreTimer);
+        this._restoreTimer = null;
+        for (const stop of this._pendingSubmits?.values() || []) stop();
+        this._pendingSubmits = null;
+        this._routeOff?.();
+        this._routeOff = null;
+        for (const note of qsa('.rx-draft-note')) note.remove();
+        for (const field of this._composers()) delete field.dataset.rxDraftRestored;
+        this._styleEl?.remove();
+        this._styleEl = null;
+    },
+};
+
 const features = [
     AdNuker, FeedCleanup, HidePremium, CategoryFilter, DarkEnhance, TheaterSplit,
     VideoDownloader, LogoToFeed, SpeedController, ScrollVolume, AutoMaxQuality,
@@ -21022,6 +21310,7 @@ const features = [
     RantArchive,
     VideoTimestamps, ScreenshotBtn, WatchHistoryFeature, AutoplayBlock,
     SearchHistory, MiniPlayer, VideoStats, LoopControl, QuickBookmark, CommentNav,
+    CommentDrafts,
     RantHighlight, RelatedFilter, ExactCounts, ShareTimestamp, TimeRemaining, ShortsFilter,
     ChatAutoScroll, AutoExpand, NotifEnhance, PlaylistQuickSave,
     // v1.8.0 additions
@@ -21148,7 +21437,14 @@ const RX_LOCAL_STORAGE_KEYS = [
     // ceiling here. It was missing from this list, so Reset All Data reported a
     // complete wipe and left it behind, and Export Backup never carried it.
     'rx_channel_prefs',
+    'rx_comment_drafts',
 ];
+
+// Keys this origin owns that Reset All Data clears but a backup does not carry.
+// An unsent comment draft is private text the user has not chosen to publish;
+// restoring it into a different browser, or months later on another machine,
+// is not what "restore my settings" means.
+const RX_BACKUP_EXCLUDED_KEYS = ['rx_comment_drafts'];
 // Plus any key starting with these prefixes (per-video caches).
 const RX_LOCAL_STORAGE_PREFIXES = ['rx_rants_'];
 
@@ -21194,6 +21490,7 @@ function rxReadLocalStorage() {
     const out = {};
     try {
         for (const k of RX_LOCAL_STORAGE_KEYS) {
+            if (RX_BACKUP_EXCLUDED_KEYS.includes(k)) continue;
             const v = localStorage.getItem(k);
             if (v !== null) out[k] = v;
         }
@@ -21216,8 +21513,9 @@ function rxReadLocalStorage() {
 function rxWriteLocalStorage(data) {
     if (!data || typeof data !== 'object') return 0;
     let written = 0;
-    const allowed = (k) => RX_LOCAL_STORAGE_KEYS.includes(k)
-        || RX_LOCAL_STORAGE_PREFIXES.some((p) => k.startsWith(p));
+    const allowed = (k) => !RX_BACKUP_EXCLUDED_KEYS.includes(k)
+        && (RX_LOCAL_STORAGE_KEYS.includes(k)
+            || RX_LOCAL_STORAGE_PREFIXES.some((p) => k.startsWith(p)));
     try {
         for (const [k, v] of Object.entries(data)) {
             if (typeof k !== 'string' || typeof v !== 'string') continue;

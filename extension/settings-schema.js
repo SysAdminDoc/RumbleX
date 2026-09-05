@@ -38,6 +38,7 @@
         loopControl: true,
         quickBookmark: true,
         commentNav: true,
+        commentDrafts: true,
         rantHighlight: true,
         relatedFilter: true,
         exactCounts: true,

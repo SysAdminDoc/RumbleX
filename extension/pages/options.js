@@ -146,6 +146,7 @@
         popoutChat: { group: 'comments-chat', label: 'Popout Chat', desc: 'Legacy popout engine; no chat-header button' },
         videoTimestamps: { group: 'comments-chat', label: 'Timestamps', desc: 'Clickable timestamps in comments/description' },
         commentNav: { group: 'comments-chat', label: 'Comment Nav', desc: 'Navigate, expand/collapse, OP-only filter' },
+        commentDrafts: { group: 'comments-chat', label: 'Comment Drafts', desc: 'Keep unsent comment text through reloads and autoplay' },
         commentSort: { group: 'comments-chat', label: 'Comment Sort', desc: 'Top / New / Oldest / Controversial' },
         rantHighlight: { group: 'comments-chat', label: 'Rant Highlight', desc: 'Glow rants without a running-total bar' },
         rantPersist: { group: 'comments-chat', label: 'Rant Persist', desc: 'Keep rants visible past expiry + export' },

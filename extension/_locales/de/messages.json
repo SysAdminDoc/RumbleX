@@ -2160,5 +2160,21 @@
   "dlOnlyStubsFound": {
     "message": "Hier gibt es nichts zum Herunterladen. Die {count} Antwort(en) von Rumble waren zu klein für dieses Video.",
     "description": "In-page UI string (shared core)."
+  },
+  "commentDraftRestored": {
+    "message": "Nicht gesendeter Entwurf wiederhergestellt.",
+    "description": "In-page UI string (shared core)."
+  },
+  "commentDraftSaved": {
+    "message": "Entwurf lokal gespeichert.",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_commentDrafts_label": {
+    "message": "Kommentarentwürfe",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_commentDrafts_desc": {
+    "message": "Ungesendeten Kommentartext über Neuladen und Autoplay hinweg behalten",
+    "description": "In-page UI string (shared core)."
   }
 }

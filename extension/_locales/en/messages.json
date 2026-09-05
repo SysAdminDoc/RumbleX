@@ -2162,5 +2162,21 @@
   "dlOnlyStubsFound": {
     "message": "Nothing downloadable here. The {count} response(s) Rumble returned were too small to be this video.",
     "description": "In-page UI string (shared core)."
+  },
+  "feat_commentDrafts_label": {
+    "message": "Comment Drafts",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_commentDrafts_desc": {
+    "message": "Keep unsent comment text through reloads and autoplay",
+    "description": "In-page UI string (shared core)."
+  },
+  "commentDraftRestored": {
+    "message": "Unsent draft restored.",
+    "description": "In-page UI string (shared core)."
+  },
+  "commentDraftSaved": {
+    "message": "Draft saved locally.",
+    "description": "In-page UI string (shared core)."
   }
 }
