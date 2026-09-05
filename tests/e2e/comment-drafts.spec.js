@@ -148,32 +148,90 @@ test('a dirty draft stops the player advancing to the next video', async () => {
     });
 });
 
-test('a draft survives submission and clears only once the comment appears', async () => {
+// Rumble's composer is a bare textarea inside li.comments-create with no form
+// anywhere near it (see tests/fixtures/platform/rumble_decoded.html), so there
+// is no submit event to hang this on and none is simulated here. The draft goes
+// when the posted comment is seen arriving in the list, and not before.
+test('a draft survives a failed post and clears only when the comment arrives', async () => {
     await withHarness(async (page) => {
         await type(page, '#top-composer', 'Posted at last');
         await expect.poll(async () => Object.keys((await readStore(page)) || {}).length).toBe(1);
 
-        // Submitted, but the comment never lands. A failed post is exactly when
-        // the text is worth keeping.
+        // The post fails: the list churns, but nothing carrying this text ever
+        // lands. A failed post is exactly when the text is worth keeping.
         await page.evaluate(() => {
-            const field = document.querySelector('#top-composer');
-            const form = document.createElement('form');
-            field.parentElement.appendChild(form);
-            form.appendChild(field);
-            form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+            const other = document.createElement('li');
+            other.className = 'comment-item';
+            other.setAttribute('data-comment-id', 'c-1002');
+            other.innerHTML = '<div class="comment-text">Somebody else entirely</div>';
+            document.querySelector('#comment-list').appendChild(other);
         });
-        await page.waitForTimeout(400);
+        await page.waitForTimeout(300);
         expect(Object.keys((await readStore(page)) || {})).toHaveLength(1);
 
-        // Now it shows up in the list.
+        // Nor does a comment already on the page count. Short replies collide
+        // all the time, and re-reading the list would throw the draft away for
+        // matching text the reader never wrote.
+        await page.evaluate(() => {
+            document.querySelector('#comment-list').firstElementChild
+                .querySelector('.comment-text').textContent = 'Posted at last';
+        });
+        await page.waitForTimeout(300);
+        expect(Object.keys((await readStore(page)) || {})).toHaveLength(1);
+
+        // Now the post lands. Whitespace differs, because Rumble renders the
+        // comment body indented inside its own markup.
         await page.evaluate(() => {
             const item = document.createElement('li');
             item.className = 'comment-item';
-            item.setAttribute('data-comment-id', 'c-1002');
-            item.innerHTML = '<div class="comment-text">Posted at last</div>';
+            item.setAttribute('data-comment-id', 'c-1003');
+            item.innerHTML = '<div class="comment-text">  Posted   at last </div>';
             document.querySelector('#comment-list').appendChild(item);
         });
         await expect.poll(async () => Object.keys((await readStore(page)) || {}).length).toBe(0);
+    });
+});
+
+test('an arriving comment clears only the draft it matches', async () => {
+    await withHarness(async (page) => {
+        await type(page, '#top-composer', 'The one that posts');
+        await type(page, '#reply-composer', 'The one still being written');
+        await expect.poll(async () => Object.keys((await readStore(page)) || {}).length).toBe(2);
+
+        await page.evaluate(() => {
+            const item = document.createElement('li');
+            item.className = 'comment-item';
+            item.setAttribute('data-comment-id', 'c-2001');
+            item.innerHTML = '<div class="comment-text">The one that posts</div>';
+            document.querySelector('#comment-list').appendChild(item);
+        });
+        await expect.poll(async () => Object.keys((await readStore(page)) || {}).length).toBe(1);
+        const store = await readStore(page);
+        expect(Object.keys(store)).toEqual([`${VIDEO}|c-1001`]);
+        expect(store[`${VIDEO}|c-1001`].text).toBe('The one still being written');
+    });
+});
+
+// Reply boxes are minted when the reader clicks Reply, long after mount, so a
+// one-shot restore leaves them empty while the draft sits in storage.
+test('a reply box created after mount is filled from storage', async () => {
+    await withHarness(async (page) => {
+        await page.evaluate((key) => {
+            localStorage.setItem(key, JSON.stringify({
+                'vfeature123|c-3001': { text: 'Written before the box existed', at: Date.now() },
+            }));
+        }, DRAFT_KEY);
+
+        await page.evaluate(() => {
+            const item = document.createElement('li');
+            item.className = 'comment-item';
+            item.setAttribute('data-comment-id', 'c-3001');
+            item.innerHTML = '<div class="comment-text">Some comment</div>'
+                + '<div data-js="comment_reply_form"><textarea id="late-reply"></textarea></div>';
+            document.querySelector('#comment-list').appendChild(item);
+        });
+        await expect.poll(() => page.evaluate(() => document.querySelector('#late-reply')?.value))
+            .toBe('Written before the box existed');
     });
 });
 

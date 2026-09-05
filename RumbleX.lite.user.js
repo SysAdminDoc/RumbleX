@@ -23,7 +23,7 @@
 // @updateURL    https://github.com/SysAdminDoc/RumbleX/raw/main/RumbleX.lite.user.js
 // ==/UserScript==
 
-// Generated from the shared extension core files. Shared runtime SHA-256: 87b820d46172ac12b54061e750ad310c97b479ebf601b46b4c19d2362f419622
+// Generated from the shared extension core files. Shared runtime SHA-256: 51559c21fd5e34e0bb8e88d216db0fec332b2d6fd592f81cd4f46aa8b8104369
 // RumbleX shared settings schema. This file is the canonical source for
 // defaults and trust-boundary normalization across content, options, popup,
 // background profile/Gist restores, and the generated userscript.
@@ -21127,14 +21127,13 @@ const CommentDrafts = {
     _MAX_ENTRIES: 200,
     _TTL_MS: 30 * 24 * 60 * 60 * 1000,
     _SAVE_DEBOUNCE_MS: 500,
-    _SUBMIT_WATCH_MS: 15000,
 
     _styleEl: null,
     _handlers: null,
     _saveTimers: null,
     _routeOff: null,
-    _restoreTimer: null,
-    _pendingSubmits: null,
+    _commentObs: null,
+    _composerObs: null,
 
     _css: `
         .rx-draft-note {
@@ -21218,7 +21217,13 @@ const CommentDrafts = {
     // setting is read here rather than only at mount.
     hasDirtyDraft() {
         if (!Settings.get(this.id)) return false;
-        return Object.keys(this._load()).length > 0;
+        // Scoped to the video being watched. The store is shared across videos,
+        // so asking whether any draft exists anywhere suppressed auto-next on
+        // every video for as long as one unsent draft survived.
+        const video = this._videoId();
+        if (!video) return false;
+        const prefix = `${video}|`;
+        return Object.keys(this._load()).some((key) => key.startsWith(prefix));
     },
 
     _COMPOSER_SELECTOR: '[data-js*="comment"] textarea, .comments-create-textarea, textarea[name*="comment"]',
@@ -21269,35 +21274,59 @@ const CommentDrafts = {
     },
 
     // Clearing on submit would throw the text away exactly when the request
-    // failed. Wait until the comment is actually in the list.
-    _watchForSubmission(key, text) {
-        if (!key || !text || this._pendingSubmits.has(key)) return;
-        const normalized = text.trim().replace(/\s+/g, ' ');
-        const root = Selectors.find('comments.root') || document;
-        const seen = () => qsa('.comment-text, [class*="comment"] [class*="text"]', root)
-            .some((node) => (node.textContent || '').trim().replace(/\s+/g, ' ') === normalized);
-
-        const observer = new MutationObserver(() => {
-            if (!seen()) return;
-            stop();
-            this._set(key, '');
-        });
-        const timer = setFeatureTimeout(this, () => stop(), this._SUBMIT_WATCH_MS);
-        const stop = () => {
-            observer.disconnect();
-            clearTimeout(timer);
-            this._pendingSubmits.delete(key);
-        };
-        this._pendingSubmits.set(key, stop);
-        observer.observe(root, { childList: true, subtree: true });
-        // The comment can already be there by the time we start watching.
-        if (seen()) { stop(); this._set(key, ''); }
+    // failed, so a draft goes only when the comment is seen in the list.
+    //
+    // There is no submit event to hang this on: Rumble's composer is a bare
+    // textarea inside li.comments-create with no form anywhere near it, so the
+    // earlier submit listener never fired on the real page and drafts were
+    // never cleared at all. Watching the list for an added comment is both
+    // form-independent and a more literal reading of "observed".
+    //
+    // Only nodes the observer sees ARRIVE count. Matching against comments
+    // already on the page would discard a draft the moment its text happened
+    // to duplicate someone else's, which is common for short replies.
+    _normalize(text) {
+        return String(text || '').trim().replace(/\s+/g, ' ');
     },
 
+    _clearMatchingDrafts(node) {
+        const store = this._load();
+        const keys = Object.keys(store);
+        if (!keys.length) return;
+        const texts = new Set();
+        const collect = (el) => {
+            const value = this._normalize(el.textContent);
+            if (value) texts.add(value);
+        };
+        if (node.matches?.('.comment-text')) collect(node);
+        for (const el of node.querySelectorAll?.('.comment-text') || []) collect(el);
+        if (!texts.size) return;
+        let changed = false;
+        for (const key of keys) {
+            if (texts.has(this._normalize(store[key].text))) { delete store[key]; changed = true; }
+        }
+        if (changed) this._write(store);
+    },
+
+    _watchComments() {
+        this._commentObs?.disconnect();
+        const root = Selectors.find('comments.root') || qs('#video-comments');
+        if (!root) return;
+        this._commentObs = new MutationObserver((records) => {
+            for (const record of records) {
+                for (const added of record.addedNodes) {
+                    if (added.nodeType === 1) this._clearMatchingDrafts(added);
+                }
+            }
+        });
+        this._commentObs.observe(root, { childList: true, subtree: true });
+    },
     init() {
+        // The boot loop calls init on every module; a feature that is switched
+        // off must not still be writing unsent private text to disk.
+        if (!Settings.get(this.id)) return;
         this._styleEl = injectStyle(this._css, 'rx-comment-drafts');
         this._saveTimers = new Map();
-        this._pendingSubmits = new Map();
 
         const onInput = (event) => {
             const field = event.target;
@@ -21317,18 +21346,12 @@ const CommentDrafts = {
             }, this._SAVE_DEBOUNCE_MS));
         };
 
-        const onSubmit = (event) => {
-            const field = event.target?.querySelector?.('textarea')
-                || (this._isComposer(event.target) ? event.target : null);
-            if (!field) return;
-            const key = this._keyFor(field);
-            const text = field.value.trim();
-            if (key && text) this._watchForSubmission(key, text);
-        };
-
-        // While a draft is dirty the page must not navigate itself away. This
-        // is deliberately independent of Autoplay Block: the text is at risk
-        // whether or not that feature is on.
+        // While THIS video has unsent text the page must not move itself on.
+        // Scoped to the current video deliberately: the store is shared, and
+        // an earlier version asked only whether any draft existed anywhere,
+        // which suppressed auto-next on every video for as long as one draft
+        // survived. Suppression also stops the page's own end-of-video
+        // handlers, which is the point, and is why it must stay this narrow.
         const onEnded = (event) => {
             if (!(event.target instanceof HTMLMediaElement)) return;
             if (!this.hasDirtyDraft()) return;
@@ -21339,9 +21362,8 @@ const CommentDrafts = {
 
         // Flush synchronously on the way out, because the debounced save may
         // not have run yet. Deliberately no preventDefault and no returnValue:
-        // that would raise the browser's "Leave site?" prompt, and this project
-        // does not put confirmation dialogs in front of people. Saving the text
-        // is the whole point; asking about it is not.
+        // that would raise the browser's "Leave site?" prompt, and this
+        // project does not put confirmation dialogs in front of people.
         const onBeforeUnload = () => {
             if (!Settings.get(this.id)) return;
             for (const field of this._composers()) {
@@ -21351,35 +21373,53 @@ const CommentDrafts = {
             }
         };
 
-        this._handlers = { onInput, onSubmit, onEnded, onBeforeUnload };
+        this._handlers = { onInput, onEnded, onBeforeUnload };
         document.addEventListener('input', onInput, true);
-        document.addEventListener('submit', onSubmit, true);
         document.addEventListener('ended', onEnded, true);
         window.addEventListener('beforeunload', onBeforeUnload);
 
         this._restore();
-        this._restoreTimer = setFeatureTimeout(this, () => this._restore(), 1200);
-        this._routeOff = Router.onChange(() => {
+        this._watchComments();
+        // Reply boxes are minted when the reader clicks Reply, long after
+        // mount, so a one-shot restore leaves them empty while the draft sits
+        // in storage. Watch for composers arriving instead of guessing a delay.
+        this._composerObs = new MutationObserver((records) => {
+            for (const record of records) {
+                for (const added of record.addedNodes) {
+                    if (added.nodeType !== 1) continue;
+                    if (this._isComposer(added) || added.querySelector?.(this._COMPOSER_SELECTOR)) {
+                        this._restore();
+                        return;
+                    }
+                }
+            }
+        });
+        this._composerObs.observe(document.body || document.documentElement, { childList: true, subtree: true });
+        // A route change replaces the comment section, so the restore marks go
+        // with it. Only act when the route actually changed: Router also fires
+        // on visibilitychange, and re-restoring there would put back text the
+        // reader had just deleted but not yet saved.
+        this._routeOff = Router.onChange((detail) => {
+            if (detail && detail.changed === false) return;
             for (const field of this._composers()) delete field.dataset.rxDraftRestored;
             this._restore();
+            this._watchComments();
         });
     },
-
     destroy() {
         const h = this._handlers;
         if (h) {
             document.removeEventListener('input', h.onInput, true);
-            document.removeEventListener('submit', h.onSubmit, true);
             document.removeEventListener('ended', h.onEnded, true);
             window.removeEventListener('beforeunload', h.onBeforeUnload);
         }
         this._handlers = null;
         for (const timer of this._saveTimers?.values() || []) clearTimeout(timer);
         this._saveTimers = null;
-        clearTimeout(this._restoreTimer);
-        this._restoreTimer = null;
-        for (const stop of this._pendingSubmits?.values() || []) stop();
-        this._pendingSubmits = null;
+        this._commentObs?.disconnect();
+        this._commentObs = null;
+        this._composerObs?.disconnect();
+        this._composerObs = null;
         this._routeOff?.();
         this._routeOff = null;
         for (const note of qsa('.rx-draft-note')) note.remove();

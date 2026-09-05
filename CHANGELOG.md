@@ -6,7 +6,7 @@ All notable changes to RumbleX will be documented in this file.
 
 ### Added
 
-- Comments you have started writing are no longer lost. A long comment is the most expensive thing you type on Rumble, and it disappears in two ordinary ways: the video ends and the page moves on, or the comment section is replaced as you navigate. Unsent text is now kept on your machine, per video and per comment you are replying to, and comes back when you return. While anything is unsent the player will not advance to the next video on its own. A draft is only discarded once the comment actually shows up in the list, so a post that fails keeps your text. Drafts expire after thirty days, Reset All Data clears them, and they are deliberately left out of backups: unsent private text is not something a settings backup should carry to another machine.
+- Comments you have started writing are no longer lost. A long comment is the most expensive thing you type on Rumble, and it disappears in two ordinary ways: the video ends and the page moves on, or the comment section is replaced as you navigate. Unsent text is now kept on your machine, per video and per comment you are replying to, and comes back when you return. A reply box you open after the page has loaded is filled in too. While anything is unsent the player will not advance to the next video on its own. A draft is only discarded once the comment actually shows up in the list, so a post that fails keeps your text. Drafts expire after thirty days, Reset All Data clears them, and they are deliberately left out of backups: unsent private text is not something a settings backup should carry to another machine.
 
 ### Fixed
 
