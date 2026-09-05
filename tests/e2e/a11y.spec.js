@@ -3,9 +3,9 @@
 //
 // Runs axe-core via @axe-core/playwright against every page surface the
 // extension owns (popup, options, in-side-panel options). Fails on any
-// "critical" or "serious" WCAG 2.1 / 2.2 violation. "moderate" and "minor"
-// violations are surfaced as a warning summary but don't fail the build —
-// we'll triage those by hand each release.
+// violation of a rule tagged as a WCAG 2.0/2.1/2.2 A or AA success criterion,
+// whatever severity Axe assigns it. Best-practice findings are reported but do
+// not fail, because they are advice rather than the standard.
 //
 // Scope: the static extension pages only. Content-script overlays
 // injected into rumble.com (settings modal, toast region, ext-player
@@ -21,7 +21,18 @@ const { AxeBuilder } = require('@axe-core/playwright');
 const fs = require('fs');
 const path = require('path');
 
-const FAIL_IMPACTS = new Set(['critical', 'serious']);
+// v3.58.0 — Conformance is decided by the rule, not by Axe's impact guess.
+//
+// This suite described itself as WCAG 2.2 AA while failing only on critical and
+// serious findings, so a moderate violation of a rule that IS the standard —
+// colour contrast at AA, an accessible name, a form label — passed and was
+// logged as "informational". Impact is Deque's severity heuristic; the tag says
+// whether the rule is a success criterion. A violation carrying any of the
+// selected WCAG tags fails now, whatever its impact. Best-practice rules are
+// requested on the surfaces that want them and reported separately, because
+// they are advice rather than the standard.
+const WCAG_TAGS = Object.freeze(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa']);
+const isWcagViolation = (violation) => (violation.tags || []).some((tag) => WCAG_TAGS.includes(tag));
 const OFFLINE_RUMBLE_FIXTURE = fs.readFileSync(path.join(__dirname, '..', 'fixtures', 'platform', 'offline-watch.html'), 'utf8');
 
 test.setTimeout(90_000);
@@ -55,13 +66,13 @@ test('options page passes axe-core WCAG 2.2 AA', async ({ context, extensionId }
     // async on a 250ms setTimeout in v3.1) so axe sees the final DOM.
     await page.waitForTimeout(400);
     const results = await scanPage(page);
-    const fails = results.violations.filter((v) => FAIL_IMPACTS.has(v.impact));
+    const fails = results.violations.filter(isWcagViolation);
     if (fails.length) {
-        console.error('axe critical/serious violations:', JSON.stringify(summarizeViolations(fails), null, 2));
+        console.error('axe WCAG A/AA violations:', JSON.stringify(summarizeViolations(fails), null, 2));
     }
     if (results.violations.length) {
-        console.warn('axe moderate/minor violations (informational):', summarizeViolations(
-            results.violations.filter((v) => !FAIL_IMPACTS.has(v.impact)),
+        console.warn('axe best-practice findings (not WCAG, informational):', summarizeViolations(
+            results.violations.filter((v) => !isWcagViolation(v)),
         ));
     }
     expect(fails).toEqual([]);
@@ -75,9 +86,9 @@ test('options settings modal passes axe-core WCAG 2.2 AA', async ({ context, ext
     // Let the dirty-draft workspace render every settings card.
     await page.waitForTimeout(600);
     const results = await scanPage(page);
-    const fails = results.violations.filter((v) => FAIL_IMPACTS.has(v.impact));
+    const fails = results.violations.filter(isWcagViolation);
     if (fails.length) {
-        console.error('axe critical/serious violations:', JSON.stringify(summarizeViolations(fails), null, 2));
+        console.error('axe WCAG A/AA violations:', JSON.stringify(summarizeViolations(fails), null, 2));
     }
     expect(fails).toEqual([]);
 });
@@ -87,9 +98,9 @@ test('popup passes axe-core WCAG 2.2 AA', async ({ context, extensionId }) => {
     await page.goto(`chrome-extension://${extensionId}/pages/popup.html`);
     await page.waitForTimeout(200);
     const results = await scanPage(page);
-    const fails = results.violations.filter((v) => FAIL_IMPACTS.has(v.impact));
+    const fails = results.violations.filter(isWcagViolation);
     if (fails.length) {
-        console.error('axe critical/serious violations:', JSON.stringify(summarizeViolations(fails), null, 2));
+        console.error('axe WCAG A/AA violations:', JSON.stringify(summarizeViolations(fails), null, 2));
     }
     expect(fails).toEqual([]);
 });
@@ -125,9 +136,9 @@ test('injected settings modal passes axe-core WCAG 2.2 AA on offline Rumble fixt
         .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa', 'best-practice'])
         .disableRules(['region'])
         .analyze();
-    const fails = results.violations.filter((v) => FAIL_IMPACTS.has(v.impact));
+    const fails = results.violations.filter(isWcagViolation);
     if (fails.length) {
-        console.error('injected modal axe critical/serious violations:', JSON.stringify(summarizeViolations(fails), null, 2));
+        console.error('injected modal axe WCAG A/AA violations:', JSON.stringify(summarizeViolations(fails), null, 2));
     }
     expect(fails).toEqual([]);
 
@@ -543,7 +554,7 @@ test('every injected feature surface passes axe-core WCAG 2.2 AA', async ({ cont
             .disableRules(['region'])
             .analyze();
 
-        const fails = results.violations.filter((v) => FAIL_IMPACTS.has(v.impact));
+        const fails = results.violations.filter(isWcagViolation);
         if (fails.length) {
             offenders.push({ surface: surface.id, violations: summarizeViolations(fails) });
         }
@@ -553,7 +564,7 @@ test('every injected feature surface passes axe-core WCAG 2.2 AA', async ({ cont
         console.error('surfaces that never rendered:', notMounted);
     }
     if (offenders.length) {
-        console.error('axe critical/serious violations by surface:', JSON.stringify(offenders, null, 2));
+        console.error('axe WCAG A/AA violations by surface:', JSON.stringify(offenders, null, 2));
     }
     expect(offenders).toEqual([]);
 
@@ -636,4 +647,155 @@ test('every control inside an injected surface is natively operable by keyboard'
     }
     expect(problems).toEqual([]);
     expect(scanned).toBeGreaterThanOrEqual(21);
+});
+
+// ── Display-preference contracts ────────────────────────────────────────────
+// Neither of these is something axe can see. Axe reads the DOM under whatever
+// media features the page happens to have; it will not tell you that a panel
+// loses its only boundary under Windows High Contrast, or that a hover lift
+// keeps animating for someone who asked the OS to stop.
+
+async function openInjectedFixture(context, colorScheme, reducedMotion, forcedColors) {
+    const page = await context.newPage();
+    await page.route('**/*', (route) => {
+        const url = route.request().url();
+        if (url.startsWith('https://rumble.com/')) {
+            return route.fulfill({ status: 200, contentType: 'text/html', body: OFFLINE_RUMBLE_FIXTURE });
+        }
+        return route.abort();
+    });
+    await page.emulateMedia({ colorScheme, reducedMotion, forcedColors });
+    await page.goto('https://rumble.com/vdisplay-prefs.html', { waitUntil: 'domcontentloaded' });
+    await page.waitForSelector('#rx-settings-btn', { state: 'attached', timeout: 15_000 });
+    return page;
+}
+
+test('forced colors keeps every RumbleX boundary, focus ring and selection visible', async ({ context }) => {
+    const page = await openInjectedFixture(context, 'dark', 'no-preference', 'active');
+    await page.evaluate(() => document.querySelector('#rx-settings-btn')?.click());
+    await page.waitForFunction(() => document.body.classList.contains('rx-panel-open'), null, { timeout: 5_000 });
+    await page.waitForFunction(
+        () => getComputedStyle(document.querySelector('#rx-modal')).opacity === '1',
+        null,
+        { timeout: 5_000 },
+    );
+
+    const state = await page.evaluate(() => {
+        const read = (selector) => {
+            const node = document.querySelector(selector);
+            if (!node) return null;
+            const style = getComputedStyle(node);
+            return {
+                borderTopWidth: style.borderTopWidth,
+                borderTopStyle: style.borderTopStyle,
+                borderTopColor: style.borderTopColor,
+                backgroundColor: style.backgroundColor,
+                color: style.color,
+                forcedColorAdjust: style.forcedColorAdjust,
+            };
+        };
+        return {
+            styleMounted: !!document.getElementById('rumblex-forced-colors'),
+            modal: read('#rx-modal'),
+            settingsButton: read('#rx-settings-btn'),
+        };
+    });
+
+    // Positive control: the rule set has to actually be on the page, or every
+    // assertion below is measuring the default styling.
+    expect(state.styleMounted).toBe(true);
+
+    // A panel with no edge is indistinguishable from the page behind it.
+    expect(state.modal).toBeTruthy();
+    expect(state.modal.borderTopStyle).not.toBe('none');
+    expect(Number.parseFloat(state.modal.borderTopWidth)).toBeGreaterThan(0);
+    // System colours resolve to real values, so a transparent border would mean
+    // the rule did not apply.
+    expect(state.modal.borderTopColor).not.toBe('rgba(0, 0, 0, 0)');
+    expect(state.modal.forcedColorAdjust).toBe('none');
+
+    // Background and foreground must differ, or the panel is unreadable.
+    expect(state.modal.backgroundColor).not.toBe(state.modal.color);
+    expect(state.settingsButton).toBeTruthy();
+    expect(state.settingsButton.forcedColorAdjust).toBe('none');
+
+    // getComputedStyle cannot read a pseudo-class, so the focus ring has to be
+    // measured on an element that genuinely matches :focus-visible. Tab is what
+    // puts a browser into the keyboard-modality state the selector depends on.
+    await page.keyboard.press('Tab');
+    const focus = await page.evaluate(() => {
+        const active = document.activeElement;
+        if (!active || active === document.body) return { focused: false };
+        const style = getComputedStyle(active);
+        return {
+            focused: true,
+            matchesFocusVisible: active.matches(':focus-visible'),
+            outlineWidth: style.outlineWidth,
+            outlineStyle: style.outlineStyle,
+            insideModal: !!active.closest('#rx-modal'),
+        };
+    });
+    expect(focus.focused).toBe(true);
+    expect(focus.insideModal).toBe(true);
+    expect(focus.matchesFocusVisible).toBe(true);
+    expect(focus.outlineStyle).not.toBe('none');
+    expect(Number.parseFloat(focus.outlineWidth)).toBeGreaterThan(0);
+});
+
+test('reduced motion stops RumbleX animation, shimmer and hover lift', async ({ context }) => {
+    const page = await openInjectedFixture(context, 'dark', 'reduce', 'none');
+
+    const state = await page.evaluate(() => {
+        const probe = document.createElement('div');
+        probe.id = 'rx-motion-probe';
+        probe.className = 'rx-shimmer rx-card';
+        probe.style.transition = 'transform 400ms ease';
+        probe.style.animation = 'rx-fake 900ms linear infinite';
+        document.body.appendChild(probe);
+        const style = getComputedStyle(probe);
+        const result = {
+            styleMounted: !!document.getElementById('rumblex-os-reduced-motion'),
+            transitionDuration: style.transitionDuration,
+            animationDuration: style.animationDuration,
+            animationName: style.animationName,
+            scrollBehavior: getComputedStyle(document.documentElement).scrollBehavior,
+            rootHasActiveClass: document.documentElement.classList.contains('rumblex-active'),
+        };
+        probe.remove();
+        return result;
+    });
+
+    // Positive control again: the class is what every rule is scoped to.
+    expect(state.styleMounted).toBe(true);
+    expect(state.rootHasActiveClass).toBe(true);
+
+    // 0.001ms is the project's existing "effectively off" value; anything that
+    // still reads as a perceptible duration means a rule stopped applying.
+    expect(Number.parseFloat(state.transitionDuration)).toBeLessThan(0.01);
+    expect(Number.parseFloat(state.animationDuration)).toBeLessThan(0.01);
+    // The shimmer is switched off by name, not merely shortened.
+    expect(state.animationName).toBe('none');
+    expect(state.scrollBehavior).toBe('auto');
+});
+
+test('the motion and forced-colors rules do nothing when neither preference is set', async ({ context }) => {
+    // Without this, a rule that applied unconditionally would satisfy both
+    // tests above while quietly flattening the default experience.
+    const page = await openInjectedFixture(context, 'dark', 'no-preference', 'none');
+    const state = await page.evaluate(() => {
+        const probe = document.createElement('div');
+        probe.className = 'rx-card';
+        probe.style.transition = 'transform 400ms ease';
+        document.body.appendChild(probe);
+        const style = getComputedStyle(probe);
+        const result = {
+            transitionDuration: style.transitionDuration,
+            forcedColorAdjust: style.forcedColorAdjust,
+        };
+        probe.remove();
+        return result;
+    });
+
+    expect(Number.parseFloat(state.transitionDuration)).toBeCloseTo(0.4, 2);
+    expect(state.forcedColorAdjust).toBe('auto');
 });

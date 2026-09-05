@@ -4,8 +4,13 @@ All notable changes to RumbleX will be documented in this file.
 
 ## Unreleased
 
+### Fixed
+
+- Keyboard focus is visible again in Windows High Contrast. RumbleX replaces the browser's focus outline with a glow, and High Contrast throws glows away, so anyone using it had no focus indicator anywhere in the extension's in-page interface. Panels, menus and toasts also lost their only edge and blended into the page behind them, and the settings switches stopped showing which way they were set. All of it now paints from the system palette in that mode.
+
 ### Changed
 
+- The accessibility suite now fails on any violation of a WCAG A or AA rule rather than only the ones the scanner labels critical or serious. It described itself as WCAG 2.2 AA while a moderate contrast or missing-label finding passed as informational. The scanner is also on 4.13.0, which is the first release that understands the modern component APIs Rumble's own player uses. Best-practice findings are still reported and still do not fail.
 - Download quality detection no longer depends on Rumble's CDN allowing the page to read its responses. Chrome treats a request from an in-page script as cross-origin even where the extension has permission for that host, so every probe worked only while the CDN kept returning permissive headers, and if that changed the quality list would simply come back empty with nothing to explain it. Extension builds send probes through the background worker, which does hold the permission. Userscripts keep the direct path, since they have no background to send anything to, and now say when a refusal was the browser blocking the read rather than the file being absent. Probes are capped per scan and restricted to Rumble's own hosts.
 - RumbleX's own panels follow the theme you picked. Around 190 lines of injected styling had the Catppuccin palette written into them directly, so the watch-progress bar, the resume prompt and several panel surfaces stayed Catppuccin pink and blue on the other four themes. They read the active palette now, and switching themes repaints them without a reload. With the site theme turned off they keep the same readable colours they always had. A build check fails on any palette colour written outside the theme definitions, including inside an inline style string.
 - Backups now carry the rant history that spans every video you have watched. Export already included watch progress, bookmarks, searches and per-video rant archives whenever a Rumble tab was open, but the cross-video rant summary lives in extension storage and was in no backup at all, so a reset destroyed it for good. Backup files are version 3 as a result, and files written by older versions still import.

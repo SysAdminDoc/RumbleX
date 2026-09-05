@@ -23,7 +23,7 @@
 // @updateURL    https://github.com/SysAdminDoc/RumbleX/raw/main/RumbleX.user.js
 // ==/UserScript==
 
-// Generated from the shared extension core files. Shared runtime SHA-256: 28b7f1394c3dd1585fd07c35aa8eb7cea07011ee34aa015c7d9baa2e8bbab2c6
+// Generated from the shared extension core files. Shared runtime SHA-256: ddcdb6136874ed2944bc1829708b84524d8808ece09befcdd4d995d0fe6d88db
 // RumbleX shared settings schema. This file is the canonical source for
 // defaults and trust-boundary normalization across content, options, popup,
 // background profile/Gist restores, and the generated userscript.
@@ -2811,6 +2811,70 @@ osMotionStyle.textContent = `
             scroll-behavior: auto !important;
         }
         html.rumblex-active .rx-shimmer { animation: none !important; }
+        /* Hover lifts and the preview zoom are motion too, not decoration. */
+        html.rumblex-active [class^="rx-"]:hover, html.rumblex-active [class*=" rx-"]:hover {
+            transform: none !important;
+        }
+    }
+`;
+
+// v3.58.0 — Forced colors.
+//
+// Every RumbleX surface communicated its edges with a themed background and a
+// low-contrast border. Windows High Contrast throws both away and paints from
+// the system palette, so panels, menus and toasts dissolved into the page with
+// no boundary at all, and the settings toggle became a shape with no state.
+// The extension's own pages had this treatment; the surfaces injected into
+// Rumble did not. System keywords only here: forced-colors is the one context
+// where a hardcoded colour is the bug rather than the fix.
+const osForcedColorsStyle = document.createElement('style');
+osForcedColorsStyle.id = 'rumblex-forced-colors';
+osForcedColorsStyle.textContent = `
+    @media (forced-colors: active) {
+        html.rumblex-active [class^="rx-"], html.rumblex-active [class*=" rx-"],
+        html.rumblex-active [id^="rx-"] {
+            forced-color-adjust: none;
+            background: Canvas;
+            color: CanvasText;
+        }
+        /* A panel without an edge is indistinguishable from the page behind it. */
+        html.rumblex-active #rx-modal, html.rumblex-active .rx-panel,
+        html.rumblex-active .rx-menu, html.rumblex-active .rx-toast,
+        html.rumblex-active .rx-dl-row, html.rumblex-active .rx-card,
+        html.rumblex-active [id^="rx-"] button, html.rumblex-active [class^="rx-"] button {
+            border: 1px solid CanvasText;
+        }
+        /* The site theme replaces focus outlines with a box-shadow ring, with
+           !important, across every focusable element on the page. Forced colors
+           discards box-shadow, so that ring is invisible in High Contrast and
+           there is no focus indicator at all. Put the outline back, and it has
+           to be !important to outrank the rule that removed it. */
+        html.rumblex-active :where(a, button, input, select, textarea, [tabindex]):focus-visible,
+        html.rumblex-active [id^="rx-"] :focus-visible,
+        html.rumblex-active [class^="rx-"] :focus-visible,
+        html.rumblex-active [class*=" rx-"] :focus-visible {
+            outline: 2px solid Highlight !important;
+            outline-offset: 2px !important;
+            box-shadow: none !important;
+        }
+        /* Selected, active and checked all have to survive the repaint. */
+        html.rumblex-active .rx-active, html.rumblex-active [aria-selected="true"],
+        html.rumblex-active [aria-pressed="true"], html.rumblex-active [aria-current="true"] {
+            background: Highlight;
+            color: HighlightText;
+        }
+        html.rumblex-active .rx-switch, html.rumblex-active .rx-toggle-track {
+            border: 1px solid CanvasText;
+            background: Canvas;
+        }
+        html.rumblex-active input:checked + .rx-toggle-track,
+        html.rumblex-active .rx-switch[aria-checked="true"] {
+            background: Highlight;
+        }
+        html.rumblex-active ::selection {
+            background: Highlight;
+            color: HighlightText;
+        }
     }
 `;
 let antiFoucEnabled = true;
@@ -2821,6 +2885,7 @@ function mountDocumentStartStyles() {
     if (antiFoucEnabled && !earlyStyle.isConnected) root.appendChild(earlyStyle);
     if (!watchSurfaceCleanupStyle.isConnected) root.appendChild(watchSurfaceCleanupStyle);
     if (!osMotionStyle.isConnected) root.appendChild(osMotionStyle);
+    if (!osForcedColorsStyle.isConnected) root.appendChild(osForcedColorsStyle);
     document.documentElement?.classList.add('rumblex-active');
     bootstrapRootObserver?.disconnect();
     bootstrapRootObserver = null;
