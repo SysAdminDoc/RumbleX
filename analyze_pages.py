@@ -35,10 +35,10 @@ def show(label, html, term, n=3, pre=80, post=350):
         count += 1
 
 pages = {
-    'VOD':  r'C:\Users\--\repos\RumbleX\Sample Pages\VOD-Watch Page.mhtml',
-    'Live': r'C:\Users\--\repos\RumbleX\Sample Pages\Live.mhtml',
-    'Feed': r'C:\Users\--\repos\RumbleX\Sample Pages\My Feed.mhtml',
-    'ForYou': r'C:\Users\--\repos\RumbleX\Sample Pages\For You.mhtml',
+    'VOD':  r'Sample Pages\VOD-Watch Page.mhtml',
+    'Live': r'Sample Pages\Live.mhtml',
+    'Feed': r'Sample Pages\My Feed.mhtml',
+    'ForYou': r'Sample Pages\For You.mhtml',
 }
 
 feed_html  = extract_html(pages['Feed'])
