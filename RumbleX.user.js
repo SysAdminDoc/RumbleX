@@ -23,7 +23,7 @@
 // @updateURL    https://github.com/SysAdminDoc/RumbleX/raw/main/RumbleX.user.js
 // ==/UserScript==
 
-// Generated from the shared extension core files. Shared runtime SHA-256: f4ec0b7b06f7fdaa27f8f57d5d5779cf529a03596aef42eb9f1ee2983d07c110
+// Generated from the shared extension core files. Shared runtime SHA-256: f17c81f20ec90cfa2828c5b5685a4467b93d855bfce3f8f1502dd78619d965aa
 // RumbleX shared settings schema. This file is the canonical source for
 // defaults and trust-boundary normalization across content, options, popup,
 // background profile/Gist restores, and the generated userscript.
@@ -7264,12 +7264,16 @@ const VideoDownloader = {
         return { done, total, rejected };
     },
 
-    _copyToClipboard(text) {
+    // Resolves true only once the text is on the clipboard. writeText is a
+    // promise that rejects when the page is not focused or permission is
+    // denied; returning before it settled reported success either way.
+    async _copyToClipboard(text) {
         try {
-            navigator.clipboard.writeText(text);
+            await navigator.clipboard.writeText(text);
             return true;
         } catch {
-            // Legacy fallback for older contexts.
+            // Legacy fallback for older contexts. execCommand says whether it
+            // actually copied, so that answer is the one passed on.
             try {
                 const ta = document.createElement('textarea');
                 ta.value = text;
@@ -7277,9 +7281,9 @@ const VideoDownloader = {
                 ta.style.left = '-9999px';
                 document.body.appendChild(ta);
                 ta.select();
-                document.execCommand('copy');
+                const copied = document.execCommand('copy');
                 ta.remove();
-                return true;
+                return !!copied;
             } catch { return false; }
         }
     },
@@ -7339,9 +7343,9 @@ const VideoDownloader = {
             copyBtn.title = rxT('dlCopyLink', 'Copy link');
             copyBtn.setAttribute('aria-label', `Copy ${q.label || 'quality'} download link`);
             copyBtn.innerHTML = this._copySVG;
-            copyBtn.addEventListener('click', (e) => {
+            copyBtn.addEventListener('click', async (e) => {
                 e.stopPropagation();
-                if (this._copyToClipboard(q.directUrl)) {
+                if (await this._copyToClipboard(q.directUrl)) {
                     copyBtn.classList.add('copied');
                     copyBtn.innerHTML = this._checkSVG;
                     setTimeout(() => {
@@ -18866,6 +18870,32 @@ const AudioOnly = {
         return Settings.get('audioExtractionMode') || 'browserIfSupported';
     },
 
+    // The rendition for the video on screen now, not the one the control was
+    // built for. A download panel can outlive an in-app navigation, and saving
+    // the previous video's audio under the new video's title is exactly the
+    // mislabelled file this control exists to prevent.
+    async _currentRendition() {
+        const data = VideoDownloader._currentEmbedData();
+        if (data) return VideoDownloader._audioRendition(data);
+        const embedId = VideoDownloader._getEmbedId();
+        if (!embedId) return null;
+        const fresh = await VideoDownloader._fetchEmbedData(embedId);
+        VideoDownloader._embedData = fresh;
+        VideoDownloader._embedDataId = embedId;
+        return VideoDownloader._audioRendition(fresh);
+    },
+
+    _showNone(wrap) {
+        wrap.textContent = '';
+        const note = document.createElement('div');
+        note.className = 'rx-dl-audio-note';
+        note.textContent = rxT(
+            'dlAudioNone',
+            'This video publishes no audio-only stream, so there is no audio file to save. The video rows above include the sound.',
+        );
+        wrap.appendChild(note);
+    },
+
     _save(rendition) {
         return VideoDownloader._startDirectDownload({
             label: rxT('downloadAudioOnlyRow', 'Audio only'),
@@ -18890,11 +18920,7 @@ const AudioOnly = {
         const note = document.createElement('div');
         note.className = 'rx-dl-audio-note';
         if (!rendition) {
-            note.textContent = rxT(
-                'dlAudioNone',
-                'This video publishes no audio-only stream, so there is no audio file to save. The video rows above include the sound.',
-            );
-            wrap.append(note);
+            this._showNone(wrap);
             body.appendChild(wrap);
             return;
         }
@@ -18909,15 +18935,21 @@ const AudioOnly = {
                 'dlAudioCopyNote',
                 'For a download tool outside the browser. The link points at Rumble\'s own audio file, which saves as .m4a.',
             );
-            btn.addEventListener('click', () => {
-                note.textContent = VideoDownloader._copyToClipboard(rendition.url)
+            btn.addEventListener('click', async () => {
+                const current = await this._currentRendition().catch(() => null);
+                if (!current) { this._showNone(wrap); return; }
+                note.textContent = (await VideoDownloader._copyToClipboard(current.url))
                     ? rxT('dlAudioCopied', 'Audio stream link copied.')
                     : rxT('dlAudioCopyFailed', 'Could not copy the link. Your browser blocked clipboard access.');
             });
         } else {
             btn.textContent = rxT('dlAudioSave', 'Save audio only (.m4a)');
             note.textContent = rxT('dlAudioSaveNote', 'Rumble\'s own audio track, saved without conversion.');
-            btn.addEventListener('click', () => { void this._save(rendition); });
+            btn.addEventListener('click', async () => {
+                const current = await this._currentRendition().catch(() => null);
+                if (!current) { this._showNone(wrap); return; }
+                void this._save(current);
+            });
         }
         wrap.append(btn, note);
         body.appendChild(wrap);

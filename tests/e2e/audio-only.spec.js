@@ -28,12 +28,15 @@ const embedPayload = (withAudio) => ({
 // Everything the background would send to the network or the browser's
 // download manager is recorded instead, so the tests stay on this machine and
 // can assert exactly what was asked for.
-async function stubWorker(serviceWorker, settings) {
-    await serviceWorker.evaluate(async (seed) => {
+async function stubWorker(serviceWorker, settings, probeHits = []) {
+    await serviceWorker.evaluate(async ({ seed, hits }) => {
         if (seed) await chrome.storage.local.set({ rx_settings: seed });
         globalThis.__rxAudioTest = { downloads: [], fetches: [] };
         globalThis.fetch = async (input) => {
             __rxAudioTest.fetches.push(String(input));
+            if (hits.includes(String(input))) {
+                return new Response(null, { status: 200, headers: { 'content-length': String(21 * 1024 * 1024) } });
+            }
             return new Response(null, { status: 404 });
         };
         chrome.downloads.download = (options, callback) => {
@@ -41,11 +44,11 @@ async function stubWorker(serviceWorker, settings) {
             callback?.(4242);
             return Promise.resolve(4242);
         };
-    }, settings || null);
+    }, { seed: settings || null, hits: probeHits });
 }
 
-async function openPanel(context, serviceWorker, { withAudio, settings }) {
-    await stubWorker(serviceWorker, settings);
+async function openPanel(context, serviceWorker, { withAudio, settings, probeHits, embedFor }) {
+    await stubWorker(serviceWorker, settings, probeHits);
     const page = await context.newPage();
     const pageRequests = [];
     await page.route('**/*', (route) => {
@@ -55,7 +58,9 @@ async function openPanel(context, serviceWorker, { withAudio, settings }) {
         }
         pageRequests.push(request.url());
         if (request.url().includes('/embedJS/')) {
-            return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(embedPayload(withAudio)) });
+            const embedId = new URL(request.url()).searchParams.get('v');
+            const payload = embedFor ? embedFor(embedId) : embedPayload(withAudio);
+            return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(payload) });
         }
         return route.abort();
     });
@@ -161,16 +166,28 @@ test('audioExtractionMode off leaves the control out, and external copies the li
     const control = external.page.locator('.rx-dl-audio');
     const button = control.locator('.rx-dl-audio-btn');
     await expect(button).toHaveText('Copy audio-only stream link');
-    await serviceWorker.evaluate(async (target) => {
+    // A refused clipboard write is reported as a failure. The helper used to
+    // return before the write settled, so this said "copied" either way.
+    const setClipboard = (allow) => serviceWorker.evaluate(async ({ target, allowed }) => {
         await chrome.scripting.executeScript({
             target: { tabId: target },
             world: 'ISOLATED',
-            func: () => {
-                globalThis.__rxCopied = [];
-                VideoDownloader._copyToClipboard = (text) => { globalThis.__rxCopied.push(text); return true; };
+            func: (ok) => {
+                globalThis.__rxCopied = globalThis.__rxCopied || [];
+                navigator.clipboard.writeText = (text) => {
+                    if (!ok) return Promise.reject(new DOMException('Document is not focused.', 'NotAllowedError'));
+                    globalThis.__rxCopied.push(text);
+                    return Promise.resolve();
+                };
+                document.execCommand = () => false;
             },
+            args: [allowed],
         });
-    }, external.tabId);
+    }, { target: external.tabId, allowed: allow });
+    await setClipboard(false);
+    await button.click();
+    await expect(control.locator('.rx-dl-audio-note')).toHaveText('Could not copy the link. Your browser blocked clipboard access.');
+    await setClipboard(true);
     await button.click();
     await expect(control.locator('.rx-dl-audio-note')).toHaveText('Audio stream link copied.');
     const copied = await serviceWorker.evaluate(async (target) => {
@@ -182,5 +199,47 @@ test('audioExtractionMode off leaves the control out, and external copies the li
         return execution.result;
     }, external.tabId);
     expect(copied).toEqual([AUDIO_URL]);
+    expect(await serviceWorker.evaluate(() => __rxAudioTest.downloads.length)).toBe(0);
+});
+
+test('the deep-scan audio row saves as .m4a too', async ({ context, serviceWorker }) => {
+    // The worker answers the audio URL's probe, so the scan adds its row.
+    const { page } = await openPanel(context, serviceWorker, { withAudio: true, probeHits: [AUDIO_URL] });
+    const row = page.locator('.rx-dl-quality[data-key="audio only|mp4"]');
+    await expect(row).toBeVisible({ timeout: 15_000 });
+    await expect(row.locator('.rx-dl-type-badge')).toHaveText('M4A');
+    await row.locator('.rx-dl-quality-row-inner').click();
+    await expect.poll(() => serviceWorker.evaluate(() => __rxAudioTest.downloads.length)).toBe(1);
+    const [download] = await serviceWorker.evaluate(() => __rxAudioTest.downloads);
+    expect(download.url).toBe(AUDIO_URL);
+    expect(download.filename).toMatch(/ - Audio only\.m4a$/);
+});
+
+test('a control left over from the previous video resolves the video on screen before saving', async ({ context, serviceWorker }) => {
+    // The first video publishes audio; the one navigated to does not.
+    const { page, tabId } = await openPanel(context, serviceWorker, {
+        withAudio: true,
+        embedFor: (embedId) => embedPayload(embedId !== 'vnoaudio1'),
+    });
+    const control = page.locator('.rx-dl-audio');
+    await expect(control.locator('.rx-dl-audio-btn')).toHaveText('Save audio only (.m4a)');
+
+    // An in-app navigation that leaves the panel standing: the player now
+    // belongs to a different video.
+    await serviceWorker.evaluate(async (target) => {
+        await chrome.scripting.executeScript({
+            target: { tabId: target },
+            world: 'ISOLATED',
+            func: () => { document.querySelector('[id^="vid_v"]').id = 'vid_vnoaudio1'; },
+        });
+    }, tabId);
+    await control.locator('.rx-dl-audio-btn').click();
+
+    // It looked the new video up, found no audio rendition, and said so
+    // instead of saving the old video's track under the new title.
+    await expect(control).toHaveText(
+        'This video publishes no audio-only stream, so there is no audio file to save. The video rows above include the sound.',
+    );
+    await page.waitForTimeout(300);
     expect(await serviceWorker.evaluate(() => __rxAudioTest.downloads.length)).toBe(0);
 });
