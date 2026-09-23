@@ -1473,6 +1473,9 @@ function rxNormalizeDownloadRecovery(root) {
                 downloadId: job.downloadId,
                 operation: String(job.operation || 'download').replace(/[^a-z0-9_.-]/gi, '').slice(0, 60) || 'download',
                 archiveJobId: String(job.archiveJobId || '').slice(0, 80) || null,
+                // The tab that asked for a panel download, so a failure the
+                // browser reports later can be shown where it was started.
+                tabId: Number.isInteger(job.tabId) && job.tabId >= 0 ? job.tabId : null,
                 trackedAt: Number(job.trackedAt) || Date.now(),
                 updatedAt: Number(job.updatedAt) || Date.now(),
                 resumePending: job.resumePending === true,
@@ -1541,6 +1544,7 @@ async function rxTrackManagedDownload(downloadId, metadata = {}) {
             downloadId,
             operation: metadata.operation || 'download',
             archiveJobId: metadata.archiveJobId || null,
+            tabId: Number.isInteger(metadata.tabId) ? metadata.tabId : null,
             trackedAt: Date.now(),
             updatedAt: Date.now(),
             resumePending: false,
@@ -2131,6 +2135,15 @@ async function rxHandleManagedDownloadChanged(delta) {
             browserDownloadId: delta.id,
         });
     } catch {}
+    // The panel said "Download started!" long before this. Tell the tab that
+    // asked, so it can say what went wrong instead of leaving that standing.
+    if (!archiveJob && Number.isInteger(managed?.tabId)) {
+        try {
+            chrome.tabs.sendMessage(managed.tabId, { action: 'directDownloadInterrupted', downloadId: delta.id, reason }, () => {
+                void chrome.runtime.lastError;
+            });
+        } catch {}
+    }
     return { handled: true, failed: true };
 }
 
@@ -3382,13 +3395,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                 stage: 'url-validation',
                 error: { message: 'Download URL is not allowed', code: 'url-not-allowlisted' },
             })
-                .then((entry) => sendResponse({ error: 'Download URL is not allowed', diagnosticId: entry.id }))
-                .catch(() => sendResponse({ error: 'Download URL is not allowed' }));
+                .then((entry) => sendResponse({ error: 'Download URL is not allowed', stage: 'url-validation', diagnosticId: entry.id }))
+                .catch(() => sendResponse({ error: 'Download URL is not allowed', stage: 'url-validation' }));
             return true;
         }
         rxStartManagedDownload(
             { url, filename, saveAs: true },
-            { operation: baseDiagnostic.operation },
+            { operation: baseDiagnostic.operation, tabId: sender?.tab?.id },
         ).then(async (downloadId) => {
             if (typeof navigator !== 'undefined' && navigator.onLine === false) {
                 rxHandleNetworkOffline().catch(() => {});

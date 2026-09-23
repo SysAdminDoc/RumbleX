@@ -2416,5 +2416,13 @@
   "rfEmptyChannel": {
     "message": "Todavía no hay vídeos cargados en esta página de canal, así que no hay nada que buscar.",
     "description": "In-page UI string (shared core)."
+  },
+  "dlDirectInterrupted": {
+    "message": "La descarga del navegador de {quality} se detuvo antes de terminar.",
+    "description": "In-page UI string (shared core)."
+  },
+  "dlSelectedQuality": {
+    "message": "esta calidad",
+    "description": "In-page UI string (shared core)."
   }
 }

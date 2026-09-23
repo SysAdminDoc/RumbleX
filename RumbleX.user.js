@@ -23,7 +23,7 @@
 // @updateURL    https://github.com/SysAdminDoc/RumbleX/raw/main/RumbleX.user.js
 // ==/UserScript==
 
-// Generated from the shared extension core files. Shared runtime SHA-256: 5d2cc16cc34978619ce8e1254f6bc5474a243ef440ac486e56be00fd4746d1d0
+// Generated from the shared extension core files. Shared runtime SHA-256: 4647b8a786cbe2019442e94498f8f5ec162a05a41350eb025be261b1a3177673
 // RumbleX shared settings schema. This file is the canonical source for
 // defaults and trust-boundary normalization across content, options, popup,
 // background profile/Gist restores, and the generated userscript.
@@ -1430,7 +1430,9 @@
   "rfRegionSearch": "Filter loaded search results",
   "rfPlaceholderChannel": "Search loaded videos by title",
   "rfPlaceholderSearch": "Filter loaded results by title or channel",
-  "rfSortLabel": "Sort loaded results"
+  "rfSortLabel": "Sort loaded results",
+  "dlDirectInterrupted": "The browser download of {quality} stopped before it finished.",
+  "dlSelectedQuality": "this quality"
 });
     const STORAGE_KEYS_WITH_CHANGE_EVENTS = ['rx_settings'];
     const ALLOWED_REQUEST_HOSTS = ['rumble.com', 'rumble.cloud', '1a-1791.com'];
@@ -6059,6 +6061,46 @@ const VideoDownloader = {
     _scanSeq: 0, // guards against late results after the user navigates away
     _embedData: null,
     _embedDataId: null,
+    _directDownloads: new Map(),
+
+    // What the browser reports when its own download stops, as the error
+    // shape the failure guide already classifies.
+    _interruptError(reason) {
+        const code = String(reason || '');
+        const withStatus = (status) => Object.assign(new Error(`The browser download stopped: ${code}`), { rxStatus: status, rxStage: 'browser-download' });
+        if (code === 'USER_CANCELED') return new DOMException('The download was cancelled.', 'AbortError');
+        if (code === 'SERVER_FORBIDDEN') return withStatus(403);
+        if (code === 'SERVER_UNAUTHORIZED') return withStatus(401);
+        if (code === 'SERVER_BAD_CONTENT') return withStatus(410);
+        if (code === 'FILE_NO_SPACE' || code === 'FILE_TOO_LARGE') {
+            return Object.assign(new Error(`The browser download stopped: ${code}`), { name: 'QuotaExceededError', rxStage: 'browser-download' });
+        }
+        if (/^SERVER_/.test(code)) return withStatus(502);
+        if (/^NETWORK_/.test(code)) return Object.assign(new Error(`The browser download stopped: network (${code})`), { rxStage: 'browser-download' });
+        return Object.assign(new Error(`The browser download stopped: ${code || 'unknown reason'}`), { rxStage: 'browser-download' });
+    },
+
+    // The browser's own download can still fail after the panel said it had
+    // started: the CDN refusing the file, a link that expired, a full disk.
+    _onDirectInterrupted({ downloadId, reason }) {
+        const started = this._directDownloads.get(downloadId);
+        if (!started) return false;
+        this._directDownloads.delete(downloadId);
+        const body = this._getBody();
+        if (!body) return false;
+        const error = this._interruptError(reason);
+        if (error.name === 'AbortError') return false;
+        const line = document.createElement('div');
+        line.className = 'rx-dl-error';
+        line.textContent = rxT('dlDirectInterrupted', 'The browser download of {quality} stopped before it finished.', {
+            quality: started.quality?.label || rxT('dlSelectedQuality', 'this quality'),
+        });
+        body.appendChild(line);
+        this._mountFailureGuide(body, { stage: 'browser-download', error, quality: started.quality, operation: 'direct-download' });
+        // The background recorded the diagnostic when the download stopped.
+        RxDownloadDiagnostics.mountActions(body);
+        return true;
+    },
 
     // The embed payload last fetched, but only while it still belongs to the
     // video on screen. After an in-app navigation the old payload would answer
@@ -6276,10 +6318,18 @@ const VideoDownloader = {
         try {
             return await this._resolveHlsOnce(quality, options);
         } catch (error) {
+            const cancelled = () => new DOMException('The download was cancelled.', 'AbortError');
+            if (options.signal?.aborted) throw cancelled();
             const refusedPlaylist = (error?.rxStage === 'master-playlist' || error?.rxStage === 'segment-playlist')
                 && this._REFRESHABLE_STATUS.has(Number(error?.rxStatus));
-            if (!refusedPlaylist || options.signal?.aborted) throw error;
-            const fresh = await this._refreshHlsUrl(options.signal).catch(() => null);
+            if (!refusedPlaylist) throw error;
+            let fresh = null;
+            try {
+                fresh = await this._refreshHlsUrl(options.signal);
+            } catch (refreshError) {
+                if (refreshError?.name === 'AbortError' || options.signal?.aborted) throw cancelled();
+            }
+            if (options.signal?.aborted) throw cancelled();
             if (!fresh) throw error;
             options.diagnosticUrls?.push({ role: 'refreshed-master-playlist', url: fresh });
             options.onStage?.('master-playlist', 0, rxT('dlRefreshingLink', 'The stream link had expired. Trying a fresh one…'));
@@ -8189,7 +8239,7 @@ const VideoDownloader = {
         const group = this._STAGE_GROUPS[error?.rxStage || stage];
         if (name === 'AbortError' || stage === 'cancelled') return 'cancelled';
         if (status === 401) return 'auth';
-        if (status === 410 || (status === 404 && group === 'rendition')) return 'expired';
+        if (status === 410 || (status === 404 && (group === 'rendition' || group === 'master'))) return 'expired';
         if (status === 403) return 'forbidden';
         if (name === 'QuotaExceededError' || code === 'in-memory-limit'
             || /quota|no space|disk (?:is )?full|FILE_NO_SPACE/i.test(message)) return 'quota';
@@ -8199,7 +8249,7 @@ const VideoDownloader = {
         // Only a failure with no HTTP status can be a parse failure: every HTTP
         // error message names its stage, and the stage names mention playlists.
         if (!status && (name === 'SyntaxError' || /playlist|segments? found|unexpected token|json/i.test(message))) return 'parse';
-        if (code === 'cors' || (name === 'TypeError' && /failed to fetch|networkerror|load failed/i.test(message))) {
+        if (code === 'cors' || (name === 'TypeError' && /failed to fetch|networkerror|load failed|network request failed/i.test(message))) {
             return navigator.onLine === false ? 'network' : 'cors';
         }
         if (/network|timed? ?out/i.test(message)) return 'network';
@@ -8358,11 +8408,12 @@ const VideoDownloader = {
                     }, errorBody);
                 } else {
                     const error = new Error(resp.error);
-                    this._mountFailureGuide(errorBody, { stage: 'browser-download', error, quality, operation: 'direct-download' });
+                    this._mountFailureGuide(errorBody, { stage: resp.stage || 'browser-download', error, quality, operation: 'direct-download' });
                     RxDownloadDiagnostics.mountActions(errorBody);
                 }
             } else if (resp?.downloadId) {
                 this._setBodyText('rx-dl-done', 'Download started! Check your browser downloads.');
+                this._directDownloads.set(resp.downloadId, { quality });
                 // A direct file is never trimmed, but the marks still describe
                 // its timeline exactly, so they are worth recording.
                 const sponsor = this._sponsorSidecarFields(this._planSponsorTrim([], this._localSponsorSegments()));
@@ -8758,6 +8809,7 @@ const VideoDownloader = {
         this._lastMuxerContext = null;
         this._embedData = null;
         this._embedDataId = null;
+        this._directDownloads.clear();
     }
 };
 
@@ -23044,6 +23096,10 @@ RXPlatform.onMessage((msg, sender, sendResponse) => {
         const written = rxWriteLocalStorage(msg.data);
         sendResponse({ ok: true, written });
         return true;
+    }
+    if (msg.action === 'directDownloadInterrupted') {
+        VideoDownloader._onDirectInterrupted(msg);
+        return;
     }
     if (msg.action === 'getActivityStore') {
         RXPlatform.storage.get(RX_ACTIVITY_META)

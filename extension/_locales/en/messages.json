@@ -2418,5 +2418,13 @@
   "rfSortLabel": {
     "message": "Sort loaded results",
     "description": "In-page UI string (shared core)."
+  },
+  "dlDirectInterrupted": {
+    "message": "The browser download of {quality} stopped before it finished.",
+    "description": "In-page UI string (shared core)."
+  },
+  "dlSelectedQuality": {
+    "message": "this quality",
+    "description": "In-page UI string (shared core)."
   }
 }

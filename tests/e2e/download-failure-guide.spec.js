@@ -38,7 +38,8 @@ const embedWith = (hls) => ({
 // Serves the watch page, an embed payload whose HLS link changes on every
 // fetch of the u3 unit the panel uses, and the playlists and segments. Counts
 // what was asked for so the tests can hold the fallback to exactly one try.
-async function openWatch(context, serviceWorker, { masters, embeds }) {
+async function openWatch(context, serviceWorker, { masters, embeds, holdRefresh = false }) {
+    const hold = holdRefresh ? { pending: [] } : null;
     await serviceWorker.evaluate(() => {
         // Deep-scan probes stay on this machine.
         globalThis.fetch = async () => new Response(null, { status: 404 });
@@ -54,9 +55,16 @@ async function openWatch(context, serviceWorker, { masters, embeds }) {
         // Only the panel's own endpoint. The deep scan also reads four other
         // units and a u3 variant, and those must not consume the sequence.
         if (url.includes('/embedJS/u3/?request=video&ver=2')) {
-            const payload = embeds[Math.min(counts.embed, embeds.length - 1)];
+            const index = counts.embed;
+            const payload = embeds[Math.min(index, embeds.length - 1)];
             counts.embed += 1;
-            return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(payload) });
+            const fulfill = () => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(payload) })
+                .catch(() => {});
+            if (hold && index >= 1) {
+                hold.pending.push(fulfill);
+                return undefined;
+            }
+            return fulfill();
         }
         if (url.includes('/embedJS/')) return route.fulfill({ status: 404, body: '' });
         if (url === OLD_MASTER || url === NEW_MASTER) {
@@ -83,7 +91,7 @@ async function openWatch(context, serviceWorker, { masters, embeds }) {
     }, page.url());
     await page.evaluate(() => document.querySelector('#rx-download-btn')?.click());
     await expect(page.locator('.rx-dl-quality').first()).toBeVisible({ timeout: 15_000 });
-    return { page, counts, tabId };
+    return { page, counts, tabId, hold };
 }
 
 // Starts a TS download of the 720p HLS row from inside the content script and
@@ -221,6 +229,10 @@ test('every failure kind and stage has its own words', async ({ context, service
                     quotaMemory: [Object.assign(new Error('Stream exceeded the limit'), { code: 'in-memory-limit' }), 'segment-download'],
                     cancelled: [named('AbortError'), 'segment-download'],
                     network: [http(503, 'master-playlist'), 'master-playlist'],
+                    // A retired master link is as expired as a retired rendition.
+                    expiredMaster: [http(404, 'master-playlist'), 'master-playlist'],
+                    // The userscript transport's own wording for a refused request.
+                    corsUserscript: [new TypeError('Network request failed'), 'segment-download'],
                     unknown: [new Error('something else'), 'save'],
                 };
                 const kinds = Object.fromEntries(Object.entries(cases)
@@ -248,6 +260,8 @@ test('every failure kind and stage has its own words', async ({ context, service
         quotaMemory: 'quota',
         cancelled: 'cancelled',
         network: 'network',
+        expiredMaster: 'expired',
+        corsUserscript: 'cors',
         unknown: 'unknown',
     });
     expect(table.stages).toEqual({
@@ -266,4 +280,68 @@ test('every failure kind and stage has its own words', async ({ context, service
         expect(text.next.length).toBeGreaterThan(20);
         expect(text.next).not.toMatch(/export (your )?cookies|user[- ]agent|impersonat/i);
     }
+});
+
+test('cancelling while an expired link is being refreshed reports a cancel, not the refusal', async ({ context, serviceWorker }) => {
+    const { page, counts, tabId, hold } = await openWatch(context, serviceWorker, {
+        masters: { [OLD_MASTER]: 403, [NEW_MASTER]: 200 },
+        embeds: [embedWith(OLD_MASTER), embedWith(NEW_MASTER)],
+        holdRefresh: true,
+    });
+    await serviceWorker.evaluate(async (target) => {
+        await chrome.scripting.executeScript({
+            target: { tabId: target },
+            world: 'ISOLATED',
+            func: () => {
+                VideoDownloader._triggerSave = () => {};
+                void VideoDownloader._startDownload(
+                    { label: '720p', height: 720, width: 1280, type: 'hls', directUrl: null },
+                    'Guide Fixture',
+                    'ts',
+                );
+            },
+        });
+    }, tabId);
+    // The master was refused and the refresh is now waiting on the network.
+    await expect.poll(() => counts.embed).toBe(2);
+    await serviceWorker.evaluate(async (target) => {
+        await chrome.scripting.executeScript({
+            target: { tabId: target },
+            world: 'ISOLATED',
+            func: () => VideoDownloader._downloadController?.abort(),
+        });
+    }, tabId);
+    for (const release of hold.pending) await release();
+    await expect(page.locator('.rx-dl-status')).toHaveText('Download cancelled.');
+    await expect(page.locator('.rx-dl-failure')).toHaveCount(0);
+    await expect(page.locator('.rx-diagnostic-actions')).toHaveCount(0);
+    expect(counts[NEW_MASTER]).toBe(0);
+});
+
+test('a direct download the browser stops after it started gets the guide', async ({ context, serviceWorker }) => {
+    const direct = {
+        ua: { mp4: { 720: { url: 'https://1a-1791.com/video/fx/direct720.mp4', meta: { h: 720, w: 1280, size: 80 * 1024 * 1024 } } } },
+    };
+    const { page } = await openWatch(context, serviceWorker, {
+        masters: { [OLD_MASTER]: 200, [NEW_MASTER]: 200 },
+        embeds: [direct],
+    });
+    await serviceWorker.evaluate(() => {
+        rxDownloadsApi.download = async () => 4242;
+        rxDownloadsApi.search = async ({ id }) => [{ id, canResume: false, error: 'SERVER_FORBIDDEN' }];
+    });
+    await page.locator('.rx-dl-quality .rx-dl-quality-row-inner').first().click();
+    await expect(page.locator('.rx-dl-done')).toHaveText('Download started! Check your browser downloads.');
+
+    // The CDN refuses the file after the browser has taken the download over.
+    await serviceWorker.evaluate(() => rxHandleManagedDownloadChanged({
+        id: 4242,
+        state: { current: 'interrupted' },
+        error: { current: 'SERVER_FORBIDDEN' },
+    }));
+    const guide = page.locator('.rx-dl-failure');
+    await expect(guide).toHaveAttribute('data-kind', 'forbidden');
+    await expect(guide.locator('.rx-dl-failure-stage')).toHaveText('Failed at: Direct MP4 download');
+    await expect(page.locator('.rx-dl-error')).toHaveText('The browser download of 720p stopped before it finished.');
+    await expect(page.locator('.rx-diagnostic-actions')).toBeVisible();
 });
