@@ -35,11 +35,17 @@ const GM_BOOTSTRAP = `
 `;
 
 test('generated userscript boots without extension APIs and keeps standalone downloads usable', async () => {
+    // Headless like every other spec. This one alone was pinned headed, which
+    // put a real browser window on the desktop of whoever ran the suite. A
+    // visible run is still available on purpose with RUMBLEX_HEADED=1.
+    const headed = process.env.RUMBLEX_HEADED === '1';
     const x = Number.parseInt(process.env.RUMBLEX_TEST_WINDOW_X || '0', 10);
     const y = Number.parseInt(process.env.RUMBLEX_TEST_WINDOW_Y || '0', 10);
     const browser = await chromium.launch({
-        headless: false,
-        args: [`--window-position=${x},${y}`, '--window-size=1280,900', '--no-first-run'],
+        headless: !headed,
+        args: headed
+            ? [`--window-position=${x},${y}`, '--window-size=1280,900', '--no-first-run']
+            : ['--window-size=1280,900', '--no-first-run'],
     });
     try {
         const context = await browser.newContext();

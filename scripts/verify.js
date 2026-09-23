@@ -33,6 +33,7 @@ const SOURCE_STEPS = Object.freeze([
     nodeStep('vendor-manifest', 'Vendored library provenance', 'scripts/check-vendor-manifest.js'),
     nodeStep('offline-fixture', 'Committed offline capture', 'scripts/build-offline-fixture.js', ['--check']),
     nodeStep('line-endings', 'Byte guards ignore checkout line endings', 'scripts/test-line-endings.js'),
+    nodeStep('headless-specs', 'No spec opens a visible browser', 'scripts/check-headless-specs.js'),
     nodeStep('release-gate', 'Release gate regression', 'scripts/test-release-gate.js'),
     pythonStep(),
     nodeStep('firefox-smoke', 'Headless Firefox extension smoke', 'scripts/test-firefox-extension.js'),
