@@ -107,6 +107,17 @@ const TRACKER = () => {
     });
     globalThis.__rxSleep = (ms) => new Promise((resolve) => nativeSetTimeout(resolve, ms));
     globalThis.__rxPaint = () => new Promise((resolve) => nativeRaf(() => nativeRaf(() => resolve())));
+    globalThis.__rxSettle = async (maxMs = 3000) => {
+        const started = performance.now();
+        let previous = JSON.stringify(globalThis.__rxLive());
+        for (;;) {
+            await globalThis.__rxPaint();
+            await globalThis.__rxSleep(60);
+            const current = JSON.stringify(globalThis.__rxLive());
+            if (current === previous || performance.now() - started > maxMs) return;
+            previous = current;
+        }
+    };
 };
 
 async function withTrackedHarness(fn, arg) {
@@ -159,6 +170,7 @@ const NAVIGATE = async ({ body, routes, enabled }) => {
         document.dispatchEvent(new CustomEvent('htmx:afterSettle', { bubbles: true }));
         await globalThis.__rxPaint();
         await globalThis.__rxSleep(150);
+        await globalThis.__rxSettle();
         const scans = RxPerfBudget.scans();
         const delta = {};
         for (const [module, count] of Object.entries(scans)) {
