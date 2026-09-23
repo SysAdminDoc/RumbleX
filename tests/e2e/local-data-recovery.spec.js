@@ -1,10 +1,32 @@
 // @ts-check
-// Regression coverage for no-open-Rumble-tab import/reset localStorage recovery.
+// Regression coverage for no-open-Rumble-tab import/reset of per-site activity,
+// which the extension keeps in extension storage (rx_act:) rather than in
+// rumble.com's localStorage.
 const { test, expect } = require('./_fixtures');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const zlib = require('zlib');
+
+// Where the extension keeps per-site activity since it moved out of
+// rumble.com's localStorage: one extension-storage key per item.
+const ACTIVITY = 'rx_act:';
+const readActivity = (page, key) => page.evaluate(async (storageKey) => {
+    const got = await chrome.storage.local.get(storageKey);
+    return got[storageKey] ?? null;
+}, ACTIVITY + key);
+const activityLeft = (page) => page.evaluate(async (prefix) => Object.keys(await chrome.storage.local.get(null))
+    .filter((key) => key.startsWith(prefix)), ACTIVITY);
+const seedActivity = (page, data) => page.evaluate(({ prefix, entries }) => chrome.storage.local.set(
+    Object.fromEntries(Object.entries(entries).map(([key, value]) => [prefix + key, value])),
+), { prefix: ACTIVITY, entries: data });
+// The content script loads the store once and then follows it through
+// storage.onChanged; wait until an open tab can see what was seeded.
+const tabSees = (options, count) => expect.poll(() => options.evaluate(async () => {
+    const [tab] = await chrome.tabs.query({ url: ['*://rumble.com/*'] });
+    const state = await chrome.tabs.sendMessage(tab.id, { action: 'getActivityStore' });
+    return state?.keys || 0;
+})).toBeGreaterThanOrEqual(count);
 
 test('staged per-site data restores and clears on the next Rumble tab', async ({ context, extensionId, serviceWorker }) => {
     const payload = {
@@ -28,7 +50,8 @@ test('staged per-site data restores and clears on the next Rumble tab', async ({
 
     const rumble = await context.newPage();
     await rumble.goto('https://rumble.com/vtest-local-data');
-    await expect.poll(() => rumble.evaluate(() => localStorage.getItem('rx_watch_progress'))).toBe(payload.rx_watch_progress);
+    await expect.poll(() => readActivity(options, 'rx_watch_progress')).toBe(payload.rx_watch_progress);
+    expect(await rumble.evaluate(() => localStorage.getItem('rx_watch_progress'))).toBe(null);
     await expect.poll(() => serviceWorker.evaluate(() => new Promise((resolve) => {
         chrome.storage.local.get('rx_pending_local_data_op', (got) => resolve(Boolean(got.rx_pending_local_data_op)));
     }))).toBe(false);
@@ -42,7 +65,7 @@ test('staged per-site data restores and clears on the next Rumble tab', async ({
 
     const reopened = await context.newPage();
     await reopened.goto('https://rumble.com/vtest-local-data-clear');
-    await expect.poll(() => reopened.evaluate(() => localStorage.getItem('rx_watch_progress'))).toBe(null);
+    await expect.poll(() => activityLeft(options)).toEqual([]);
     await expect.poll(() => serviceWorker.evaluate(() => new Promise((resolve) => {
         chrome.storage.local.get('rx_pending_local_data_op', (got) => resolve(Boolean(got.rx_pending_local_data_op)));
     }))).toBe(false);
@@ -72,15 +95,16 @@ test('Reset All Data clears every rx_ key the runtime writes', async ({ context,
 
     const rumble = await context.newPage();
     await rumble.goto('https://rumble.com/vtest-reset-all');
-    await rumble.evaluate((data) => {
-        for (const [key, value] of Object.entries(data)) localStorage.setItem(key, value);
-    }, seeded);
-    // Guard against a vacuous pass: the wipe has to have something to remove.
-    expect(await rumble.evaluate(() => Object.keys(localStorage).filter((k) => k.startsWith('rx_')).sort()))
-        .toEqual(Object.keys(seeded).sort());
 
     const options = await context.newPage();
     await options.goto(`chrome-extension://${extensionId}/pages/options.html`);
+    await seedActivity(options, seeded);
+    // A stray copy in the page itself, the kind a tab running older code can
+    // leave after the move. The reset has to take it too.
+    await rumble.evaluate(() => localStorage.setItem('rx_search_history', '["stray page copy"]'));
+    // Guard against a vacuous pass: the wipe has to have something to remove.
+    expect((await activityLeft(options)).sort()).toEqual(Object.keys(seeded).map((key) => ACTIVITY + key).sort());
+    await tabSees(options, Object.keys(seeded).length);
     // Extension-storage records, including the five the service worker owns.
     // The registry and its guard only ever scanned the content scripts, so
     // those five survived a wipe the options page called complete.
@@ -102,6 +126,10 @@ test('Reset All Data clears every rx_ key the runtime writes', async ({ context,
     await options.click('#reset-btn');
     await expect(options.locator('#status')).toContainText(/cleared/i, { timeout: 15000 });
 
+    await expect.poll(
+        () => activityLeft(options),
+        { message: 'Reset All Data left activity in extension storage', timeout: 15000 },
+    ).toEqual([]);
     await expect.poll(
         () => rumble.evaluate(() => Object.keys(localStorage).filter((k) => k.startsWith('rx_'))),
         { message: 'Reset All Data left rx_ keys in Rumble-origin localStorage', timeout: 15000 },
@@ -176,12 +204,11 @@ test('a backup round-trips every kind of user activity, not just settings', asyn
 
     const rumble = await context.newPage();
     await rumble.goto('https://rumble.com/vtest-round-trip');
-    await rumble.evaluate((data) => {
-        for (const [key, value] of Object.entries(data)) localStorage.setItem(key, value);
-    }, perSite);
 
     const options = await context.newPage();
     await options.goto(`chrome-extension://${extensionId}/pages/options.html`);
+    await seedActivity(options, perSite);
+    await tabSees(options, Object.keys(perSite).length);
     await options.evaluate((mirror) => chrome.storage.local.set({ rx_rant_stats_mirror: mirror }), rantMirror);
 
     // Export with a Rumble tab open, so per-site data is reachable.
@@ -207,8 +234,7 @@ test('a backup round-trips every kind of user activity, not just settings', asyn
     // Wipe everything the backup is supposed to be able to restore.
     await options.click('#reset-btn');
     await expect(options.locator('#status')).toContainText(/cleared/i, { timeout: 15000 });
-    await expect.poll(() => rumble.evaluate(() => Object.keys(localStorage).filter((k) => k.startsWith('rx_'))))
-        .toEqual([]);
+    await expect.poll(() => activityLeft(options)).toEqual([]);
     await expect.poll(() => options.evaluate(async () => {
         const got = await chrome.storage.local.get('rx_rant_stats_mirror');
         return got.rx_rant_stats_mirror ?? null;
@@ -222,7 +248,7 @@ test('a backup round-trips every kind of user activity, not just settings', asyn
 
     for (const [key, value] of Object.entries(perSite)) {
         await expect.poll(
-            () => rumble.evaluate((k) => localStorage.getItem(k), key),
+            () => readActivity(options, key),
             { message: `per-site key ${key} did not survive the round trip`, timeout: 15000 },
         ).toBe(value);
     }
@@ -262,7 +288,7 @@ test('a version 2 backup written before extensionData existed still restores', a
     await options.setInputFiles('#import-file', legacyPath);
     await expect(options.locator('#status')).toContainText(/imported/i, { timeout: 30000 });
 
-    await expect.poll(() => rumble.evaluate(() => localStorage.getItem('rx_bookmarks')))
+    await expect.poll(() => readActivity(options, 'rx_bookmarks'))
         .toBe(legacy.localData.rx_bookmarks);
     expect(await options.evaluate(async () => {
         const got = await chrome.storage.local.get('rx_settings');

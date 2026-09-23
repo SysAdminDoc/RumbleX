@@ -23,12 +23,16 @@
         'rx_download_diagnostics',
         'rx_download_recovery',
         'rx_welcome_seen',
+        'rx_activity_premigration',
     ];
     // Extension-storage keys worth carrying in a backup. Deliberately narrower
     // than the reset list: rx_probe_cache is a CDN probe cache that rebuilds
     // itself and would only bloat the file, while the rant mirror is the only
     // record of rants across every video the user has watched.
     const EXTENSION_STORAGE_BACKUP_KEYS = ['rx_rant_stats_mirror'];
+    // Mirrors RX_ACTIVITY_PREFIX in content.js: every activity item that moved
+    // out of rumble.com's localStorage is stored under this prefix.
+    const ACTIVITY_PREFIX = 'rx_act:';
     const GROUP_MESSAGE_KEYS = {
         all: 'groupAll',
         core: 'groupCore',
@@ -1091,6 +1095,16 @@
             await chrome.storage.local.remove(STORAGE_KEY);
             try { await chrome.storage.local.remove('rx_popup_ui'); } catch {}
             try { await chrome.storage.local.remove(EXTENSION_STORAGE_RESET_KEYS); } catch {}
+            // Activity that moved into extension storage is cleared here
+            // directly, so the reset reaches it with no Rumble tab open. Open
+            // tabs drop it from memory through their own change listener.
+            let activityCleared = 0;
+            try {
+                const everything = await chrome.storage.local.get(null);
+                const activity = Object.keys(everything).filter((key) => key.startsWith(ACTIVITY_PREFIX));
+                if (activity.length) await chrome.storage.local.remove(activity);
+                activityCleared = activity.length;
+            } catch {}
 
             // 2) Ask any open Rumble tabs to wipe their own localStorage.
             // Tabs that aren't open simply won't be touched — next time they
@@ -1116,7 +1130,10 @@
             const snapshotNote = snapshot?.ok
                 ? ' Snapshot captured first.'
                 : ' No snapshot was taken because backup history is turned off — this reset cannot be undone.';
-            showStatus('All settings cleared.' + snapshotNote + suffix, 'success');
+            const activityNote = activityCleared
+                ? ` Cleared ${activityCleared} saved activity ${activityCleared === 1 ? 'item' : 'items'}.`
+                : '';
+            showStatus('All settings cleared.' + snapshotNote + activityNote + suffix, 'success');
         } catch (err) {
             showStatus('Reset failed: ' + err.message, 'error');
         }

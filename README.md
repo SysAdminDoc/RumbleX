@@ -290,7 +290,7 @@ Click the extension icon → **gear button** to open the dedicated options page.
 - App bar with version + live storage status
 - Workspace hero + **Open Settings Editor** CTA
 - 5-card stats overview (Enabled features, Storage size, Channels, Keywords, Chatters)
-- **Full-parity Export / Import**. backups now include both `rx_settings` AND per-origin localStorage (watch progress, watch/search history, bookmarks, volume memory, rant archives), plus the cross-video rant summary kept in extension storage. Export format: `exportVersion: 3`. Files from versions 1 and 2 still import. Imports are allowlisted by key so a crafted file cannot smuggle arbitrary localStorage keys onto rumble.com.
+- **Full-parity Export / Import**. backups include both `rx_settings` AND your activity (watch progress, watch/search history, bookmarks, volume memory, rant archives), plus the cross-video rant summary. Export format: `exportVersion: 3`. Files from versions 1 and 2 still import. Imports are allowlisted by key so a crafted file cannot smuggle arbitrary localStorage keys onto rumble.com.
 - **Frame budget report**. Off by default. Turn on **Frame Budget Report** under Privacy & Data and RumbleX keeps a local list of its own page scans that took longer than one frame (16 ms), with the module that ran each one and the kind of page it happened on. The last 100 are kept, and nothing leaves the browser unless you press **Export frame budget report**.
 - **Credential-safe backups**. Normal exports omit every configured credential. A warned checkbox can include them for a deliberate device migration. Privacy reports, error logs, clipboard diagnostics, and encrypted Gist payloads always redact or omit credential values.
 - **Optional GitHub access**. GitHub API access is not requested at install time. Clicking the update check or an encrypted Gist action asks for the host permission at that moment. If access is declined, RumbleX sends no GitHub request and explains what happened in the current language.
@@ -405,9 +405,9 @@ RumbleX intentionally does not request Declarative Net Request feedback/debug pe
 - Vanilla JavaScript. no runtime framework; a deterministic build generates the single-file userscript
 - Chrome Extension Manifest V3 + Firefox Manifest V2 (parallel manifests)
 - `chrome.storage.local` (extensions) or `GM_*Value` (userscript) for settings persistence
-- `localStorage` (per-origin) for watch progress, volume memory, history, rant archives
+- Activity (watch progress, volume memory, history, bookmarks, rant archives) lives in extension storage in the extension builds, so clearing rumble.com's site data leaves it alone. Userscripts have no extension storage and keep it in rumble.com's `localStorage`. Existing installs move it over once, on the first Rumble page after updating, keeping a copy of what was there to roll back to.
 - Mediabunny 1.55.7 (bundled) for default HLS-to-MP4 conversion, including direct-to-disk streaming
-- mux.js 7.0.3 (bundled) as the bounded fallback when Mediabunny or WebCodecs is unavailable
+- mux.js 7.1.0 (bundled) as the bounded fallback when Mediabunny or WebCodecs is unavailable
 - `AbortController` + generation-counter guards for cancellable async work
 - Anti-FOUC: CSS injected at `document_start`
 - GitHub Releases API for update checking
@@ -424,7 +424,7 @@ flowchart LR
     Content <--> Worker[worker.js / mediabunny-worker.js]
     Content <--> Background[background.js service worker]
     Popup[Popup / Options / Side panel] <--> Background
-    Content <--> Storage[chrome.storage.local + site localStorage]
+    Content <--> Storage[chrome.storage.local, or site localStorage in userscripts]
     Background <--> Storage
     Background --> Downloads[chrome.downloads]
     Background <--> Offscreen[offscreen document]

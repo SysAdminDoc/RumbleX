@@ -23,7 +23,7 @@
 // @updateURL    https://github.com/SysAdminDoc/RumbleX/raw/main/RumbleX.lite.user.js
 // ==/UserScript==
 
-// Generated from the shared extension core files. Shared runtime SHA-256: 5bfc134b42f0a4986fc2f5629ae4f61656d06494a0a608e79eec3250c76c653e
+// Generated from the shared extension core files. Shared runtime SHA-256: 5d2cc16cc34978619ce8e1254f6bc5474a243ef440ac486e56be00fd4746d1d0
 // RumbleX shared settings schema. This file is the canonical source for
 // defaults and trust-boundary normalization across content, options, popup,
 // background profile/Gist restores, and the generated userscript.
@@ -2868,6 +2868,250 @@ if (RXPlatform.storage?.onChanged) {
 }
 // Ensure pending writes land before the page unloads.
 window.addEventListener('pagehide', () => Settings._flush(), { capture: true });
+
+// ── Activity store ──
+// Watch progress, history, bookmarks, searches, rant archives and the rest of
+// what someone builds up while using RumbleX used to live in rumble.com's own
+// localStorage. Clearing that site's data, which browsers offer in one click
+// and Rumble can do on its own, took all of it along. In the extension it now
+// lives in extension storage instead: one storage key per item, named with
+// RX_ACTIVITY_PREFIX, beside a version record. Userscripts have no extension
+// storage and keep the page's localStorage.
+//
+// Reads stay synchronous, because every consumer was written against
+// localStorage: init() loads the whole store into memory before any feature
+// starts, a write updates memory at once and reaches storage at the end of
+// the current task, and writes made in other tabs arrive through onChanged.
+const RX_ACTIVITY_PREFIX = 'rx_act:';
+const RX_ACTIVITY_META = 'rx_activity_meta';
+const RX_ACTIVITY_SNAPSHOT = 'rx_activity_premigration';
+const RX_ACTIVITY_VERSION = 1;
+
+const RxActivity = {
+    _mode: 'page',
+    _cache: new Map(),
+    _dirty: new Map(),
+    _inFlight: new Set(),
+    _flushQueued: false,
+    _unsubscribe: null,
+
+    get mode() { return this._mode; },
+
+    getItem(key) {
+        if (this._mode === 'page') return localStorage.getItem(key);
+        return this._cache.has(key) ? this._cache.get(key) : null;
+    },
+
+    setItem(key, value) {
+        if (this._mode === 'page') {
+            localStorage.setItem(key, value);
+            return;
+        }
+        const text = String(value);
+        this._cache.set(key, text);
+        this._queue(key, text);
+    },
+
+    removeItem(key) {
+        if (this._mode === 'page') {
+            localStorage.removeItem(key);
+            return;
+        }
+        if (!this._cache.has(key)) return;
+        this._cache.delete(key);
+        this._queue(key, null);
+    },
+
+    keys() {
+        if (this._mode === 'extension') return [...this._cache.keys()];
+        const out = [];
+        for (let i = 0; i < localStorage.length; i++) {
+            const key = localStorage.key(i);
+            if (key) out.push(key);
+        }
+        return out;
+    },
+
+    _queue(key, value) {
+        this._dirty.set(key, value);
+        if (this._flushQueued) return;
+        this._flushQueued = true;
+        queueMicrotask(() => { void this.flush(); });
+    },
+
+    async flush() {
+        this._flushQueued = false;
+        if (!this._dirty.size) return;
+        const batch = [...this._dirty];
+        this._dirty.clear();
+        const set = {};
+        const remove = [];
+        for (const [key, value] of batch) {
+            this._inFlight.add(key);
+            if (value === null) remove.push(RX_ACTIVITY_PREFIX + key);
+            else set[RX_ACTIVITY_PREFIX + key] = value;
+        }
+        try {
+            if (Object.keys(set).length) await RXPlatform.storage.set(set);
+            if (remove.length) await RXPlatform.storage.remove(remove);
+        } catch (error) {
+            try { RxErrorLog.record('ActivityStore', error, 'flush'); } catch {}
+        } finally {
+            for (const [key] of batch) {
+                if (!this._dirty.has(key)) this._inFlight.delete(key);
+            }
+        }
+    },
+
+    // Every RumbleX key in the page's own storage: the named ones and the
+    // per-video prefixes. Nothing else on rumble.com's origin is touched.
+    _isActivityKey(key) {
+        return RX_LOCAL_STORAGE_KEYS.includes(key)
+            || RX_LOCAL_STORAGE_PREFIXES.some((prefix) => key.startsWith(prefix));
+    },
+
+    clearPageCopies() {
+        let removed = 0;
+        for (const key of Object.keys(this._readPageStore())) {
+            try { localStorage.removeItem(key); removed++; } catch {}
+        }
+        return removed;
+    },
+
+    _readPageStore() {
+        const out = {};
+        for (let i = 0; i < localStorage.length; i++) {
+            const key = localStorage.key(i);
+            if (!key || !this._isActivityKey(key)) continue;
+            const value = localStorage.getItem(key);
+            if (typeof value === 'string') out[key] = value;
+        }
+        return out;
+    },
+
+    // The move itself. Order matters, because a tab can close at any point:
+    // the pre-migration snapshot is written first so a rollback always has
+    // something to restore, then the copies, then every copy is read back and
+    // compared, and only after the version record says the move is complete
+    // are the page's own copies removed. Anything short of that leaves the
+    // page copies authoritative and the next load starts the move over.
+    async _migrate() {
+        const run = async () => {
+            const meta = (await RXPlatform.storage.get(RX_ACTIVITY_META))?.[RX_ACTIVITY_META];
+            if (meta?.version === RX_ACTIVITY_VERSION) return { ok: true, already: true };
+            if (meta?.hold) return { ok: false, reason: 'held' };
+            const snapshot = this._readPageStore();
+            const keys = Object.keys(snapshot);
+            await RXPlatform.storage.set({
+                [RX_ACTIVITY_SNAPSHOT]: { at: Date.now(), version: RX_ACTIVITY_VERSION, data: snapshot },
+            });
+            if (keys.length) {
+                await RXPlatform.storage.set(Object.fromEntries(keys.map((key) => [RX_ACTIVITY_PREFIX + key, snapshot[key]])));
+            }
+            const readBack = keys.length
+                ? await RXPlatform.storage.get(keys.map((key) => RX_ACTIVITY_PREFIX + key))
+                : {};
+            const mismatched = keys.filter((key) => readBack?.[RX_ACTIVITY_PREFIX + key] !== snapshot[key]);
+            if (mismatched.length) {
+                await this._undoCopies(keys);
+                await RXPlatform.storage.set({
+                    [RX_ACTIVITY_META]: { version: 0, failedAt: Date.now(), reason: 'verify', mismatched: mismatched.length },
+                });
+                return { ok: false, reason: 'verify', mismatched };
+            }
+            await RXPlatform.storage.set({
+                [RX_ACTIVITY_META]: { version: RX_ACTIVITY_VERSION, migratedAt: Date.now(), keys: keys.length },
+            });
+            for (const key of keys) {
+                try { localStorage.removeItem(key); } catch {}
+            }
+            return { ok: true, keys: keys.length };
+        };
+        // Two tabs loading at once would otherwise both copy, and the slower
+        // one could overwrite activity the faster one had already written.
+        try {
+            if (navigator.locks?.request) return await navigator.locks.request('rx-activity-migration', run);
+            return await run();
+        } catch (error) {
+            try { RxErrorLog.record('ActivityStore', error, 'migrate'); } catch {}
+            return { ok: false, reason: 'error', error: String(error?.message || error) };
+        }
+    },
+
+    async _undoCopies(keys) {
+        const extra = Object.keys(await RXPlatform.storage.get(null) || {})
+            .filter((key) => key.startsWith(RX_ACTIVITY_PREFIX));
+        const targets = [...new Set([...keys.map((key) => RX_ACTIVITY_PREFIX + key), ...extra])];
+        if (targets.length) await RXPlatform.storage.remove(targets);
+    },
+
+    // Puts the page copies back exactly as they were before the move, drops
+    // the extension copies, and holds the store in page storage so the next
+    // load does not move it straight back. Used when someone needs the old
+    // arrangement; clearing the hold lets the move run again.
+    async rollback() {
+        const stored = (await RXPlatform.storage.get(RX_ACTIVITY_SNAPSHOT))?.[RX_ACTIVITY_SNAPSHOT];
+        if (!stored?.data || typeof stored.data !== 'object') return { ok: false, reason: 'no-snapshot' };
+        let restored = 0;
+        for (const [key, value] of Object.entries(stored.data)) {
+            if (typeof value !== 'string' || !this._isActivityKey(key)) continue;
+            try { localStorage.setItem(key, value); restored++; } catch { break; }
+        }
+        await this._undoCopies(Object.keys(stored.data));
+        await RXPlatform.storage.set({ [RX_ACTIVITY_META]: { version: 0, hold: true, rolledBackAt: Date.now() } });
+        this._unsubscribe?.();
+        this._unsubscribe = null;
+        this._cache.clear();
+        this._dirty.clear();
+        this._mode = 'page';
+        return { ok: true, restored };
+    },
+
+    async init() {
+        if (!RXPlatform.capabilities.activityStorage) return { mode: 'page' };
+        const migration = await this._migrate();
+        if (!migration.ok) return { mode: 'page', migration };
+        const all = await RXPlatform.storage.get(null) || {};
+        for (const [key, value] of Object.entries(all)) {
+            if (key.startsWith(RX_ACTIVITY_PREFIX) && typeof value === 'string') {
+                this._cache.set(key.slice(RX_ACTIVITY_PREFIX.length), value);
+            }
+        }
+        this._mode = 'extension';
+        // A move that committed but was interrupted before it removed the page
+        // copies finishes here. Where both hold a key, the version record says
+        // the extension copy is the real one. A key only the page holds (a tab
+        // still running older code can write one after the move) is adopted
+        // rather than thrown away, and page copies go only once that landed.
+        const leftovers = this._readPageStore();
+        const adopted = {};
+        for (const [key, value] of Object.entries(leftovers)) {
+            if (this._cache.has(key)) continue;
+            this._cache.set(key, value);
+            adopted[RX_ACTIVITY_PREFIX + key] = value;
+        }
+        try {
+            if (Object.keys(adopted).length) await RXPlatform.storage.set(adopted);
+            for (const key of Object.keys(leftovers)) {
+                try { localStorage.removeItem(key); } catch {}
+            }
+        } catch (error) {
+            try { RxErrorLog.record('ActivityStore', error, 'adopt'); } catch {}
+        }
+        this._unsubscribe = RXPlatform.storage.onChanged((changes) => {
+            for (const [storageKey, change] of Object.entries(changes)) {
+                if (!storageKey.startsWith(RX_ACTIVITY_PREFIX)) continue;
+                const key = storageKey.slice(RX_ACTIVITY_PREFIX.length);
+                // This tab's own newer write wins over an event for an older one.
+                if (this._inFlight.has(key) || this._dirty.has(key)) continue;
+                if (typeof change.newValue === 'string') this._cache.set(key, change.newValue);
+                else this._cache.delete(key);
+            }
+        });
+        return { mode: 'extension', migration };
+    },
+};
+window.addEventListener('pagehide', () => { void RxActivity.flush(); }, { capture: true });
 
 // ── Anti-FOUC: Inject immediately at document-start ──
 const ANTI_FOUC_CSS = `
@@ -8794,12 +9038,12 @@ const ScrollVolume = {
     },
 
     _saveVolume(vol) {
-        try { localStorage.setItem(this.STORAGE_KEY, vol.toString()); } catch {}
+        try { RxActivity.setItem(this.STORAGE_KEY, vol.toString()); } catch {}
     },
 
     _loadVolume() {
         try {
-            const v = parseFloat(localStorage.getItem(this.STORAGE_KEY));
+            const v = parseFloat(RxActivity.getItem(this.STORAGE_KEY));
             return isNaN(v) ? null : Math.min(1, Math.max(0, v));
         } catch { return null; }
     },
@@ -9445,7 +9689,7 @@ const WatchProgress = {
 
     _getStore() {
         try {
-            return JSON.parse(localStorage.getItem(this.STORAGE_KEY) || '{}');
+            return JSON.parse(RxActivity.getItem(this.STORAGE_KEY) || '{}');
         } catch { return {}; }
     },
 
@@ -9457,7 +9701,7 @@ const WatchProgress = {
             const pruned = Object.fromEntries(entries.slice(entries.length - this.MAX_ENTRIES));
             store = pruned;
         }
-        try { localStorage.setItem(this.STORAGE_KEY, JSON.stringify(store)); } catch {}
+        try { RxActivity.setItem(this.STORAGE_KEY, JSON.stringify(store)); } catch {}
     },
 
     _savePosition(video) {
@@ -11604,12 +11848,12 @@ const WatchHistoryFeature = {
     _buttonWrapper: null,
 
     _getHistory() {
-        try { return JSON.parse(localStorage.getItem(this._KEY) || '[]'); }
+        try { return JSON.parse(RxActivity.getItem(this._KEY) || '[]'); }
         catch { return []; }
     },
 
     _saveHistory(entries) {
-        localStorage.setItem(this._KEY, JSON.stringify(entries.slice(0, this._MAX)));
+        RxActivity.setItem(this._KEY, JSON.stringify(entries.slice(0, this._MAX)));
     },
 
     _recordCurrent() {
@@ -11727,7 +11971,7 @@ const WatchHistoryFeature = {
         clearBtn.className = 'rx-history-clear';
         clearBtn.textContent = 'Clear All';
         clearBtn.addEventListener('click', () => {
-            localStorage.removeItem(this._KEY);
+            RxActivity.removeItem(this._KEY);
             overlay.remove();
         });
         const closeBtn = document.createElement('button');
@@ -12350,12 +12594,12 @@ const SearchHistory = {
     `,
 
     _getHistory() {
-        try { return JSON.parse(localStorage.getItem(this._KEY) || '[]'); }
+        try { return JSON.parse(RxActivity.getItem(this._KEY) || '[]'); }
         catch { return []; }
     },
 
     _saveHistory(entries) {
-        localStorage.setItem(this._KEY, JSON.stringify(entries.slice(0, this._MAX)));
+        RxActivity.setItem(this._KEY, JSON.stringify(entries.slice(0, this._MAX)));
     },
 
     _recordSearch(query) {
@@ -12386,7 +12630,7 @@ const SearchHistory = {
         clearBtn.textContent = 'Clear all';
         clearBtn.addEventListener('click', (e) => {
             e.stopPropagation();
-            localStorage.removeItem(this._KEY);
+            RxActivity.removeItem(this._KEY);
             this._dropdown.classList.remove('show');
         });
         header.appendChild(clearBtn);
@@ -13221,12 +13465,12 @@ const QuickBookmark = {
     `,
 
     _getBookmarks() {
-        try { return JSON.parse(localStorage.getItem(this._KEY) || '[]'); }
+        try { return JSON.parse(RxActivity.getItem(this._KEY) || '[]'); }
         catch { return []; }
     },
 
     _saveBookmarks(bm) {
-        localStorage.setItem(this._KEY, JSON.stringify(bm.slice(0, this._MAX)));
+        RxActivity.setItem(this._KEY, JSON.stringify(bm.slice(0, this._MAX)));
     },
 
     _isBookmarked(url) {
@@ -14771,12 +15015,12 @@ const PlaylistQuickSave = {
                     if (url && title) {
                         const key = 'rx_bookmarks';
                         try {
-                            const bm = JSON.parse(localStorage.getItem(key) || '[]');
+                            const bm = JSON.parse(RxActivity.getItem(key) || '[]');
                             if (!bm.some(b => b.url === url)) {
                                 const channel = VideoCards.channel(card);
                                 const img = thumb.matches('img') ? thumb : thumb.querySelector('img');
                                 bm.unshift({ url, title, channel, thumb: img?.src || '', time: Date.now() });
-                                localStorage.setItem(key, JSON.stringify(bm.slice(0, 200)));
+                                RxActivity.setItem(key, JSON.stringify(bm.slice(0, 200)));
                                 btn.classList.add('saved');
                                 RxToast.show(rxT('toastBookmarked', 'Bookmarked locally'));
                             } else {
@@ -16184,7 +16428,7 @@ const PerChannelPrefs = {
 
     _load() {
         try {
-            const raw = localStorage.getItem(this._KEY);
+            const raw = RxActivity.getItem(this._KEY);
             const parsed = raw ? JSON.parse(raw) : null;
             return (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) ? parsed : {};
         } catch { return {}; }
@@ -16199,7 +16443,7 @@ const PerChannelPrefs = {
                 const ordered = keys.sort((a, b) => (store[a]?.at || 0) - (store[b]?.at || 0));
                 for (const key of ordered.slice(0, keys.length - this._MAX)) delete store[key];
             }
-            localStorage.setItem(this._KEY, JSON.stringify(store));
+            RxActivity.setItem(this._KEY, JSON.stringify(store));
         } catch { /* quota or disabled storage — preferences are best-effort */ }
     },
 
@@ -16856,7 +17100,7 @@ const RantArchive = {
         try {
             const id = location.pathname.match(/\/(v[a-z0-9]+)-/i)?.[1];
             if (!id) return [];
-            return JSON.parse(localStorage.getItem('rx_rants_' + id) || '[]') || [];
+            return JSON.parse(RxActivity.getItem('rx_rants_' + id) || '[]') || [];
         } catch { return []; }
     },
 
@@ -17130,8 +17374,7 @@ const RantPersist = {
     _pruneGlobal() {
         try {
             const keys = [];
-            for (let i = 0; i < localStorage.length; i++) {
-                const k = localStorage.key(i);
+            for (const k of RxActivity.keys()) {
                 if (k && k.startsWith('rx_rants_')) keys.push(k);
             }
             if (keys.length <= this._MAX_KEPT_VIDEOS) return;
@@ -17139,13 +17382,13 @@ const RantPersist = {
             const scored = keys.map((k) => {
                 let maxTs = 0;
                 try {
-                    const arr = JSON.parse(localStorage.getItem(k)) || [];
+                    const arr = JSON.parse(RxActivity.getItem(k)) || [];
                     for (const e of arr) if (e && e.ts > maxTs) maxTs = e.ts;
                 } catch {}
                 return { k, maxTs };
             }).sort((a, b) => a.maxTs - b.maxTs);
             const drop = scored.slice(0, keys.length - this._MAX_KEPT_VIDEOS);
-            for (const { k } of drop) localStorage.removeItem(k);
+            for (const { k } of drop) RxActivity.removeItem(k);
         } catch {}
     },
 
@@ -17177,11 +17420,11 @@ const RantPersist = {
         const key = this._videoKey();
         if (!key) return;
         try {
-            localStorage.setItem(key, JSON.stringify(this._cached));
+            RxActivity.setItem(key, JSON.stringify(this._cached));
         } catch {
             // QuotaExceeded — prune and retry once
             this._pruneGlobal();
-            try { localStorage.setItem(key, JSON.stringify(this._cached)); } catch {}
+            try { RxActivity.setItem(key, JSON.stringify(this._cached)); } catch {}
         }
         // Debounced mirror to chrome.storage.local for the options-page RantStats panel.
         this._scheduleMirrorWrite();
@@ -17226,7 +17469,7 @@ const RantPersist = {
         const key = this._videoKey();
         if (key) {
             try {
-                const raw = localStorage.getItem(key);
+                const raw = RxActivity.getItem(key);
                 if (raw) this._cached = JSON.parse(raw) || [];
             } catch {}
         }
@@ -22007,7 +22250,7 @@ const CommentDrafts = {
 
     _load() {
         try {
-            const raw = localStorage.getItem(this._KEY);
+            const raw = RxActivity.getItem(this._KEY);
             const parsed = raw ? JSON.parse(raw) : null;
             if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {};
             return this._prune(parsed);
@@ -22034,8 +22277,8 @@ const CommentDrafts = {
     _write(store) {
         try {
             const pruned = this._prune(store);
-            if (Object.keys(pruned).length) localStorage.setItem(this._KEY, JSON.stringify(pruned));
-            else localStorage.removeItem(this._KEY);
+            if (Object.keys(pruned).length) RxActivity.setItem(this._KEY, JSON.stringify(pruned));
+            else RxActivity.removeItem(this._KEY);
         } catch (e) {
             console.warn('[RumbleX] comment draft save failed:', e);
         }
@@ -22335,6 +22578,12 @@ async function boot() {
     }
     syncAntiFoucStyle();
     try {
+        await RxActivity.init();
+    } catch (e) {
+        console.warn('[RumbleX] activity store init failed:', e);
+        try { RxErrorLog?.record('ActivityStore', e, 'init'); } catch {}
+    }
+    try {
         await rxApplyPendingLocalDataOperation();
     } catch (e) {
         console.warn('[RumbleX] pending local-data restore failed:', e);
@@ -22432,6 +22681,9 @@ const RX_EXTENSION_STORAGE_RESET_KEYS = [
     'rx_download_diagnostics',
     'rx_download_recovery',
     'rx_welcome_seen',
+    // The copy of the activity in the page, taken just before it moved
+    // into extension storage. It is user activity like the rest.
+    'rx_activity_premigration',
 ];
 
 // Runtime `rx_` keys the reset deliberately does not drop here, and why. The
@@ -22442,22 +22694,26 @@ const RX_RESET_EXCLUSIONS = {
     rx_settings_snapshots: 'The pre-reset snapshot is the undo. Wiping it would make Reset All Data irreversible.',
     rx_pending_local_data_op: 'The reset itself stages one of these for the next Rumble tab. Clearing it would cancel the per-site wipe the reset just queued.',
     rx_notification_targets: 'Lives in chrome.storage.session, which the browser discards at the end of the session on its own.',
+    rx_activity_meta: 'Records that activity already moved into extension storage. Clearing it would re-run the move against an empty page store after every reset.',
 };
 
 function rxClearLocalStorage() {
     let cleared = 0;
     try {
         for (const k of RX_LOCAL_STORAGE_KEYS) {
-            if (localStorage.getItem(k) !== null) { localStorage.removeItem(k); cleared++; }
+            if (RxActivity.getItem(k) !== null) { RxActivity.removeItem(k); cleared++; }
         }
         // Collect prefix-matched keys first (removing while iterating shifts
         // indices) then delete.
         const toDrop = [];
-        for (let i = 0; i < localStorage.length; i++) {
-            const k = localStorage.key(i);
+        for (const k of RxActivity.keys()) {
             if (k && RX_LOCAL_STORAGE_PREFIXES.some((p) => k.startsWith(p))) toDrop.push(k);
         }
-        for (const k of toDrop) { localStorage.removeItem(k); cleared++; }
+        for (const k of toDrop) { RxActivity.removeItem(k); cleared++; }
+        // Once activity lives in extension storage the page can still hold a
+        // stray copy, written by a tab that ran older code after the move. A
+        // reset promises everything, so it clears that too.
+        if (RxActivity.mode === 'extension') cleared += RxActivity.clearPageCopies();
     } catch (e) {
         console.warn('[RumbleX] localStorage clear failed:', e);
     }
@@ -22473,14 +22729,13 @@ function rxReadLocalStorage() {
     try {
         for (const k of RX_LOCAL_STORAGE_KEYS) {
             if (RX_BACKUP_EXCLUDED_KEYS.includes(k)) continue;
-            const v = localStorage.getItem(k);
+            const v = RxActivity.getItem(k);
             if (v !== null) out[k] = v;
         }
-        for (let i = 0; i < localStorage.length; i++) {
-            const k = localStorage.key(i);
+        for (const k of RxActivity.keys()) {
             if (!k) continue;
             if (RX_LOCAL_STORAGE_PREFIXES.some((p) => k.startsWith(p))) {
-                out[k] = localStorage.getItem(k);
+                out[k] = RxActivity.getItem(k);
             }
         }
     } catch (e) {
@@ -22504,7 +22759,7 @@ function rxWriteLocalStorage(data) {
             if (!allowed(k)) continue;
             // chrome.storage.local has no quota on file; localStorage does
             // (5–10 MB). If we blow it, stop writing rather than throw.
-            try { localStorage.setItem(k, v); written++; } catch { break; }
+            try { RxActivity.setItem(k, v); written++; } catch { break; }
         }
     } catch (e) {
         console.warn('[RumbleX] localStorage write failed:', e);
@@ -22637,13 +22892,12 @@ function rxBuildPrivacyReport() {
     let localBytes = 0;
     let localKeys = 0;
     try {
-        for (let i = 0; i < localStorage.length; i++) {
-            const k = localStorage.key(i);
+        for (const k of RxActivity.keys()) {
             if (!k) continue;
             if (RX_LOCAL_STORAGE_KEYS.includes(k)
                 || RX_LOCAL_STORAGE_PREFIXES.some((p) => k.startsWith(p))) {
                 localKeys++;
-                localBytes += k.length + (localStorage.getItem(k) || '').length;
+                localBytes += k.length + (RxActivity.getItem(k) || '').length;
             }
         }
     } catch {}
@@ -22688,6 +22942,7 @@ function rxBuildPrivacyReport() {
         localStorage: {
             keys: localKeys,
             bytes: localBytes,
+            store: RxActivity.mode === 'extension' ? 'extension storage' : 'rumble.com localStorage',
         },
         notes: [
             settings.stripTrackingParams ? 'Tracking-param stripping is ON' : 'Tracking-param stripping is OFF',
@@ -22788,6 +23043,18 @@ RXPlatform.onMessage((msg, sender, sendResponse) => {
     if (msg.action === 'setLocalData') {
         const written = rxWriteLocalStorage(msg.data);
         sendResponse({ ok: true, written });
+        return true;
+    }
+    if (msg.action === 'getActivityStore') {
+        RXPlatform.storage.get(RX_ACTIVITY_META)
+            .then((stored) => sendResponse({ ok: true, mode: RxActivity.mode, keys: RxActivity.keys().length, meta: stored?.[RX_ACTIVITY_META] || null }))
+            .catch((error) => sendResponse({ ok: false, reason: String(error?.message || error) }));
+        return true;
+    }
+    if (msg.action === 'rollbackActivityMigration') {
+        RxActivity.rollback()
+            .then(sendResponse)
+            .catch((error) => sendResponse({ ok: false, reason: String(error?.message || error) }));
         return true;
     }
     // v2.6.0 — privacy / backup / telemetry message API

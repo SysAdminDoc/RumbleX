@@ -81,6 +81,10 @@
             // script does not, whatever the manifest declares. Probes route
             // through it so they do not depend on the CDN CORS headers.
             proxiedMediaProbe: true,
+            // Activity (history, progress, bookmarks, rant archives) lives in
+            // extension storage, not in rumble.com's localStorage, so clearing
+            // the site's data does not take it along.
+            activityStorage: true,
         }),
         storage,
         fetch: (...args) => fetch(...args),
