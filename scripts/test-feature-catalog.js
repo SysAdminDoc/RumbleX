@@ -107,7 +107,7 @@ const MODAL_EXCLUSIONS = {
     chatMuteDurations: 'value-input', commentMuteDurations: 'value-input',
     glassIntensity: 'value-input', accentColor: 'value-input',
     chatHighlightKeywords: 'value-input', chatFontScale: 'value-input',
-    chatNicknames: 'stored-data',
+    chatNicknames: 'stored-data', theaterLayout: 'stored-data',
     sponsorCategoryBehavior: 'value-input', sponsorTimeSaved: 'value-input',
 
     // Enum choices — same reasoning as value inputs.

@@ -193,7 +193,7 @@ Live chat got the things every other chat platform already has, and rants became
 - **SponsorBlock**. Per-video local segments with auto-skip (sponsor / intro / outro / selfpromo / interaction), progress-bar markers, JSON import + export, and an opt-in trim that keeps marked segments out of downloads
 
 ### Video Player
-- **Theater Split**. Fullscreen video with a resizable side panel. Live Chat or Comments fills the panel, with Download available in its own tab.
+- **Theater Split**. Fullscreen video with a resizable side panel. Live Chat or Comments fills the panel, with Download available in its own tab. Live streams and recorded videos each remember where you left the divider and whether you closed Theater, so a chat-heavy live layout and a video-first recording layout don't overwrite each other. After you close it, Rumble's own theater button opens it again. Turn on **Per-Channel Theater Layout** to give a channel its own layout, and reset **Theater Layout Memory** in Options to go back to the Split Ratio default.
 - **Auto Theater**. Auto-enter native theater mode on load
 - **Full-Width Player**. Maximize player width; on live streams, side-by-side chat layout with responsive stacking ≤ 1100 px
 - **Adaptive Live Layout**. Expand main content whenever chat is visible on live streams

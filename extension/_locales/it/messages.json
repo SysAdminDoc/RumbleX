@@ -760,7 +760,7 @@
     "description": "In-page UI string (shared core)."
   },
   "feat_theaterSplit_desc": {
-    "message": "Video a schermo intero con pannello laterale che appare allo scorrimento",
+    "message": "Video a schermo intero accanto a un pannello di chat o commenti a tutta altezza",
     "description": "In-page UI string (shared core)."
   },
   "feat_autoTheater_label": {
@@ -2335,6 +2335,14 @@
   },
   "dlRefreshingLink": {
     "message": "Il link del flusso era scaduto. Provo con uno nuovo…",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_theaterChannelLayout_label": {
+    "message": "Layout teatro per canale",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_theaterChannelLayout_desc": {
+    "message": "Mantenere un layout teatro separato per ogni canale",
     "description": "In-page UI string (shared core)."
   }
 }

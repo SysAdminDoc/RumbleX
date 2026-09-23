@@ -760,7 +760,7 @@
     "description": "In-page UI string (shared core)."
   },
   "feat_theaterSplit_desc": {
-    "message": "Vollbildvideo mit Seitenleiste, die beim Scrollen erscheint",
+    "message": "Vollbildvideo neben einer Chat- oder Kommentarleiste in voller Höhe",
     "description": "In-page UI string (shared core)."
   },
   "feat_autoTheater_label": {
@@ -2335,6 +2335,14 @@
   },
   "dlRefreshingLink": {
     "message": "Der Stream-Link war abgelaufen. Ein frischer wird versucht…",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_theaterChannelLayout_label": {
+    "message": "Theater-Layout pro Kanal",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_theaterChannelLayout_desc": {
+    "message": "Für jeden Kanal ein eigenes Theater-Layout merken",
     "description": "In-page UI string (shared core)."
   }
 }

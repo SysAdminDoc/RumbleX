@@ -760,7 +760,7 @@
     "description": "In-page UI string (shared core)."
   },
   "feat_theaterSplit_desc": {
-    "message": "Vidéo en plein écran avec panneau latéral révélé au défilement",
+    "message": "Vidéo en plein écran à côté d'un panneau de chat ou de commentaires sur toute la hauteur",
     "description": "In-page UI string (shared core)."
   },
   "feat_autoTheater_label": {
@@ -2335,6 +2335,14 @@
   },
   "dlRefreshingLink": {
     "message": "Le lien du flux avait expiré. Essai d'un nouveau lien…",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_theaterChannelLayout_label": {
+    "message": "Disposition théâtre par chaîne",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_theaterChannelLayout_desc": {
+    "message": "Garder une disposition théâtre distincte pour chaque chaîne",
     "description": "In-page UI string (shared core)."
   }
 }

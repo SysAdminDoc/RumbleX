@@ -2244,6 +2244,47 @@ const TheaterSplit = {
         return matchMedia('(max-width: 860px), (pointer: coarse)').matches;
     },
 
+    // Live streams and recorded videos want different layouts: on a live
+    // stream the chat is half the point, on a recording the video is. Each kind
+    // keeps its own divider position and whether Theater was left open, in
+    // `theaterLayout`. `splitRatio` is the default both start from, and
+    // clearing `theaterLayout` returns both to it. With `theaterChannelLayout`
+    // on, a channel's own layout, stored with its other per-channel
+    // preferences, wins over both, one field at a time.
+    _layoutKind() {
+        return this._detectLive() ? 'live' : 'vod';
+    },
+
+    _channelLayoutSlug() {
+        return Settings.get('theaterChannelLayout') ? PerChannelPrefs.currentSlug() : null;
+    },
+
+    _layout() {
+        const kind = this._layoutKind();
+        const byKind = Settings.get('theaterLayout')?.[kind] || {};
+        const slug = this._channelLayoutSlug();
+        const channel = (slug && PerChannelPrefs.get(slug)?.theater?.[kind]) || {};
+        const ratio = [channel.ratio, byKind.ratio, Settings.get('splitRatio'), 75]
+            .map(Number)
+            .find((value) => Number.isFinite(value) && value > 0);
+        const open = [channel.open, byKind.open].find((value) => typeof value === 'boolean');
+        return { kind, ratio, open: open !== false };
+    },
+
+    _rememberLayout(patch) {
+        const kind = this._layoutKind();
+        const slug = this._channelLayoutSlug();
+        if (slug) {
+            const theater = { ...(PerChannelPrefs.get(slug)?.theater || {}) };
+            theater[kind] = { ...(theater[kind] || {}), ...patch };
+            PerChannelPrefs.remember(slug, { theater });
+            return;
+        }
+        const layout = { ...(Settings.get('theaterLayout') || {}) };
+        layout[kind] = { ...(layout[kind] || {}), ...patch };
+        Settings.set('theaterLayout', layout);
+    },
+
     _applySplitGeometry(leftPct, persist = false) {
         const requestedLeft = Math.max(30, Math.min(80, Number(leftPct) || 75));
         const narrow = this._isNarrow();
@@ -2273,7 +2314,7 @@ const TheaterSplit = {
         }
         divider.setAttribute('aria-valuenow', String(Math.round(left)));
         divider.setAttribute('aria-valuetext', `${Math.round(side)} percent side panel`);
-        if (persist) Settings.set('splitRatio', Math.round(left));
+        if (persist) this._rememberLayout({ ratio: Math.round(left) });
     },
 
     _initDividerDrag(divider, left, right) {
@@ -2305,10 +2346,14 @@ const TheaterSplit = {
                 const coord = narrow ? me.clientY : me.clientX;
                 const delta = coord - startCoord;
                 const newLeft = Math.max(30, Math.min(80, startLeftFrac + (delta / total * 100)));
-                this._applySplitGeometry(newLeft, true);
+                this._applySplitGeometry(newLeft);
             };
 
-            const onUp = () => finishDrag();
+            const onUp = () => {
+                const settled = Number(divider.getAttribute('aria-valuenow'));
+                if (Number.isFinite(settled) && !narrow) this._applySplitGeometry(settled, true);
+                finishDrag();
+            };
             this._dragCleanup = () => {
                 window.removeEventListener('mousemove', onMove);
                 window.removeEventListener('mouseup', onUp);
@@ -2324,7 +2369,7 @@ const TheaterSplit = {
         divider.addEventListener('keydown', (e) => {
             if (!['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End'].includes(e.key)) return;
             e.preventDefault();
-            const current = Number(divider.getAttribute('aria-valuenow')) || Settings.get('splitRatio') || 75;
+            const current = Number(divider.getAttribute('aria-valuenow')) || this._layout().ratio;
             let next = current;
             if (e.key === 'Home') next = 30;
             else if (e.key === 'End') next = 80;
@@ -2343,9 +2388,7 @@ const TheaterSplit = {
         const divider = qs('#rx-split-divider');
         if (!right || !divider) return;
 
-        const leftPct = Settings.get('splitRatio') || 75;
-
-        this._applySplitGeometry(leftPct);
+        this._applySplitGeometry(this._layout().ratio);
         right.classList.add('rx-expanded');
 
         this._populateRight(right);
@@ -2509,7 +2552,10 @@ const TheaterSplit = {
         exitBtn.title = 'Exit theater mode';
         exitBtn.setAttribute('aria-label', exitBtn.title);
         exitBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>';
-        exitBtn.addEventListener('click', () => this._unmount({ restoreFocus: true }));
+        exitBtn.addEventListener('click', () => {
+            this._rememberLayout({ open: false });
+            this._unmount({ restoreFocus: true });
+        });
 
         actions.appendChild(homeBtn);
         actions.appendChild(gearBtn);
@@ -2685,8 +2731,7 @@ const TheaterSplit = {
 
         this._windowResizeHandler = () => {
             if (this._isSplit) {
-                const leftPct = Settings.get('splitRatio') || 75;
-                this._applySplitGeometry(leftPct);
+                this._applySplitGeometry(this._layout().ratio);
                 if (this._isLive) {
                     setFeatureTimeout(this, () => this._syncLiveChatRoot(), 250);
                 }
@@ -2808,13 +2853,36 @@ const TheaterSplit = {
         }
         if (this._isActive) this._unmount();
         waitForFeature(this, '#videoPlayer').then(() => {
-            if (token === this._mountToken && Page.isWatch()) this._mountOverlay();
+            if (token !== this._mountToken || !Page.isWatch()) return;
+            if (this._layout().open || !this._nativeTheaterButton()) this._mountOverlay();
         }).catch(() => {});
+    },
+
+    // Rumble's own theater button is the way back in after Theater was left,
+    // so there is no second button on the player. While Theater is open the
+    // button is inside it and keeps its native behaviour.
+    _NATIVE_THEATER: '[data-js="theater-mode-toggle"], button[title*="theater" i], button[aria-label*="theater" i]',
+
+    _nativeTheaterButton(target) {
+        const found = target ? target.closest?.(this._NATIVE_THEATER) : qs(this._NATIVE_THEATER);
+        if (!found || found.closest('#rx-split-wrapper, [class^="rx-"], [id^="rx-"]')) return null;
+        if (Settings.get('hideTheaterButton')) return null;
+        return found;
+    },
+
+    _onNativeTheater(event) {
+        if (this._isActive || !Page.isWatch() || !this._nativeTheaterButton(event.target)) return;
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        this._rememberLayout({ open: true });
+        this._mountOverlay();
     },
 
     init() {
         if (!Settings.get(this.id)) return;
         this._styleEl = injectStyle(this._css, 'rx-theater-css');
+        this._nativeTheaterHandler = (event) => this._onNativeTheater(event);
+        document.addEventListener('click', this._nativeTheaterHandler, true);
         this._routerUnsub = Router.onChange((detail) => {
             if (detail.changed) {
                 this._mountToken++;
@@ -2847,6 +2915,8 @@ const TheaterSplit = {
         this._awaitingRouteDom = false;
         this._routerUnsub?.();
         this._routerUnsub = null;
+        if (this._nativeTheaterHandler) document.removeEventListener('click', this._nativeTheaterHandler, true);
+        this._nativeTheaterHandler = null;
         this._unmount();
         this._styleEl?.remove();
         this._styleEl = null;
@@ -11852,7 +11922,8 @@ const RX_CATEGORIES = [
         id: 'video-player', label: 'Video Player', color: '#a78bfa',
         icon: '<path d="M5 3a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2V5a2 2 0 00-2-2H5zm5.5 4.5l6 4.5-6 4.5v-9z"/>',
         features: [
-            { id: 'theaterSplit', label: 'Theater Split', desc: 'Fullscreen video with scroll-to-reveal side panel' },
+            { id: 'theaterSplit', label: 'Theater Split', desc: 'Fullscreen video beside a full-height chat or comments panel' },
+            { id: 'theaterChannelLayout', label: 'Per-Channel Theater Layout', desc: 'Keep a separate Theater layout for each channel', parent: 'theaterSplit' },
             { id: 'autoTheater', label: 'Auto Theater', desc: 'Auto-enter native theater mode on load' },
             { id: 'speedController', label: 'Speed Control', desc: 'Persistent playback speed with live detection' },
             { id: 'scrollVolume', label: 'Scroll Volume', desc: 'Mouse wheel volume + middle-click mute' },

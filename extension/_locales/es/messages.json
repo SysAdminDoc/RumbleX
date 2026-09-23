@@ -760,7 +760,7 @@
     "description": "In-page UI string (shared core)."
   },
   "feat_theaterSplit_desc": {
-    "message": "Vídeo a pantalla completa con panel lateral que aparece al desplazarse",
+    "message": "Vídeo a pantalla completa junto a un panel de chat o comentarios a toda altura",
     "description": "In-page UI string (shared core)."
   },
   "feat_autoTheater_label": {
@@ -2335,6 +2335,14 @@
   },
   "dlRefreshingLink": {
     "message": "El enlace del flujo había caducado. Probando uno nuevo…",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_theaterChannelLayout_label": {
+    "message": "Diseño de teatro por canal",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_theaterChannelLayout_desc": {
+    "message": "Guardar un diseño de teatro distinto para cada canal",
     "description": "In-page UI string (shared core)."
   }
 }

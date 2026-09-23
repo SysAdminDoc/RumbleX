@@ -16,6 +16,13 @@
         wideLayout: true,
         videoDownload: true,
         splitRatio: 75,
+        // Theater Split's remembered layout, kept separately for live streams
+        // and recorded videos: { live: { ratio, open }, vod: { ratio, open } }.
+        // splitRatio is where both start and what an empty object returns to.
+        theaterLayout: {},
+        // A channel's own Theater layout, stored with its per-channel playback
+        // preferences, wins over theaterLayout when this is on.
+        theaterChannelLayout: false,
         hiddenCategories: [],
         logoToFeed: true,
         hidePremium: true,
@@ -624,6 +631,24 @@
                     if (name && label) nicks[name.toLowerCase()] = label;
                 }
                 out[key] = nicks;
+                continue;
+            }
+            // Only the two kinds and the two fields. The ratio stays inside
+            // the range the divider itself allows, so a restored backup cannot
+            // open Theater with the video or the panel squeezed to nothing.
+            if (key === 'theaterLayout') {
+                if (!isPlainObject(value)) continue;
+                const layout = {};
+                for (const kind of ['live', 'vod']) {
+                    const entry = value[kind];
+                    if (!isPlainObject(entry)) continue;
+                    const clean = {};
+                    const ratio = Number(entry.ratio);
+                    if (Number.isFinite(ratio)) clean.ratio = Math.round(Math.min(80, Math.max(30, ratio)));
+                    if (typeof entry.open === 'boolean') clean.open = entry.open;
+                    if (Object.keys(clean).length) layout[kind] = clean;
+                }
+                out[key] = layout;
                 continue;
             }
             if (key === 'sponsorCategoryBehavior') {

@@ -126,7 +126,9 @@
         titleNormalizer: { group: 'theme-layout', label: 'Title Normalizer', desc: 'Calm ALL-CAPS, emoji spray and repeated !!! in video titles; original stays on hover' },
         titleNormalizerMode: { group: 'theme-layout', label: 'Title Normalizer Style', desc: 'sentence | title. How a shouty title is re-cased.' },
         theme: { group: 'theme-layout', label: 'Theme', desc: 'catppuccin | youtube | midnight | rumbleGreen' },
-        splitRatio: { group: 'theme-layout', label: 'Split Ratio', desc: 'Theater split panel width % (40-90)' },
+        splitRatio: { group: 'theme-layout', label: 'Split Ratio', desc: 'Default video width % for Theater Split (30-80). Live streams and recorded videos start here, then each remembers where you leave the divider.' },
+        theaterLayout: { group: 'theme-layout', label: 'Theater Layout Memory', desc: 'Where the divider sits and whether Theater was left open, kept separately for live streams (live) and recorded videos (vod). Reset it to send both back to the Split Ratio default with Theater open.' },
+        theaterChannelLayout: { group: 'theme-layout', label: 'Per-Channel Theater Layout', desc: 'Keep a separate Theater layout for each channel. A channel\'s own layout wins over the live and recorded defaults.' },
 
         videoDownload: { group: 'downloads', label: 'Video Download', desc: 'Download direct MP4, bounded HLS-to-MP4, or stream TS directly to disk' },
         audioOnly: { group: 'downloads', label: 'Audio-Only Download', desc: 'Save the audio-only stream Rumble publishes as .m4a, with no conversion, on videos that have one. Videos without one say so instead of saving a video file.' },

@@ -760,7 +760,7 @@
     "description": "In-page UI string (shared core)."
   },
   "feat_theaterSplit_desc": {
-    "message": "Fullscreen video with scroll-to-reveal side panel",
+    "message": "Fullscreen video beside a full-height chat or comments panel",
     "description": "In-page UI string (shared core)."
   },
   "feat_autoTheater_label": {
@@ -2337,6 +2337,14 @@
   },
   "dlActionReload": {
     "message": "Reload quality list",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_theaterChannelLayout_label": {
+    "message": "Per-Channel Theater Layout",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_theaterChannelLayout_desc": {
+    "message": "Keep a separate Theater layout for each channel",
     "description": "In-page UI string (shared core)."
   }
 }
