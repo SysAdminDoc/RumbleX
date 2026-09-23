@@ -347,6 +347,7 @@
         channelArchiveButton: { group: 'integrations', label: 'In-Page Archive Button', desc: 'Show "Archive channel" button next to Follow on channel pages.' },
         channelArchiveMaxHeight: { group: 'downloads', label: 'Archive Max Height', desc: 'Cap archive downloads at this resolution. best | 2160 | 1440 | 1080 | 720 | 480 | 360.' },
         channelArchiveSubfolder: { group: 'downloads', label: 'Archive Subfolder', desc: 'Subfolder under Downloads for archive-queue files. Default "RumbleX".' },
+        debugPerfBudget: { group: 'privacy', label: 'Frame Budget Report', desc: 'Keep a local list of RumbleX page scans that ran longer than one frame (16 ms), with the module that ran each one, so it can be exported for a performance report. The last 100 are kept. Never uploaded.' },
         debugErrorLog: { group: 'privacy', label: 'Error Log Ring Buffer', desc: 'Show the local 200-entry feature-failure ring buffer here so it can be exported for a bug report. Capture is always on and always local; this only reveals it. Never uploaded.' },
 
         // v3.1.0 — Platform follow-through
@@ -450,6 +451,7 @@
         telemetryExportBtn: document.getElementById('telemetry-export-btn'),
         errorLogExportBtn: document.getElementById('errorlog-export-btn'),
         errorLogClearBtn: document.getElementById('errorlog-clear-btn'),
+        perfReportExportBtn: document.getElementById('perfreport-export-btn'),
         downloadDiagnosticsCopyBtn: document.getElementById('download-diagnostics-copy-btn'),
         downloadDiagnosticsExportBtn: document.getElementById('download-diagnostics-export-btn'),
         downloadDiagnosticsClearBtn: document.getElementById('download-diagnostics-clear-btn'),
@@ -1937,6 +1939,21 @@
         showStatus('Error log exported (' + entries.length + ' entr' + (entries.length === 1 ? 'y' : 'ies') + ').', 'success');
     }
 
+    async function exportPerfReport() {
+        const resp = await sendToContent('getPerfReport');
+        if (!resp?.ok) {
+            showStatus(resp?.reason === 'disabled'
+                ? 'Turn on Frame Budget Report first, then use a rumble.com tab for a while.'
+                : 'Frame budget report unavailable. Open a rumble.com tab so the content script can respond.', 'error');
+            return;
+        }
+        const report = RXSettingsSchema.sanitizeDiagnosticValue(resp.report);
+        const slow = Array.isArray(report?.slow) ? report.slow.length : 0;
+        const ts = new Date().toISOString().replace(/[:T]/g, '-').replace(/\..+$/, '');
+        downloadJsonBlob('rumblex-frame-budget-' + ts + '.json', report);
+        showStatus('Frame budget report exported (' + slow + ' scan' + (slow === 1 ? '' : 's') + ' over ' + report.budgetMs + ' ms).', 'success');
+    }
+
     async function clearErrorLog() {
         const resp = await sendToContent('clearErrorLog');
         if (resp?.ok) showStatus('Error log cleared.', 'success');
@@ -2989,6 +3006,7 @@
     if (elements.telemetryExportBtn) elements.telemetryExportBtn.addEventListener('click', () => void exportSelectorTelemetry());
     if (elements.errorLogExportBtn) elements.errorLogExportBtn.addEventListener('click', () => void exportErrorLog());
     if (elements.errorLogClearBtn) elements.errorLogClearBtn.addEventListener('click', () => void clearErrorLog());
+    if (elements.perfReportExportBtn) elements.perfReportExportBtn.addEventListener('click', () => void exportPerfReport());
     if (elements.downloadDiagnosticsCopyBtn) elements.downloadDiagnosticsCopyBtn.addEventListener('click', () => void copyDownloadDiagnostics());
     if (elements.downloadDiagnosticsExportBtn) elements.downloadDiagnosticsExportBtn.addEventListener('click', () => void exportDownloadDiagnostics());
     if (elements.downloadDiagnosticsClearBtn) elements.downloadDiagnosticsClearBtn.addEventListener('click', () => void clearDownloadDiagnostics());

@@ -275,6 +275,10 @@
     "message": "Fehlerprotokoll leeren",
     "description": "UI string used by popup/options i18n pass."
   },
+  "exportPerfReport": {
+    "message": "Frame-Budget-Bericht exportieren",
+    "description": "UI string used by popup/options i18n pass."
+  },
   "copyDownloadDiagnostics": {
     "message": "Download-Diagnose kopieren",
     "description": "Kopiert das lokale bereinigte Fehlerpaket fuer Downloads."

@@ -23,7 +23,7 @@
 // @updateURL    https://github.com/SysAdminDoc/RumbleX/raw/main/RumbleX.lite.user.js
 // ==/UserScript==
 
-// Generated from the shared extension core files. Shared runtime SHA-256: d594f074296dc13b512e16360f1a02635bebe62a1b8fd08ee187d2b3a482a008
+// Generated from the shared extension core files. Shared runtime SHA-256: 0834051996277002faa18ec84181cc727713acf5082d6a473530a158c4eb0ecd
 // RumbleX shared settings schema. This file is the canonical source for
 // defaults and trust-boundary normalization across content, options, popup,
 // background profile/Gist restores, and the generated userscript.
@@ -191,6 +191,10 @@
         // Default OFF; when ON, feature init failures land in rx_error_log
         // for export via the options page. Local-only — never shipped remotely.
         debugErrorLog: false,
+        // Per-module frame-scan budget. The tallies are always kept in memory;
+        // this keeps the scans that ran past one frame and lets Options export
+        // them. Local-only, never shipped remotely.
+        debugPerfBudget: false,
         // Layout & UI cleanup
         hideThumbnails: false,
         hideThumbnailsFeeds: false,
@@ -865,6 +869,7 @@
   "exportSelectorTelemetry": "Export selector telemetry",
   "exportErrorLog": "Export error log",
   "clearErrorLog": "Clear error log",
+  "exportPerfReport": "Export frame budget report",
   "copyDownloadDiagnostics": "Copy download diagnostics",
   "exportDownloadDiagnostics": "Export download diagnostics",
   "clearDownloadDiagnostics": "Clear download diagnostics",
@@ -3105,6 +3110,59 @@ function cancelFeatureTimeouts(owner) {
     owner._rxPendingTimeouts.clear();
 }
 
+// Which module ran which frame-scheduled scan, and how long each one took.
+// The tallies are always kept: one Map update per frame, and they are what
+// lets a test prove that a route change did not multiply anyone's work. The
+// list of scans over the frame budget is opt-in (`debugPerfBudget`), capped,
+// local, and only leaves the page when the user exports it from Options.
+const RxPerfBudget = {
+    SLOW_MS: 16,
+    MAX_SLOW: 100,
+    _modules: new Map(),
+    _slow: [],
+
+    note(owner, key, ms) {
+        const module = String(owner?.id || owner?.name || 'unknown');
+        let entry = this._modules.get(module);
+        if (!entry) {
+            entry = { scans: 0, totalMs: 0, maxMs: 0 };
+            this._modules.set(module, entry);
+        }
+        entry.scans += 1;
+        entry.totalMs += ms;
+        if (ms > entry.maxMs) entry.maxMs = ms;
+        if (ms <= this.SLOW_MS || !Settings.get('debugPerfBudget')) return;
+        this._slow.push({
+            at: Date.now(),
+            module,
+            key: String(key ?? ''),
+            ms: Math.round(ms * 10) / 10,
+            route: Page.classify(),
+        });
+        if (this._slow.length > this.MAX_SLOW) this._slow.splice(0, this._slow.length - this.MAX_SLOW);
+    },
+
+    scans() {
+        return Object.fromEntries([...this._modules].map(([module, entry]) => [module, entry.scans]));
+    },
+
+    report() {
+        const round = (ms) => Math.round(ms * 10) / 10;
+        return {
+            budgetMs: this.SLOW_MS,
+            modules: [...this._modules]
+                .map(([module, entry]) => ({ module, scans: entry.scans, totalMs: round(entry.totalMs), maxMs: round(entry.maxMs) }))
+                .sort((a, b) => b.totalMs - a.totalMs),
+            slow: this._slow.slice(),
+        };
+    },
+
+    clear() {
+        this._modules.clear();
+        this._slow.length = 0;
+    },
+};
+
 // Infinite feeds and live chat can deliver dozens of MutationObserver
 // callbacks between paints. Features that rescan a whole surface should run
 // at most once per animation frame, and any queued work must disappear when
@@ -3117,7 +3175,13 @@ function scheduleFeatureFrame(owner, key, callback) {
     const frame = requestAnimationFrame(() => {
         if (pending.get(key) !== frame) return;
         pending.delete(key);
-        if (generation === owner._rxLifecycleGeneration) callback();
+        if (generation !== owner._rxLifecycleGeneration) return;
+        const started = performance.now();
+        try {
+            callback();
+        } finally {
+            RxPerfBudget.note(owner, key, performance.now() - started);
+        }
     });
     pending.set(key, frame);
     return frame;
@@ -21917,6 +21981,9 @@ function rxBuildPrivacyReport() {
             settings.debugSelectorTelemetry ? 'Selector telemetry is being collected locally (ring buffer, no upload)' : 'Selector telemetry is disabled',
             'Error log ring buffer is captured locally on every page (200-entry rolling window, no upload)'
                 + (settings.debugErrorLog ? ' and is visible on the options page' : ' and stays hidden until the Error Log Ring Buffer setting is enabled'),
+            settings.debugPerfBudget
+                ? 'Page scans that run longer than one frame are listed locally for export (last 100, no upload)'
+                : 'The frame budget report is off',
             settings.remoteCosmeticRules ? 'Remote cosmetic rules enabled — signed payloads only' : 'Remote cosmetic rules disabled',
             settings.creatorMode
                 ? 'The Creator Program panel re-reads the channel page you are on, once per visit, because Rumble strips its own listing data out of the DOM after load — same origin, same URL, no cookies, nothing sent'
@@ -22029,6 +22096,16 @@ RXPlatform.onMessage((msg, sender, sendResponse) => {
     // v3.20.0 — Per-feature error log ring buffer.
     if (msg.action === 'getErrorLog') {
         sendResponse({ ok: true, entries: RxErrorLog.drain() });
+        return true;
+    }
+    // Per-module frame-scan budget. Gated at the only producer, like the
+    // privacy report, so turning the setting off hides the list everywhere.
+    if (msg.action === 'getPerfReport') {
+        if (!Settings.get('debugPerfBudget')) {
+            sendResponse({ ok: false, reason: 'disabled' });
+            return true;
+        }
+        sendResponse({ ok: true, report: RxPerfBudget.report() });
         return true;
     }
     if (msg.action === 'clearErrorLog') {

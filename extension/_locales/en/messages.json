@@ -275,6 +275,10 @@
     "message": "Clear error log",
     "description": "UI string used by popup/options i18n pass."
   },
+  "exportPerfReport": {
+    "message": "Export frame budget report",
+    "description": "UI string used by popup/options i18n pass."
+  },
   "copyDownloadDiagnostics": {
     "message": "Copy download diagnostics",
     "description": "Copies the local sanitized downloader failure bundle."

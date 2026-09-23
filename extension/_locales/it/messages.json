@@ -275,6 +275,10 @@
     "message": "Svuota il registro errori",
     "description": "UI string used by popup/options i18n pass."
   },
+  "exportPerfReport": {
+    "message": "Esporta il rapporto sul budget dei fotogrammi",
+    "description": "UI string used by popup/options i18n pass."
+  },
   "copyDownloadDiagnostics": {
     "message": "Copia la diagnostica dei download",
     "description": "Copies the local sanitized downloader failure bundle."

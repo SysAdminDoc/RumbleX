@@ -165,6 +165,10 @@
         // Default OFF; when ON, feature init failures land in rx_error_log
         // for export via the options page. Local-only — never shipped remotely.
         debugErrorLog: false,
+        // Per-module frame-scan budget. The tallies are always kept in memory;
+        // this keeps the scans that ran past one frame and lets Options export
+        // them. Local-only, never shipped remotely.
+        debugPerfBudget: false,
         // Layout & UI cleanup
         hideThumbnails: false,
         hideThumbnailsFeeds: false,

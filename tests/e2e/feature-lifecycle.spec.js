@@ -550,7 +550,6 @@ test('features cannot attach delayed DOM work after being disabled', async () =>
     try {
         const { context, page } = await createHarnessPage(browser);
         const lifecycleFeatureIds = await page.evaluate(() => globalThis.__RumbleXFeatureHarness.features
-            .slice(0, 75)
             .map((feature) => feature.id)
             .filter((id) => id !== 'disableShortsFeed'));
         const leaks = await page.evaluate(async ({ body, featureIds, routes }) => {

@@ -275,6 +275,10 @@
     "message": "Limpar log de erros",
     "description": "UI string used by popup/options i18n pass."
   },
+  "exportPerfReport": {
+    "message": "Exportar relatório de orçamento de quadros",
+    "description": "UI string used by popup/options i18n pass."
+  },
   "copyDownloadDiagnostics": {
     "message": "Copiar diagnosticos de download",
     "description": "Copia o pacote local e sanitizado de falhas de download."

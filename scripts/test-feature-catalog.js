@@ -135,7 +135,7 @@ const MODAL_EXCLUSIONS = {
     remoteCosmeticRules: 'extension-only',
 
     // Diagnostics, surfaced through the options page Privacy & Data section.
-    debugSelectorTelemetry: 'diagnostics', debugErrorLog: 'diagnostics',
+    debugSelectorTelemetry: 'diagnostics', debugErrorLog: 'diagnostics', debugPerfBudget: 'diagnostics',
 
     // Parked keys shipped ahead of their features; see Roadmap_Blocked.md.
     // These must not appear as live switches anywhere until implemented.
