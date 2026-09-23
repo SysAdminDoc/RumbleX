@@ -282,30 +282,36 @@ function rxCancelProbeScan(scanId) {
 // budget, which is the exact behaviour the scan controller exists to stop.
 // The abort reason is passed along so the caller can still tell a timeout
 // (TimeoutError) apart from a cancellation (AbortError).
+//
+// Returns a disposer alongside the signal, and the caller has to run it. On the
+// fallback path the relay listener sits on the scan's own signal, which lives
+// for the whole scan: a probe that simply succeeds aborts nothing, so without
+// the disposer each of the 250 probes a scan is allowed leaves a listener and a
+// live timeout signal behind, and they all fire together if the panel is closed
+// later. Native AbortSignal.any leaves no such tail, so its disposer is empty.
 function rxAnySignal(signals) {
-    if (typeof AbortSignal.any === 'function') return AbortSignal.any(signals);
+    if (typeof AbortSignal.any === 'function') {
+        return { signal: AbortSignal.any(signals), dispose() {} };
+    }
     const controller = new AbortController();
     const listeners = [];
-    const detach = () => {
+    const dispose = () => {
         for (const off of listeners.splice(0)) off();
     };
     for (const signal of signals) {
         if (signal.aborted) {
-            detach();
+            dispose();
             controller.abort(signal.reason);
-            return controller.signal;
+            return { signal: controller.signal, dispose };
         }
         const onAbort = () => {
-            detach();
+            dispose();
             controller.abort(signal.reason);
         };
         signal.addEventListener('abort', onAbort, { once: true });
         listeners.push(() => signal.removeEventListener('abort', onAbort));
     }
-    // The composite outliving its sources would keep them alive through the
-    // listeners; once it aborts on its own there is nothing left to relay.
-    controller.signal.addEventListener('abort', detach, { once: true });
-    return controller.signal;
+    return { signal: controller.signal, dispose };
 }
 
 function rxCountProbe(scanId, now = Date.now()) {
@@ -345,11 +351,13 @@ async function rxProbeMedia({ url, scanId, timeoutMs }) {
     if (scanSignal.aborted) return { ok: false, reason: 'aborted' };
 
     const attempt = async (init) => {
+        // The scan's own signal has to be in here, not just the timeout, or
+        // closing the panel leaves these running to completion. Built outside
+        // the try so the disposer below always runs: the relay it installs sits
+        // on the scan signal, which outlives this one probe by up to 250 more.
+        const composite = rxAnySignal([scanSignal, AbortSignal.timeout(budget)]);
         try {
-            // The scan's own signal has to be in here, not just the timeout, or
-            // closing the panel leaves these running to completion.
-            const signal = rxAnySignal([scanSignal, AbortSignal.timeout(budget)]);
-            const response = await fetch(url, { ...init, credentials: 'omit', signal });
+            const response = await fetch(url, { ...init, credentials: 'omit', signal: composite.signal });
             response.body?.cancel?.();
             if (response.ok || response.status === 206) {
                 const length = Number.parseInt(
@@ -369,6 +377,8 @@ async function rxProbeMedia({ url, scanId, timeoutMs }) {
             // permission is a transport failure, not a CORS refusal. Content
             // scripts are where CORS bites, and that path reports it itself.
             return { ok: false, reason: 'network', detail: rxSanitizeDiagnosticString(error?.message || String(error)) };
+        } finally {
+            composite.dispose();
         }
     };
 

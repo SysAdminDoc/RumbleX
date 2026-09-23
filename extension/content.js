@@ -4128,8 +4128,15 @@ const VideoDownloader = {
         const duration = durationSeconds === undefined
             ? this._videoDurationSeconds()
             : (Number(durationSeconds) > 0 ? Number(durationSeconds) : null);
-        if (duration && bytes < duration * this._MIN_BYTES_PER_SECOND) return 'reject';
+        // Both remaining floors are video floors, so the name has to win before
+        // either runs. _MIN_BYTES_PER_SECOND is 6 KB/s, about 48 kbps: a sane
+        // floor for video, and exactly where a low-bitrate audio track sits. A
+        // 32-48 kbps speech track fails it at every duration, because its size
+        // grows with the video's length at the same rate the floor does. The
+        // absolute byte floor above still applies, so a placeholder cannot ride
+        // in by claiming a name.
         if (uaKind === 'audio') return 'ok';
+        if (duration && bytes < duration * this._MIN_BYTES_PER_SECOND) return 'reject';
         if (largestKnownBytes > 0 && bytes < largestKnownBytes * this._MIN_LADDER_RATIO) return 'reject';
         return 'ok';
     },

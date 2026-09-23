@@ -23,7 +23,7 @@
 // @updateURL    https://github.com/SysAdminDoc/RumbleX/raw/main/RumbleX.lite.user.js
 // ==/UserScript==
 
-// Generated from the shared extension core files. Shared runtime SHA-256: 51559c21fd5e34e0bb8e88d216db0fec332b2d6fd592f81cd4f46aa8b8104369
+// Generated from the shared extension core files. Shared runtime SHA-256: 63f48eb807c4558187e5f949d3ad025349952603ecc3a500995d2c4b580e32d9
 // RumbleX shared settings schema. This file is the canonical source for
 // defaults and trust-boundary normalization across content, options, popup,
 // background profile/Gist restores, and the generated userscript.
@@ -6650,8 +6650,15 @@ const VideoDownloader = {
         const duration = durationSeconds === undefined
             ? this._videoDurationSeconds()
             : (Number(durationSeconds) > 0 ? Number(durationSeconds) : null);
-        if (duration && bytes < duration * this._MIN_BYTES_PER_SECOND) return 'reject';
+        // Both remaining floors are video floors, so the name has to win before
+        // either runs. _MIN_BYTES_PER_SECOND is 6 KB/s, about 48 kbps: a sane
+        // floor for video, and exactly where a low-bitrate audio track sits. A
+        // 32-48 kbps speech track fails it at every duration, because its size
+        // grows with the video's length at the same rate the floor does. The
+        // absolute byte floor above still applies, so a placeholder cannot ride
+        // in by claiming a name.
         if (uaKind === 'audio') return 'ok';
+        if (duration && bytes < duration * this._MIN_BYTES_PER_SECOND) return 'reject';
         if (largestKnownBytes > 0 && bytes < largestKnownBytes * this._MIN_LADDER_RATIO) return 'reject';
         return 'ok';
     },

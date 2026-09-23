@@ -428,11 +428,16 @@ test('the embed payload names each format, and the harvester keeps that name', a
                 const byKind = Object.fromEntries(harvested.map((entry) => [entry.uaKind, entry.url]));
 
                 // A 2 GB video sets the bar; the audio track is one per cent of
-                // it and the preview strip is a few hundred KB.
+                // it and the preview strip is a few hundred KB. The duration has
+                // to be one those byte sizes could actually belong to: an hour of
+                // 2 GB video is 4.8 Mbps, which is a plausible 1080p rendition.
+                // The 21 MB track at that length is 47 kbps. Picking a short
+                // duration instead hides the bug the audio branch exists to fix,
+                // because 21 MB over fifteen minutes clears the 6 KB/s floor.
                 const twoGb = 2 * 1024 * 1024 * 1024;
-                const verdict = (size, uaKind) => VideoDownloader._renditionVerdict(size, {
+                const verdict = (size, uaKind, durationSeconds = 3600) => VideoDownloader._renditionVerdict(size, {
                     largestKnownBytes: twoGb,
-                    durationSeconds: 900,
+                    durationSeconds,
                     uaKind,
                 });
                 return {
@@ -447,6 +452,12 @@ test('the embed payload names each format, and the harvester keeps that name', a
                     // Even named audio has to clear the absolute floor, so a
                     // placeholder cannot ride in by claiming to be audio.
                     tinyAudioRejected: verdict(1024, 'audio'),
+                    // The duration floor is a video floor too. A 32 kbps speech
+                    // track over a four-hour stream is 57.6 MB, 4 KB/s, which is
+                    // under the 6 KB/s floor at any length, so the name has to
+                    // win before that floor runs and not after it.
+                    audioKeptOnLongVideo: verdict(57_600_000, 'audio', 14400),
+                    audioWithoutNameOnLongVideo: verdict(57_600_000, null, 14400),
                 };
             },
             args: [embed],
@@ -469,6 +480,8 @@ test('the embed payload names each format, and the harvester keeps that name', a
     // A 21 MB audio rendition survives next to a 2 GB video because it is named
     // audio, and would not survive on size alone.
     expect(result.audioKept).toBe('ok');
+    expect(result.audioKeptOnLongVideo).toBe('ok');
+    expect(result.audioWithoutNameOnLongVideo).toBe('reject');
     expect(result.audioWithoutName).toBe('reject');
     expect(result.videoKept).toBe('ok');
     expect(result.smallVideoRejected).toBe('reject');
@@ -485,7 +498,7 @@ test('the embed payload names each format, and the harvester keeps that name', a
 // cancelled nothing and every probe ran its full budget. Chromium always has
 // the native method, so the fallback is only reachable here by hiding it.
 test('scan cancellation still reaches the fetch where AbortSignal.any is missing', async ({ serviceWorker }) => {
-    test.setTimeout(120_000);
+    test.setTimeout(180_000);
     const result = await serviceWorker.evaluate(async () => {
         const native = AbortSignal.any;
         const workerFetch = globalThis.fetch;
@@ -496,21 +509,58 @@ test('scan cancellation still reaches the fetch where AbortSignal.any is missing
             // Cancellation: the scan's own controller has to reach the fetch.
             const scan = new AbortController();
             const composite = rxAnySignal([scan.signal, AbortSignal.timeout(60_000)]);
-            const beforeAbort = composite.aborted;
+            const beforeAbort = composite.signal.aborted;
             scan.abort();
-            const cancelled = { aborted: composite.aborted, reason: nameOf(composite) };
+            const cancelled = { aborted: composite.signal.aborted, reason: nameOf(composite.signal) };
 
             // Timeout: the other source still works, and stays distinguishable
             // from a cancellation by its reason.
             const timed = rxAnySignal([new AbortController().signal, AbortSignal.timeout(20)]);
             await settle(200);
-            const expired = { aborted: timed.aborted, reason: nameOf(timed) };
+            const expired = { aborted: timed.signal.aborted, reason: nameOf(timed.signal) };
+            timed.dispose();
 
             // A source that has already aborted produces a composite that is
             // aborted on arrival, not one waiting for an event that has been.
             const spent = new AbortController();
             spent.abort();
             const already = rxAnySignal([spent.signal, AbortSignal.timeout(60_000)]);
+            already.dispose();
+
+            // A scan signal lives for the whole scan and a probe that succeeds
+            // aborts nothing, so a relay left attached accumulates once per
+            // probe, up to the 250 a scan is allowed, each one pinning a live
+            // timeout signal that then fires when the panel is finally closed.
+            const okScanId = `nolead-${label}-${Date.now()}`;
+            const okSignal = rxProbeScanSignal(okScanId);
+            let attached = 0;
+            const add = okSignal.addEventListener.bind(okSignal);
+            const remove = okSignal.removeEventListener.bind(okSignal);
+            okSignal.addEventListener = (type, ...rest) => {
+                if (type === 'abort') attached += 1;
+                return add(type, ...rest);
+            };
+            okSignal.removeEventListener = (type, ...rest) => {
+                if (type === 'abort') attached -= 1;
+                return remove(type, ...rest);
+            };
+            let okProbes = 0;
+            globalThis.fetch = () => {
+                okProbes += 1;
+                return Promise.resolve(new Response(null, {
+                    status: 200,
+                    headers: { 'content-length': '1048576' },
+                }));
+            };
+            for (let i = 0; i < 25; i += 1) {
+                await rxProbeMedia({
+                    url: `https://1a-1791.com/video/fx/ok-${i}.mp4`,
+                    scanId: okScanId,
+                    timeoutMs: 60_000,
+                });
+            }
+            const leftAttached = attached;
+            rxCancelProbeScan(okScanId);
 
             // End to end through the probe itself: a fetch that never settles
             // on its own, cancelled by the scan.
@@ -546,7 +596,9 @@ test('scan cancellation still reaches the fetch where AbortSignal.any is missing
                 beforeAbort,
                 cancelled,
                 expired,
-                alreadyAborted: already.aborted,
+                alreadyAborted: already.signal.aborted,
+                okProbes,
+                leftAttached,
                 started,
                 sawAbort,
                 probeReason: probe.reason,
@@ -578,6 +630,10 @@ test('scan cancellation still reaches the fetch where AbortSignal.any is missing
         // The timeout source still fires, and stays tellable apart.
         expect(path.expired, label).toEqual({ aborted: true, reason: 'TimeoutError' });
         expect(path.alreadyAborted, label).toBe(true);
+        // Positive control: 25 probes really did run and really did fetch.
+        expect(path.okProbes, label).toBe(25);
+        // None of them left a relay on the scan signal.
+        expect(path.leftAttached, label).toBe(0);
         // The probe really started a fetch, that fetch saw the abort, and the
         // probe resolved as cancelled rather than running out its 60s budget.
         expect(path.started, label).toBeGreaterThan(0);
