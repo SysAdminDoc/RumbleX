@@ -23,7 +23,7 @@
 // @updateURL    https://github.com/SysAdminDoc/RumbleX/raw/main/RumbleX.lite.user.js
 // ==/UserScript==
 
-// Generated from the shared extension core files. Shared runtime SHA-256: 5708e4630ed26866b8be508ee78923fae569e7ba803ed800b1fc1c01a118e409
+// Generated from the shared extension core files. Shared runtime SHA-256: a34f53b90f36e894ac7a0a32c009267eb4b24b1d04e1f44ab4d5d1c0482688f0
 // RumbleX shared settings schema. This file is the canonical source for
 // defaults and trust-boundary normalization across content, options, popup,
 // background profile/Gist restores, and the generated userscript.
@@ -4769,6 +4769,9 @@ const TheaterSplit = {
     _playerResizeObs: null,
     _styleEl: null,
     _windowResizeHandler: null,
+    // The narrow layout's size for this mount only. It's never saved, but a
+    // window resize must not throw it away either.
+    _narrowLeft: null,
     _routerUnsub: null,
     _mountToken: 0,
     _routeTimer: null,
@@ -5382,6 +5385,7 @@ const TheaterSplit = {
             const onUp = () => {
                 const settled = Number(divider.getAttribute('aria-valuenow'));
                 if (Number.isFinite(settled) && !narrow) this._applySplitGeometry(settled, true);
+                else if (Number.isFinite(settled)) this._narrowLeft = settled;
                 finishDrag();
             };
             this._dragCleanup = () => {
@@ -5408,7 +5412,9 @@ const TheaterSplit = {
             // The narrow layout's divider runs on its own 32-54 scale, so a
             // value from it would open the next desktop visit squeezed. Same
             // rule as a drag.
-            this._applySplitGeometry(next, !this._isNarrow());
+            const narrow = this._isNarrow();
+            this._applySplitGeometry(next, !narrow);
+            if (narrow) this._narrowLeft = Number(divider.getAttribute('aria-valuenow'));
         });
     },
 
@@ -5764,7 +5770,10 @@ const TheaterSplit = {
 
         this._windowResizeHandler = () => {
             if (this._isSplit) {
-                this._applySplitGeometry(this._layout().ratio);
+                // Any resize lands here, a phone's address bar collapsing
+                // included, so the narrow size set this visit has to survive it.
+                const narrow = this._isNarrow() && this._narrowLeft != null;
+                this._applySplitGeometry(narrow ? this._narrowLeft : this._layout().ratio);
                 if (this._isLive) {
                     setFeatureTimeout(this, () => this._syncLiveChatRoot(), 250);
                 }
@@ -5839,6 +5848,7 @@ const TheaterSplit = {
         this._playerResizeObs = null;
         if (this._windowResizeHandler) window.removeEventListener('resize', this._windowResizeHandler);
         this._windowResizeHandler = null;
+        this._narrowLeft = null;
         if (this._keyHandler) document.removeEventListener('keydown', this._keyHandler);
         this._keyHandler = null;
 

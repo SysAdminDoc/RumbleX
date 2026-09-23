@@ -253,3 +253,33 @@ test('keyboard moves in the narrow layout never overwrite the desktop ratio', as
         expect((await t.measure()).ratio).toBe(68);
     });
 });
+
+test('a window resize keeps the size set in the narrow layout this visit', async () => {
+    await withTheater(async (t) => {
+        await t.start({ settings: { theaterLayout: { vod: { ratio: 68 } } } });
+        await t.page.setViewportSize({ width: 800, height: 900 });
+        await t.go('vod', '/vnarrow003-recorded.html');
+        const divider = t.page.locator('#rx-split-divider');
+        await expect(divider).toHaveAttribute('aria-orientation', 'horizontal');
+        const sideHeight = () => t.page.evaluate(() => Math.round(
+            document.querySelector('#rx-split-right').getBoundingClientRect().height
+            / document.querySelector('#rx-split-wrapper').getBoundingClientRect().height * 100));
+        // Positive control: the narrow layout opens with a 60% side panel.
+        expect(await sideHeight()).toBeGreaterThanOrEqual(59);
+        expect(await sideHeight()).toBeLessThanOrEqual(61);
+        await divider.focus();
+        for (let i = 0; i < 4; i += 1) await divider.press('ArrowUp');
+        await expect(divider).toHaveAttribute('aria-valuenow', '32');
+        const adjusted = await sideHeight();
+        expect(adjusted).toBeGreaterThan(65);
+
+        // The event a phone's address bar or a dragged window edge sends. It
+        // used to put the stored desktop ratio back, which is 60% here.
+        await t.page.evaluate(() => window.dispatchEvent(new Event('resize')));
+        await t.page.setViewportSize({ width: 790, height: 880 });
+        await expect(divider).toHaveAttribute('aria-valuenow', '32');
+        expect(Math.abs(await sideHeight() - adjusted)).toBeLessThanOrEqual(1);
+        // Still never saved.
+        expect((await t.settings()).theaterLayout).toEqual({ vod: { ratio: 68 } });
+    });
+});
