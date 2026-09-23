@@ -639,15 +639,31 @@
             // open Theater with the video or the panel squeezed to nothing.
             if (key === 'theaterLayout') {
                 if (!isPlainObject(value)) continue;
-                const layout = {};
-                for (const kind of ['live', 'vod']) {
-                    const entry = value[kind];
-                    if (!isPlainObject(entry)) continue;
-                    const clean = {};
-                    const ratio = Number(entry.ratio);
-                    if (Number.isFinite(ratio)) clean.ratio = Math.round(Math.min(80, Math.max(30, ratio)));
-                    if (typeof entry.open === 'boolean') clean.open = entry.open;
-                    if (Object.keys(clean).length) layout[kind] = clean;
+                const kinds = (source) => {
+                    const layout = {};
+                    for (const kind of ['live', 'vod']) {
+                        const entry = source[kind];
+                        if (!isPlainObject(entry)) continue;
+                        const clean = {};
+                        const ratio = Number(entry.ratio);
+                        if (Number.isFinite(ratio)) clean.ratio = Math.round(Math.min(80, Math.max(30, ratio)));
+                        if (typeof entry.open === 'boolean') clean.open = entry.open;
+                        if (Object.keys(clean).length) layout[kind] = clean;
+                    }
+                    return layout;
+                };
+                const layout = kinds(value);
+                // Per-channel layouts: channel slugs as Rumble writes them in
+                // /c/<slug> and /user/<slug>, lower-cased, at most 200.
+                if (isPlainObject(value.channels)) {
+                    const channels = {};
+                    for (const [slug, entry] of Object.entries(value.channels).slice(0, 200)) {
+                        const safeSlug = String(slug).toLowerCase();
+                        if (!/^[a-z0-9._-]{1,80}$/.test(safeSlug) || !isPlainObject(entry)) continue;
+                        const clean = kinds(entry);
+                        if (Object.keys(clean).length) channels[safeSlug] = clean;
+                    }
+                    if (Object.keys(channels).length) layout.channels = channels;
                 }
                 out[key] = layout;
                 continue;

@@ -19,17 +19,21 @@ const GOTO = async ({ body, kind, path }) => {
     // a recorded page removes.
     document.querySelector('.media-by-actions')
         ?.insertAdjacentHTML('beforebegin', '<a class="media-by--a" href="/c/layout-channel">Layout Channel</a>');
+    const invented = document.querySelector('[data-js="theater-mode-toggle"]');
+    if (invented) {
+        const real = document.createElement('div');
+        real.title = 'Toggle theater mode';
+        invented.replaceWith(real);
+    }
     history.pushState({}, '', path);
     document.dispatchEvent(new CustomEvent('htmx:afterSwap', { bubbles: true }));
     await new Promise((resolve) => setTimeout(resolve, 1700));
 };
 
-const START = ({ settings = {}, channelPrefs = null } = {}) => {
+const START = ({ settings = {} } = {}) => {
     const harness = globalThis.__RumbleXFeatureHarness;
     const base = harness.resetSettings();
     Object.assign(base, { theaterSplit: true, videoDownload: true }, settings);
-    if (channelPrefs) localStorage.setItem('rx_channel_prefs', JSON.stringify(channelPrefs));
-    else localStorage.removeItem('rx_channel_prefs');
     Router.init();
     harness.features.find((feature) => feature.id === 'theaterSplit').init();
 };
@@ -75,7 +79,7 @@ async function withTheater(fn) {
                 for (let i = 0; i < Math.abs(presses); i += 1) await divider.press(key);
             },
             exit: () => page.locator('.rx-panel-exit').click(),
-            nativeTheater: () => page.evaluate(() => document.querySelector('[data-js="theater-mode-toggle"]').click()),
+            nativeTheater: () => page.evaluate(() => document.querySelector('[title="Toggle theater mode"]').click()),
         };
         await fn(api);
         expect(errors).toEqual([]);
@@ -161,8 +165,10 @@ test('a channel\'s own layout wins when the override is on, and only then', asyn
     await withTheater(async (t) => {
         const slug = 'layout-channel';
         await t.start({
-            settings: { theaterChannelLayout: true, theaterLayout: { vod: { ratio: 70 } } },
-            channelPrefs: { [slug]: { theater: { vod: { ratio: 40 } }, at: Date.now() } },
+            settings: {
+                theaterChannelLayout: true,
+                theaterLayout: { vod: { ratio: 70 }, channels: { [slug]: { vod: { ratio: 40 } } } },
+            },
         });
         await t.go('vod', '/vchannel001-recorded.html');
         expect(await t.page.evaluate(() => PerChannelPrefs.currentSlug())).toBe(slug);
@@ -171,17 +177,21 @@ test('a channel\'s own layout wins when the override is on, and only then', asyn
         // A change while the override is on belongs to the channel, not to
         // every recorded video.
         await t.nudge(2); // 40 -> 44
-        const stored = await t.page.evaluate((key) => ({
-            channel: PerChannelPrefs.get(key)?.theater,
-            byKind: Settings.get('theaterLayout'),
-        }), slug);
-        expect(stored.channel).toEqual({ vod: { ratio: 44 } });
-        expect(stored.byKind).toEqual({ vod: { ratio: 70 } });
+        const stored = await t.page.evaluate(() => Settings.get('theaterLayout'));
+        expect(stored).toEqual({ vod: { ratio: 70 }, channels: { [slug]: { vod: { ratio: 44 } } } });
 
         // Off again: the kind's own memory applies.
         await t.page.evaluate(() => Settings.set('theaterChannelLayout', false));
         await t.go('vod', '/vchannel002-recorded.html');
         expect((await t.measure()).ratio).toBe(70);
+
+        // One reset clears it all, channel layouts included.
+        await t.page.evaluate(() => {
+            Settings.set('theaterChannelLayout', true);
+            Settings.set('theaterLayout', {});
+        });
+        await t.go('vod', '/vchannel003-recorded.html');
+        expect((await t.measure()).ratio).toBe(75);
     });
 });
 
@@ -210,5 +220,36 @@ test('a divider drag moves live and is remembered once, when it ends', async () 
         // And the next recorded video opens where the drag left it.
         await t.go('vod', '/vdrag002-recorded.html');
         expect((await t.measure()).ratio).toBe(after.theaterLayout.vod.ratio);
+    });
+});
+
+test('Escape leaves Theater the way the exit button does, and it is remembered', async () => {
+    await withTheater(async (t) => {
+        await t.start();
+        await t.go('vod', '/vescape001-recorded.html');
+        expect((await t.measure()).open).toBe(true);
+        await t.page.keyboard.press('Escape');
+        expect(await t.measure()).toEqual({ open: false });
+        expect((await t.settings()).theaterLayout.vod).toEqual({ open: false });
+        await t.go('vod', '/vescape002-recorded.html');
+        expect(await t.measure()).toEqual({ open: false });
+    });
+});
+
+test('keyboard moves in the narrow layout never overwrite the desktop ratio', async () => {
+    await withTheater(async (t) => {
+        await t.start({ settings: { theaterLayout: { vod: { ratio: 68 } } } });
+        await t.page.setViewportSize({ width: 800, height: 900 });
+        await t.go('vod', '/vnarrow001-recorded.html');
+        const divider = t.page.locator('#rx-split-divider');
+        await expect(divider).toHaveAttribute('aria-orientation', 'horizontal');
+        await divider.focus();
+        await divider.press('Home');
+        await divider.press('ArrowLeft');
+        // The narrow geometry moved, but what desktop opens with did not.
+        expect((await t.settings()).theaterLayout).toEqual({ vod: { ratio: 68 } });
+        await t.page.setViewportSize({ width: 1440, height: 900 });
+        await t.go('vod', '/vnarrow002-recorded.html');
+        expect((await t.measure()).ratio).toBe(68);
     });
 });

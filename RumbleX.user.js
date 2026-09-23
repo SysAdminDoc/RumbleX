@@ -23,7 +23,7 @@
 // @updateURL    https://github.com/SysAdminDoc/RumbleX/raw/main/RumbleX.user.js
 // ==/UserScript==
 
-// Generated from the shared extension core files. Shared runtime SHA-256: 4647b8a786cbe2019442e94498f8f5ec162a05a41350eb025be261b1a3177673
+// Generated from the shared extension core files. Shared runtime SHA-256: cde315dad3746b99211edad642aa2700f122b26885bea57907c1336e9e0b3b06
 // RumbleX shared settings schema. This file is the canonical source for
 // defaults and trust-boundary normalization across content, options, popup,
 // background profile/Gist restores, and the generated userscript.
@@ -665,15 +665,31 @@
             // open Theater with the video or the panel squeezed to nothing.
             if (key === 'theaterLayout') {
                 if (!isPlainObject(value)) continue;
-                const layout = {};
-                for (const kind of ['live', 'vod']) {
-                    const entry = value[kind];
-                    if (!isPlainObject(entry)) continue;
-                    const clean = {};
-                    const ratio = Number(entry.ratio);
-                    if (Number.isFinite(ratio)) clean.ratio = Math.round(Math.min(80, Math.max(30, ratio)));
-                    if (typeof entry.open === 'boolean') clean.open = entry.open;
-                    if (Object.keys(clean).length) layout[kind] = clean;
+                const kinds = (source) => {
+                    const layout = {};
+                    for (const kind of ['live', 'vod']) {
+                        const entry = source[kind];
+                        if (!isPlainObject(entry)) continue;
+                        const clean = {};
+                        const ratio = Number(entry.ratio);
+                        if (Number.isFinite(ratio)) clean.ratio = Math.round(Math.min(80, Math.max(30, ratio)));
+                        if (typeof entry.open === 'boolean') clean.open = entry.open;
+                        if (Object.keys(clean).length) layout[kind] = clean;
+                    }
+                    return layout;
+                };
+                const layout = kinds(value);
+                // Per-channel layouts: channel slugs as Rumble writes them in
+                // /c/<slug> and /user/<slug>, lower-cased, at most 200.
+                if (isPlainObject(value.channels)) {
+                    const channels = {};
+                    for (const [slug, entry] of Object.entries(value.channels).slice(0, 200)) {
+                        const safeSlug = String(slug).toLowerCase();
+                        if (!/^[a-z0-9._-]{1,80}$/.test(safeSlug) || !isPlainObject(entry)) continue;
+                        const clean = kinds(entry);
+                        if (Object.keys(clean).length) channels[safeSlug] = clean;
+                    }
+                    if (Object.keys(channels).length) layout.channels = channels;
                 }
                 out[key] = layout;
                 continue;
@@ -5130,10 +5146,10 @@ const TheaterSplit = {
     // Live streams and recorded videos want different layouts: on a live
     // stream the chat is half the point, on a recording the video is. Each kind
     // keeps its own divider position and whether Theater was left open, in
-    // `theaterLayout`. `splitRatio` is the default both start from, and
-    // clearing `theaterLayout` returns both to it. With `theaterChannelLayout`
-    // on, a channel's own layout, stored with its other per-channel
-    // preferences, wins over both, one field at a time.
+    // `theaterLayout`. `splitRatio` is the default both start from. With
+    // `theaterChannelLayout` on, a channel's own layout (theaterLayout.channels)
+    // wins over both, one field at a time. Everything lives in that one setting
+    // so resetting it resets all of it, channel layouts included.
     _layoutKind() {
         return this._detectLive() ? 'live' : 'vod';
     },
@@ -5144,9 +5160,10 @@ const TheaterSplit = {
 
     _layout() {
         const kind = this._layoutKind();
-        const byKind = Settings.get('theaterLayout')?.[kind] || {};
+        const stored = Settings.get('theaterLayout') || {};
+        const byKind = stored[kind] || {};
         const slug = this._channelLayoutSlug();
-        const channel = (slug && PerChannelPrefs.get(slug)?.theater?.[kind]) || {};
+        const channel = (slug && stored.channels?.[slug]?.[kind]) || {};
         const ratio = [channel.ratio, byKind.ratio, Settings.get('splitRatio'), 75]
             .map(Number)
             .find((value) => Number.isFinite(value) && value > 0);
@@ -5157,14 +5174,16 @@ const TheaterSplit = {
     _rememberLayout(patch) {
         const kind = this._layoutKind();
         const slug = this._channelLayoutSlug();
-        if (slug) {
-            const theater = { ...(PerChannelPrefs.get(slug)?.theater || {}) };
-            theater[kind] = { ...(theater[kind] || {}), ...patch };
-            PerChannelPrefs.remember(slug, { theater });
-            return;
-        }
         const layout = { ...(Settings.get('theaterLayout') || {}) };
-        layout[kind] = { ...(layout[kind] || {}), ...patch };
+        if (slug) {
+            const channels = { ...(layout.channels || {}) };
+            const channel = { ...(channels[slug] || {}) };
+            channel[kind] = { ...(channel[kind] || {}), ...patch };
+            channels[slug] = channel;
+            layout.channels = channels;
+        } else {
+            layout[kind] = { ...(layout[kind] || {}), ...patch };
+        }
         Settings.set('theaterLayout', layout);
     },
 
@@ -5258,7 +5277,10 @@ const TheaterSplit = {
             else if (e.key === 'End') next = 80;
             else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') next -= 2;
             else next += 2;
-            this._applySplitGeometry(next, true);
+            // The narrow layout's divider runs on its own 32-54 scale, so a
+            // value from it would open the next desktop visit squeezed. Same
+            // rule as a drag.
+            this._applySplitGeometry(next, !this._isNarrow());
         });
     },
 
@@ -5626,6 +5648,7 @@ const TheaterSplit = {
             if (e.key === 'Escape' && this._isActive) {
                 if (document.body.classList.contains('rx-panel-open')) return;
                 e.preventDefault();
+                this._rememberLayout({ open: false });
                 this._unmount({ restoreFocus: true });
             }
         };
@@ -5744,7 +5767,10 @@ const TheaterSplit = {
     // Rumble's own theater button is the way back in after Theater was left,
     // so there is no second button on the player. While Theater is open the
     // button is inside it and keeps its native behaviour.
-    _NATIVE_THEATER: '[data-js="theater-mode-toggle"], button[title*="theater" i], button[aria-label*="theater" i]',
+    // Rumble renders its theater control as <div title="Toggle theater mode">
+    // (the committed capture, and what hideTheaterButton hides); the other
+    // shapes are older markup.
+    _NATIVE_THEATER: '[title="Toggle theater mode" i], [data-js="theater-mode-toggle"], button[title*="theater" i], button[aria-label*="theater" i]',
 
     _nativeTheaterButton(target) {
         const found = target ? target.closest?.(this._NATIVE_THEATER) : qs(this._NATIVE_THEATER);
