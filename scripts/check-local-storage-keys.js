@@ -60,12 +60,63 @@ function literalBody(source, name, open, close) {
     return match[1];
 }
 
-function arrayLiteral(source, name) {
-    return [...literalBody(source, name, '[', ']').matchAll(/'([^']+)'/g)].map((entry) => entry[1]);
+// Line and block comments out, strings left alone. Pairing quotes across the
+// raw body let an apostrophe in a comment ("the page's activity") swallow the
+// next key, so a listed key read as missing and the guard's picture of the
+// registry was simply wrong.
+function stripComments(body) {
+    let out = '';
+    let quote = null;
+    for (let i = 0; i < body.length; i += 1) {
+        const char = body[i];
+        if (quote) {
+            out += char;
+            if (char === '\\') { out += body[i + 1] ?? ''; i += 1; continue; }
+            if (char === quote) quote = null;
+            continue;
+        }
+        if (char === '/' && body[i + 1] === '/') {
+            while (i < body.length && body[i] !== '\n') i += 1;
+            out += '\n';
+            continue;
+        }
+        if (char === '/' && body[i + 1] === '*') {
+            const endAt = body.indexOf('*/', i + 2);
+            i = endAt < 0 ? body.length : endAt + 1;
+            continue;
+        }
+        if (char === "'" || char === '"' || char === '`') quote = char;
+        out += char;
+    }
+    return out;
 }
 
+function quotedStrings(body) {
+    return [...stripComments(body).matchAll(/'([^']+)'/g)].map((entry) => entry[1]);
+}
+
+function arrayLiteral(source, name) {
+    return quotedStrings(literalBody(source, name, '[', ']'));
+}
+
+// The parser is the guard's whole view of the registries, so it proves itself
+// first on the exact shape that fooled it.
+assert.deepEqual(
+    arrayLiteral([
+        'const RX_SAMPLE = [',
+        "    'rx_first',",
+        '    // the page' + "'" + 's activity, and a quote: "it' + "'" + 's"',
+        '    /* block comment' + "'" + 's apostrophe */',
+        "    'rx_second', // trailing comment" + "'" + 's apostrophe',
+        "    'rx_third',",
+        '];',
+    ].join('\n'), 'RX_SAMPLE'),
+    ['rx_first', 'rx_second', 'rx_third'],
+    'the registry parser drops keys when a comment contains an apostrophe',
+);
+
 function objectKeys(source, name) {
-    return [...literalBody(source, name, '{', '}').matchAll(/^\s{4}([A-Za-z0-9_]+):\s*'([^']*)'/gm)]
+    return [...stripComments(literalBody(source, name, '{', '}')).matchAll(/^\s{4}([A-Za-z0-9_]+):\s*'([^']*)'/gm)]
         .map(([, key, reason]) => [key, reason]);
 }
 
@@ -165,7 +216,7 @@ assert.ok(core.includes('const allowed = (k) => !RX_BACKUP_EXCLUDED_KEYS.include
 // green.
 const mirror = optionsSource.match(/const EXTENSION_STORAGE_RESET_KEYS = \[([\s\S]*?)\];/);
 assert.ok(mirror, 'options.js no longer declares EXTENSION_STORAGE_RESET_KEYS');
-const mirrored = [...mirror[1].matchAll(/'([^']+)'/g)].map((entry) => entry[1]);
+const mirrored = quotedStrings(mirror[1]);
 assert.deepEqual(mirrored.slice().sort(), extensionKeys.slice().sort(),
     `options.js EXTENSION_STORAGE_RESET_KEYS drifted from content.js RX_EXTENSION_STORAGE_RESET_KEYS: `
     + `${mirrored.join(', ')} vs ${extensionKeys.join(', ')}`);
