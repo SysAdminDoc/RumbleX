@@ -2484,5 +2484,17 @@
   "creatorLiveNoRaids": {
     "message": "Las incursiones no se cuentan. La API de directos de Rumble no las informa.",
     "description": "In-page UI string (shared core)."
+  },
+  "dlFailManager": {
+    "message": "Tu gestor de userscripts no puede pasar este archivo al navegador para guardarlo con su nombre.",
+    "description": "In-page UI string (shared core)."
+  },
+  "dlNextManager": {
+    "message": "Tampermonkey y Violentmonkey pueden hacerlo con GM_download, y también la extensión RumbleX. Todos guardan archivos directos de cualquier tamaño.",
+    "description": "In-page UI string (shared core)."
+  },
+  "dlFetchingViaManager": {
+    "message": "Descargando el archivo a través de tu gestor de userscripts. Se guardará cuando haya llegado completo…",
+    "description": "In-page UI string (shared core)."
   }
 }

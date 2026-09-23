@@ -2484,5 +2484,17 @@
   "creatorLiveNoRaids": {
     "message": "Les raids ne sont pas comptés. L'API de diffusion en direct de Rumble ne les signale pas.",
     "description": "In-page UI string (shared core)."
+  },
+  "dlFailManager": {
+    "message": "Ton gestionnaire de userscripts ne peut pas confier ce fichier au navigateur pour l'enregistrer sous son nom.",
+    "description": "In-page UI string (shared core)."
+  },
+  "dlNextManager": {
+    "message": "Tampermonkey et Violentmonkey le peuvent, grâce à GM_download, tout comme l'extension RumbleX. Tous enregistrent les fichiers directs de n'importe quelle taille.",
+    "description": "In-page UI string (shared core)."
+  },
+  "dlFetchingViaManager": {
+    "message": "Récupération du fichier via ton gestionnaire de userscripts. Il sera enregistré une fois arrivé en entier…",
+    "description": "In-page UI string (shared core)."
   }
 }

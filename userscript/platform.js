@@ -147,13 +147,92 @@
         return { downloadId: `userscript-${Date.now()}` };
     }
 
+    // Without GM_download an anchor is all that's left, and browsers ignore
+    // `download` on a cross-origin link: the tab would open the CDN URL, or
+    // save it under the CDN's name. So the file comes through
+    // GM_xmlhttpRequest into a same-origin blob, which an anchor does save by
+    // name. The whole file sits in this tab until then, hence the cap, the same
+    // one in-browser HLS conversion uses.
+    const UNMANAGED_DOWNLOAD_MAX_BYTES = 512 * 1024 * 1024;
+    const UNMANAGED_DOWNLOAD_TIMEOUT_MS = 30 * 60_000;
+
+    const downloadError = (message, code, extra = {}) => Object.assign(new Error(message), { code }, extra);
+    const megabytes = (bytes) => `${Math.ceil(bytes / (1024 * 1024))} MB`;
+
+    function fetchBlobForSave(url) {
+        if (typeof GM_xmlhttpRequest !== 'function') {
+            return Promise.reject(downloadError(
+                'This userscript manager can\'t save files from Rumble\'s media server under their own names. It offers neither GM_download nor GM_xmlhttpRequest.',
+                'userscript-cannot-name',
+            ));
+        }
+        return new Promise((resolve, reject) => {
+            let settled = false;
+            let request;
+            const finish = (fn, value) => {
+                if (settled) return;
+                settled = true;
+                fn(value);
+            };
+            const tooLarge = (bytes) => {
+                finish(reject, downloadError(
+                    `This file is ${megabytes(bytes)}. Without GM_download, RumbleX can only save files up to ${megabytes(UNMANAGED_DOWNLOAD_MAX_BYTES)} through this userscript manager.`,
+                    'userscript-too-large',
+                ));
+                try { request?.abort?.(); } catch {}
+            };
+            request = GM_xmlhttpRequest({
+                method: 'GET',
+                url,
+                responseType: 'blob',
+                timeout: UNMANAGED_DOWNLOAD_TIMEOUT_MS,
+                onprogress(event) {
+                    const total = event?.lengthComputable ? Number(event.total) || 0 : 0;
+                    const size = Math.max(total, Number(event?.loaded) || 0);
+                    if (size > UNMANAGED_DOWNLOAD_MAX_BYTES) tooLarge(size);
+                },
+                onload(result) {
+                    const status = Number(result?.status) || 0;
+                    if (status >= 400) {
+                        finish(reject, downloadError(`Rumble's media server answered HTTP ${status}.`, 'http-status', { rxStatus: status }));
+                        return;
+                    }
+                    const body = result?.response;
+                    // A manager that ignored responseType hands back text,
+                    // which would save as a corrupted file.
+                    if (body == null || typeof body === 'string') {
+                        finish(reject, downloadError(
+                            'This userscript manager returned the file as text, so RumbleX can\'t save it intact.',
+                            'userscript-cannot-name',
+                        ));
+                        return;
+                    }
+                    const type = responseHeaders(result.responseHeaders).get('content-type') || '';
+                    const blob = new Blob([body], { type });
+                    if (blob.size > UNMANAGED_DOWNLOAD_MAX_BYTES) tooLarge(blob.size);
+                    else finish(resolve, blob);
+                },
+                onerror() { finish(reject, new TypeError('Network request failed')); },
+                ontimeout() { finish(reject, new DOMException('The download timed out.', 'TimeoutError')); },
+                onabort() { finish(reject, new DOMException('The operation was aborted.', 'AbortError')); },
+            });
+        });
+    }
+
     async function download(data) {
         const url = String(data?.url || '');
         const filename = String(data?.filename || 'rumblex-download').replace(/[\\/:*?"<>|]/g, '_').slice(0, 180);
         const parsed = new URL(url, location.href);
         if (parsed.protocol === 'blob:' || parsed.protocol === 'data:') return saveWithAnchor(parsed.href, filename);
         if (!isAllowedRemoteUrl(parsed)) throw new Error(`Download URL is not allowed: ${parsed.href}`);
-        if (typeof GM_download !== 'function') return saveWithAnchor(parsed.href, filename);
+        if (typeof GM_download !== 'function') {
+            const href = URL.createObjectURL(await fetchBlobForSave(parsed.href));
+            try {
+                return saveWithAnchor(href, filename);
+            } finally {
+                setTimeout(() => URL.revokeObjectURL(href), 60_000);
+            }
+        }
         return new Promise((resolve, reject) => {
             try {
                 GM_download({

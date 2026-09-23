@@ -23,7 +23,7 @@
 // @updateURL    https://github.com/SysAdminDoc/RumbleX/raw/main/RumbleX.user.js
 // ==/UserScript==
 
-// Generated from the shared extension core files. Shared runtime SHA-256: b9fc8804cd54290e80370bab954f22c5c0248d5ff752118221dba2e59a3721d2
+// Generated from the shared extension core files. Shared runtime SHA-256: 5708e4630ed26866b8be508ee78923fae569e7ba803ed800b1fc1c01a118e409
 // RumbleX shared settings schema. This file is the canonical source for
 // defaults and trust-boundary normalization across content, options, popup,
 // background profile/Gist restores, and the generated userscript.
@@ -1494,7 +1494,10 @@
   "creatorLiveGifts": "Gifted subs",
   "creatorLiveRants": "Rants",
   "creatorLivePeak": "Peak watching",
-  "creatorLiveNoRaids": "Raids are not counted. Rumble's Live Stream API does not report them."
+  "creatorLiveNoRaids": "Raids are not counted. Rumble's Live Stream API does not report them.",
+  "dlFailManager": "Your userscript manager can't hand this file to the browser to save by name.",
+  "dlNextManager": "Tampermonkey and Violentmonkey can, through GM_download, and so can the RumbleX extension. All of them save direct files at any size.",
+  "dlFetchingViaManager": "Fetching the file through your userscript manager. It saves once all of it has arrived…"
 });
     const STORAGE_KEYS_WITH_CHANGE_EVENTS = ['rx_settings'];
     const ALLOWED_REQUEST_HOSTS = ['rumble.com', 'rumble.cloud', '1a-1791.com'];
@@ -1638,13 +1641,92 @@
         return { downloadId: `userscript-${Date.now()}` };
     }
 
+    // Without GM_download an anchor is all that's left, and browsers ignore
+    // `download` on a cross-origin link: the tab would open the CDN URL, or
+    // save it under the CDN's name. So the file comes through
+    // GM_xmlhttpRequest into a same-origin blob, which an anchor does save by
+    // name. The whole file sits in this tab until then, hence the cap, the same
+    // one in-browser HLS conversion uses.
+    const UNMANAGED_DOWNLOAD_MAX_BYTES = 512 * 1024 * 1024;
+    const UNMANAGED_DOWNLOAD_TIMEOUT_MS = 30 * 60_000;
+
+    const downloadError = (message, code, extra = {}) => Object.assign(new Error(message), { code }, extra);
+    const megabytes = (bytes) => `${Math.ceil(bytes / (1024 * 1024))} MB`;
+
+    function fetchBlobForSave(url) {
+        if (typeof GM_xmlhttpRequest !== 'function') {
+            return Promise.reject(downloadError(
+                'This userscript manager can\'t save files from Rumble\'s media server under their own names. It offers neither GM_download nor GM_xmlhttpRequest.',
+                'userscript-cannot-name',
+            ));
+        }
+        return new Promise((resolve, reject) => {
+            let settled = false;
+            let request;
+            const finish = (fn, value) => {
+                if (settled) return;
+                settled = true;
+                fn(value);
+            };
+            const tooLarge = (bytes) => {
+                finish(reject, downloadError(
+                    `This file is ${megabytes(bytes)}. Without GM_download, RumbleX can only save files up to ${megabytes(UNMANAGED_DOWNLOAD_MAX_BYTES)} through this userscript manager.`,
+                    'userscript-too-large',
+                ));
+                try { request?.abort?.(); } catch {}
+            };
+            request = GM_xmlhttpRequest({
+                method: 'GET',
+                url,
+                responseType: 'blob',
+                timeout: UNMANAGED_DOWNLOAD_TIMEOUT_MS,
+                onprogress(event) {
+                    const total = event?.lengthComputable ? Number(event.total) || 0 : 0;
+                    const size = Math.max(total, Number(event?.loaded) || 0);
+                    if (size > UNMANAGED_DOWNLOAD_MAX_BYTES) tooLarge(size);
+                },
+                onload(result) {
+                    const status = Number(result?.status) || 0;
+                    if (status >= 400) {
+                        finish(reject, downloadError(`Rumble's media server answered HTTP ${status}.`, 'http-status', { rxStatus: status }));
+                        return;
+                    }
+                    const body = result?.response;
+                    // A manager that ignored responseType hands back text,
+                    // which would save as a corrupted file.
+                    if (body == null || typeof body === 'string') {
+                        finish(reject, downloadError(
+                            'This userscript manager returned the file as text, so RumbleX can\'t save it intact.',
+                            'userscript-cannot-name',
+                        ));
+                        return;
+                    }
+                    const type = responseHeaders(result.responseHeaders).get('content-type') || '';
+                    const blob = new Blob([body], { type });
+                    if (blob.size > UNMANAGED_DOWNLOAD_MAX_BYTES) tooLarge(blob.size);
+                    else finish(resolve, blob);
+                },
+                onerror() { finish(reject, new TypeError('Network request failed')); },
+                ontimeout() { finish(reject, new DOMException('The download timed out.', 'TimeoutError')); },
+                onabort() { finish(reject, new DOMException('The operation was aborted.', 'AbortError')); },
+            });
+        });
+    }
+
     async function download(data) {
         const url = String(data?.url || '');
         const filename = String(data?.filename || 'rumblex-download').replace(/[\\/:*?"<>|]/g, '_').slice(0, 180);
         const parsed = new URL(url, location.href);
         if (parsed.protocol === 'blob:' || parsed.protocol === 'data:') return saveWithAnchor(parsed.href, filename);
         if (!isAllowedRemoteUrl(parsed)) throw new Error(`Download URL is not allowed: ${parsed.href}`);
-        if (typeof GM_download !== 'function') return saveWithAnchor(parsed.href, filename);
+        if (typeof GM_download !== 'function') {
+            const href = URL.createObjectURL(await fetchBlobForSave(parsed.href));
+            try {
+                return saveWithAnchor(href, filename);
+            } finally {
+                setTimeout(() => URL.revokeObjectURL(href), 60_000);
+            }
+        }
         return new Promise((resolve, reject) => {
             try {
                 GM_download({
@@ -8310,6 +8392,9 @@ const VideoDownloader = {
         const message = String(error?.message || error || '');
         const group = this._STAGE_GROUPS[error?.rxStage || stage];
         if (name === 'AbortError' || stage === 'cancelled') return 'cancelled';
+        // The userscript adapter's own refusals: its manager has no
+        // GM_download and could not stand in for it.
+        if (code === 'userscript-cannot-name' || code === 'userscript-too-large') return 'manager';
         if (status === 401) return 'auth';
         if (status === 410 || (status === 404 && (group === 'rendition' || group === 'master'))) return 'expired';
         if (status === 403) return 'forbidden';
@@ -8357,6 +8442,10 @@ const VideoDownloader = {
             case 'quota': return {
                 what: rxT('dlFailQuota', 'There was not enough room to finish this download.'),
                 next: rxT('dlNextQuota', 'Choose a direct MP4 row, or TS to disk where it is offered. Neither holds the whole video in this tab.'),
+            };
+            case 'manager': return {
+                what: rxT('dlFailManager', 'Your userscript manager can\'t hand this file to the browser to save by name.'),
+                next: rxT('dlNextManager', 'Tampermonkey and Violentmonkey can, through GM_download, and so can the RumbleX extension. All of them save direct files at any size.'),
             };
             case 'network': return {
                 what: rxT('dlFailNetwork', 'The connection to Rumble dropped.'),
@@ -8449,7 +8538,11 @@ const VideoDownloader = {
         wrap.className = 'rx-dl-progress-wrap';
         const status = document.createElement('div');
         status.className = 'rx-dl-status';
-        status.textContent = rxT('dlStartingBrowser', 'Starting download via browser…');
+        // Without GM_download the userscript fetches the whole file before the
+        // browser sees it, so "starting" would sit there for minutes.
+        status.textContent = RXPlatform.capabilities.managedDownloads === false
+            ? rxT('dlFetchingViaManager', 'Fetching the file through your userscript manager. It saves once all of it has arrived…')
+            : rxT('dlStartingBrowser', 'Starting download via browser…');
         wrap.appendChild(status);
         body.appendChild(wrap);
 

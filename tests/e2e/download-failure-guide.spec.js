@@ -233,6 +233,10 @@ test('every failure kind and stage has its own words', async ({ context, service
                     expiredMaster: [http(404, 'master-playlist'), 'master-playlist'],
                     // The userscript transport's own wording for a refused request.
                     corsUserscript: [new TypeError('Network request failed'), 'segment-download'],
+                    // The userscript adapter's refusals when its manager has no
+                    // GM_download: a file over the in-tab cap, or no way at all.
+                    managerTooLarge: [Object.assign(new Error('This file is 900 MB.'), { code: 'userscript-too-large' }), 'background-message'],
+                    managerCannotName: [Object.assign(new Error('x'), { code: 'userscript-cannot-name' }), 'background-message'],
                     unknown: [new Error('something else'), 'save'],
                 };
                 const kinds = Object.fromEntries(Object.entries(cases)
@@ -240,7 +244,7 @@ test('every failure kind and stage has its own words', async ({ context, service
                 const stages = Object.fromEntries(['browser-download', 'embed-api', 'master-playlist',
                     'segment-playlist', 'mux', 'file-close', 'page-detection']
                     .map((stage) => [stage, VideoDownloader._stageLabel(stage)]));
-                const texts = ['auth', 'forbidden', 'expired', 'cors', 'parse', 'codec', 'quota', 'network', 'unknown']
+                const texts = ['auth', 'forbidden', 'expired', 'cors', 'parse', 'codec', 'quota', 'network', 'manager', 'unknown']
                     .map((kind) => VideoDownloader._failureText(kind, 403));
                 return { kinds, stages, texts };
             },
@@ -262,6 +266,8 @@ test('every failure kind and stage has its own words', async ({ context, service
         network: 'network',
         expiredMaster: 'expired',
         corsUserscript: 'cors',
+        managerTooLarge: 'manager',
+        managerCannotName: 'manager',
         unknown: 'unknown',
     });
     expect(table.stages).toEqual({
@@ -273,9 +279,9 @@ test('every failure kind and stage has its own words', async ({ context, service
         'file-close': 'Writing the file',
         'page-detection': 'Finding the video on this page',
     });
-    // Nine distinct explanations, each with a next step, and none of them
+    // Ten distinct explanations, each with a next step, and none of them
     // suggests exporting cookies or disguising the browser.
-    expect(new Set(table.texts.map((text) => text.what)).size).toBe(9);
+    expect(new Set(table.texts.map((text) => text.what)).size).toBe(10);
     for (const text of table.texts) {
         expect(text.next.length).toBeGreaterThan(20);
         expect(text.next).not.toMatch(/export (your )?cookies|user[- ]agent|impersonat/i);

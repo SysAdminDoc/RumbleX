@@ -2484,5 +2484,17 @@
   "creatorLiveNoRaids": {
     "message": "I raid non vengono contati. L'API delle dirette di Rumble non li segnala.",
     "description": "In-page UI string (shared core)."
+  },
+  "dlFailManager": {
+    "message": "Il tuo gestore di userscript non può passare questo file al browser per salvarlo con il suo nome.",
+    "description": "In-page UI string (shared core)."
+  },
+  "dlNextManager": {
+    "message": "Tampermonkey e Violentmonkey possono farlo tramite GM_download, e così anche l'estensione RumbleX. Tutti salvano file diretti di qualsiasi dimensione.",
+    "description": "In-page UI string (shared core)."
+  },
+  "dlFetchingViaManager": {
+    "message": "Recupero del file tramite il tuo gestore di userscript. Verrà salvato quando sarà arrivato per intero…",
+    "description": "In-page UI string (shared core)."
   }
 }

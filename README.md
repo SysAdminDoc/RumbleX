@@ -343,6 +343,8 @@ The userscript supports settings, themes, page cleanup, selectors/routes, screen
 
 Its metadata also requests early ad cancellation through the userscript-manager `@webRequest` facility. Manager/browser support is not uniform: current Chromium MV3 Tampermonkey does not expose that request hook, so the userscript UI and Privacy Report mark the shield as manager-dependent and do not claim extension-level network blocking there. Ad Nuker still performs document-start and reinsertion cleanup.
 
+Direct downloads save by name through the manager's `GM_download`, which Tampermonkey and Violentmonkey both provide. A manager without it can't hand a file on Rumble's media server to the browser under a name of RumbleX's choosing, so RumbleX fetches the file through `GM_xmlhttpRequest` and saves that copy instead. The whole file sits in the tab until it's saved, so that route stops at 512 MB and tells you. Anything bigger needs Tampermonkey, Violentmonkey or the extension.
+
 #### Chrome and Edge need user scripts switched on
 
 On Chromium browsers a correctly installed userscript can sit there doing nothing until you grant the manager permission to run user scripts. Nothing warns you on the page, so this looks exactly like RumbleX being broken.

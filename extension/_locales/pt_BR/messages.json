@@ -2484,5 +2484,17 @@
   "creatorLiveNoRaids": {
     "message": "Raids não são contados. A API de transmissão ao vivo do Rumble não os informa.",
     "description": "In-page UI string (shared core)."
+  },
+  "dlFailManager": {
+    "message": "Seu gerenciador de userscripts não consegue entregar este arquivo ao navegador para salvá-lo com o nome dele.",
+    "description": "In-page UI string (shared core)."
+  },
+  "dlNextManager": {
+    "message": "O Tampermonkey e o Violentmonkey conseguem, via GM_download, assim como a extensão RumbleX. Todos salvam arquivos diretos de qualquer tamanho.",
+    "description": "In-page UI string (shared core)."
+  },
+  "dlFetchingViaManager": {
+    "message": "Buscando o arquivo pelo seu gerenciador de userscripts. Ele será salvo quando chegar por completo…",
+    "description": "In-page UI string (shared core)."
   }
 }

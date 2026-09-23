@@ -5,6 +5,7 @@ const assert = require('assert/strict');
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
+const { resolveObjectURL } = require('buffer');
 
 const ROOT = path.resolve(__dirname, '..');
 const template = fs.readFileSync(path.join(ROOT, 'userscript', 'platform.js'), 'utf8');
@@ -26,6 +27,9 @@ async function main() {
     let downloadOptions = null;
     let nativeFetchCalls = 0;
     const anchors = [];
+    // Captured rather than run, so a pending revoke doesn't hold the process
+    // open and the test can fire it on purpose.
+    const timers = [];
 
     const context = vm.createContext({
         URL,
@@ -40,8 +44,8 @@ async function main() {
         TextDecoder,
         crypto,
         console,
-        setTimeout,
-        clearTimeout,
+        setTimeout: (fn, delay) => timers.push({ fn, delay }),
+        clearTimeout() {},
         location: { href: 'https://rumble.com/vfixture-test.html', origin: 'https://rumble.com' },
         navigator: { clipboard: { writeText: async () => {} } },
         document: {
@@ -151,6 +155,76 @@ async function main() {
     );
     assert.equal(anchors.length, 0);
 
+    // No GM_download. A cross-origin anchor would open the CDN URL in the tab
+    // or save it under the CDN's name, so the file has to arrive as a
+    // same-origin blob first and the anchor points at that.
+    const gmDownload = context.GM_download;
+    delete context.GM_download;
+    const CDN = 'https://hugh.cdn.1a-1791.com/video/s8/2/clip.mp4';
+    const unmanaged = (filename = 'clip.mp4') => platform.sendMessage({ action: 'download', data: { url: CDN, filename } });
+    let blobXhr;
+    xhrImpl = (options) => {
+        blobXhr = options;
+        queueMicrotask(() => {
+            options.onprogress({ lengthComputable: true, loaded: 3, total: 3 });
+            options.onload({ status: 200, response: new Blob([new Uint8Array([7, 8, 9])]), responseHeaders: 'Content-Type: video/mp4\r\n' });
+        });
+        return { abort() {} };
+    };
+    assert.match((await unmanaged('Clip: 720p.mp4')).downloadId, /^userscript-/);
+    assert.equal(blobXhr.url, CDN);
+    assert.equal(blobXhr.responseType, 'blob');
+    assert.equal(anchors.length, 1);
+    assert.match(anchors[0].href, /^blob:/, 'the anchor must point at a same-origin blob, never the CDN URL');
+    assert.equal(anchors[0].download, 'Clip_ 720p.mp4');
+    const savedBlob = resolveObjectURL(anchors[0].href);
+    assert.deepEqual([...new Uint8Array(await savedBlob.arrayBuffer())], [7, 8, 9]);
+    assert.equal(savedBlob.type, 'video/mp4');
+    const revoke = timers.find((timer) => timer.delay === 60_000);
+    assert.ok(revoke, 'the blob URL is revoked once the browser has the file');
+    revoke.fn();
+    assert.equal(resolveObjectURL(anchors[0].href), undefined);
+
+    // Over the in-tab cap, from the first progress event that says so, with
+    // or without a Content-Length.
+    for (const progress of [
+        { lengthComputable: true, loaded: 1024, total: 600 * 1024 * 1024 },
+        { lengthComputable: false, loaded: 513 * 1024 * 1024, total: 0 },
+    ]) {
+        let abortedLarge = false;
+        xhrImpl = (options) => {
+            queueMicrotask(() => {
+                options.onprogress(progress);
+                // Like a real transfer, it finishes unless someone stops it.
+                if (!abortedLarge) options.onload({ status: 200, response: new Blob([new Uint8Array(4)]) });
+            });
+            return { abort() { abortedLarge = true; } };
+        };
+        await assert.rejects(unmanaged(), (error) => error.code === 'userscript-too-large'
+            && /GM_download/.test(error.message) && /512 MB/.test(error.message));
+        assert.equal(abortedLarge, true, 'an oversized transfer is stopped, not left to fill the tab');
+    }
+
+    const answer = (result) => (options) => {
+        queueMicrotask(() => options.onload(result));
+        return { abort() {} };
+    };
+    xhrImpl = answer({ status: 403, response: new Blob([]) });
+    await assert.rejects(unmanaged(), (error) => error.rxStatus === 403);
+    xhrImpl = answer({ status: 200, response: 'text instead of bytes' });
+    await assert.rejects(unmanaged(), (error) => error.code === 'userscript-cannot-name');
+    xhrImpl = (options) => {
+        queueMicrotask(() => options.onerror({ status: 0 }));
+        return { abort() {} };
+    };
+    await assert.rejects(unmanaged(), (error) => error.name === 'TypeError' && /network request failed/i.test(error.message));
+    const gmXhr = context.GM_xmlhttpRequest;
+    delete context.GM_xmlhttpRequest;
+    await assert.rejects(unmanaged(), (error) => error.code === 'userscript-cannot-name');
+    context.GM_xmlhttpRequest = gmXhr;
+    context.GM_download = gmDownload;
+    assert.equal(anchors.length, 1, 'a refused download never clicks an anchor');
+
     values.clear();
     values.set('rx_keyboardNav', true);
     values.set('rx_speedControl', false);
@@ -170,10 +244,20 @@ async function main() {
     assert.ok(manifest.host_permissions.includes('https://*.rumble.com/*'));
     assert.equal(platform.capabilities.persistentBackground, false);
 
-    console.log('Userscript platform contract OK: storage, migration, xhr, abort, HTTPS allowlist, downloads, manifest.');
+    console.log('Userscript platform contract OK: storage, migration, xhr, abort, HTTPS allowlist, downloads with and without GM_download, manifest.');
 }
 
-main().catch((error) => {
+// A promise the adapter never settles leaves nothing on the event loop, and
+// Node then exits 0 halfway through: a hang would read as a pass.
+let finished = false;
+process.on('exit', (code) => {
+    if (code === 0 && !finished) {
+        console.error('Userscript platform contract stopped before its last check: a promise never settled.');
+        process.exitCode = 1;
+    }
+});
+
+main().then(() => { finished = true; }, (error) => {
     console.error(error);
     process.exit(1);
 });

@@ -5609,6 +5609,9 @@ const VideoDownloader = {
         const message = String(error?.message || error || '');
         const group = this._STAGE_GROUPS[error?.rxStage || stage];
         if (name === 'AbortError' || stage === 'cancelled') return 'cancelled';
+        // The userscript adapter's own refusals: its manager has no
+        // GM_download and could not stand in for it.
+        if (code === 'userscript-cannot-name' || code === 'userscript-too-large') return 'manager';
         if (status === 401) return 'auth';
         if (status === 410 || (status === 404 && (group === 'rendition' || group === 'master'))) return 'expired';
         if (status === 403) return 'forbidden';
@@ -5656,6 +5659,10 @@ const VideoDownloader = {
             case 'quota': return {
                 what: rxT('dlFailQuota', 'There was not enough room to finish this download.'),
                 next: rxT('dlNextQuota', 'Choose a direct MP4 row, or TS to disk where it is offered. Neither holds the whole video in this tab.'),
+            };
+            case 'manager': return {
+                what: rxT('dlFailManager', 'Your userscript manager can\'t hand this file to the browser to save by name.'),
+                next: rxT('dlNextManager', 'Tampermonkey and Violentmonkey can, through GM_download, and so can the RumbleX extension. All of them save direct files at any size.'),
             };
             case 'network': return {
                 what: rxT('dlFailNetwork', 'The connection to Rumble dropped.'),
@@ -5748,7 +5755,11 @@ const VideoDownloader = {
         wrap.className = 'rx-dl-progress-wrap';
         const status = document.createElement('div');
         status.className = 'rx-dl-status';
-        status.textContent = rxT('dlStartingBrowser', 'Starting download via browser…');
+        // Without GM_download the userscript fetches the whole file before the
+        // browser sees it, so "starting" would sit there for minutes.
+        status.textContent = RXPlatform.capabilities.managedDownloads === false
+            ? rxT('dlFetchingViaManager', 'Fetching the file through your userscript manager. It saves once all of it has arrived…')
+            : rxT('dlStartingBrowser', 'Starting download via browser…');
         wrap.appendChild(status);
         body.appendChild(wrap);
 
