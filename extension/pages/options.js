@@ -1967,8 +1967,18 @@
                 : 'Frame budget report unavailable. Open a rumble.com tab so the content script can respond.', 'error');
             return;
         }
-        const report = RXSettingsSchema.sanitizeDiagnosticValue(resp.report);
-        const slow = Array.isArray(report?.slow) ? report.slow.length : 0;
+        // Sanitized one entry at a time. The shared sanitizer caps every array
+        // at 30 items, which kept the 30 oldest of up to 100 slow scans and
+        // dropped the newest, the ones someone exporting is looking for.
+        const raw = resp.report && typeof resp.report === 'object' ? resp.report : {};
+        const report = {
+            budgetMs: Number(raw.budgetMs) || 16,
+            modules: (Array.isArray(raw.modules) ? raw.modules : [])
+                .map((row) => RXSettingsSchema.sanitizeDiagnosticValue(row)),
+            slow: (Array.isArray(raw.slow) ? raw.slow : []).slice(-100)
+                .map((entry) => RXSettingsSchema.sanitizeDiagnosticValue(entry)),
+        };
+        const slow = report.slow.length;
         const ts = new Date().toISOString().replace(/[:T]/g, '-').replace(/\..+$/, '');
         downloadJsonBlob('rumblex-frame-budget-' + ts + '.json', report);
         showStatus('Frame budget report exported (' + slow + ' scan' + (slow === 1 ? '' : 's') + ' over ' + report.budgetMs + ' ms).', 'success');

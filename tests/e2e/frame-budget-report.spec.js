@@ -58,6 +58,19 @@ test('the frame budget report exports slow scans by module only once it is turne
     // On: the next slow scan is kept and exported, with its module and route.
     await options.evaluate(() => chrome.storage.local.set({ rx_settings: { debugPerfBudget: true } }));
     await expect.poll(slowScan).toBeGreaterThan(1);
+    // Forty more over-budget scans. The export used to pass the list through
+    // a sanitizer that keeps the first 30 array items, which silently dropped
+    // the newest entries of a full report.
+    await options.evaluate(async () => {
+        const [tab] = await chrome.tabs.query({ url: ['*://rumble.com/*'] });
+        await chrome.scripting.executeScript({
+            target: { tabId: tab.id },
+            world: 'ISOLATED',
+            func: () => {
+                for (let i = 0; i < 40; i += 1) RxPerfBudget.note(ExactCounts, `bulk-${i}`, 20 + i);
+            },
+        });
+    });
     const download = options.waitForEvent('download');
     await options.locator('#perfreport-export-btn').click();
     const exported = await download;
@@ -65,6 +78,8 @@ test('the frame budget report exports slow scans by module only once it is turne
     const report = JSON.parse(await readDownload(exported));
     expect(report.budgetMs).toBe(16);
     expect(report.modules.some((row) => row.module === 'exactCounts' && row.maxMs >= 20)).toBe(true);
+    expect(report.slow.length).toBeGreaterThanOrEqual(41);
+    expect(report.slow.map((entry) => entry.key)).toContain('bulk-39');
     const slow = report.slow.filter((entry) => entry.key === 'budget-probe');
     expect(slow.length).toBeGreaterThan(0);
     // The offline capture carries a chat list, which is what makes a watch

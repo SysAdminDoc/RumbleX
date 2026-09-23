@@ -95,7 +95,11 @@ const TRACKER = () => {
     if (globalThis.IntersectionObserver) globalThis.IntersectionObserver = track(globalThis.IntersectionObserver);
     if (globalThis.ResizeObserver) globalThis.ResizeObserver = track(globalThis.ResizeObserver);
 
+    // Router.onChange subscribers live in a plain array that none of the
+    // wrappers above see, so a module that subscribed again on every
+    // navigation would leak there unnoticed. Counted directly.
     globalThis.__rxLive = () => ({
+        routerHandlers: typeof Router === 'undefined' ? 0 : Router._handlers.length,
         observers: live.observers.size,
         intervals: live.intervals.size,
         timeouts: live.timeouts.size,
@@ -193,7 +197,7 @@ const NAVIGATE = async ({ body, routes, enabled }) => {
     };
 };
 
-const HANDLES = ['observers', 'intervals', 'timeouts', 'frames', 'listeners'];
+const HANDLES = ['routerHandlers', 'observers', 'intervals', 'timeouts', 'frames', 'listeners'];
 const handlesOf = (sample) => Object.fromEntries(HANDLES.map((field) => [field, sample[field]]));
 const sum = (samples, field) => samples.reduce((total, sample) => total + sample[field], 0);
 const scanTotals = (samples) => {
@@ -224,7 +228,7 @@ test('twenty route transitions return live handles to baseline and never multipl
     for (let index = 0; index < ROUTES.length; index += 1) {
         const first = firstLap[index];
         const last = lastLap[index];
-        for (const field of ['observers', 'intervals', 'listeners']) {
+        for (const field of ['routerHandlers', 'observers', 'intervals', 'listeners']) {
             expect(last[field], `${field} on ${last.route}: first visit ${first[field]}, fourth ${last[field]}`)
                 .toBeLessThanOrEqual(first[field]);
         }
