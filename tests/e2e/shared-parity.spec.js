@@ -46,7 +46,9 @@ async function inContent(serviceWorker, targetTabId, action, args = []) {
                     return VideoCards.related().map((card) => card.classList.contains('rx-related-hidden'));
                 }
                 if (name === 'watchedFilter') {
-                    localStorage.setItem('rx_watch_progress', JSON.stringify({ valpha123: { t: 30, d: 100, ts: Date.now() } }));
+                    // Through the runtime's own activity store: in the extension it
+                    // is extension storage, not rumble.com's localStorage.
+                    RxActivity.setItem('rx_watch_progress', JSON.stringify({ valpha123: { t: 30, d: 100, ts: Date.now() } }));
                     RelatedFilter._filter('', true);
                     WatchProgress._addProgressBars();
                     return VideoCards.related().map((card) => ({

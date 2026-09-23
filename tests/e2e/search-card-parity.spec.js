@@ -84,7 +84,11 @@ test('modern search cards drive filtering, save, batch, title, thumbnail, and he
     expect(visualContract.imageVisibility).toBe('hidden');
 
     await page.locator('article.video-item').first().locator('.rx-quick-save').click();
-    const bookmarks = await page.evaluate(() => JSON.parse(localStorage.getItem('rx_bookmarks') || '[]'));
+    // The extension keeps bookmarks in its activity store (extension storage,
+    // one key per item under rx_act:), not in rumble.com's localStorage.
+    await expect.poll(() => serviceWorker.evaluate(async () => (await chrome.storage.local.get('rx_act:rx_bookmarks'))['rx_act:rx_bookmarks'] || null))
+        .not.toBeNull();
+    const bookmarks = await serviceWorker.evaluate(async () => JSON.parse((await chrome.storage.local.get('rx_act:rx_bookmarks'))['rx_act:rx_bookmarks']));
     expect(bookmarks).toEqual([expect.objectContaining({
         url: 'https://rumble.com/vsearch101-alpha-report.html',
         title: 'Alpha Report',
