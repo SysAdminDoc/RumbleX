@@ -232,7 +232,7 @@
             padding: 10px 12px; border-radius: var(--radius-sm);
             background: rgba(17,17,27,0.35); border: 1px solid rgba(205,214,244,0.1);
         }
-        .welcome-presets input { margin-top: 3px; flex: none; }
+        .welcome-presets input { width: 24px; height: 24px; margin: 0; flex: none; accent-color: var(--rumble-green); cursor: pointer; }
         .welcome-presets label { display: grid; gap: 2px; cursor: pointer; }
         .welcome-presets strong { font-size: 13px; }
         .welcome-presets span { color: var(--text-muted); font-size: 11px; line-height: 1.5; }
@@ -759,11 +759,11 @@
                 <div class="welcome-copy">
                     <span class="workspace-eyebrow">Welcome</span>
                     <h2 class="welcome-title" id="welcome-title">RumbleX is installed and already working</h2>
-                    <p>Ad blocking, feed cleanup, and tracking-parameter stripping are on by default — you do not need to configure anything. The presets below turn on the handful of extras most people want. Everything is reversible and nothing leaves your browser.</p>
+                    <p>Ad blocking, feed cleanup, and tracking-parameter stripping are already on. Pick only the extras you want below. Nothing else will be enabled, and no data leaves your browser.</p>
                 </div>
                 <ul class="welcome-presets" id="welcome-presets"></ul>
                 <div class="welcome-actions">
-                    <button type="button" class="cta-button" id="welcome-apply-btn">Turn these on</button>
+                    <button type="button" class="cta-button" id="welcome-apply-btn" disabled>Select features to turn on</button>
                     <button type="button" class="settings-tertiary-button" id="welcome-dismiss-btn">Not now</button>
                 </div>
                 <p class="welcome-footnote">This only appears once. Every one of these is a normal setting you can change later.</p>

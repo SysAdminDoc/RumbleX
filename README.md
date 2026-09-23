@@ -152,7 +152,7 @@ Live chat got the things every other chat platform already has, and rants became
 
 ### v3.42 highlights
 - **Settings that do nothing now say so.** 41 of 210 keys rendered live controls that no runtime code read. flip the switch, watch it save, nothing happens. Two were wired up (`encryptedGistSync`, `privacyReport`), two dead duplicates were removed with a schema migration, and the remaining 38 are labelled "Not implemented yet" with a stated reason and disabled inputs. A guard fails in both directions so the list cannot rot.
-- **First-run welcome** naming eight default-off, genuinely-wired presets, applied in one click. Dismissible, shown once, writes nothing if you decline.
+- **First-run welcome** naming eight default-off, genuinely wired extras. Nothing is preselected, the action stays disabled until you choose something, and dismissing it writes no settings.
 - **Deleting a settings profile is reversible**. inline Undo plus a pre-delete snapshot. The pre-*switch* snapshot never actually fired before this release either.
 - **`a-delivery.rmbl.ws` is blocked.** It is a CNAME alias of the already-blocked ad host, and hostname matching never follows CNAMEs, so it had been passing through every runtime. All three hand-synced host lists are now machine-checked against each other.
 - **`RumbleX.lite.user.js`**. a Greasy Fork-compliant build with the same shared runtime, minus the bundled transmuxers.

@@ -25,14 +25,22 @@
 }
 * { margin: 0; padding: 0; box-sizing: border-box; }
 [hidden] { display: none !important; }
+html {
+    width: 440px;
+    height: min(600px, 100vh);
+    background: var(--page-bg);
+}
 body {
     width: 440px;
+    height: min(600px, 100vh);
     font-family: 'Segoe UI Variable Display', 'Segoe UI', system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
     background:
         linear-gradient(180deg, rgba(133,213,81,0.035), transparent 180px),
         var(--page-bg);
     color: var(--text-primary);
     overflow: hidden;
+    display: flex;
+    flex-direction: column;
 }
 .header {
     padding: 16px 18px 14px;
@@ -41,6 +49,7 @@ body {
     gap: 10px;
     background: rgba(255,255,255,0.018);
     border-bottom: 1px solid var(--border);
+    flex: 0 0 auto;
 }
 .header svg { width: 30px; height: 30px; flex-shrink: 0; }
 .header-text h1 { font-size: 17px; font-weight: 800; line-height: 1.2; letter-spacing: 0; }
@@ -57,6 +66,7 @@ body {
     color: #d7ffe8;
     font-size: 11px;
     font-weight: 750;
+    flex: 0 0 auto;
 }
 .popup-autosave, .popup-shield { display: inline-flex; align-items: center; gap: 7px; min-width: 0; }
 .popup-autosave::before, .popup-shield::before {
@@ -90,6 +100,7 @@ body {
     justify-content: space-between;
     gap: 8px;
     font-family: inherit;
+    flex: 0 0 auto;
     transition: border-color 160ms var(--ease-out), background 160ms var(--ease-out), box-shadow 160ms var(--ease-out), transform 140ms var(--ease-out);
 }
 .open-options:hover {
@@ -111,7 +122,12 @@ body {
 .open-options svg { width: 14px; height: 14px; flex-shrink: 0; opacity: 0.75; }
 .open-options .open-options-icon { width: 34px; height: 34px; opacity: 1; }
 
-.features { padding: 6px 12px 10px; max-height: 548px; overflow-y: auto; }
+.features {
+    min-height: 0;
+    padding: 6px 12px 10px;
+    overflow-y: auto;
+    flex: 1 1 auto;
+}
 
 /* Group headers — collapsible sections per category */
 .feat-group {
@@ -248,7 +264,7 @@ body {
 /* Footer */
 .save-error { margin: 0 12px 8px; padding: 8px 10px; border-radius: 6px;
     background: rgba(220, 60, 60, 0.14); border: 1px solid rgba(220, 60, 60, 0.4);
-    color: #ffb4b4; font-size: 12px; line-height: 1.4; }
+    color: #ffb4b4; font-size: 12px; line-height: 1.4; flex: 0 0 auto; }
 .footer {
     padding: 11px 14px;
     border-top: 1px solid var(--border);
@@ -256,6 +272,7 @@ body {
     display: flex;
     align-items: center;
     justify-content: space-between;
+    flex: 0 0 auto;
 }
 .footer-left {
     display: flex; align-items: center; gap: 6px;

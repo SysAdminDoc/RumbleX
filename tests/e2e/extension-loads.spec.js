@@ -37,6 +37,35 @@ test('popup renders feature groups with toggles', async ({ context, extensionId 
     await expect(realFrameRow.locator('input[type="checkbox"]')).not.toBeChecked();
 });
 
+test('popup fits Chromium bounds and keeps the footer and last setting reachable', async ({ context, extensionId }) => {
+    const page = await context.newPage();
+    await page.setViewportSize({ width: 440, height: 600 });
+    await page.goto(`chrome-extension://${extensionId}/pages/popup.html`);
+
+    const features = page.locator('#features');
+    const footer = page.locator('.footer');
+    const footerBox = await footer.boundingBox();
+    expect(footerBox).not.toBeNull();
+    expect(footerBox.y + footerBox.height).toBeLessThanOrEqual(600);
+
+    const scrollState = await features.evaluate((node) => ({
+        clientHeight: node.clientHeight,
+        scrollHeight: node.scrollHeight,
+    }));
+    expect(scrollState.clientHeight).toBeGreaterThan(100);
+    expect(scrollState.scrollHeight).toBeGreaterThan(scrollState.clientHeight);
+
+    const lastGroup = page.locator('.feat-group').last();
+    if (await lastGroup.evaluate((node) => node.classList.contains('collapsed'))) {
+        await lastGroup.locator('.feat-group-header').click();
+    }
+    await features.evaluate((node) => { node.scrollTop = node.scrollHeight; });
+    const lastRow = lastGroup.locator('.feat-row').last();
+    const lastRowBox = await lastRow.boundingBox();
+    expect(lastRowBox).not.toBeNull();
+    expect(lastRowBox.y + lastRowBox.height).toBeLessThanOrEqual(footerBox.y);
+});
+
 test('options and popup consume localized UI messages', async ({ context, extensionId }) => {
     await context.addInitScript(() => {
         window.__RUMBLEX_TEST_I18N = {

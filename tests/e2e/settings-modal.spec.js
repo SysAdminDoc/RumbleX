@@ -179,7 +179,7 @@ test('settings with no runtime consumer are disclosed and not operable', async (
 // A fresh install used to land on 126 modules and 208 settings with no
 // orientation at all: onInstalled only synced context menus, the side panel,
 // the notifier, and alarms.
-test('first-run welcome offers real default-off presets, applies them, and never returns', async ({ context, extensionId }) => {
+test('first-run welcome offers explicit opt-in presets, applies only selections, and never returns', async ({ context, extensionId }) => {
     const page = await context.newPage();
     await page.goto(`chrome-extension://${extensionId}/pages/options.html`);
 
@@ -204,19 +204,24 @@ test('first-run welcome offers real default-off presets, applies them, and never
         expect(entry.exists, `${entry.key} is not a real setting`).toBe(true);
         expect(entry.defaultValue, `${entry.key} is already on by default`).toBe(false);
         expect(entry.unimplemented, `${entry.key} has no runtime consumer`).toBe(false);
-        expect(entry.checked).toBe(true);
+        expect(entry.checked).toBe(false);
     }
 
-    // Deselect one so the applied set is not simply "all of them".
-    const skipped = audit[0].key;
-    await page.locator(`#welcome-preset-${skipped}`).uncheck();
+    const apply = page.locator('#welcome-apply-btn');
+    await expect(apply).toBeDisabled();
+
+    // The page must never imply consent for disruptive extras. Select one
+    // deliberately and prove only that setting is written.
+    const selected = audit[0].key;
+    await page.locator(`#welcome-preset-${selected}`).check();
+    await expect(apply).toBeEnabled();
     await page.locator('#welcome-apply-btn').click();
     await expect(panel).toBeHidden();
 
     const stored = await page.evaluate(async () => (await chrome.storage.local.get('rx_settings')).rx_settings || {});
     for (const entry of audit) {
-        if (entry.key === skipped) expect(stored[entry.key]).toBeFalsy();
-        else expect(stored[entry.key], `${entry.key} was not applied`).toBe(true);
+        if (entry.key === selected) expect(stored[entry.key], `${entry.key} was not applied`).toBe(true);
+        else expect(stored[entry.key], `${entry.key} was enabled without consent`).toBeFalsy();
     }
 
     // Shown once: a reload must not bring it back.

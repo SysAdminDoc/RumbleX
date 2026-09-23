@@ -3252,8 +3252,8 @@
         { key: 'autoHideHeader', label: 'Auto-hide the header', desc: 'Reclaims vertical space until you move the pointer to the top.' },
         { key: 'hideRelatedSidebar', label: 'Hide the related-videos rail', desc: 'Removes the recommendation column beside the player.' },
         { key: 'hidePausedVideoAds', label: 'Hide paused-video ads', desc: 'Suppresses the overlay Rumble shows when you pause.' },
-        { key: 'liveDVR', label: 'Live DVR', desc: 'Lets you scrub backwards during a live stream to catch what you missed.' },
-        { key: 'defaultMaxVolume', label: 'Start at full volume', desc: 'Sets the player to maximum volume on load.' },
+        { key: 'liveDVR', label: 'Live DVR clip', desc: 'Lets you save the most recent part of a live stream as a clip.' },
+        { key: 'defaultMaxVolume', label: 'Start videos at full volume', desc: 'Always starts the player at 100%. Leave this off if you use headphones.' },
     ];
 
     async function setupWelcome() {
@@ -3276,7 +3276,7 @@
             const item = document.createElement('li');
             const input = document.createElement('input');
             input.type = 'checkbox';
-            input.checked = true;
+            input.checked = false;
             input.id = 'welcome-preset-' + preset.key;
             input.dataset.key = preset.key;
             const label = document.createElement('label');
@@ -3291,6 +3291,17 @@
         }
         panel.hidden = false;
 
+        const applyButton = document.getElementById('welcome-apply-btn');
+        const syncApplyButton = () => {
+            const selected = list.querySelectorAll('input[type="checkbox"]:checked').length;
+            applyButton.disabled = selected === 0;
+            applyButton.textContent = selected === 0
+                ? 'Select features to turn on'
+                : `Turn on ${selected} selected`;
+        };
+        list.addEventListener('change', syncApplyButton);
+        syncApplyButton();
+
         const dismiss = async () => {
             panel.hidden = true;
             await new Promise((resolve) => chrome.storage.local.set({ rx_welcome_seen: true }, resolve));
@@ -3300,7 +3311,7 @@
             void dismiss().then(() => showStatus('Welcome dismissed. Everything stays at its defaults.', 'info'));
         });
 
-        document.getElementById('welcome-apply-btn')?.addEventListener('click', async () => {
+        applyButton?.addEventListener('click', async () => {
             const chosen = [...list.querySelectorAll('input[type="checkbox"]')]
                 .filter((input) => input.checked)
                 .map((input) => input.dataset.key);
