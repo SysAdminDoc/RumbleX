@@ -79,7 +79,12 @@ const variants = [
 
 if (process.argv.includes('--check')) {
     for (const variant of variants) {
-        const current = fs.existsSync(variant.file) ? fs.readFileSync(variant.file, 'utf8') : '';
+        // Judge the content, not the checkout's line endings. The sources are
+        // normalized on the way in, so a CRLF copy of an up-to-date file is
+        // not stale; any other difference still is.
+        const current = fs.existsSync(variant.file)
+            ? fs.readFileSync(variant.file, 'utf8').replace(/\r\n?/g, '\n')
+            : '';
         if (current !== variant.source) {
             console.error(`${variant.label} is stale. Run: npm run build:userscript`);
             process.exit(1);

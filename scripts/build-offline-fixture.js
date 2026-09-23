@@ -36,8 +36,16 @@ const OUTPUT = path.join(ROOT, 'tests', 'fixtures', 'platform', 'offline-watch.h
 // is no capture to regenerate from and existence alone proves nothing.
 const HASH_FILE = path.join(ROOT, 'tests', 'fixtures', 'platform', 'offline-watch.sha256');
 
+// Hashes the content with LF line endings, which is what the repository
+// stores. Hashing raw bytes recorded whatever the generating machine happened
+// to have on disk: the capture's CRLF lines mixed with the sanitizer's LF
+// ones, which no checkout on any platform reproduces.
 function fileHash(file) {
-    return crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex');
+    return crypto.createHash('sha256').update(normalizeEol(fs.readFileSync(file, 'utf8'))).digest('hex');
+}
+
+function normalizeEol(text) {
+    return text.replace(/\r\n?/g, '\n');
 }
 
 function recordedHash() {
@@ -223,10 +231,10 @@ function main() {
     }
 
     assert.ok(fs.existsSync(sourcePath), `capture not found: ${sourcePath}`);
-    const generated = sanitize(fs.readFileSync(sourcePath, 'utf8'));
+    const generated = normalizeEol(sanitize(fs.readFileSync(sourcePath, 'utf8')));
 
     if (check) {
-        const committed = fs.existsSync(OUTPUT) ? fs.readFileSync(OUTPUT, 'utf8') : '';
+        const committed = fs.existsSync(OUTPUT) ? normalizeEol(fs.readFileSync(OUTPUT, 'utf8')) : '';
         assert.equal(generated, committed,
             'tests/fixtures/platform/offline-watch.html differs from what this script produces. '
             + 'Regenerate it rather than hand-editing: node scripts/build-offline-fixture.js');

@@ -1,4 +1,11 @@
-* text=auto
+# Every text file checks out with the LF the repository stores. With text=auto
+# alone, a Windows clone wrote CRLF and three byte-comparing guards failed on a
+# tree where nothing had changed (scripts/test-line-endings.js).
+* text=auto eol=lf
 
 *.sh text eol=lf
 *.bash text eol=lf
+
+# Vendored libraries are pinned to the exact bytes of their npm tarballs
+# (extension/lib/VENDOR.json, extension/build.sh). No checkout may rewrite them.
+extension/lib/** -text
