@@ -32,7 +32,7 @@ const CORE_FILES = [
  * string is the thing this guard exists to reject.
  */
 const BASELINE = {
-    assignments: 61, // .textContent / .placeholder / .title = 'literal'
+    assignments: 59, // .textContent / .placeholder / .title = 'literal'
     ariaLabels: 36,   // setAttribute('aria-label', 'literal')
     // RX_CATEGORIES is no longer counted: the modal renders it through
     // rxFeatLabel/rxFeatDesc/rxCatLabel, and sync-content-locale.js derives the

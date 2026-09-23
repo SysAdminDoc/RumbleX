@@ -23,7 +23,7 @@
 // @updateURL    https://github.com/SysAdminDoc/RumbleX/raw/main/RumbleX.user.js
 // ==/UserScript==
 
-// Generated from the shared extension core files. Shared runtime SHA-256: 63f48eb807c4558187e5f949d3ad025349952603ecc3a500995d2c4b580e32d9
+// Generated from the shared extension core files. Shared runtime SHA-256: d594f074296dc13b512e16360f1a02635bebe62a1b8fd08ee187d2b3a482a008
 // RumbleX shared settings schema. This file is the canonical source for
 // defaults and trust-boundary normalization across content, options, popup,
 // background profile/Gist restores, and the generated userscript.
@@ -729,7 +729,6 @@
         downloadQualityPreference: 'Downloader always offers every rendition.',
         downloadLiveStreams: 'Live-stream downloads are gated by page state, not this key.',
         downloadShorts: 'Shorts downloads are gated by page state, not this key.',
-        audioExtractionMode: 'Audio extraction always prefers the browser encoder.',
 
         // Channel archive preferences. The archive queue reads
         // channelArchiveMaxHeight and channelArchiveSubfolder, but not these.
@@ -1041,8 +1040,8 @@
   "feat_compactAccountPagination_desc": "Shrink the autoPg pagination on /account/content",
   "feat_videoDownload_label": "Video Download",
   "feat_videoDownload_desc": "Download direct MP4, bounded HLS-to-MP4, or stream TS directly to disk",
-  "feat_audioOnly_label": "Low-Bitrate MP4",
-  "feat_audioOnly_desc": "Download smallest video variant for listening (saved as .mp4)",
+  "feat_audioOnly_label": "Audio-Only Download",
+  "feat_audioOnly_desc": "Save the audio-only stream Rumble publishes as .m4a, on videos that have one",
   "feat_videoClips_label": "Video Clips",
   "feat_videoClips_desc": "Mark In/Out and export clip as MP4",
   "feat_liveDVR_label": "Live DVR",
@@ -1342,7 +1341,14 @@
   "feat_commentDrafts_desc": "Keep unsent comment text through reloads and autoplay",
   "commentDraftRestored": "Unsent draft restored.",
   "commentDraftSaved": "Draft saved locally.",
-  "downloadAudioOnlyRow": "Audio only"
+  "downloadAudioOnlyRow": "Audio only",
+  "dlAudioNone": "This video publishes no audio-only stream, so there is no audio file to save. The video rows above include the sound.",
+  "dlAudioCopy": "Copy audio-only stream link",
+  "dlAudioCopyNote": "For a download tool outside the browser. The link points at Rumble's own audio file, which saves as .m4a.",
+  "dlAudioCopied": "Audio stream link copied.",
+  "dlAudioCopyFailed": "Could not copy the link. Your browser blocked clipboard access.",
+  "dlAudioSave": "Save audio only (.m4a)",
+  "dlAudioSaveNote": "Rumble's own audio track, saved without conversion."
 });
     const STORAGE_KEYS_WITH_CHANGE_EVENTS = ['rx_settings'];
     const ALLOWED_REQUEST_HOSTS = ['rumble.com', 'rumble.cloud', '1a-1791.com'];
@@ -5550,6 +5556,51 @@ const VideoDownloader = {
     _scanController: null,
     _downloadController: null,
     _scanSeq: 0, // guards against late results after the user navigates away
+    _embedData: null,
+    _embedDataId: null,
+
+    // The embed payload last fetched, but only while it still belongs to the
+    // video on screen. After an in-app navigation the old payload would answer
+    // for the new video: its duration, and whether it publishes audio.
+    _currentEmbedData() {
+        if (!this._embedData || !this._embedDataId) return null;
+        return this._embedDataId === this._getEmbedId() ? this._embedData : null;
+    },
+
+    // Rumble's audio-only rendition (`ua.audio`: AAC in an MP4 container), or
+    // null when this video publishes none. Some videos carry it and others do
+    // not, and there is no other way to get sound without the picture short of
+    // decoding the video. The highest bitrate wins where there are several.
+    // Only `meta.bitrate` is reported as a bitrate: the group key (yt-dlp shows
+    // it as `audio-192p`) orders the entries, but nothing documents its unit.
+    _audioRendition(json) {
+        const group = json?.ua?.audio;
+        if (!group || typeof group !== 'object') return null;
+        let best = null;
+        for (const [key, entry] of Object.entries(group)) {
+            const url = this._safeMediaUrl(entry?.url);
+            if (!url || !/\/video\/.+\.mp4\b/i.test(url)) continue;
+            const kbps = Number(entry?.meta?.bitrate) || 0;
+            const rank = kbps || Number.parseInt(key, 10) || 0;
+            const size = Number(entry?.meta?.size) || 0;
+            if (size && this._renditionVerdict(size, { uaKind: 'audio' }) === 'reject') continue;
+            if (!best || rank > best.rank) best = { url, kbps, size, rank };
+        }
+        return best;
+    },
+
+    // yt-dlp's own field names, so tools that already read its .info.json
+    // know an audio-only file from a video without looking at the extension.
+    _formatSidecarFields(quality) {
+        if (quality?.uaKind !== 'audio') return null;
+        return {
+            format_id: 'audio',
+            format_note: 'Audio only',
+            ext: 'm4a',
+            vcodec: 'none',
+            abr: Number(quality.kbps) > 0 ? Number(quality.kbps) : undefined,
+        };
+    },
 
     _getEmbedId() {
         const player = qs('[id^="vid_v"]');
@@ -6620,7 +6671,7 @@ const VideoDownloader = {
     _videoDurationSeconds() {
         const structured = PageData.durationSeconds();
         if (Number.isFinite(structured) && structured > 0) return structured;
-        const embedDuration = Number(this._embedData?.duration);
+        const embedDuration = Number(this._currentEmbedData()?.duration);
         if (Number.isFinite(embedDuration) && embedDuration > 0) return embedDuration;
         const player = getActiveMedia();
         const playing = Number(player?.duration);
@@ -7110,7 +7161,7 @@ const VideoDownloader = {
         }
         const badge = document.createElement('span');
         badge.className = 'rx-dl-type-badge' + (q.type === 'tar' ? ' type-tar' : '');
-        badge.textContent = q.type === 'tar' ? 'TAR' : (q.directUrl ? 'MP4' : 'HLS');
+        badge.textContent = q.type === 'tar' ? 'TAR' : (q.uaKind === 'audio' ? 'M4A' : (q.directUrl ? 'MP4' : 'HLS'));
         label.appendChild(badge);
         main.appendChild(label);
 
@@ -7178,6 +7229,7 @@ const VideoDownloader = {
             const data = await this._fetchEmbedData(embedId);
             if (seq !== this._scanSeq) return; // user already kicked off another scan
             this._embedData = data;
+            this._embedDataId = embedId;
             this._hlsUrl = this._extractHlsUrl(data);
             const qualities = this._parseQualities(data);
 
@@ -7291,6 +7343,7 @@ const VideoDownloader = {
                         size: hit.size,
                         height: heightFromLabel,
                         token: hit.token,
+                        uaKind: hit.uaKind || null,
                         sizeConfirmed: !!hit.sizeConfirmed,
                     });
                 }
@@ -7550,8 +7603,10 @@ const VideoDownloader = {
     },
 
     async _startDirectDownload(quality, title) {
-        // Honour a per-quality extension — RUD results may be .tar archives.
-        const ext = quality.type === 'tar' ? 'tar' : (quality.ext || 'mp4');
+        // Honour a per-quality extension — RUD results may be .tar archives, and
+        // Rumble's audio-only rendition is an MP4 container holding only AAC,
+        // which is exactly what .m4a names.
+        const ext = quality.type === 'tar' ? 'tar' : (quality.uaKind === 'audio' ? 'm4a' : (quality.ext || 'mp4'));
         const filename = `${title} - ${quality.label}.${ext}`;
         const operationId = this._newOperationId('direct-download');
 
@@ -7600,9 +7655,11 @@ const VideoDownloader = {
                 this._setBodyText('rx-dl-done', 'Download started! Check your browser downloads.');
                 // A direct file is never trimmed, but the marks still describe
                 // its timeline exactly, so they are worth recording.
+                const sponsor = this._sponsorSidecarFields(this._planSponsorTrim([], this._localSponsorSegments()));
+                const format = this._formatSidecarFields(quality);
                 this._writeSidecars(
                     `${title} - ${quality.label}`,
-                    this._sponsorSidecarFields(this._planSponsorTrim([], this._localSponsorSegments())),
+                    sponsor || format ? { ...sponsor, ...format } : null,
                 );
             } else {
                 const error = new Error('Download failed to start');
@@ -7989,6 +8046,8 @@ const VideoDownloader = {
         this._mediabunnyWorker?.terminate();
         this._mediabunnyWorker = null;
         this._lastMuxerContext = null;
+        this._embedData = null;
+        this._embedDataId = null;
     }
 };
 
@@ -14081,7 +14140,7 @@ const RX_CATEGORIES = [
         icon: '<path d="M12 3a1 1 0 011 1v9.59l3.3-3.3a1 1 0 011.4 1.42l-5 5a1 1 0 01-1.4 0l-5-5a1 1 0 011.4-1.42L11 13.59V4a1 1 0 011-1zM5 19a1 1 0 100 2h14a1 1 0 100-2H5z"/>',
         features: [
             { id: 'videoDownload', label: 'Video Download', desc: 'Download direct MP4, bounded HLS-to-MP4, or stream TS directly to disk' },
-            { id: 'audioOnly', label: 'Low-Bitrate MP4', desc: 'Download smallest video variant for listening (saved as .mp4)' },
+            { id: 'audioOnly', label: 'Audio-Only Download', desc: 'Save the audio-only stream Rumble publishes as .m4a, on videos that have one' },
             { id: 'videoClips', label: 'Video Clips', desc: 'Mark In/Out and export clip as MP4' },
             { id: 'liveDVR', label: 'Live DVR', desc: 'Save the last N seconds of a live stream' },
             { id: 'batchDownload', label: 'Batch Download', desc: 'Multi-select thumbnails from feeds to download' },
@@ -18448,123 +18507,120 @@ const Transcripts = {
 };
 
 // ═══════════════════════════════════════════
-//  FEATURE: Low-Bitrate MP4 (for background listening)
+//  FEATURE: Audio-only download
 // ═══════════════════════════════════════════
-// Note: true audio-only extraction from a TS/HLS source requires an audio
-// demuxer (e.g. ffmpeg.wasm) we don't ship. Instead we fetch the lowest
-// bandwidth variant which is full-video-but-tiny, suitable for listening.
-// The setting key stays `audioOnly` for compatibility with saved settings.
+// Rumble publishes a real audio-only rendition on many videos (`ua.audio` in
+// the embed payload, AAC in an MP4 container) and none at all on others. Where
+// one exists this saves Rumble's own file as .m4a with no conversion. Where
+// none exists it says so and saves nothing. It used to fetch the smallest
+// video variant instead, which put a video file behind an audio label.
+//
+// `audioExtractionMode` picks what the control does: 'off' leaves it out,
+// 'browserIfSupported' saves through the browser, and 'companion' and
+// 'external' copy the stream address for a tool outside the browser, because
+// RumbleX ships no companion of its own. The setting key stays `audioOnly` for
+// compatibility with saved settings.
 const AudioOnly = {
     id: 'audioOnly',
-    name: 'Low-Bitrate MP4',
+    name: 'Audio-Only Download',
     _styleEl: null,
     _obs: null,
-    _busy: false,
-    _controller: null,
 
     _css: `
+        .rx-dl-audio { margin-top: 8px; }
         .rx-dl-audio-btn {
-            display: block; width: 100%; margin-top: 8px;
-            background: rgba(249,226,175,0.12); border: 1px solid rgba(249,226,175,0.3);
-            color: var(--rx-yellow, #f9e2af); border-radius: 8px; padding: 10px; cursor: pointer;
+            display: block; width: 100%;
+            background: color-mix(in srgb, var(--rx-theater-warning, var(--rx-yellow, #f9e2af)) 12%, transparent);
+            border: 1px solid color-mix(in srgb, var(--rx-theater-warning, var(--rx-yellow, #f9e2af)) 30%, transparent);
+            color: var(--rx-theater-warning, var(--rx-yellow, #f9e2af)); border-radius: 8px; padding: 10px; cursor: pointer;
             font: 600 12px/1 system-ui, sans-serif;
             transition: background .15s;
         }
-        .rx-dl-audio-btn:hover { background: rgba(249,226,175,0.2); }
-        .rx-dl-audio-btn:disabled { opacity: 0.55; cursor: progress; }
+        .rx-dl-audio-btn:hover { background: color-mix(in srgb, var(--rx-theater-warning, var(--rx-yellow, #f9e2af)) 20%, transparent); }
         .rx-dl-audio-note {
-            font: 10px/1.4 system-ui, sans-serif; color: var(--rx-subtext, #a6adc8);
+            font: 10px/1.4 system-ui, sans-serif; color: var(--rx-theater-subtext, var(--rx-subtext, #a6adc8));
             margin-top: 4px; padding: 0 4px;
         }
     `,
 
-    async _extractAudio() {
-        if (this._busy) return;
-        const panel = qs('#rx-tab-download .rx-dl-body');
-        if (!panel) return;
-        this._busy = true;
-        this._controller?.abort();
-        const controller = new AbortController();
-        this._controller = controller;
-        const { signal } = controller;
-        const btn = qs('.rx-dl-audio-btn');
-        if (btn) btn.disabled = true;
-
-        const status = document.createElement('div');
-        status.className = 'rx-dl-status';
-        panel.appendChild(status);
-        const setStatus = (m) => { status.textContent = m; };
-        try {
-            setStatus('Fetching embed data...');
-            const embedId = VideoDownloader._getEmbedId();
-            if (!embedId) throw new Error('No embed id');
-            const data = VideoDownloader._embedData || await VideoDownloader._fetchEmbedData(embedId, signal);
-            VideoDownloader._embedData = data;
-            const hls = VideoDownloader._extractHlsUrl(data);
-            if (!hls) throw new Error('No valid HLS playlist');
-            const masterResponse = await RXPlatform.fetch(hls, { signal });
-            if (!masterResponse.ok) throw VideoDownloader._httpError(masterResponse, 'master-playlist', hls);
-            const master = await masterResponse.text();
-            const variants = VideoDownloader._parseMasterPlaylist(master, hls);
-            const variant = [...variants].sort((a, b) => (a.bandwidth || 0) - (b.bandwidth || 0))[0];
-            if (!variant) throw new Error('No stream variant found');
-            const variantResponse = await RXPlatform.fetch(variant.url, { signal });
-            if (!variantResponse.ok) throw VideoDownloader._httpError(variantResponse, 'segment-playlist', variant.url);
-            const vtxt = await variantResponse.text();
-            const segUrls = VideoDownloader._parseSegmentPlaylist(vtxt, variant.url);
-            if (!segUrls.length) throw new Error('No segments in playlist');
-
-            const buffers = await VideoDownloader._downloadBuffers(segUrls, {
-                signal,
-                onProgress: (done, total) => setStatus(`Downloading ${done}/${total}...`),
-            });
-            setStatus('Packaging MP4...');
-            const blob = await VideoDownloader._transmuxWithWorker(buffers, signal);
-            const title = VideoDownloader._getTitle();
-            const tag = variant.height ? `${variant.height}p` : 'lo';
-            VideoDownloader._triggerSave(blob, `${title} - ${tag}.mp4`, 'video/mp4');
-            setStatus('Saved. Low-bitrate MP4 is full video at the smallest size — good for listening.');
-        } catch (e) {
-            setStatus(e?.name === 'AbortError' ? 'Download cancelled.' : 'Error: ' + e.message);
-        } finally {
-            if (this._controller === controller) this._controller = null;
-            this._busy = false;
-            if (btn) btn.disabled = false;
-        }
+    _mode() {
+        return Settings.get('audioExtractionMode') || 'browserIfSupported';
     },
 
-    _mountBtn() {
-        const body = qs('#rx-tab-download .rx-dl-body');
-        if (!body || qs('.rx-dl-audio-btn')) return;
+    _save(rendition) {
+        return VideoDownloader._startDirectDownload({
+            label: rxT('downloadAudioOnlyRow', 'Audio only'),
+            type: 'mp4',
+            uaKind: 'audio',
+            directUrl: rendition.url,
+            size: rendition.size || 0,
+            kbps: rendition.kbps || 0,
+        }, VideoDownloader._getTitle());
+    },
+
+    _mount(body) {
+        // No payload yet means discovery has not finished, or failed and the
+        // panel is already saying why. The observer comes back on the next
+        // change to the panel.
+        const data = VideoDownloader._currentEmbedData();
+        if (!data) return;
+        const rendition = VideoDownloader._audioRendition(data);
+
+        const wrap = document.createElement('div');
+        wrap.className = 'rx-dl-audio';
+        const note = document.createElement('div');
+        note.className = 'rx-dl-audio-note';
+        if (!rendition) {
+            note.textContent = rxT(
+                'dlAudioNone',
+                'This video publishes no audio-only stream, so there is no audio file to save. The video rows above include the sound.',
+            );
+            wrap.append(note);
+            body.appendChild(wrap);
+            return;
+        }
+
         const btn = document.createElement('button');
         btn.type = 'button';
         btn.className = 'rx-dl-audio-btn';
-        btn.textContent = 'Low-Bitrate MP4 (for listening)';
-        btn.addEventListener('click', () => this._extractAudio());
-        body.appendChild(btn);
-        const note = document.createElement('div');
-        note.className = 'rx-dl-audio-note';
-        note.textContent = 'Fetches the smallest video variant. Not audio-only — saves as .mp4 at lowest quality.';
-        body.appendChild(note);
+        const mode = this._mode();
+        if (mode === 'companion' || mode === 'external') {
+            btn.textContent = rxT('dlAudioCopy', 'Copy audio-only stream link');
+            note.textContent = rxT(
+                'dlAudioCopyNote',
+                'For a download tool outside the browser. The link points at Rumble\'s own audio file, which saves as .m4a.',
+            );
+            btn.addEventListener('click', () => {
+                note.textContent = VideoDownloader._copyToClipboard(rendition.url)
+                    ? rxT('dlAudioCopied', 'Audio stream link copied.')
+                    : rxT('dlAudioCopyFailed', 'Could not copy the link. Your browser blocked clipboard access.');
+            });
+        } else {
+            btn.textContent = rxT('dlAudioSave', 'Save audio only (.m4a)');
+            note.textContent = rxT('dlAudioSaveNote', 'Rumble\'s own audio track, saved without conversion.');
+            btn.addEventListener('click', () => { void this._save(rendition); });
+        }
+        wrap.append(btn, note);
+        body.appendChild(wrap);
     },
 
     init() {
         if (!Settings.get(this.id) || !Page.isWatch()) return;
+        if (this._mode() === 'off') return;
         this._styleEl = injectStyle(this._css, 'rx-audioonly-css');
         this._obs = new MutationObserver(() => {
             const body = qs('#rx-tab-download .rx-dl-body');
-            if (body && body.children.length && !body.querySelector('.rx-dl-audio-btn')) {
-                this._mountBtn();
-            }
+            if (body && body.children.length && !body.querySelector('.rx-dl-audio')) this._mount(body);
         });
         this._obs.observe(document.body, { childList: true, subtree: true });
     },
 
     destroy() {
-        this._controller?.abort();
-        this._controller = null;
         this._styleEl?.remove();
+        this._styleEl = null;
         this._obs?.disconnect();
+        this._obs = null;
+        for (const el of qsa('.rx-dl-audio')) el.remove();
     }
 };
 

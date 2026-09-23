@@ -976,11 +976,11 @@
     "description": "In-page UI string (shared core)."
   },
   "feat_audioOnly_label": {
-    "message": "MP4 a basso bitrate",
+    "message": "Download solo audio",
     "description": "In-page UI string (shared core)."
   },
   "feat_audioOnly_desc": {
-    "message": "Scaricare la variante più piccola del video per l'ascolto (salvata come .mp4)",
+    "message": "Salva il flusso solo audio di Rumble come .m4a quando il video ne pubblica uno",
     "description": "In-page UI string (shared core)."
   },
   "feat_videoClips_label": {
@@ -2179,6 +2179,34 @@
   },
   "downloadAudioOnlyRow": {
     "message": "Solo audio",
+    "description": "In-page UI string (shared core)."
+  },
+  "dlAudioNone": {
+    "message": "Questo video non pubblica un flusso solo audio, quindi non c'è nessun file audio da salvare. Le righe video qui sopra includono l'audio.",
+    "description": "In-page UI string (shared core)."
+  },
+  "dlAudioSave": {
+    "message": "Salva solo audio (.m4a)",
+    "description": "In-page UI string (shared core)."
+  },
+  "dlAudioSaveNote": {
+    "message": "La traccia audio di Rumble, salvata senza conversione.",
+    "description": "In-page UI string (shared core)."
+  },
+  "dlAudioCopy": {
+    "message": "Copia il link del flusso solo audio",
+    "description": "In-page UI string (shared core)."
+  },
+  "dlAudioCopyNote": {
+    "message": "Per uno strumento di download esterno al browser. Il link punta al file audio di Rumble, che si salva come .m4a.",
+    "description": "In-page UI string (shared core)."
+  },
+  "dlAudioCopied": {
+    "message": "Link del flusso audio copiato.",
+    "description": "In-page UI string (shared core)."
+  },
+  "dlAudioCopyFailed": {
+    "message": "Impossibile copiare il link. Il browser ha bloccato l'accesso agli appunti.",
     "description": "In-page UI string (shared core)."
   }
 }

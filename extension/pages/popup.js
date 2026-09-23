@@ -59,7 +59,7 @@ const GROUPS = [
         id: 'downloads', label: 'Downloads & Capture',
         features: [
             { id: 'videoDownload', label: 'Video Download' },
-            { id: 'audioOnly', label: 'Low-Bitrate MP4' },
+            { id: 'audioOnly', label: 'Audio-Only Download' },
             { id: 'videoClips', label: 'Video Clips' },
             { id: 'liveDVR', label: 'Live DVR' },
             { id: 'batchDownload', label: 'Batch Download' },

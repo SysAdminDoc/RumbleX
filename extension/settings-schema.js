@@ -703,7 +703,6 @@
         downloadQualityPreference: 'Downloader always offers every rendition.',
         downloadLiveStreams: 'Live-stream downloads are gated by page state, not this key.',
         downloadShorts: 'Shorts downloads are gated by page state, not this key.',
-        audioExtractionMode: 'Audio extraction always prefers the browser encoder.',
 
         // Channel archive preferences. The archive queue reads
         // channelArchiveMaxHeight and channelArchiveSubfolder, but not these.

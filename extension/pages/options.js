@@ -129,7 +129,7 @@
         splitRatio: { group: 'theme-layout', label: 'Split Ratio', desc: 'Theater split panel width % (40-90)' },
 
         videoDownload: { group: 'downloads', label: 'Video Download', desc: 'Download direct MP4, bounded HLS-to-MP4, or stream TS directly to disk' },
-        audioOnly: { group: 'downloads', label: 'Low-Bitrate MP4', desc: 'Download the smallest video variant for background listening (saved as .mp4).' },
+        audioOnly: { group: 'downloads', label: 'Audio-Only Download', desc: 'Save the audio-only stream Rumble publishes as .m4a, with no conversion, on videos that have one. Videos without one say so instead of saving a video file.' },
         videoClips: { group: 'downloads', label: 'Video Clips', desc: 'Mark In/Out and export clip as MP4' },
         liveDVR: { group: 'downloads', label: 'Live DVR', desc: 'Save the last N seconds of a live stream' },
         batchDownload: { group: 'downloads', label: 'Batch Download', desc: 'Multi-select thumbnails from feeds' },
@@ -285,7 +285,7 @@
         downloadConcurrency: { group: 'downloads', label: 'Download Concurrency', desc: 'Max parallel downloads (host-safe default: 2).' },
         downloadProbeCacheTtlHours: { group: 'downloads', label: 'Probe Cache TTL (hours)', desc: 'Prevents repeated CDN probes.' },
         downloadMuxerEngine: { group: 'downloads', label: 'HLS MP4 Muxer Engine', desc: 'mediabunnyWebCodecs | muxjs. Default Mediabunny; falls back to mux.js automatically where WebCodecs is unavailable or conversion fails.' },
-        audioExtractionMode: { group: 'downloads', label: 'Audio Extraction', desc: 'off | browserIfSupported | companion | external.' },
+        audioExtractionMode: { group: 'downloads', label: 'Audio Extraction', desc: 'off hides the audio control. browserIfSupported saves the audio-only stream through the browser. companion and external copy its address for a tool outside the browser, since RumbleX ships no companion app.' },
         externalPlayerEnabled: { group: 'integrations', label: 'External Player Handoff', desc: 'MPV / PotPlayer / custom URI scheme.' },
         externalPlayerTemplate: { group: 'integrations', label: 'External Player Template', desc: 'Command/URI template, e.g. "mpv://{url}".' },
         channelArchiveEnabled: { group: 'downloads', label: 'Channel Archive', desc: 'Queue channels for bulk archive.' },

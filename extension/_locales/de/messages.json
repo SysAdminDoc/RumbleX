@@ -976,11 +976,11 @@
     "description": "In-page UI string (shared core)."
   },
   "feat_audioOnly_label": {
-    "message": "MP4 mit niedriger Bitrate",
+    "message": "Nur-Audio-Download",
     "description": "In-page UI string (shared core)."
   },
   "feat_audioOnly_desc": {
-    "message": "Kleinste Videovariante zum Mithören laden (wird als .mp4 gespeichert)",
+    "message": "Speichert Rumbles eigenen reinen Audiostream als .m4a, wenn das Video einen anbietet",
     "description": "In-page UI string (shared core)."
   },
   "feat_videoClips_label": {
@@ -2179,6 +2179,34 @@
   },
   "downloadAudioOnlyRow": {
     "message": "Nur Audio",
+    "description": "In-page UI string (shared core)."
+  },
+  "dlAudioNone": {
+    "message": "Dieses Video bietet keinen reinen Audiostream an, daher gibt es keine Audiodatei zum Speichern. Die Videozeilen oben enthalten den Ton.",
+    "description": "In-page UI string (shared core)."
+  },
+  "dlAudioSave": {
+    "message": "Nur Audio speichern (.m4a)",
+    "description": "In-page UI string (shared core)."
+  },
+  "dlAudioSaveNote": {
+    "message": "Rumbles eigene Tonspur, ohne Umwandlung gespeichert.",
+    "description": "In-page UI string (shared core)."
+  },
+  "dlAudioCopy": {
+    "message": "Link zum reinen Audiostream kopieren",
+    "description": "In-page UI string (shared core)."
+  },
+  "dlAudioCopyNote": {
+    "message": "Für ein Download-Programm außerhalb des Browsers. Der Link führt zu Rumbles eigener Audiodatei, die als .m4a gespeichert wird.",
+    "description": "In-page UI string (shared core)."
+  },
+  "dlAudioCopied": {
+    "message": "Link zum Audiostream kopiert.",
+    "description": "In-page UI string (shared core)."
+  },
+  "dlAudioCopyFailed": {
+    "message": "Link konnte nicht kopiert werden. Der Browser hat den Zugriff auf die Zwischenablage blockiert.",
     "description": "In-page UI string (shared core)."
   }
 }
