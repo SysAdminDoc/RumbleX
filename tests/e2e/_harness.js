@@ -175,6 +175,7 @@ const INIT_STYLE_IDS = Object.freeze({
     autoplayBlock: 'rx-autoplay-block-css', searchHistory: 'rx-search-history-css', miniPlayer: 'rx-miniplayer-css',
     videoStats: 'rx-stats-css', loopControl: 'rx-loop-css', quickBookmark: 'rx-bookmark-css',
     commentNav: 'rx-comment-nav-css', rantHighlight: 'rx-rant-highlight-css', relatedFilter: 'rx-related-filter-css',
+    resultsFilter: 'rx-results-filter-css',
     exactCounts: 'rx-exact-counts-css', shareTimestamp: 'rx-share-ts-css', shortsFilter: 'rx-shorts-filter-css',
     chatAutoScroll: 'rx-chat-autoscroll-css', autoExpand: 'rx-auto-expand-css', notifEnhance: 'rx-notif-enhance-css',
     quickSave: 'rx-quick-save-css', fullTitles: 'rx-fulltitles-css', titleFont: 'rx-titlefont-css',

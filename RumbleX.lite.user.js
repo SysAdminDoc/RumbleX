@@ -23,7 +23,7 @@
 // @updateURL    https://github.com/SysAdminDoc/RumbleX/raw/main/RumbleX.lite.user.js
 // ==/UserScript==
 
-// Generated from the shared extension core files. Shared runtime SHA-256: 1b388ea675a5566282f5b221cd0e3db1be76f7eade3625f5942cc92238e595ae
+// Generated from the shared extension core files. Shared runtime SHA-256: 5bfc134b42f0a4986fc2f5629ae4f61656d06494a0a608e79eec3250c76c653e
 // RumbleX shared settings schema. This file is the canonical source for
 // defaults and trust-boundary normalization across content, options, popup,
 // background profile/Gist restores, and the generated userscript.
@@ -74,6 +74,7 @@
         commentDrafts: true,
         rantHighlight: true,
         relatedFilter: true,
+        resultsFilter: true,
         exactCounts: true,
         shareTimestamp: true,
         shortsFilter: true,
@@ -1411,7 +1412,25 @@
   "dlActionSaveTs": "Save as TS instead",
   "dlActionReload": "Reload quality list",
   "feat_theaterChannelLayout_label": "Per-Channel Theater Layout",
-  "feat_theaterChannelLayout_desc": "Keep a separate Theater layout for each channel"
+  "feat_theaterChannelLayout_desc": "Keep a separate Theater layout for each channel",
+  "feat_resultsFilter_label": "Loaded Results Filter",
+  "feat_resultsFilter_desc": "Filter and sort the results already loaded on search and channel pages",
+  "rfSortNewest": "Newest first",
+  "rfSortOldest": "Oldest first",
+  "rfSortLongest": "Longest first",
+  "rfSortShortest": "Shortest first",
+  "rfSortViews": "Most viewed first",
+  "rfSortRumble": "Rumble's order",
+  "rfEmptyChannel": "No videos are loaded on this channel page yet, so there is nothing to search.",
+  "rfEmptyBackend": "Rumble returned no results here, so the filter has nothing to work with.",
+  "rfEmptyLocal": "None of the {count} loaded results match. Rumble may have more further down, or clear the filter.",
+  "rfStatusSome": "Showing {shown} of {count} loaded results. More load as you scroll, and they join the filter as they arrive.",
+  "rfStatusAll": "Showing all {count} loaded results. This filters and sorts what is on the page, not Rumble's search.",
+  "rfRegionChannel": "Search this channel's loaded videos",
+  "rfRegionSearch": "Filter loaded search results",
+  "rfPlaceholderChannel": "Search loaded videos by title",
+  "rfPlaceholderSearch": "Filter loaded results by title or channel",
+  "rfSortLabel": "Sort loaded results"
 });
     const STORAGE_KEYS_WITH_CHANGE_EVENTS = ['rx_settings'];
     const ALLOWED_REQUEST_HOSTS = ['rumble.com', 'rumble.cloud', '1a-1791.com'];
@@ -2204,6 +2223,33 @@ const VideoCards = {
     },
     videoId(card) {
         return this.url(card).match(/\/(v[a-z0-9]+)-/i)?.[1] || null;
+    },
+    // Sortable facts, where the card carries them, and null where it does not
+    // (never zero, which would sort a card that says nothing as the oldest,
+    // shortest or least watched). The custom element carries them as
+    // attributes: `time` (ISO), `duration` (seconds) and `views`. Older
+    // markup uses <time datetime> and data values on the duration and views.
+    published(card) {
+        const raw = card.getAttribute('time')
+            || card.querySelector('time[datetime]')?.getAttribute('datetime')
+            || '';
+        const ms = Date.parse(raw);
+        return Number.isFinite(ms) ? ms : null;
+    },
+    duration(card) {
+        const attr = card.getAttribute('duration');
+        if (attr && /^\d+(?:\.\d+)?$/.test(attr)) return Number(attr);
+        const node = card.querySelector('.video-item--duration, .videostream__status--duration, .videostream__badge--duration');
+        const text = String(node?.getAttribute('data-value') || node?.textContent || '').trim();
+        if (!/^\d{1,3}(?::\d{1,2}){1,2}$/.test(text)) return null;
+        return text.split(':').map(Number).reduce((total, part) => total * 60 + part, 0);
+    },
+    views(card) {
+        const raw = card.getAttribute('views')
+            ?? card.querySelector('[data-views]')?.getAttribute('data-views')
+            ?? card.querySelector('.video-item--views')?.getAttribute('data-value');
+        const digits = String(raw ?? '').replace(/[,\s]/g, '');
+        return /^\d+$/.test(digits) ? Number(digits) : null;
     },
     thumbnail(card) {
         return card.querySelector('.rum-video-thumbnail__image, .videostream__image, .thumbnail__image, .videostream__thumbnail, .video-item--img-wrapper, [class*="thumbnail"]');
@@ -13678,6 +13724,287 @@ const RelatedFilter = {
 };
 
 // ═══════════════════════════════════════════
+//  FEATURE: Loaded Results Filter
+// ═══════════════════════════════════════════
+// Rumble's search misses exact titles and has no way to search inside one
+// channel. RumbleX cannot change what the backend returns, so this works on
+// what the page already holds: the results loaded on a search or channel
+// page. The bar says that in plain words, results that arrive through infinite
+// scroll join the current filter and sort as they land, and an empty list says
+// whether Rumble returned nothing or the filter hid everything.
+const ResultsFilter = {
+    id: 'resultsFilter',
+    name: 'Loaded Results Filter',
+    _styleEl: null,
+    _bar: null,
+    _input: null,
+    _select: null,
+    _status: null,
+    _obs: null,
+    _routerUnsub: null,
+    _query: '',
+    _sort: 'rumble',
+    _seq: 0,
+
+    _css: `
+        .rx-results-filter {
+            display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
+            margin: 8px 0 12px; padding: 8px 10px; border-radius: 8px;
+            border: 1px solid var(--rx-surface1, #45475a);
+            background: var(--rx-surface0, #313244);
+            color: var(--rx-text, #cdd6f4);
+            font: 12px/1.4 system-ui, sans-serif;
+        }
+        .rx-results-filter input, .rx-results-filter select {
+            padding: 6px 10px; border-radius: 6px;
+            border: 1px solid var(--rx-surface1, #45475a);
+            background: var(--rx-base, #1e1e2e); color: var(--rx-text, #cdd6f4);
+            font: inherit;
+        }
+        .rx-results-filter input { flex: 1 1 220px; min-width: 160px; }
+        .rx-results-filter input:focus-visible, .rx-results-filter select:focus-visible {
+            outline: 2px solid var(--rx-accent, #89b4fa); outline-offset: 1px;
+        }
+        .rx-results-filter-status { flex: 1 1 100%; color: var(--rx-subtext, #a6adc8); }
+        .rx-rf-hidden { display: none !important; }
+    `,
+
+    _SORTS: [
+        { id: 'rumble', needs: null, dir: 0 },
+        { id: 'newest', needs: 'published', dir: -1 },
+        { id: 'oldest', needs: 'published', dir: 1 },
+        { id: 'longest', needs: 'duration', dir: -1 },
+        { id: 'shortest', needs: 'duration', dir: 1 },
+        { id: 'views', needs: 'views', dir: -1 },
+    ],
+
+    _sortLabel(id) {
+        switch (id) {
+            case 'newest': return rxT('rfSortNewest', 'Newest first');
+            case 'oldest': return rxT('rfSortOldest', 'Oldest first');
+            case 'longest': return rxT('rfSortLongest', 'Longest first');
+            case 'shortest': return rxT('rfSortShortest', 'Shortest first');
+            case 'views': return rxT('rfSortViews', 'Most viewed first');
+            default: return rxT('rfSortRumble', 'Rumble\'s order');
+        }
+    },
+
+    _active() {
+        return Page.isSearch() || Page.isChannel();
+    },
+
+    _root() {
+        return qs('main') || document.body;
+    },
+
+    // The outermost card for each video. The card selector matches both a
+    // grid wrapper and the custom element inside it on some layouts, and a
+    // video must be counted, hidden and moved once.
+    _cards() {
+        const found = VideoCards.all(this._root()).filter((card) => !card.closest('.rx-results-filter'));
+        return found.filter((card) => !found.some((other) => other !== card && other.contains(card)));
+    },
+
+    // What actually moves: the list item where the card sits in a list, the
+    // card itself in a grid.
+    _item(card) {
+        return card.closest('li') || card;
+    },
+
+    _matches(card, query) {
+        if (!query) return true;
+        return VideoCards.title(card).toLowerCase().includes(query)
+            || VideoCards.channel(card).toLowerCase().includes(query);
+    },
+
+    _apply() {
+        if (!this._bar) return;
+        const cards = this._cards();
+        for (const card of cards) {
+            const item = this._item(card);
+            if (!item.dataset.rxRfOrder) item.dataset.rxRfOrder = String(this._seq++);
+        }
+        const query = this._query.trim().toLowerCase();
+        let shown = 0;
+        for (const card of cards) {
+            const match = this._matches(card, query);
+            this._item(card).classList.toggle('rx-rf-hidden', !match);
+            if (match) shown += 1;
+        }
+        this._syncSorts(cards);
+        this._order(cards);
+        this._placeBar(cards);
+        this._report(cards.length, shown);
+    },
+
+    // Only the sorts some loaded card can actually answer are offered. A
+    // results page without view counts should not pretend to sort by them.
+    _syncSorts(cards) {
+        for (const option of this._select?.options || []) {
+            const sort = this._SORTS.find((entry) => entry.id === option.value);
+            option.disabled = !!sort?.needs && !cards.some((card) => VideoCards[sort.needs](card) !== null);
+        }
+        if (this._select?.selectedOptions[0]?.disabled) {
+            this._sort = 'rumble';
+            this._select.value = 'rumble';
+        }
+    },
+
+    _order(cards) {
+        const sort = this._SORTS.find((entry) => entry.id === this._sort) || this._SORTS[0];
+        const value = (card) => (sort.needs ? VideoCards[sort.needs](card) : null);
+        const groups = new Map();
+        for (const card of cards) {
+            const item = this._item(card);
+            if (!item.parentElement) continue;
+            if (!groups.has(item.parentElement)) groups.set(item.parentElement, []);
+            groups.get(item.parentElement).push({ item, value: value(card), order: Number(item.dataset.rxRfOrder) });
+        }
+        for (const [parent, entries] of groups) {
+            // Cards the page does not date or time go last, and ties keep
+            // Rumble's own order, so the sort is stable and reversible.
+            const sorted = [...entries].sort((a, b) => {
+                if (sort.needs) {
+                    if (a.value === null && b.value !== null) return 1;
+                    if (b.value === null && a.value !== null) return -1;
+                    if (a.value !== null && a.value !== b.value) return (a.value - b.value) * sort.dir;
+                }
+                return a.order - b.order;
+            });
+            if (sorted.every((entry, index) => entry.item === entries[index].item)) continue;
+            // Everything goes back in one block where the cards already were,
+            // ahead of whatever follows them (Rumble's load-more sentinel), so
+            // infinite scroll keeps appending after the last result.
+            const anchor = entries[entries.length - 1].item.nextSibling;
+            for (const entry of sorted) parent.insertBefore(entry.item, anchor);
+        }
+    },
+
+    _placeBar(cards) {
+        const list = cards.length ? this._item(cards[0]).parentElement : null;
+        if (list && list !== this._root() && this._bar.nextElementSibling !== list && list.parentNode) {
+            list.parentNode.insertBefore(this._bar, list);
+        }
+    },
+
+    _report(total, shown) {
+        const channel = Page.isChannel();
+        let text;
+        if (!total) {
+            text = channel
+                ? rxT('rfEmptyChannel', 'No videos are loaded on this channel page yet, so there is nothing to search.')
+                : rxT('rfEmptyBackend', 'Rumble returned no results here, so the filter has nothing to work with.');
+        } else if (!shown) {
+            text = rxT('rfEmptyLocal', 'None of the {count} loaded results match. Rumble may have more further down, or clear the filter.', { count: total });
+        } else if (shown < total) {
+            text = rxT('rfStatusSome', 'Showing {shown} of {count} loaded results. More load as you scroll, and they join the filter as they arrive.', { shown, count: total });
+        } else {
+            text = rxT('rfStatusAll', 'Showing all {count} loaded results. This filters and sorts what is on the page, not Rumble\'s search.', { count: total });
+        }
+        if (this._status && this._status.textContent !== text) this._status.textContent = text;
+        this._bar.dataset.state = !total ? 'backend-empty' : (!shown ? 'filter-empty' : 'results');
+    },
+
+    _mount() {
+        if (this._bar || !this._active()) return;
+        const channel = Page.isChannel();
+        const bar = document.createElement('div');
+        bar.className = 'rx-results-filter';
+        bar.setAttribute('role', 'search');
+        bar.setAttribute('aria-label', channel
+            ? rxT('rfRegionChannel', 'Search this channel\'s loaded videos')
+            : rxT('rfRegionSearch', 'Filter loaded search results'));
+
+        const input = document.createElement('input');
+        input.type = 'search';
+        input.placeholder = channel
+            ? rxT('rfPlaceholderChannel', 'Search loaded videos by title')
+            : rxT('rfPlaceholderSearch', 'Filter loaded results by title or channel');
+        input.setAttribute('aria-label', input.placeholder);
+        input.addEventListener('input', () => {
+            this._query = input.value;
+            this._apply();
+        });
+
+        const select = document.createElement('select');
+        select.setAttribute('aria-label', rxT('rfSortLabel', 'Sort loaded results'));
+        for (const sort of this._SORTS) {
+            const option = document.createElement('option');
+            option.value = sort.id;
+            option.textContent = this._sortLabel(sort.id);
+            select.appendChild(option);
+        }
+        select.addEventListener('change', () => {
+            this._sort = select.value;
+            this._apply();
+        });
+
+        const status = document.createElement('div');
+        status.className = 'rx-results-filter-status';
+        status.setAttribute('role', 'status');
+        status.setAttribute('aria-live', 'polite');
+
+        bar.append(input, select, status);
+        this._root().prepend(bar);
+        this._bar = bar;
+        this._input = input;
+        this._select = select;
+        this._status = status;
+
+        // Results that arrive later join the filter. Only nodes that are cards
+        // RumbleX has not numbered yet count, so the moves _order makes and the
+        // status text it writes do not wake it again.
+        const isNewCard = (node) => node.nodeType === 1 && !node.dataset?.rxRfOrder
+            && !node.closest?.('.rx-results-filter')
+            && (node.matches?.(VideoCards.selector) || !!node.querySelector?.(VideoCards.selector));
+        this._obs = new MutationObserver((mutations) => {
+            if (!mutations.some((mutation) => [...mutation.addedNodes].some(isNewCard))) return;
+            scheduleFeatureFrame(this, 'apply', () => this._apply());
+        });
+        this._obs.observe(this._root(), { childList: true, subtree: true });
+        this._apply();
+    },
+
+    // Put every result back where Rumble had it and visible, then take the
+    // bar away. Used on route changes and on disable.
+    _unmount() {
+        this._obs?.disconnect();
+        this._obs = null;
+        this._sort = 'rumble';
+        this._query = '';
+        if (this._bar) this._order(this._cards());
+        for (const item of qsa('[data-rx-rf-order]')) {
+            item.classList.remove('rx-rf-hidden');
+            delete item.dataset.rxRfOrder;
+        }
+        this._bar?.remove();
+        this._bar = null;
+        this._input = null;
+        this._select = null;
+        this._status = null;
+    },
+
+    init() {
+        if (!Settings.get(this.id)) return;
+        this._styleEl = injectStyle(this._css, 'rx-results-filter-css');
+        this._routerUnsub = Router.onChange((detail) => {
+            if (!detail.changed) return;
+            this._unmount();
+            if (this._active()) waitForFeature(this, 'main').then(() => this._mount()).catch(() => {});
+        });
+        if (this._active()) waitForFeature(this, 'main').then(() => this._mount()).catch(() => {});
+    },
+
+    destroy() {
+        this._routerUnsub?.();
+        this._routerUnsub = null;
+        this._unmount();
+        this._styleEl?.remove();
+        this._styleEl = null;
+    },
+};
+
+// ═══════════════════════════════════════════
 //  FEATURE: Exact Counts
 // ═══════════════════════════════════════════
 const ExactCounts = {
@@ -14624,6 +14951,7 @@ const RX_CATEGORIES = [
         features: [
             { id: 'channelBlocker', label: 'Channel Blocker', desc: 'Block/hide channels from all feeds' },
             { id: 'keywordFilter', label: 'Keyword Filter', desc: 'Hide videos whose titles match blocked keywords (literal/regex/wildcard modes in options)' },
+            { id: 'resultsFilter', label: 'Loaded Results Filter', desc: 'Filter and sort the results already loaded on search and channel pages' },
             { id: 'relatedFilter', label: 'Related Filter', desc: 'Search & filter related sidebar videos' },
             { id: 'exactCounts', label: 'Exact Counts', desc: 'Show full numbers instead of 1.2K/3.5M' },
             // v2.4.0 — Feed, Discovery, and Moderation
@@ -21950,7 +22278,7 @@ const features = [
     VideoTimestamps, ScreenshotBtn, WatchHistoryFeature, AutoplayBlock,
     SearchHistory, MiniPlayer, VideoStats, LoopControl, QuickBookmark, CommentNav,
     CommentDrafts,
-    RantHighlight, RelatedFilter, ExactCounts, ShareTimestamp, TimeRemaining, ShortsFilter,
+    RantHighlight, RelatedFilter, ResultsFilter, ExactCounts, ShareTimestamp, TimeRemaining, ShortsFilter,
     ChatAutoScroll, AutoExpand, NotifEnhance, PlaylistQuickSave,
     // v1.8.0 additions
     FullTitles, PerChannelPrefs, ChannelRss, CreatorProgram, TitleNormalizer, TitleFont, UniqueChatters, ChatUserBlock, ChatSpamDedup,

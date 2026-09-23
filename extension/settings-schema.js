@@ -48,6 +48,7 @@
         commentDrafts: true,
         rantHighlight: true,
         relatedFilter: true,
+        resultsFilter: true,
         exactCounts: true,
         shareTimestamp: true,
         shortsFilter: true,

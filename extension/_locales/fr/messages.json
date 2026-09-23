@@ -2344,5 +2344,77 @@
   "feat_theaterChannelLayout_desc": {
     "message": "Garder une disposition théâtre distincte pour chaque chaîne",
     "description": "In-page UI string (shared core)."
+  },
+  "feat_resultsFilter_label": {
+    "message": "Filtre des résultats chargés",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_resultsFilter_desc": {
+    "message": "Filtre et trie les résultats déjà chargés sur les pages de recherche et de chaîne",
+    "description": "In-page UI string (shared core)."
+  },
+  "rfSortRumble": {
+    "message": "Ordre de Rumble",
+    "description": "In-page UI string (shared core)."
+  },
+  "rfSortNewest": {
+    "message": "Plus récentes d'abord",
+    "description": "In-page UI string (shared core)."
+  },
+  "rfSortOldest": {
+    "message": "Plus anciennes d'abord",
+    "description": "In-page UI string (shared core)."
+  },
+  "rfSortLongest": {
+    "message": "Plus longues d'abord",
+    "description": "In-page UI string (shared core)."
+  },
+  "rfSortShortest": {
+    "message": "Plus courtes d'abord",
+    "description": "In-page UI string (shared core)."
+  },
+  "rfSortViews": {
+    "message": "Plus vues d'abord",
+    "description": "In-page UI string (shared core)."
+  },
+  "rfSortLabel": {
+    "message": "Trier les résultats chargés",
+    "description": "In-page UI string (shared core)."
+  },
+  "rfRegionSearch": {
+    "message": "Filtrer les résultats de recherche chargés",
+    "description": "In-page UI string (shared core)."
+  },
+  "rfRegionChannel": {
+    "message": "Rechercher dans les vidéos chargées de cette chaîne",
+    "description": "In-page UI string (shared core)."
+  },
+  "rfPlaceholderSearch": {
+    "message": "Filtrer les résultats chargés par titre ou chaîne",
+    "description": "In-page UI string (shared core)."
+  },
+  "rfPlaceholderChannel": {
+    "message": "Rechercher les vidéos chargées par titre",
+    "description": "In-page UI string (shared core)."
+  },
+  "rfStatusAll": {
+    "message": "Les {count} résultats chargés sont affichés. Ce filtre trie ce qui est sur la page, pas la recherche de Rumble.",
+    "description": "In-page UI string (shared core)."
+  },
+  "rfStatusSome": {
+    "message": "{shown} résultats chargés sur {count} sont affichés. D'autres se chargent en défilant et rejoignent le filtre dès leur arrivée.",
+    "description": "In-page UI string (shared core)."
+  },
+  "rfEmptyLocal": {
+    "message": "Aucun des {count} résultats chargés ne correspond. Rumble en a peut-être d'autres plus bas, sinon efface le filtre.",
+    "description": "In-page UI string (shared core)."
+  },
+  "rfEmptyBackend": {
+    "message": "Rumble n'a renvoyé aucun résultat ici, le filtre n'a donc rien à traiter.",
+    "description": "In-page UI string (shared core)."
+  },
+  "rfEmptyChannel": {
+    "message": "Aucune vidéo n'est encore chargée sur cette page de chaîne, il n'y a donc rien à rechercher.",
+    "description": "In-page UI string (shared core)."
   }
 }

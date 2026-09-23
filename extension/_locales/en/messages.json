@@ -2346,5 +2346,77 @@
   "feat_theaterChannelLayout_desc": {
     "message": "Keep a separate Theater layout for each channel",
     "description": "In-page UI string (shared core)."
+  },
+  "feat_resultsFilter_label": {
+    "message": "Loaded Results Filter",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_resultsFilter_desc": {
+    "message": "Filter and sort the results already loaded on search and channel pages",
+    "description": "In-page UI string (shared core)."
+  },
+  "rfSortNewest": {
+    "message": "Newest first",
+    "description": "In-page UI string (shared core)."
+  },
+  "rfSortOldest": {
+    "message": "Oldest first",
+    "description": "In-page UI string (shared core)."
+  },
+  "rfSortLongest": {
+    "message": "Longest first",
+    "description": "In-page UI string (shared core)."
+  },
+  "rfSortShortest": {
+    "message": "Shortest first",
+    "description": "In-page UI string (shared core)."
+  },
+  "rfSortViews": {
+    "message": "Most viewed first",
+    "description": "In-page UI string (shared core)."
+  },
+  "rfSortRumble": {
+    "message": "Rumble's order",
+    "description": "In-page UI string (shared core)."
+  },
+  "rfEmptyChannel": {
+    "message": "No videos are loaded on this channel page yet, so there is nothing to search.",
+    "description": "In-page UI string (shared core)."
+  },
+  "rfEmptyBackend": {
+    "message": "Rumble returned no results here, so the filter has nothing to work with.",
+    "description": "In-page UI string (shared core)."
+  },
+  "rfEmptyLocal": {
+    "message": "None of the {count} loaded results match. Rumble may have more further down, or clear the filter.",
+    "description": "In-page UI string (shared core)."
+  },
+  "rfStatusSome": {
+    "message": "Showing {shown} of {count} loaded results. More load as you scroll, and they join the filter as they arrive.",
+    "description": "In-page UI string (shared core)."
+  },
+  "rfStatusAll": {
+    "message": "Showing all {count} loaded results. This filters and sorts what is on the page, not Rumble's search.",
+    "description": "In-page UI string (shared core)."
+  },
+  "rfRegionChannel": {
+    "message": "Search this channel's loaded videos",
+    "description": "In-page UI string (shared core)."
+  },
+  "rfRegionSearch": {
+    "message": "Filter loaded search results",
+    "description": "In-page UI string (shared core)."
+  },
+  "rfPlaceholderChannel": {
+    "message": "Search loaded videos by title",
+    "description": "In-page UI string (shared core)."
+  },
+  "rfPlaceholderSearch": {
+    "message": "Filter loaded results by title or channel",
+    "description": "In-page UI string (shared core)."
+  },
+  "rfSortLabel": {
+    "message": "Sort loaded results",
+    "description": "In-page UI string (shared core)."
   }
 }

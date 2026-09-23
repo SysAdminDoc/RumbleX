@@ -267,6 +267,7 @@ Live chat got the things every other chat platform already has, and rants became
 ### Feed Controls
 - **Channel Blocker**. Block/hide channels from all feeds
 - **Keyword Filter**. Hide videos whose titles contain blocked keywords
+- **Loaded Results Filter**. On search and channel pages, filter the results already loaded by title or channel and sort them by date, length or views, using only the facts the cards carry (a sort nothing on the page can answer is not offered). It says on the page that it works on loaded results, not on Rumble's search. Results that arrive as you scroll join the filter, and an empty list tells you whether Rumble returned nothing or the filter hid everything.
 - **Related Filter**. Search and filter related sidebar videos
 - **Exact Counts**. Show full numbers instead of 1.2K/3.5M abbreviations
 

@@ -164,6 +164,7 @@
 
         channelBlocker: { group: 'feed-controls', label: 'Channel Blocker', desc: 'Block/hide channels from all feeds' },
         keywordFilter: { group: 'feed-controls', label: 'Keyword Filter', desc: 'Hide videos whose titles match keywords' },
+        resultsFilter: { group: 'feed-controls', label: 'Loaded Results Filter', desc: 'Filter search and channel pages by title or channel, and sort by date, length or views, using only the results already loaded. It says so on the page, and new results join the filter as they load.' },
         relatedFilter: { group: 'feed-controls', label: 'Related Filter', desc: 'Search & filter related sidebar videos' },
         exactCounts: { group: 'feed-controls', label: 'Exact Counts', desc: 'Full numbers instead of 1.2K/3.5M' },
         blockedChannels: { group: 'feed-controls', label: 'Blocked Channels', desc: 'Channel names hidden from feeds' },

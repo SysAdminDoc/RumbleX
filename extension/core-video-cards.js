@@ -44,6 +44,33 @@ const VideoCards = {
     videoId(card) {
         return this.url(card).match(/\/(v[a-z0-9]+)-/i)?.[1] || null;
     },
+    // Sortable facts, where the card carries them, and null where it does not
+    // (never zero, which would sort a card that says nothing as the oldest,
+    // shortest or least watched). The custom element carries them as
+    // attributes: `time` (ISO), `duration` (seconds) and `views`. Older
+    // markup uses <time datetime> and data values on the duration and views.
+    published(card) {
+        const raw = card.getAttribute('time')
+            || card.querySelector('time[datetime]')?.getAttribute('datetime')
+            || '';
+        const ms = Date.parse(raw);
+        return Number.isFinite(ms) ? ms : null;
+    },
+    duration(card) {
+        const attr = card.getAttribute('duration');
+        if (attr && /^\d+(?:\.\d+)?$/.test(attr)) return Number(attr);
+        const node = card.querySelector('.video-item--duration, .videostream__status--duration, .videostream__badge--duration');
+        const text = String(node?.getAttribute('data-value') || node?.textContent || '').trim();
+        if (!/^\d{1,3}(?::\d{1,2}){1,2}$/.test(text)) return null;
+        return text.split(':').map(Number).reduce((total, part) => total * 60 + part, 0);
+    },
+    views(card) {
+        const raw = card.getAttribute('views')
+            ?? card.querySelector('[data-views]')?.getAttribute('data-views')
+            ?? card.querySelector('.video-item--views')?.getAttribute('data-value');
+        const digits = String(raw ?? '').replace(/[,\s]/g, '');
+        return /^\d+$/.test(digits) ? Number(digits) : null;
+    },
     thumbnail(card) {
         return card.querySelector('.rum-video-thumbnail__image, .videostream__image, .thumbnail__image, .videostream__thumbnail, .video-item--img-wrapper, [class*="thumbnail"]');
     },
