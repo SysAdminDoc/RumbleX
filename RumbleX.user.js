@@ -23,7 +23,7 @@
 // @updateURL    https://github.com/SysAdminDoc/RumbleX/raw/main/RumbleX.user.js
 // ==/UserScript==
 
-// Generated from the shared extension core files. Shared runtime SHA-256: 0834051996277002faa18ec84181cc727713acf5082d6a473530a158c4eb0ecd
+// Generated from the shared extension core files. Shared runtime SHA-256: f4ec0b7b06f7fdaa27f8f57d5d5779cf529a03596aef42eb9f1ee2983d07c110
 // RumbleX shared settings schema. This file is the canonical source for
 // defaults and trust-boundary normalization across content, options, popup,
 // background profile/Gist restores, and the generated userscript.
@@ -1353,7 +1353,38 @@
   "dlAudioCopied": "Audio stream link copied.",
   "dlAudioCopyFailed": "Could not copy the link. Your browser blocked clipboard access.",
   "dlAudioSave": "Save audio only (.m4a)",
-  "dlAudioSaveNote": "Rumble's own audio track, saved without conversion."
+  "dlAudioSaveNote": "Rumble's own audio track, saved without conversion.",
+  "dlRefreshingLink": "The stream link had expired. Trying a fresh one…",
+  "dlStagePage": "Finding the video on this page",
+  "dlStageEmbed": "Embed metadata",
+  "dlStageMaster": "HLS master playlist",
+  "dlStageRendition": "Rendition stream",
+  "dlStageConversion": "MP4 conversion",
+  "dlStageFile": "Writing the file",
+  "dlStageDirect": "Direct MP4 download",
+  "dlStageUnknown": "Download",
+  "dlFailAuth": "Rumble wants you signed in for this video (HTTP 401).",
+  "dlNextAuth": "Sign in to Rumble in this tab, reload the page and try again. RumbleX never copies or exports your cookies.",
+  "dlFailForbidden": "Rumble refused this request (HTTP {status}).",
+  "dlNextForbidden": "Reload the quality list for fresh links. If Rumble still refuses, the video may be limited to members or to some regions.",
+  "dlFailExpired": "This stream link has expired (HTTP {status}).",
+  "dlNextExpired": "Reload the quality list for fresh links, then start the download again.",
+  "dlFailCors": "The browser would not let this page read Rumble's media server.",
+  "dlNextCors": "Reload the quality list. If it keeps happening in a userscript manager, check that it allows requests to rumble.cloud and 1a-1791.com.",
+  "dlFailParse": "Rumble sent a playlist or metadata RumbleX could not read.",
+  "dlNextParse": "Try a direct MP4 row if there is one. Otherwise copy the diagnostics below into a bug report.",
+  "dlFailCodec": "This browser could not convert the stream to MP4.",
+  "dlNextCodec": "Save it as TS instead. That keeps the stream exactly as Rumble sent it, with no conversion, and VLC plays it.",
+  "dlFailQuota": "There was not enough room to finish this download.",
+  "dlNextQuota": "Choose a direct MP4 row, or TS to disk where it is offered. Neither holds the whole video in this tab.",
+  "dlFailNetwork": "The connection to Rumble dropped.",
+  "dlNextNetwork": "Check that you are online, then reload the quality list and try again.",
+  "dlFailUnknown": "The download failed in a way RumbleX does not recognise.",
+  "dlNextUnknown": "Copy the diagnostics below into a bug report. They name the stage and never include your cookies or signed links.",
+  "dlFailureGuide": "What went wrong",
+  "dlFailedAt": "Failed at: {stage}",
+  "dlActionSaveTs": "Save as TS instead",
+  "dlActionReload": "Reload quality list"
 });
     const STORAGE_KEYS_WITH_CHANGE_EVENTS = ['rx_settings'];
     const ALLOWED_REQUEST_HOSTS = ['rumble.com', 'rumble.cloud', '1a-1791.com'];
@@ -2858,6 +2889,7 @@ osForcedColorsStyle.textContent = `
         html.rumblex-active #rx-modal, html.rumblex-active .rx-panel,
         html.rumblex-active .rx-menu, html.rumblex-active .rx-toast,
         html.rumblex-active .rx-dl-row, html.rumblex-active .rx-card,
+        html.rumblex-active .rx-dl-failure,
         html.rumblex-active [id^="rx-"] button, html.rumblex-active [class^="rx-"] button {
             border: 1px solid CanvasText;
         }
@@ -5588,6 +5620,24 @@ const VideoDownloader = {
             font: 10px/1.5 system-ui, sans-serif; color: var(--rx-theater-subtext, var(--rx-subtext, #a6adc8));
         }
         .rx-dl-tar-note strong { color: var(--rx-theater-warning, var(--rx-yellow, #f9e2af)); }
+        .rx-dl-failure {
+            margin-top: 8px; padding: 10px 12px;
+            border: 1px solid color-mix(in srgb, var(--rx-theater-danger, var(--rx-red, #f38ba8)) 35%, transparent);
+            background: color-mix(in srgb, var(--rx-theater-danger, var(--rx-red, #f38ba8)) 7%, transparent);
+            border-radius: 8px;
+            font: 12px/1.5 system-ui, sans-serif; color: var(--rx-theater-text, var(--rx-text, #cdd6f4));
+        }
+        .rx-dl-failure-stage { font-weight: 600; }
+        .rx-dl-failure-next { margin-top: 4px; color: var(--rx-theater-subtext, var(--rx-subtext, #a6adc8)); }
+        .rx-dl-failure-action {
+            min-height: 32px; margin-top: 8px; padding: 6px 12px;
+            border: 1px solid color-mix(in srgb, var(--rx-theater-accent, var(--rx-blue, #89b4fa)) 45%, transparent); border-radius: 7px;
+            background: color-mix(in srgb, var(--rx-theater-accent, var(--rx-blue, #89b4fa)) 12%, transparent);
+            color: var(--rx-theater-accent, var(--rx-blue, #89b4fa));
+            cursor: pointer; font: 600 12px/1 system-ui, sans-serif;
+        }
+        .rx-dl-failure-action:hover { background: color-mix(in srgb, var(--rx-theater-accent, var(--rx-blue, #89b4fa)) 20%, transparent); }
+        .rx-dl-failure-action:focus-visible { outline: 3px solid var(--rx-theater-accent, var(--rx-blue, #89b4fa)); outline-offset: 2px; }
     `,
 
     _downloadSVG: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>',
@@ -5827,7 +5877,42 @@ const VideoDownloader = {
             ), variants[0]);
     },
 
-    async _resolveHlsSegments(quality, { signal, diagnosticUrls = [], onStage } = {}) {
+    // Rumble's playlist links are signed and do not last, so a panel left open
+    // can be holding one that has since been retired. Before giving up on a
+    // refused playlist, the embed payload is read once more and the new link
+    // tried once. It never loops, it only follows a link that is different
+    // from the one that failed, and that link has to pass the same media-host
+    // allowlist as every other.
+    _REFRESHABLE_STATUS: new Set([403, 404, 410]),
+
+    async _resolveHlsSegments(quality, options = {}) {
+        try {
+            return await this._resolveHlsOnce(quality, options);
+        } catch (error) {
+            const refusedPlaylist = (error?.rxStage === 'master-playlist' || error?.rxStage === 'segment-playlist')
+                && this._REFRESHABLE_STATUS.has(Number(error?.rxStatus));
+            if (!refusedPlaylist || options.signal?.aborted) throw error;
+            const fresh = await this._refreshHlsUrl(options.signal).catch(() => null);
+            if (!fresh) throw error;
+            options.diagnosticUrls?.push({ role: 'refreshed-master-playlist', url: fresh });
+            options.onStage?.('master-playlist', 0, rxT('dlRefreshingLink', 'The stream link had expired. Trying a fresh one…'));
+            return this._resolveHlsOnce(quality, options);
+        }
+    },
+
+    async _refreshHlsUrl(signal) {
+        const embedId = this._getEmbedId();
+        if (!embedId) return null;
+        const data = await this._fetchEmbedData(embedId, signal);
+        const fresh = this._safeMediaUrl(this._extractHlsUrl(data));
+        if (!fresh || fresh === this._safeMediaUrl(this._hlsUrl)) return null;
+        this._embedData = data;
+        this._embedDataId = embedId;
+        this._hlsUrl = fresh;
+        return fresh;
+    },
+
+    async _resolveHlsOnce(quality, { signal, diagnosticUrls = [], onStage } = {}) {
         const masterUrl = this._safeMediaUrl(this._hlsUrl);
         if (!masterUrl) throw new Error('Rumble did not provide a valid HLS playlist.');
 
@@ -7659,11 +7744,179 @@ const VideoDownloader = {
         };
     },
 
+    // ── Failure guide ────────────────────────────────────────────────────
+    // A failed download used to show one raw error line and two diagnostics
+    // buttons. The guide says which stage failed, what kind of failure it was,
+    // and the one next step most likely to work. Every step it offers is
+    // something the panel already does, run once on the user's click: nothing
+    // retries in a loop, nothing leaves Rumble's own hosts, and nothing touches
+    // cookies or pretends to be a different browser.
+
+    _STAGE_GROUPS: Object.freeze({
+        'page-detection': 'page',
+        'embed-api': 'embed',
+        'master-playlist': 'master',
+        'quality-selection': 'rendition',
+        'segment-playlist': 'rendition',
+        'segment-download': 'rendition',
+        mux: 'conversion',
+        'worker-dispatch': 'conversion',
+        'worker-runtime': 'conversion',
+        'worker-timeout': 'conversion',
+        'file-picker': 'file',
+        'file-open': 'file',
+        'file-close': 'file',
+        save: 'file',
+        'browser-download': 'direct',
+        'background-message': 'direct',
+        'url-validation': 'direct',
+    }),
+
+    _stageLabel(stage) {
+        switch (this._STAGE_GROUPS[stage] || 'unknown') {
+            case 'page': return rxT('dlStagePage', 'Finding the video on this page');
+            case 'embed': return rxT('dlStageEmbed', 'Embed metadata');
+            case 'master': return rxT('dlStageMaster', 'HLS master playlist');
+            case 'rendition': return rxT('dlStageRendition', 'Rendition stream');
+            case 'conversion': return rxT('dlStageConversion', 'MP4 conversion');
+            case 'file': return rxT('dlStageFile', 'Writing the file');
+            case 'direct': return rxT('dlStageDirect', 'Direct MP4 download');
+            default: return rxT('dlStageUnknown', 'Download');
+        }
+    },
+
+    // One kind per failure, most specific first. The HTTP status is the most
+    // reliable signal, then the error's name and code; message text is only
+    // consulted for failures that carry nothing better. A 410, or a 404 on a
+    // rendition the playlist listed a moment ago, means the link was retired;
+    // a 403 that survived a fresh embed payload means Rumble is refusing.
+    _classifyFailure(error, stage) {
+        const status = Number(error?.rxStatus) || 0;
+        const name = String(error?.name || '');
+        const code = String(error?.code || '');
+        const message = String(error?.message || error || '');
+        const group = this._STAGE_GROUPS[error?.rxStage || stage];
+        if (name === 'AbortError' || stage === 'cancelled') return 'cancelled';
+        if (status === 401) return 'auth';
+        if (status === 410 || (status === 404 && group === 'rendition')) return 'expired';
+        if (status === 403) return 'forbidden';
+        if (name === 'QuotaExceededError' || code === 'in-memory-limit'
+            || /quota|no space|disk (?:is )?full|FILE_NO_SPACE/i.test(message)) return 'quota';
+        if (group === 'conversion' || name === 'EncodingError' || name === 'NotSupportedError'
+            || /codec|webcodecs|transmux|demux/i.test(message)) return 'codec';
+        if (status >= 500) return 'network';
+        // Only a failure with no HTTP status can be a parse failure: every HTTP
+        // error message names its stage, and the stage names mention playlists.
+        if (!status && (name === 'SyntaxError' || /playlist|segments? found|unexpected token|json/i.test(message))) return 'parse';
+        if (code === 'cors' || (name === 'TypeError' && /failed to fetch|networkerror|load failed/i.test(message))) {
+            return navigator.onLine === false ? 'network' : 'cors';
+        }
+        if (/network|timed? ?out/i.test(message)) return 'network';
+        return 'unknown';
+    },
+
+    _failureText(kind, status) {
+        switch (kind) {
+            case 'auth': return {
+                what: rxT('dlFailAuth', 'Rumble wants you signed in for this video (HTTP 401).'),
+                next: rxT('dlNextAuth', 'Sign in to Rumble in this tab, reload the page and try again. RumbleX never copies or exports your cookies.'),
+            };
+            case 'forbidden': return {
+                what: rxT('dlFailForbidden', 'Rumble refused this request (HTTP {status}).', { status: status || 403 }),
+                next: rxT('dlNextForbidden', 'Reload the quality list for fresh links. If Rumble still refuses, the video may be limited to members or to some regions.'),
+            };
+            case 'expired': return {
+                what: rxT('dlFailExpired', 'This stream link has expired (HTTP {status}).', { status: status || 410 }),
+                next: rxT('dlNextExpired', 'Reload the quality list for fresh links, then start the download again.'),
+            };
+            case 'cors': return {
+                what: rxT('dlFailCors', 'The browser would not let this page read Rumble\'s media server.'),
+                next: rxT('dlNextCors', 'Reload the quality list. If it keeps happening in a userscript manager, check that it allows requests to rumble.cloud and 1a-1791.com.'),
+            };
+            case 'parse': return {
+                what: rxT('dlFailParse', 'Rumble sent a playlist or metadata RumbleX could not read.'),
+                next: rxT('dlNextParse', 'Try a direct MP4 row if there is one. Otherwise copy the diagnostics below into a bug report.'),
+            };
+            case 'codec': return {
+                what: rxT('dlFailCodec', 'This browser could not convert the stream to MP4.'),
+                next: rxT('dlNextCodec', 'Save it as TS instead. That keeps the stream exactly as Rumble sent it, with no conversion, and VLC plays it.'),
+            };
+            case 'quota': return {
+                what: rxT('dlFailQuota', 'There was not enough room to finish this download.'),
+                next: rxT('dlNextQuota', 'Choose a direct MP4 row, or TS to disk where it is offered. Neither holds the whole video in this tab.'),
+            };
+            case 'network': return {
+                what: rxT('dlFailNetwork', 'The connection to Rumble dropped.'),
+                next: rxT('dlNextNetwork', 'Check that you are online, then reload the quality list and try again.'),
+            };
+            default: return {
+                what: rxT('dlFailUnknown', 'The download failed in a way RumbleX does not recognise.'),
+                next: rxT('dlNextUnknown', 'Copy the diagnostics below into a bug report. They name the stage and never include your cookies or signed links.'),
+            };
+        }
+    },
+
+    _mountFailureGuide(host, { stage, error, quality, operation }) {
+        if (!host?.isConnected) return null;
+        const kind = this._classifyFailure(error, stage);
+        if (kind === 'cancelled') return null;
+        host.querySelector('.rx-dl-failure')?.remove();
+        const status = Number(error?.rxStatus) || 0;
+        const text = this._failureText(kind, status);
+
+        const guide = document.createElement('div');
+        guide.className = 'rx-dl-failure';
+        guide.dataset.kind = kind;
+        guide.setAttribute('role', 'group');
+        guide.setAttribute('aria-label', rxT('dlFailureGuide', 'What went wrong'));
+        const stageEl = document.createElement('div');
+        stageEl.className = 'rx-dl-failure-stage';
+        stageEl.textContent = rxT('dlFailedAt', 'Failed at: {stage}', { stage: this._stageLabel(error?.rxStage || stage) });
+        const whatEl = document.createElement('div');
+        whatEl.className = 'rx-dl-failure-what';
+        whatEl.textContent = text.what;
+        const nextEl = document.createElement('div');
+        nextEl.className = 'rx-dl-failure-next';
+        nextEl.textContent = text.next;
+        guide.append(stageEl, whatEl, nextEl);
+
+        // The single step the guide can take for the user. Reloading the list
+        // re-reads Rumble's embed payload once; saving as TS reruns the same
+        // rendition without the converter. Both are ordinary panel actions.
+        const action = document.createElement('button');
+        action.type = 'button';
+        action.className = 'rx-dl-failure-action';
+        // Only inside the download panel: a clip export or a DVR save shares
+        // this reporter, and reloading the quality list would do nothing there.
+        const inPanel = !!host.closest('#rx-tab-download');
+        const hls = inPanel && quality && !quality.directUrl
+            && (operation === 'hls-download' || operation === 'hls-mp4-stream-to-disk');
+        if (kind === 'codec' && hls) {
+            action.textContent = rxT('dlActionSaveTs', 'Save as TS instead');
+            action.addEventListener('click', () => {
+                const title = this._getTitle();
+                if (operation === 'hls-mp4-stream-to-disk') void this._startStreamingToDisk(quality, title, 'ts');
+                else void this._startDownload(quality, title, 'ts');
+            });
+            guide.appendChild(action);
+        } else if (inPanel && ['forbidden', 'expired', 'cors', 'network', 'quota', 'parse'].includes(kind)) {
+            action.textContent = rxT('dlActionReload', 'Reload quality list');
+            action.addEventListener('click', () => { void this._loadQualities(); });
+            guide.appendChild(action);
+        }
+        host.appendChild(guide);
+        return guide;
+    },
+
     _reportFailure(details, host) {
         const payload = this._diagnosticDetails(details);
+        const target = host || this._getBody();
+        // The guide goes up at once; the diagnostics actions follow it once the
+        // bundle has been recorded.
+        this._mountFailureGuide(target, details);
         return RxDownloadDiagnostics.record(payload)
             .catch(() => ({ ok: false }))
-            .finally(() => RxDownloadDiagnostics.mountActions(host || this._getBody()));
+            .finally(() => RxDownloadDiagnostics.mountActions(target));
     },
 
     async _startDirectDownload(quality, title) {
@@ -7713,6 +7966,8 @@ const VideoDownloader = {
                         quality, format: ext, urls: [{ role: 'download', url: quality.directUrl }],
                     }, errorBody);
                 } else {
+                    const error = new Error(resp.error);
+                    this._mountFailureGuide(errorBody, { stage: 'browser-download', error, quality, operation: 'direct-download' });
                     RxDownloadDiagnostics.mountActions(errorBody);
                 }
             } else if (resp?.downloadId) {

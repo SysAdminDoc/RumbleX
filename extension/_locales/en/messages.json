@@ -2214,5 +2214,129 @@
   "dlAudioSaveNote": {
     "message": "Rumble's own audio track, saved without conversion.",
     "description": "In-page UI string (shared core)."
+  },
+  "dlRefreshingLink": {
+    "message": "The stream link had expired. Trying a fresh one…",
+    "description": "In-page UI string (shared core)."
+  },
+  "dlStagePage": {
+    "message": "Finding the video on this page",
+    "description": "In-page UI string (shared core)."
+  },
+  "dlStageEmbed": {
+    "message": "Embed metadata",
+    "description": "In-page UI string (shared core)."
+  },
+  "dlStageMaster": {
+    "message": "HLS master playlist",
+    "description": "In-page UI string (shared core)."
+  },
+  "dlStageRendition": {
+    "message": "Rendition stream",
+    "description": "In-page UI string (shared core)."
+  },
+  "dlStageConversion": {
+    "message": "MP4 conversion",
+    "description": "In-page UI string (shared core)."
+  },
+  "dlStageFile": {
+    "message": "Writing the file",
+    "description": "In-page UI string (shared core)."
+  },
+  "dlStageDirect": {
+    "message": "Direct MP4 download",
+    "description": "In-page UI string (shared core)."
+  },
+  "dlStageUnknown": {
+    "message": "Download",
+    "description": "In-page UI string (shared core)."
+  },
+  "dlFailAuth": {
+    "message": "Rumble wants you signed in for this video (HTTP 401).",
+    "description": "In-page UI string (shared core)."
+  },
+  "dlNextAuth": {
+    "message": "Sign in to Rumble in this tab, reload the page and try again. RumbleX never copies or exports your cookies.",
+    "description": "In-page UI string (shared core)."
+  },
+  "dlFailForbidden": {
+    "message": "Rumble refused this request (HTTP {status}).",
+    "description": "In-page UI string (shared core)."
+  },
+  "dlNextForbidden": {
+    "message": "Reload the quality list for fresh links. If Rumble still refuses, the video may be limited to members or to some regions.",
+    "description": "In-page UI string (shared core)."
+  },
+  "dlFailExpired": {
+    "message": "This stream link has expired (HTTP {status}).",
+    "description": "In-page UI string (shared core)."
+  },
+  "dlNextExpired": {
+    "message": "Reload the quality list for fresh links, then start the download again.",
+    "description": "In-page UI string (shared core)."
+  },
+  "dlFailCors": {
+    "message": "The browser would not let this page read Rumble's media server.",
+    "description": "In-page UI string (shared core)."
+  },
+  "dlNextCors": {
+    "message": "Reload the quality list. If it keeps happening in a userscript manager, check that it allows requests to rumble.cloud and 1a-1791.com.",
+    "description": "In-page UI string (shared core)."
+  },
+  "dlFailParse": {
+    "message": "Rumble sent a playlist or metadata RumbleX could not read.",
+    "description": "In-page UI string (shared core)."
+  },
+  "dlNextParse": {
+    "message": "Try a direct MP4 row if there is one. Otherwise copy the diagnostics below into a bug report.",
+    "description": "In-page UI string (shared core)."
+  },
+  "dlFailCodec": {
+    "message": "This browser could not convert the stream to MP4.",
+    "description": "In-page UI string (shared core)."
+  },
+  "dlNextCodec": {
+    "message": "Save it as TS instead. That keeps the stream exactly as Rumble sent it, with no conversion, and VLC plays it.",
+    "description": "In-page UI string (shared core)."
+  },
+  "dlFailQuota": {
+    "message": "There was not enough room to finish this download.",
+    "description": "In-page UI string (shared core)."
+  },
+  "dlNextQuota": {
+    "message": "Choose a direct MP4 row, or TS to disk where it is offered. Neither holds the whole video in this tab.",
+    "description": "In-page UI string (shared core)."
+  },
+  "dlFailNetwork": {
+    "message": "The connection to Rumble dropped.",
+    "description": "In-page UI string (shared core)."
+  },
+  "dlNextNetwork": {
+    "message": "Check that you are online, then reload the quality list and try again.",
+    "description": "In-page UI string (shared core)."
+  },
+  "dlFailUnknown": {
+    "message": "The download failed in a way RumbleX does not recognise.",
+    "description": "In-page UI string (shared core)."
+  },
+  "dlNextUnknown": {
+    "message": "Copy the diagnostics below into a bug report. They name the stage and never include your cookies or signed links.",
+    "description": "In-page UI string (shared core)."
+  },
+  "dlFailureGuide": {
+    "message": "What went wrong",
+    "description": "In-page UI string (shared core)."
+  },
+  "dlFailedAt": {
+    "message": "Failed at: {stage}",
+    "description": "In-page UI string (shared core)."
+  },
+  "dlActionSaveTs": {
+    "message": "Save as TS instead",
+    "description": "In-page UI string (shared core)."
+  },
+  "dlActionReload": {
+    "message": "Reload quality list",
+    "description": "In-page UI string (shared core)."
   }
 }

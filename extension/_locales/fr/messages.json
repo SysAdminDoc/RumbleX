@@ -2212,5 +2212,129 @@
   "dlAudioCopyFailed": {
     "message": "Impossible de copier le lien. Le navigateur a bloqué l'accès au presse-papiers.",
     "description": "In-page UI string (shared core)."
+  },
+  "dlStagePage": {
+    "message": "Recherche de la vidéo sur cette page",
+    "description": "In-page UI string (shared core)."
+  },
+  "dlStageEmbed": {
+    "message": "Métadonnées d'intégration",
+    "description": "In-page UI string (shared core)."
+  },
+  "dlStageMaster": {
+    "message": "Playlist maître HLS",
+    "description": "In-page UI string (shared core)."
+  },
+  "dlStageRendition": {
+    "message": "Flux de la qualité choisie",
+    "description": "In-page UI string (shared core)."
+  },
+  "dlStageConversion": {
+    "message": "Conversion en MP4",
+    "description": "In-page UI string (shared core)."
+  },
+  "dlStageFile": {
+    "message": "Écriture du fichier",
+    "description": "In-page UI string (shared core)."
+  },
+  "dlStageDirect": {
+    "message": "Téléchargement MP4 direct",
+    "description": "In-page UI string (shared core)."
+  },
+  "dlStageUnknown": {
+    "message": "Téléchargement",
+    "description": "In-page UI string (shared core)."
+  },
+  "dlFailedAt": {
+    "message": "Échec à l'étape : {stage}",
+    "description": "In-page UI string (shared core)."
+  },
+  "dlFailureGuide": {
+    "message": "Ce qui s'est mal passé",
+    "description": "In-page UI string (shared core)."
+  },
+  "dlFailAuth": {
+    "message": "Rumble demande d'être connecté pour cette vidéo (HTTP 401).",
+    "description": "In-page UI string (shared core)."
+  },
+  "dlNextAuth": {
+    "message": "Connecte-toi à Rumble dans cet onglet, recharge la page et réessaie. RumbleX ne copie ni n'exporte jamais tes cookies.",
+    "description": "In-page UI string (shared core)."
+  },
+  "dlFailForbidden": {
+    "message": "Rumble a refusé cette requête (HTTP {status}).",
+    "description": "In-page UI string (shared core)."
+  },
+  "dlNextForbidden": {
+    "message": "Recharge la liste des qualités pour obtenir de nouveaux liens. Si Rumble refuse encore, la vidéo est peut-être réservée aux membres ou à certaines régions.",
+    "description": "In-page UI string (shared core)."
+  },
+  "dlFailExpired": {
+    "message": "Ce lien de flux a expiré (HTTP {status}).",
+    "description": "In-page UI string (shared core)."
+  },
+  "dlNextExpired": {
+    "message": "Recharge la liste des qualités pour obtenir de nouveaux liens, puis relance le téléchargement.",
+    "description": "In-page UI string (shared core)."
+  },
+  "dlFailCors": {
+    "message": "Le navigateur n'a pas laissé cette page lire le serveur multimédia de Rumble.",
+    "description": "In-page UI string (shared core)."
+  },
+  "dlNextCors": {
+    "message": "Recharge la liste des qualités. Si cela se reproduit dans un gestionnaire de userscripts, vérifie qu'il autorise les requêtes vers rumble.cloud et 1a-1791.com.",
+    "description": "In-page UI string (shared core)."
+  },
+  "dlFailParse": {
+    "message": "Rumble a envoyé une playlist ou des métadonnées que RumbleX n'a pas pu lire.",
+    "description": "In-page UI string (shared core)."
+  },
+  "dlNextParse": {
+    "message": "Essaie une ligne MP4 directe s'il y en a une. Sinon, copie le diagnostic ci-dessous dans un rapport de bug.",
+    "description": "In-page UI string (shared core)."
+  },
+  "dlFailCodec": {
+    "message": "Ce navigateur n'a pas pu convertir le flux en MP4.",
+    "description": "In-page UI string (shared core)."
+  },
+  "dlNextCodec": {
+    "message": "Enregistre-le plutôt en TS. Le flux reste exactement tel que Rumble l'a envoyé, sans conversion, et VLC le lit.",
+    "description": "In-page UI string (shared core)."
+  },
+  "dlFailQuota": {
+    "message": "Il n'y avait pas assez de place pour terminer ce téléchargement.",
+    "description": "In-page UI string (shared core)."
+  },
+  "dlNextQuota": {
+    "message": "Choisis une ligne MP4 directe, ou TS sur le disque là où c'est proposé. Aucune des deux ne garde toute la vidéo dans cet onglet.",
+    "description": "In-page UI string (shared core)."
+  },
+  "dlFailNetwork": {
+    "message": "La connexion à Rumble a été coupée.",
+    "description": "In-page UI string (shared core)."
+  },
+  "dlNextNetwork": {
+    "message": "Vérifie que tu es en ligne, puis recharge la liste des qualités et réessaie.",
+    "description": "In-page UI string (shared core)."
+  },
+  "dlFailUnknown": {
+    "message": "Le téléchargement a échoué d'une façon que RumbleX ne reconnaît pas.",
+    "description": "In-page UI string (shared core)."
+  },
+  "dlNextUnknown": {
+    "message": "Copie le diagnostic ci-dessous dans un rapport de bug. Il indique l'étape et ne contient jamais tes cookies ni tes liens signés.",
+    "description": "In-page UI string (shared core)."
+  },
+  "dlActionSaveTs": {
+    "message": "Enregistrer en TS à la place",
+    "description": "In-page UI string (shared core)."
+  },
+  "dlActionReload": {
+    "message": "Recharger la liste des qualités",
+    "description": "In-page UI string (shared core)."
+  },
+  "dlRefreshingLink": {
+    "message": "Le lien du flux avait expiré. Essai d'un nouveau lien…",
+    "description": "In-page UI string (shared core)."
   }
 }
