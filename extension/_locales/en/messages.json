@@ -2426,5 +2426,9 @@
   "dlSelectedQuality": {
     "message": "this quality",
     "description": "In-page UI string (shared core)."
+  },
+  "rfEmptyOthers": {
+    "message": "Your other RumbleX filters (blocked channels, keywords or Shorts) hide all {count} matching results.",
+    "description": "In-page UI string (shared core)."
   }
 }

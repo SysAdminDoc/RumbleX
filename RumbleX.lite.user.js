@@ -23,7 +23,7 @@
 // @updateURL    https://github.com/SysAdminDoc/RumbleX/raw/main/RumbleX.lite.user.js
 // ==/UserScript==
 
-// Generated from the shared extension core files. Shared runtime SHA-256: cde315dad3746b99211edad642aa2700f122b26885bea57907c1336e9e0b3b06
+// Generated from the shared extension core files. Shared runtime SHA-256: ca807b998fe962c6196bcdce64155f0546c746209dff7a7ff2c7310c69bc5fa9
 // RumbleX shared settings schema. This file is the canonical source for
 // defaults and trust-boundary normalization across content, options, popup,
 // background profile/Gist restores, and the generated userscript.
@@ -1448,7 +1448,8 @@
   "rfPlaceholderSearch": "Filter loaded results by title or channel",
   "rfSortLabel": "Sort loaded results",
   "dlDirectInterrupted": "The browser download of {quality} stopped before it finished.",
-  "dlSelectedQuality": "this quality"
+  "dlSelectedQuality": "this quality",
+  "rfEmptyOthers": "Your other RumbleX filters (blocked channels, keywords or Shorts) hide all {count} matching results."
 });
     const STORAGE_KEYS_WITH_CHANGE_EVENTS = ['rx_settings'];
     const ALLOWED_REQUEST_HOSTS = ['rumble.com', 'rumble.cloud', '1a-1791.com'];
@@ -14133,10 +14134,12 @@ const ResultsFilter = {
         return card.closest('li') || card;
     },
 
+    // On a channel page every card carries that channel's name, so matching
+    // it would show every card for any fragment of the name. Titles only there.
     _matches(card, query) {
         if (!query) return true;
-        return VideoCards.title(card).toLowerCase().includes(query)
-            || VideoCards.channel(card).toLowerCase().includes(query);
+        if (VideoCards.title(card).toLowerCase().includes(query)) return true;
+        return !Page.isChannel() && VideoCards.channel(card).toLowerCase().includes(query);
     },
 
     _apply() {
@@ -14147,16 +14150,27 @@ const ResultsFilter = {
             if (!item.dataset.rxRfOrder) item.dataset.rxRfOrder = String(this._seq++);
         }
         const query = this._query.trim().toLowerCase();
-        let shown = 0;
+        let matched = 0;
         for (const card of cards) {
             const match = this._matches(card, query);
             this._item(card).classList.toggle('rx-rf-hidden', !match);
-            if (match) shown += 1;
+            if (match) matched += 1;
         }
         this._syncSorts(cards);
         this._order(cards);
         this._placeBar(cards);
-        this._report(cards.length, shown);
+        // What is really on screen: blocked channels, keyword and Shorts
+        // filters hide cards too, and a count that ignored them would say
+        // "showing all 40" over an empty list.
+        const shown = cards.filter((card) => card.getClientRects().length > 0).length;
+        this._report(cards.length, matched, shown);
+        // Other filters often act on the same new cards in the same frame,
+        // after this pass. Count once more when that frame has run.
+        scheduleFeatureFrame(this, 'recount', () => {
+            if (!this._bar) return;
+            const visible = cards.filter((card) => card.isConnected && card.getClientRects().length > 0).length;
+            if (visible !== shown) this._report(cards.length, matched, visible);
+        });
     },
 
     // Only the sorts some loaded card can actually answer are offered. A
@@ -14194,11 +14208,19 @@ const ResultsFilter = {
                 return a.order - b.order;
             });
             if (sorted.every((entry, index) => entry.item === entries[index].item)) continue;
-            // Everything goes back in one block where the cards already were,
-            // ahead of whatever follows them (Rumble's load-more sentinel), so
-            // infinite scroll keeps appending after the last result.
-            const anchor = entries[entries.length - 1].item.nextSibling;
-            for (const entry of sorted) parent.insertBefore(entry.item, anchor);
+            // Each card goes into a slot a card already occupied, so whatever
+            // Rumble put between or after them (an ad, a heading, the load-more
+            // sentinel) keeps its place, and putting Rumble's order back puts
+            // the page back exactly as it was.
+            const slots = entries.map((entry) => {
+                const marker = document.createComment('rx-rf-slot');
+                parent.insertBefore(marker, entry.item);
+                return marker;
+            });
+            slots.forEach((marker, index) => {
+                parent.insertBefore(sorted[index].item, marker);
+                marker.remove();
+            });
         }
     },
 
@@ -14209,22 +14231,28 @@ const ResultsFilter = {
         }
     },
 
-    _report(total, shown) {
+    _report(total, matched, shown) {
         const channel = Page.isChannel();
         let text;
+        let state = 'results';
         if (!total) {
+            state = 'backend-empty';
             text = channel
                 ? rxT('rfEmptyChannel', 'No videos are loaded on this channel page yet, so there is nothing to search.')
                 : rxT('rfEmptyBackend', 'Rumble returned no results here, so the filter has nothing to work with.');
-        } else if (!shown) {
+        } else if (!matched) {
+            state = 'filter-empty';
             text = rxT('rfEmptyLocal', 'None of the {count} loaded results match. Rumble may have more further down, or clear the filter.', { count: total });
+        } else if (!shown) {
+            state = 'others-empty';
+            text = rxT('rfEmptyOthers', 'Your other RumbleX filters (blocked channels, keywords or Shorts) hide all {count} matching results.', { count: matched });
         } else if (shown < total) {
             text = rxT('rfStatusSome', 'Showing {shown} of {count} loaded results. More load as you scroll, and they join the filter as they arrive.', { shown, count: total });
         } else {
             text = rxT('rfStatusAll', 'Showing all {count} loaded results. This filters and sorts what is on the page, not Rumble\'s search.', { count: total });
         }
         if (this._status && this._status.textContent !== text) this._status.textContent = text;
-        this._bar.dataset.state = !total ? 'backend-empty' : (!shown ? 'filter-empty' : 'results');
+        this._bar.dataset.state = state;
     },
 
     _mount() {

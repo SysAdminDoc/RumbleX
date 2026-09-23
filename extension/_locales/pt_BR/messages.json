@@ -2424,5 +2424,9 @@
   "dlSelectedQuality": {
     "message": "esta qualidade",
     "description": "In-page UI string (shared core)."
+  },
+  "rfEmptyOthers": {
+    "message": "Seus outros filtros do RumbleX (canais bloqueados, palavras-chave ou Shorts) ocultam todos os {count} resultados correspondentes.",
+    "description": "In-page UI string (shared core)."
   }
 }

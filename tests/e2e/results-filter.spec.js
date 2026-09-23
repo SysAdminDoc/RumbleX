@@ -242,3 +242,76 @@ test('the filter bar passes axe', async () => {
         expect(accessibility.violations).toEqual([]);
     });
 });
+
+test('on a channel page the search reads titles only, since every card names the same channel', async () => {
+    await withResults(async (t) => {
+        const sameChannel = CARDS.map((entry) => ({ ...entry, channel: 'Fixture Channel' }));
+        await t.open(channelPage(sameChannel), '/c/fixture-channel');
+        await t.type('fixture');
+        let state = await t.state();
+        expect(state.state).toBe('filter-empty');
+        expect(state.order).toEqual(['(Alpha Report)', '(Beta Briefing)', '(Gamma Notes)', '(Delta Special)']);
+        await t.type('gamma');
+        state = await t.state();
+        expect(state.order).toEqual(['(Alpha Report)', '(Beta Briefing)', 'Gamma Notes', '(Delta Special)']);
+    });
+});
+
+test('what sits between the results keeps its place through a sort, and Rumble\'s order restores the page exactly', async () => {
+    await withResults(async (t) => {
+        const withAd = searchPage(CARDS).replace(
+            '<li class="video-listing-entry"><rum-video-thumbnail role="listitem" url="/vc00-c.html"',
+            '<li class="rx-test-ad">sponsored</li><li class="video-listing-entry"><rum-video-thumbnail role="listitem" url="/vc00-c.html"',
+        );
+        expect(withAd).toContain('rx-test-ad');
+        await t.open(withAd, '/search/video?q=report');
+        const shape = () => t.page.evaluate(() => [...document.querySelector('#search-results').children]
+            .map((child) => (child.classList.contains('video-listing-entry')
+                ? child.querySelector('rum-text').textContent
+                : child.className)));
+        const original = await shape();
+        expect(original).toEqual(['Alpha Report', 'Beta Briefing', 'rx-test-ad', 'Gamma Notes', 'Delta Special', 'rx-test-sentinel']);
+        await t.sort('newest');
+        expect(await shape()).toEqual(['Beta Briefing', 'Alpha Report', 'rx-test-ad', 'Gamma Notes', 'Delta Special', 'rx-test-sentinel']);
+        await t.sort('views');
+        expect(await shape()).toEqual(['Gamma Notes', 'Alpha Report', 'rx-test-ad', 'Beta Briefing', 'Delta Special', 'rx-test-sentinel']);
+        await t.sort('rumble');
+        expect(await shape()).toEqual(original);
+    });
+});
+
+test('results hidden by other RumbleX filters are not counted as shown', async () => {
+    await withResults(async (t) => {
+        // What a blocked channel or a keyword filter leaves on a card.
+        const hidden = (titles) => searchPage(CARDS.map((entry) => ({ ...entry })))
+            .replace(/<rum-video-thumbnail ([^>]*)>(?=<a href="[^"]*">([^<]*)<\/a>)/g,
+                (tag, attributes, title) => (titles.includes(title)
+                    ? `<rum-video-thumbnail ${attributes} style="display:none">`
+                    : tag));
+        await t.open(hidden(['Beta Briefing', 'Delta Special']), '/search/video?q=report');
+        let state = await t.state();
+        expect(state.status).toBe('Showing 2 of 4 loaded results. More load as you scroll, and they join the filter as they arrive.');
+
+        // A filter that lands one frame after this one still gets counted.
+        await t.open(searchPage(CARDS), '/search/video?q=report');
+        await t.page.evaluate(() => {
+            // The filter pass runs inside the input event; the other filter
+            // hides two cards straight after it, in the same task.
+            const input = document.querySelector('.rx-results-filter input');
+            input.value = 'a';
+            input.dispatchEvent(new Event('input', { bubbles: true }));
+            for (const node of document.querySelectorAll('rum-video-thumbnail')) {
+                if (/Beta|Delta/.test(node.querySelector('rum-text').textContent)) node.style.display = 'none';
+            }
+        });
+        await expect.poll(async () => (await t.state()).status)
+            .toBe('Showing 2 of 4 loaded results. More load as you scroll, and they join the filter as they arrive.');
+
+        // Everything the query matches is hidden by something else.
+        await t.open(hidden(['Alpha Report', 'Gamma Notes']), '/search/video?q=report');
+        await t.type('alpha'); // Alpha Report by title, Gamma Notes by Creator Alpha
+        state = await t.state();
+        expect(state.state).toBe('others-empty');
+        expect(state.status).toBe('Your other RumbleX filters (blocked channels, keywords or Shorts) hide all 2 matching results.');
+    });
+});
