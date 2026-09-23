@@ -341,6 +341,8 @@
         creatorMode: { group: 'creator', label: 'Creator Program Panel', desc: 'On a channel page, count this month\'s shorts against the program threshold. Reads the page only.' },
         uploaderMetadataFill: { group: 'creator', label: 'Uploader Metadata Fill', desc: 'Auto-fill uploader fields from clipboard URL.' },
         studioSceneTools: { group: 'creator', label: 'Studio Scene Tools', desc: 'Rumble Studio scene/layout helpers.' },
+        liveStreamApiMetrics: { group: 'creator', label: 'Live Stream API Metrics', desc: 'Show followers, subscribers, gifted subs, rants and viewers from Rumble\'s Live Stream API in the Creator Program panel, polled only while the panel is on screen. Counts are what this browser observed, since Rumble returns only the latest 50 of each. Raids are not in the API.' },
+        liveStreamApiUrl: { group: 'creator', label: 'Live Stream API URL', desc: 'From rumble.com/account/livestream-api. It contains your API key: only rumble.com URLs are accepted, it is never sent to the page and it is left out of ordinary exports.' },
         obsAlertExport: { group: 'creator', label: 'OBS Alert Export', desc: 'Rant/sub/follow alert output for OBS.' },
         // Privacy, data & backup
         stripTrackingParams: { group: 'privacy', label: 'Strip Tracking Params', desc: 'Remove e9s, campaign, ref params where safe.' },

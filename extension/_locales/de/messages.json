@@ -2428,5 +2428,61 @@
   "rfEmptyOthers": {
     "message": "Deine anderen RumbleX-Filter (gesperrte Kanäle, Stichwörter oder Shorts) blenden alle {count} passenden Ergebnisse aus.",
     "description": "In-page UI string (shared core)."
+  },
+  "creatorLiveTitle": {
+    "message": "Live-Stream-API",
+    "description": "In-page UI string (shared core)."
+  },
+  "creatorLiveNotConfigured": {
+    "message": "Trage in den Optionen deine Live-Stream-API-URL ein, um hier Follower, Abonnenten und Geschenke zu sehen.",
+    "description": "In-page UI string (shared core)."
+  },
+  "creatorLiveFailed": {
+    "message": "Rumble hat auf die Anfrage an die Live-Stream-API nicht geantwortet. Die Zahlen unten stammen aus früheren Abfragen.",
+    "description": "In-page UI string (shared core)."
+  },
+  "creatorLiveFollowers": {
+    "message": "Follower",
+    "description": "In-page UI string (shared core)."
+  },
+  "creatorLiveSubscribers": {
+    "message": "Abonnenten",
+    "description": "In-page UI string (shared core)."
+  },
+  "creatorLiveWatching": {
+    "message": "Schauen gerade zu",
+    "description": "In-page UI string (shared core)."
+  },
+  "creatorLiveObservedSince": {
+    "message": "Lokal beobachtet seit {date}, aus dem, was dieser Browser abgefragt hat. Rumble liefert jeweils nur die letzten 50, ein lebhafter Stream kann das überholen.",
+    "description": "In-page UI string (shared core)."
+  },
+  "creatorLiveChatters": {
+    "message": "Verschiedene Chatter",
+    "description": "In-page UI string (shared core)."
+  },
+  "creatorLiveNewFollowers": {
+    "message": "Neue Follower",
+    "description": "In-page UI string (shared core)."
+  },
+  "creatorLiveNewSubscribers": {
+    "message": "Neue Abonnenten",
+    "description": "In-page UI string (shared core)."
+  },
+  "creatorLiveGifts": {
+    "message": "Verschenkte Abos",
+    "description": "In-page UI string (shared core)."
+  },
+  "creatorLiveRants": {
+    "message": "Rants",
+    "description": "In-page UI string (shared core)."
+  },
+  "creatorLivePeak": {
+    "message": "Höchste Zuschauerzahl",
+    "description": "In-page UI string (shared core)."
+  },
+  "creatorLiveNoRaids": {
+    "message": "Raids werden nicht gezählt. Die Live-Stream-API von Rumble meldet sie nicht.",
+    "description": "In-page UI string (shared core)."
   }
 }

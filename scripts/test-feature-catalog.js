@@ -136,6 +136,9 @@ const MODAL_EXCLUSIONS = {
 
     // Diagnostics, surfaced through the options page Privacy & Data section.
     debugSelectorTelemetry: 'diagnostics', debugErrorLog: 'diagnostics', debugPerfBudget: 'diagnostics',
+    // The Live Stream API is read by the extension background with the
+    // user's key; userscripts have no background to hold it.
+    liveStreamApiMetrics: 'extension-only', liveStreamApiUrl: 'extension-only',
 
     // Parked keys shipped ahead of their features; see Roadmap_Blocked.md.
     // These must not appear as live switches anywhere until implemented.

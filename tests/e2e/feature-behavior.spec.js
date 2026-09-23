@@ -2094,10 +2094,14 @@ test('RantArchive totals rant amounts, ranks supporters, and escapes CSV safely'
     // A missing username is bucketed rather than dropped.
     expect(result.totals.top[2]).toEqual({ user: 'unknown', total: 0 });
 
-    expect(result.emptyTotals).toEqual({ count: 0, amount: 0, supporters: 0, top: [] });
+    // Gifted subs from the Live Stream API are counted on their own.
+    expect(result.emptyTotals).toEqual({ count: 0, amount: 0, supporters: 0, top: [], gifts: 0 });
     expect(result.junkTotals.count).toBe(0);
 
-    expect(result.csvLines[0]).toBe('user,price,amount,level,text,timestamp');
+    // kind and gifts are appended, so the older columns keep their positions.
+    expect(result.csvLines[0]).toBe('user,price,amount,level,text,timestamp,kind,gifts');
+    // The fixture row spans two physical lines (an embedded newline).
+    expect(result.csvLines.slice(1).join('\n').endsWith(',rant,')).toBe(true);
     // Quotes doubled, whole field wrapped, and the embedded newline preserved.
     expect(result.csvLines[1]).toContain('"hello, ""world""');
 

@@ -23,7 +23,7 @@
 // @updateURL    https://github.com/SysAdminDoc/RumbleX/raw/main/RumbleX.lite.user.js
 // ==/UserScript==
 
-// Generated from the shared extension core files. Shared runtime SHA-256: ca807b998fe962c6196bcdce64155f0546c746209dff7a7ff2c7310c69bc5fa9
+// Generated from the shared extension core files. Shared runtime SHA-256: b9fc8804cd54290e80370bab954f22c5c0248d5ff752118221dba2e59a3721d2
 // RumbleX shared settings schema. This file is the canonical source for
 // defaults and trust-boundary normalization across content, options, popup,
 // background profile/Gist restores, and the generated userscript.
@@ -297,6 +297,13 @@
         discordWebhookUrl: '',
         rssExportEnabled: false,
         creatorMode: false,
+        // Rumble's Live Stream API, read into the Creator Program panel while
+        // it is on screen. Off until the creator turns it on and adds a URL.
+        liveStreamApiMetrics: false,
+        // Created at rumble.com/account/livestream-api. It carries the
+        // account's API key, so it is a secret: never sent to the page, never
+        // in an ordinary export.
+        liveStreamApiUrl: '',
         uploaderMetadataFill: false,
         studioSceneTools: false,
         obsAlertExport: false,
@@ -354,6 +361,7 @@
         'discordWebhookUrl',
         'encryptedGistSyncToken',
         'encryptedGistSyncId',
+        'liveStreamApiUrl',
     ]);
     const SECRET_SETTING_KEY_SET = new Set(SECRET_SETTING_KEYS);
     const DIAGNOSTIC_SECRET_KEY_RE = /(?:authorization|cookie|credential|password|passphrase|secret|bearer|webhook|access[_-]?token|refresh[_-]?token|api[_-]?key|private[_-]?key|signature|signed[_-]?url|github[_-]?pat)/i;
@@ -469,6 +477,24 @@
             if (!/^(?:(?:canary|ptb)\.)?discord(?:app)?\.com$/i.test(parsed.hostname)) return null;
             if (!/^\/api\/webhooks\/[^/]+\/[^/]+$/.test(parsed.pathname)) return null;
             return parsed.origin + parsed.pathname;
+        } catch { return null; }
+    }
+
+    // Rumble's Live Stream API URL: HTTPS, Rumble's own host, the API path and
+    // a key, rebuilt from those parts so nothing else rides along. Rumble does
+    // not publish the exact path, only that the URL is made on the account's
+    // Live Stream API page, so anything under /-livestream-api/ is accepted.
+    function safeLiveStreamApiUrl(value) {
+        const text = safeString(value, 600);
+        if (!text) return null;
+        try {
+            const parsed = new URL(text);
+            if (parsed.protocol !== 'https:' || parsed.username || parsed.password || parsed.port) return null;
+            if (!/^(?:www\.)?rumble\.com$/i.test(parsed.hostname)) return null;
+            if (!/^\/-livestream-api\/[A-Za-z0-9_-]{1,60}$/.test(parsed.pathname)) return null;
+            const key = parsed.searchParams.get('key');
+            if (!key || !/^[A-Za-z0-9_.~-]{8,300}$/.test(key)) return null;
+            return `https://rumble.com${parsed.pathname}?key=${encodeURIComponent(key)}`;
         } catch { return null; }
     }
 
@@ -615,6 +641,10 @@
             if (key === 'discordWebhookUrl') {
                 const webhook = safeWebhookUrl(value);
                 out[key] = webhook || '';
+                continue;
+            }
+            if (key === 'liveStreamApiUrl') {
+                out[key] = safeLiveStreamApiUrl(value) || '';
                 continue;
             }
             if (key === 'autoplayQueue') {
@@ -821,6 +851,7 @@
             normalizeStored,
             safeRumbleUrl,
             safeWebhookUrl,
+            safeLiveStreamApiUrl,
             SECRET_SETTING_KEYS,
             redactUrl,
             sanitizeDiagnosticText,
@@ -1449,7 +1480,21 @@
   "rfSortLabel": "Sort loaded results",
   "dlDirectInterrupted": "The browser download of {quality} stopped before it finished.",
   "dlSelectedQuality": "this quality",
-  "rfEmptyOthers": "Your other RumbleX filters (blocked channels, keywords or Shorts) hide all {count} matching results."
+  "rfEmptyOthers": "Your other RumbleX filters (blocked channels, keywords or Shorts) hide all {count} matching results.",
+  "creatorLiveTitle": "Live Stream API",
+  "creatorLiveNotConfigured": "Add your Live Stream API URL in Options to see follower, subscriber and gift counts here.",
+  "creatorLiveFailed": "Rumble did not answer the Live Stream API request. The counts below are from earlier polls.",
+  "creatorLiveFollowers": "Followers",
+  "creatorLiveSubscribers": "Subscribers",
+  "creatorLiveWatching": "Watching now",
+  "creatorLiveObservedSince": "Locally observed since {date}, from what this browser has polled. Rumble returns only the latest 50 of each, so a busy stream can outrun it.",
+  "creatorLiveChatters": "Unique chatters",
+  "creatorLiveNewFollowers": "New followers",
+  "creatorLiveNewSubscribers": "New subscribers",
+  "creatorLiveGifts": "Gifted subs",
+  "creatorLiveRants": "Rants",
+  "creatorLivePeak": "Peak watching",
+  "creatorLiveNoRaids": "Raids are not counted. Rumble's Live Stream API does not report them."
 });
     const STORAGE_KEYS_WITH_CHANGE_EVENTS = ['rx_settings'];
     const ALLOWED_REQUEST_HOSTS = ['rumble.com', 'rumble.cloud', '1a-1791.com'];
@@ -17167,8 +17212,14 @@ const RantArchive = {
         return Number.isFinite(value) && value > 0 ? value : 0;
     },
 
+    // Gifted subs from Rumble's Live Stream API sit in the same per-video list
+    // as rants, marked kind: 'gift'. They carry no price, so they are counted
+    // on their own and never pad the rant count or the total.
     totals(entries) {
-        const list = Array.isArray(entries) ? entries : [];
+        const all = Array.isArray(entries) ? entries : [];
+        const list = all.filter((entry) => entry?.kind !== 'gift');
+        const gifts = all.filter((entry) => entry?.kind === 'gift')
+            .reduce((sum, entry) => sum + (Number(entry.gifts) || 1), 0);
         let amount = 0;
         const byUser = new Map();
         for (const entry of list) {
@@ -17181,7 +17232,7 @@ const RantArchive = {
             .sort((a, b) => b[1] - a[1])
             .slice(0, 5)
             .map(([user, total]) => ({ user, total }));
-        return { count: list.length, amount: Math.round(amount * 100) / 100, supporters: byUser.size, top };
+        return { count: list.length, amount: Math.round(amount * 100) / 100, supporters: byUser.size, top, gifts };
     },
 
     toCsv(entries) {
@@ -17189,11 +17240,15 @@ const RantArchive = {
             const text = String(value === undefined || value === null ? '' : value);
             return /[",\n\r]/.test(text) ? '"' + text.replace(/"/g, '""') + '"' : text;
         };
-        const lines = ['user,price,amount,level,text,timestamp'];
+        // kind and gifts are appended rather than inserted, so anything that
+        // reads the older columns by position keeps working.
+        const lines = ['user,price,amount,level,text,timestamp,kind,gifts'];
         for (const entry of (Array.isArray(entries) ? entries : [])) {
+            const gift = entry?.kind === 'gift';
             lines.push([
-                entry?.user, entry?.price, this.parseAmount(entry?.price), entry?.level, entry?.text,
+                entry?.user, gift ? '' : entry?.price, gift ? 0 : this.parseAmount(entry?.price), gift ? '' : entry?.level, entry?.text,
                 entry?.ts ? new Date(entry.ts).toISOString() : '',
+                gift ? 'gift' : 'rant', gift ? (Number(entry.gifts) || 1) : '',
             ].map(esc).join(','));
         }
         return lines.join('\n');
@@ -17453,7 +17508,7 @@ const RantPersist = {
             const got = await RXPlatform.storage.get([this._MIRROR_KEY]);
             const root = (got && got[this._MIRROR_KEY] && typeof got[this._MIRROR_KEY] === 'object') ? got[this._MIRROR_KEY] : { videos: {} };
             if (!root.videos || typeof root.videos !== 'object') root.videos = {};
-            const slice = (this._cached || []).slice(-this._MIRROR_MAX_PER_VIDEO);
+            const slice = (this._cached || []).filter((entry) => entry?.kind !== 'gift').slice(-this._MIRROR_MAX_PER_VIDEO);
             const prev = root.videos[videoId] || {};
             const lastTs = slice.length ? slice[slice.length - 1].ts || Date.now() : Date.now();
             root.videos[videoId] = {
@@ -17558,6 +17613,42 @@ const RantPersist = {
         }
     },
 
+    // The watch page names its video by the numeric id Rumble's Live Stream
+    // API uses, in data-video-id on the player's own controls.
+    _numericVideoId() {
+        const node = qsa('[data-video-id]').find((element) => element.tagName !== 'RUM-VIDEO-THUMBNAIL');
+        const id = node?.getAttribute('data-video-id') || '';
+        return /^\d+$/.test(id) ? id : null;
+    },
+
+    // Gifted subs the Live Stream API reported for this video join its
+    // archive as kind: 'gift', once each.
+    _mergeObservedGifts() {
+        const numeric = this._numericVideoId();
+        const key = this._videoKey();
+        if (!numeric || !key) return 0;
+        let added = 0;
+        for (const gift of Object.values(RxLiveObserved.load().gifts)) {
+            if (String(gift?.videoId) !== numeric) continue;
+            const giftKey = `gift|${gift.purchasedBy}|${gift.totalGifts}|${gift.giftType}`;
+            if (this._cached.some((entry) => entry?.kind === 'gift' && entry.key === giftKey)) continue;
+            this._cached.push({
+                kind: 'gift',
+                key: giftKey,
+                user: gift.purchasedBy,
+                gifts: Number(gift.totalGifts) || 1,
+                giftType: gift.giftType || '',
+                text: '',
+                ts: Number(gift.seenAt) || Date.now(),
+            });
+            added += 1;
+        }
+        if (added) {
+            try { RxActivity.setItem(key, JSON.stringify(this._cached)); } catch {}
+        }
+        return added;
+    },
+
     _export() {
         const blob = new Blob([JSON.stringify(this._cached, null, 2)], { type: 'application/json' });
         const a = document.createElement('a');
@@ -17579,6 +17670,7 @@ const RantPersist = {
                 if (raw) this._cached = JSON.parse(raw) || [];
             } catch {}
         }
+        this._mergeObservedGifts();
         waitForFeature(this, '#chat-history-list, .chat-history').then(chatEl => {
             this._persist();
             this._obs = new MutationObserver(() => this._persist());
@@ -22112,6 +22204,88 @@ const RxDownloadDiagnostics = {
 // ═══════════════════════════════════════════
 //  FEATURE REGISTRY & INIT
 // ═══════════════════════════════════════════
+// ── Rumble Live Stream API: what this browser has seen ──
+// Rumble's API returns the latest 50 of each list on every call, so the
+// same follower or rant turns up in poll after poll. Everything is keyed and
+// merged here, and the panel only ever claims what was observed locally,
+// since the first poll this browser made. Raids are not in the API at all.
+const RxLiveObserved = {
+    KEY: 'rx_live_api_observed',
+    MAX_PER_LIST: 2_000,
+
+    load() {
+        try {
+            const parsed = JSON.parse(RxActivity.getItem(this.KEY) || 'null');
+            if (parsed && typeof parsed === 'object' && parsed.version === 1) return parsed;
+        } catch {}
+        return { version: 1, since: null, owner: null, chatters: {}, followers: {}, subscribers: {}, gifts: {}, rants: {}, peakWatching: 0, lastWatching: null };
+    },
+
+    save(store) {
+        for (const list of ['chatters', 'followers', 'subscribers', 'gifts', 'rants']) {
+            const keys = Object.keys(store[list]);
+            if (keys.length > this.MAX_PER_LIST) {
+                for (const key of keys.slice(0, keys.length - this.MAX_PER_LIST)) delete store[list][key];
+            }
+        }
+        try { RxActivity.setItem(this.KEY, JSON.stringify(store)); } catch {}
+    },
+
+    // Merge one sanitized poll. Returns what was new this time, which is what
+    // the rant archive needs.
+    merge(data, now = Date.now()) {
+        const store = this.load();
+        if (!store.since) store.since = now;
+        store.owner = { userId: data.userId || null, channelId: data.channelId || null };
+        const fresh = { gifts: [], rants: [] };
+        const add = (list, key, value) => {
+            if (!key || Object.hasOwn(store[list], key)) return false;
+            store[list][key] = value;
+            return true;
+        };
+        for (const f of data.followers?.recent || []) add('followers', `${f.username}|${f.at}`, { username: f.username, at: f.at });
+        for (const s of data.subscribers?.recent || []) {
+            add('subscribers', `${s.username}|${s.at}`, { username: s.username, at: s.at, amountCents: s.amountCents });
+        }
+        // Gift records carry no timestamp, so two identical purchases by the
+        // same person for the same video count once. That undercounts rather
+        // than inventing a second gift.
+        for (const g of data.gifts?.recent || []) {
+            const key = `${g.purchasedBy}|${g.videoId}|${g.totalGifts}|${g.giftType}`;
+            if (add('gifts', key, { ...g, seenAt: now })) fresh.gifts.push(g);
+        }
+        for (const stream of data.livestreams || []) {
+            for (const m of stream.chat?.messages || []) {
+                if (m.username) store.chatters[m.username.toLowerCase()] = m.at || store.chatters[m.username.toLowerCase()] || '';
+            }
+            for (const r of stream.chat?.rants || []) {
+                const key = `${r.username}|${r.at}|${r.amountCents}`;
+                if (add('rants', key, { ...r, streamId: stream.id })) fresh.rants.push(r);
+            }
+            if (stream.isLive && Number.isFinite(stream.watchingNow)) {
+                store.lastWatching = stream.watchingNow;
+                store.peakWatching = Math.max(store.peakWatching || 0, stream.watchingNow);
+            }
+        }
+        this.save(store);
+        return { store, fresh };
+    },
+
+    summary(store = this.load()) {
+        return {
+            since: store.since,
+            chatters: Object.keys(store.chatters).length,
+            followers: Object.keys(store.followers).length,
+            subscribers: Object.keys(store.subscribers).length,
+            gifts: Object.values(store.gifts).reduce((total, gift) => total + (Number(gift.totalGifts) || 1), 0),
+            giftPurchases: Object.keys(store.gifts).length,
+            rants: Object.keys(store.rants).length,
+            peakWatching: store.peakWatching || 0,
+            lastWatching: store.lastWatching,
+        };
+    },
+};
+
 // ═══════════════════════════════════════════
 //  FEATURE: Creator Program panel (v3.50.0)
 // ═══════════════════════════════════════════
@@ -22161,6 +22335,10 @@ const CreatorProgram = {
         .rx-cp-fill.is-short { background: linear-gradient(90deg, var(--rx-yellow, #f9e2af), var(--rx-peach, #fab387)); }
         .rx-cp-count { font-variant-numeric: tabular-nums; font-weight: 700; min-width: 62px; text-align: right; }
         .rx-cp-note { margin-top: 10px; color: var(--rx-subtext, #a6adc8); font-size: 11px; }
+        .rx-cp-live { margin-top: 12px; padding-top: 10px; border-top: 1px solid color-mix(in srgb, var(--rx-green, #a6e3a1) 20%, transparent); }
+        .rx-cp-live-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 6px 14px; margin-top: 6px; }
+        .rx-cp-live-row { display: flex; justify-content: space-between; gap: 8px; color: var(--rx-subtext, #a6adc8); }
+        .rx-cp-live-row strong { color: var(--rx-text, #cdd6f4); font-variant-numeric: tabular-nums; }
     `,
 
     _monthKey(value) {
@@ -22236,6 +22414,119 @@ const CreatorProgram = {
         return panel;
     },
 
+    // ── Live Stream API section ──
+    // Only with the setting on and a key configured, only while this panel is
+    // on screen and the tab is visible, and at most every 30 seconds. The key
+    // itself never reaches this page: the background makes the request and
+    // hands back a trimmed copy.
+    _LIVE_POLL_MS: 30_000,
+    _liveTimer: null,
+    _liveSection: null,
+
+    _liveRow(label, value) {
+        const row = document.createElement('div');
+        row.className = 'rx-cp-live-row';
+        const name = document.createElement('span');
+        name.textContent = label;
+        const count = document.createElement('strong');
+        count.textContent = value;
+        row.append(name, count);
+        return row;
+    },
+
+    _renderLive(summary, data, error) {
+        const section = document.createElement('div');
+        section.className = 'rx-cp-live';
+        const heading = document.createElement('div');
+        heading.className = 'rx-cp-title';
+        heading.textContent = rxT('creatorLiveTitle', 'Live Stream API');
+        section.appendChild(heading);
+        if (error) {
+            const note = document.createElement('div');
+            note.className = 'rx-cp-note';
+            note.textContent = error === 'not-configured'
+                ? rxT('creatorLiveNotConfigured', 'Add your Live Stream API URL in Options to see follower, subscriber and gift counts here.')
+                : rxT('creatorLiveFailed', 'Rumble did not answer the Live Stream API request. The counts below are from earlier polls.');
+            section.appendChild(note);
+            if (error === 'not-configured') return section;
+        }
+        if (data) {
+            const now = document.createElement('div');
+            now.className = 'rx-cp-live-grid';
+            if (data.followers?.total !== null && data.followers?.total !== undefined) {
+                now.appendChild(this._liveRow(rxT('creatorLiveFollowers', 'Followers'), data.followers.total.toLocaleString()));
+            }
+            if (data.subscribers?.count !== null && data.subscribers?.count !== undefined) {
+                now.appendChild(this._liveRow(rxT('creatorLiveSubscribers', 'Subscribers'), data.subscribers.count.toLocaleString()));
+            }
+            const live = (data.livestreams || []).find((stream) => stream.isLive);
+            if (live && live.watchingNow !== null) {
+                now.appendChild(this._liveRow(rxT('creatorLiveWatching', 'Watching now'), live.watchingNow.toLocaleString()));
+            }
+            section.appendChild(now);
+        }
+        if (summary?.since) {
+            const observed = document.createElement('div');
+            observed.className = 'rx-cp-live-observed';
+            const label = document.createElement('div');
+            label.className = 'rx-cp-note';
+            label.textContent = rxT(
+                'creatorLiveObservedSince',
+                'Locally observed since {date}, from what this browser has polled. Rumble returns only the latest 50 of each, so a busy stream can outrun it.',
+                { date: new Date(summary.since).toLocaleString() },
+            );
+            observed.appendChild(label);
+            const grid = document.createElement('div');
+            grid.className = 'rx-cp-live-grid';
+            grid.append(
+                this._liveRow(rxT('creatorLiveChatters', 'Unique chatters'), summary.chatters.toLocaleString()),
+                this._liveRow(rxT('creatorLiveNewFollowers', 'New followers'), summary.followers.toLocaleString()),
+                this._liveRow(rxT('creatorLiveNewSubscribers', 'New subscribers'), summary.subscribers.toLocaleString()),
+                this._liveRow(rxT('creatorLiveGifts', 'Gifted subs'), summary.gifts.toLocaleString()),
+                this._liveRow(rxT('creatorLiveRants', 'Rants'), summary.rants.toLocaleString()),
+                this._liveRow(rxT('creatorLivePeak', 'Peak watching'), summary.peakWatching.toLocaleString()),
+            );
+            observed.appendChild(grid);
+            section.appendChild(observed);
+        }
+        const raids = document.createElement('div');
+        raids.className = 'rx-cp-note';
+        raids.textContent = rxT('creatorLiveNoRaids', 'Raids are not counted. Rumble\'s Live Stream API does not report them.');
+        section.appendChild(raids);
+        return section;
+    },
+
+    _liveEnabled() {
+        return !!Settings.get('liveStreamApiMetrics') && !!RXPlatform.capabilities.persistentBackground;
+    },
+
+    async _pollLive() {
+        if (!this._panel?.isConnected || document.visibilityState !== 'visible') return;
+        let response = null;
+        try { response = await RXPlatform.sendMessage({ action: 'pollLiveStreamApi' }); } catch { response = null; }
+        if (!this._panel?.isConnected) return;
+        let data = null;
+        let error = null;
+        if (response?.ok && response.data) {
+            data = response.data;
+            RxLiveObserved.merge(data);
+        } else {
+            error = (response?.reason === 'not-configured' || response?.reason === 'disabled') ? 'not-configured' : 'failed';
+        }
+        const section = this._renderLive(RxLiveObserved.summary(), data, error);
+        if (this._liveSection?.isConnected) this._liveSection.replaceWith(section);
+        else this._panel.appendChild(section);
+        this._liveSection = section;
+    },
+
+    _scheduleLive() {
+        setFeatureTimeout(this, () => {
+            void this._pollLive().finally(() => {
+                if (this._panel?.isConnected) this._scheduleLive();
+            });
+        }, this._LIVE_POLL_MS);
+    },
+
     // Read once per visit and cached: the listing does not change under you,
     // and re-reading it on every mutation would turn a page-local panel into a
     // request loop.
@@ -22265,6 +22556,10 @@ const CreatorProgram = {
         const panel = this._render(this._tally(items));
         host.prepend(panel);
         this._panel = panel;
+        if (this._liveEnabled()) {
+            void this._pollLive();
+            this._scheduleLive();
+        }
     },
 
     init() {
@@ -22291,6 +22586,7 @@ const CreatorProgram = {
         this._pending = null;
         this._panel?.remove();
         this._panel = null;
+        this._liveSection = null;
         this._styleEl?.remove();
         this._styleEl = null;
     }
@@ -22760,6 +23056,9 @@ const RX_LOCAL_STORAGE_KEYS = [
     // complete wipe and left it behind, and Export Backup never carried it.
     'rx_channel_prefs',
     'rx_comment_drafts',
+    // What the Rumble Live Stream API has reported to this browser, merged
+    // across polls (followers, subs, gifts, rants, chatters).
+    'rx_live_api_observed',
 ];
 
 // Keys this origin owns that Reset All Data clears but a backup does not carry.
@@ -23058,6 +23357,9 @@ function rxBuildPrivacyReport() {
             settings.debugPerfBudget
                 ? 'Page scans that run longer than one frame are listed locally for export (last 100, no upload)'
                 : 'The frame budget report is off',
+            (settings.liveStreamApiMetrics && settings.liveStreamApiUrl)
+                ? 'Rumble Live Stream API is read with your key while the Creator Program panel is on screen, at most every 30 seconds, by the extension background. The key never reaches the page and is left out of ordinary exports'
+                : 'Rumble Live Stream API is not configured',
             settings.remoteCosmeticRules ? 'Remote cosmetic rules enabled — signed payloads only' : 'Remote cosmetic rules disabled',
             settings.creatorMode
                 ? 'The Creator Program panel re-reads the channel page you are on, once per visit, because Rumble strips its own listing data out of the DOM after load — same origin, same URL, no cookies, nothing sent'

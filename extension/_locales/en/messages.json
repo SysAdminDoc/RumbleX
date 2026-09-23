@@ -2430,5 +2430,61 @@
   "rfEmptyOthers": {
     "message": "Your other RumbleX filters (blocked channels, keywords or Shorts) hide all {count} matching results.",
     "description": "In-page UI string (shared core)."
+  },
+  "creatorLiveTitle": {
+    "message": "Live Stream API",
+    "description": "In-page UI string (shared core)."
+  },
+  "creatorLiveNotConfigured": {
+    "message": "Add your Live Stream API URL in Options to see follower, subscriber and gift counts here.",
+    "description": "In-page UI string (shared core)."
+  },
+  "creatorLiveFailed": {
+    "message": "Rumble did not answer the Live Stream API request. The counts below are from earlier polls.",
+    "description": "In-page UI string (shared core)."
+  },
+  "creatorLiveFollowers": {
+    "message": "Followers",
+    "description": "In-page UI string (shared core)."
+  },
+  "creatorLiveSubscribers": {
+    "message": "Subscribers",
+    "description": "In-page UI string (shared core)."
+  },
+  "creatorLiveWatching": {
+    "message": "Watching now",
+    "description": "In-page UI string (shared core)."
+  },
+  "creatorLiveObservedSince": {
+    "message": "Locally observed since {date}, from what this browser has polled. Rumble returns only the latest 50 of each, so a busy stream can outrun it.",
+    "description": "In-page UI string (shared core)."
+  },
+  "creatorLiveChatters": {
+    "message": "Unique chatters",
+    "description": "In-page UI string (shared core)."
+  },
+  "creatorLiveNewFollowers": {
+    "message": "New followers",
+    "description": "In-page UI string (shared core)."
+  },
+  "creatorLiveNewSubscribers": {
+    "message": "New subscribers",
+    "description": "In-page UI string (shared core)."
+  },
+  "creatorLiveGifts": {
+    "message": "Gifted subs",
+    "description": "In-page UI string (shared core)."
+  },
+  "creatorLiveRants": {
+    "message": "Rants",
+    "description": "In-page UI string (shared core)."
+  },
+  "creatorLivePeak": {
+    "message": "Peak watching",
+    "description": "In-page UI string (shared core)."
+  },
+  "creatorLiveNoRaids": {
+    "message": "Raids are not counted. Rumble's Live Stream API does not report them.",
+    "description": "In-page UI string (shared core)."
   }
 }

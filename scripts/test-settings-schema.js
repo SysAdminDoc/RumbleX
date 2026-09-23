@@ -170,6 +170,7 @@ const transportSecrets = Object.freeze({
     discordWebhookUrl: 'https://discord.com/api/webhooks/123456789/discord-secret-token',
     encryptedGistSyncToken: 'github_pat_gist-secret-token-value',
     encryptedGistSyncId: 'gist-secret-id-value',
+    liveStreamApiUrl: 'https://rumble.com/-livestream-api/get-data?key=live-secret-key-value',
 });
 const ordinaryTransport = plain(evaluate(`RumbleXSettingsSchema.sanitizeSettingsForTransport(JSON.parse(${JSON.stringify(JSON.stringify({
     schemaVersion: 4,

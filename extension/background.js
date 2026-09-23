@@ -1580,6 +1580,121 @@ async function rxGetManagedDownload(downloadId) {
     return root.jobs.find((job) => job.downloadId === downloadId) || null;
 }
 
+// ── Rumble Live Stream API (v3.58.0) ─────────────────────────────────────
+// The API URL a creator makes at rumble.com/account/livestream-api carries
+// their API key, and the response carries their stream key. Both stay here.
+// The content script asks for a poll while the creator surface is on screen
+// and gets back a trimmed copy: counts, usernames, timestamps and amounts,
+// with no key, no stream key and no message text beyond rants.
+const RX_LIVE_API_MIN_INTERVAL_MS = 15_000;
+const RX_LIVE_API_TIMEOUT_MS = 10_000;
+const RX_LIVE_API_MAX_ITEMS = 50;
+let rxLiveApiLast = { at: 0, url: '', result: null };
+let rxLiveApiInFlight = null;
+
+function rxLiveApiString(value, max = 120) {
+    return typeof value === 'string' ? value.slice(0, max) : (typeof value === 'number' ? String(value) : '');
+}
+
+function rxLiveApiNumber(value) {
+    const number = Number(value);
+    return Number.isFinite(number) && number >= 0 ? number : null;
+}
+
+function rxLiveApiList(value) {
+    return Array.isArray(value) ? value.slice(0, RX_LIVE_API_MAX_ITEMS) : [];
+}
+
+// Everything the panel shows and nothing else. Field names follow Rumble's
+// documentation of the response; anything missing comes back null or empty.
+function rxSanitizeLiveApi(json) {
+    const source = json && typeof json === 'object' ? json : {};
+    const followers = source.followers || {};
+    const subscribers = source.subscribers || {};
+    const gifts = source.gifted_subs || {};
+    return {
+        now: rxLiveApiNumber(source.now),
+        userId: rxLiveApiString(source.user_id, 40),
+        channelId: rxLiveApiString(source.channel_id, 40),
+        followers: {
+            count: rxLiveApiNumber(followers.num_followers),
+            total: rxLiveApiNumber(followers.num_followers_total),
+            recent: rxLiveApiList(followers.recent_followers).map((entry) => ({
+                username: rxLiveApiString(entry?.username, 80),
+                at: rxLiveApiString(entry?.followed_on, 40),
+            })).filter((entry) => entry.username),
+        },
+        subscribers: {
+            count: rxLiveApiNumber(subscribers.num_subscribers),
+            total: rxLiveApiNumber(subscribers.num_subscribers_total),
+            recent: rxLiveApiList(subscribers.recent_subscribers).map((entry) => ({
+                username: rxLiveApiString(entry?.username || entry?.user, 80),
+                amountCents: rxLiveApiNumber(entry?.amount_cents),
+                at: rxLiveApiString(entry?.subscribed_on, 40),
+            })).filter((entry) => entry.username),
+        },
+        gifts: {
+            count: rxLiveApiNumber(gifts.num_gifted_subs),
+            recent: rxLiveApiList(gifts.recent_gifted_subs).map((entry) => ({
+                purchasedBy: rxLiveApiString(entry?.purchased_by, 80),
+                totalGifts: rxLiveApiNumber(entry?.total_gifts),
+                giftType: rxLiveApiString(entry?.gift_type, 40),
+                videoId: rxLiveApiString(entry?.video_id, 40),
+            })).filter((entry) => entry.purchasedBy),
+        },
+        livestreams: rxLiveApiList(source.livestreams).map((stream) => ({
+            id: rxLiveApiString(stream?.id, 40),
+            title: rxLiveApiString(stream?.title, 200),
+            isLive: stream?.is_live === true,
+            watchingNow: rxLiveApiNumber(stream?.watching_now),
+            chat: {
+                messages: rxLiveApiList(stream?.chat?.recent_messages).map((entry) => ({
+                    username: rxLiveApiString(entry?.username, 80),
+                    at: rxLiveApiString(entry?.created_on, 40),
+                })).filter((entry) => entry.username),
+                rants: rxLiveApiList(stream?.chat?.recent_rants).map((entry) => ({
+                    username: rxLiveApiString(entry?.username, 80),
+                    text: rxLiveApiString(entry?.text, 500),
+                    at: rxLiveApiString(entry?.created_on, 40),
+                    amountCents: rxLiveApiNumber(entry?.amount_cents),
+                })).filter((entry) => entry.username),
+            },
+        })),
+    };
+}
+
+async function rxPollLiveApi() {
+    const stored = (await chrome.storage.local.get('rx_settings'))?.rx_settings || {};
+    if (!stored.liveStreamApiMetrics) return { ok: false, reason: 'disabled' };
+    const url = RumbleXSettingsSchema.safeLiveStreamApiUrl(stored.liveStreamApiUrl);
+    if (!url) return { ok: false, reason: 'not-configured' };
+    const now = Date.now();
+    // Several tabs, or one tab re-rendering, must not turn into a request
+    // loop against the creator's key.
+    if (rxLiveApiLast.url === url && rxLiveApiLast.result && now - rxLiveApiLast.at < RX_LIVE_API_MIN_INTERVAL_MS) {
+        return { ...rxLiveApiLast.result, cached: true };
+    }
+    if (rxLiveApiInFlight) return rxLiveApiInFlight;
+    rxLiveApiInFlight = (async () => {
+        try {
+            const response = await fetch(url, {
+                credentials: 'omit',
+                cache: 'no-store',
+                signal: AbortSignal.timeout(RX_LIVE_API_TIMEOUT_MS),
+            });
+            if (!response.ok) return { ok: false, reason: 'http', status: response.status };
+            const result = { ok: true, data: rxSanitizeLiveApi(await response.json()), fetchedAt: Date.now() };
+            rxLiveApiLast = { at: Date.now(), url, result };
+            return result;
+        } catch (error) {
+            return { ok: false, reason: error?.name === 'TimeoutError' ? 'timeout' : 'network' };
+        } finally {
+            rxLiveApiInFlight = null;
+        }
+    })();
+    return rxLiveApiInFlight;
+}
+
 async function rxStartManagedDownload(options, metadata = {}) {
     const downloadId = await rxDownloadsApi.download(options);
     await rxTrackManagedDownload(downloadId, metadata);
@@ -2350,6 +2465,7 @@ const RX_MESSAGE_ACTIONS = Object.freeze({
         data: rxMessageField('json-object', { required: true, maxBytes: 5 * 1024 * 1024 }),
     }),
     getPendingLocalDataOperation: rxMessageRule(RX_CONTENT_ONLY),
+    pollLiveStreamApi: rxMessageRule(RX_CONTENT_ONLY),
     completePendingLocalDataOperation: rxMessageRule(RX_CONTENT_ONLY, {
         id: rxMessageField('id', { required: true }),
         cleared: rxMessageField('integer', { min: 0, max: 1_000_000 }),
@@ -2804,6 +2920,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                 });
             }
         });
+        return true;
+    }
+
+    if (message.action === 'pollLiveStreamApi') {
+        rxPollLiveApi()
+            .then(sendResponse)
+            .catch((error) => sendResponse({ ok: false, reason: String(error?.message || error) }));
         return true;
     }
 

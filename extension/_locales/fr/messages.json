@@ -2428,5 +2428,61 @@
   "rfEmptyOthers": {
     "message": "Tes autres filtres RumbleX (chaînes bloquées, mots-clés ou Shorts) masquent les {count} résultats correspondants.",
     "description": "In-page UI string (shared core)."
+  },
+  "creatorLiveTitle": {
+    "message": "API de diffusion en direct",
+    "description": "In-page UI string (shared core)."
+  },
+  "creatorLiveNotConfigured": {
+    "message": "Ajoute l'URL de ton API de diffusion en direct dans les options pour voir ici abonnés, souscripteurs et cadeaux.",
+    "description": "In-page UI string (shared core)."
+  },
+  "creatorLiveFailed": {
+    "message": "Rumble n'a pas répondu à la requête de l'API de diffusion en direct. Les chiffres ci-dessous viennent de requêtes précédentes.",
+    "description": "In-page UI string (shared core)."
+  },
+  "creatorLiveFollowers": {
+    "message": "Abonnés",
+    "description": "In-page UI string (shared core)."
+  },
+  "creatorLiveSubscribers": {
+    "message": "Souscripteurs",
+    "description": "In-page UI string (shared core)."
+  },
+  "creatorLiveWatching": {
+    "message": "Spectateurs actuels",
+    "description": "In-page UI string (shared core)."
+  },
+  "creatorLiveObservedSince": {
+    "message": "Observé localement depuis le {date}, d'après ce que ce navigateur a interrogé. Rumble ne renvoie que les 50 derniers de chaque liste, un direct très actif peut donc le dépasser.",
+    "description": "In-page UI string (shared core)."
+  },
+  "creatorLiveChatters": {
+    "message": "Participants au chat distincts",
+    "description": "In-page UI string (shared core)."
+  },
+  "creatorLiveNewFollowers": {
+    "message": "Nouveaux abonnés",
+    "description": "In-page UI string (shared core)."
+  },
+  "creatorLiveNewSubscribers": {
+    "message": "Nouveaux souscripteurs",
+    "description": "In-page UI string (shared core)."
+  },
+  "creatorLiveGifts": {
+    "message": "Abonnements offerts",
+    "description": "In-page UI string (shared core)."
+  },
+  "creatorLiveRants": {
+    "message": "Rants",
+    "description": "In-page UI string (shared core)."
+  },
+  "creatorLivePeak": {
+    "message": "Pic de spectateurs",
+    "description": "In-page UI string (shared core)."
+  },
+  "creatorLiveNoRaids": {
+    "message": "Les raids ne sont pas comptés. L'API de diffusion en direct de Rumble ne les signale pas.",
+    "description": "In-page UI string (shared core)."
   }
 }

@@ -271,6 +271,13 @@
         discordWebhookUrl: '',
         rssExportEnabled: false,
         creatorMode: false,
+        // Rumble's Live Stream API, read into the Creator Program panel while
+        // it is on screen. Off until the creator turns it on and adds a URL.
+        liveStreamApiMetrics: false,
+        // Created at rumble.com/account/livestream-api. It carries the
+        // account's API key, so it is a secret: never sent to the page, never
+        // in an ordinary export.
+        liveStreamApiUrl: '',
         uploaderMetadataFill: false,
         studioSceneTools: false,
         obsAlertExport: false,
@@ -328,6 +335,7 @@
         'discordWebhookUrl',
         'encryptedGistSyncToken',
         'encryptedGistSyncId',
+        'liveStreamApiUrl',
     ]);
     const SECRET_SETTING_KEY_SET = new Set(SECRET_SETTING_KEYS);
     const DIAGNOSTIC_SECRET_KEY_RE = /(?:authorization|cookie|credential|password|passphrase|secret|bearer|webhook|access[_-]?token|refresh[_-]?token|api[_-]?key|private[_-]?key|signature|signed[_-]?url|github[_-]?pat)/i;
@@ -443,6 +451,24 @@
             if (!/^(?:(?:canary|ptb)\.)?discord(?:app)?\.com$/i.test(parsed.hostname)) return null;
             if (!/^\/api\/webhooks\/[^/]+\/[^/]+$/.test(parsed.pathname)) return null;
             return parsed.origin + parsed.pathname;
+        } catch { return null; }
+    }
+
+    // Rumble's Live Stream API URL: HTTPS, Rumble's own host, the API path and
+    // a key, rebuilt from those parts so nothing else rides along. Rumble does
+    // not publish the exact path, only that the URL is made on the account's
+    // Live Stream API page, so anything under /-livestream-api/ is accepted.
+    function safeLiveStreamApiUrl(value) {
+        const text = safeString(value, 600);
+        if (!text) return null;
+        try {
+            const parsed = new URL(text);
+            if (parsed.protocol !== 'https:' || parsed.username || parsed.password || parsed.port) return null;
+            if (!/^(?:www\.)?rumble\.com$/i.test(parsed.hostname)) return null;
+            if (!/^\/-livestream-api\/[A-Za-z0-9_-]{1,60}$/.test(parsed.pathname)) return null;
+            const key = parsed.searchParams.get('key');
+            if (!key || !/^[A-Za-z0-9_.~-]{8,300}$/.test(key)) return null;
+            return `https://rumble.com${parsed.pathname}?key=${encodeURIComponent(key)}`;
         } catch { return null; }
     }
 
@@ -589,6 +615,10 @@
             if (key === 'discordWebhookUrl') {
                 const webhook = safeWebhookUrl(value);
                 out[key] = webhook || '';
+                continue;
+            }
+            if (key === 'liveStreamApiUrl') {
+                out[key] = safeLiveStreamApiUrl(value) || '';
                 continue;
             }
             if (key === 'autoplayQueue') {
@@ -795,6 +825,7 @@
             normalizeStored,
             safeRumbleUrl,
             safeWebhookUrl,
+            safeLiveStreamApiUrl,
             SECRET_SETTING_KEYS,
             redactUrl,
             sanitizeDiagnosticText,
