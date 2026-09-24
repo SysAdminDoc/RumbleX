@@ -218,18 +218,23 @@ test('modern card adapter drives related, keyword, progress, and channel feature
 
     const cards = await inContent(serviceWorker, id, 'cards');
     expect(cards).toEqual([
+        { title: 'Floating Update', channel: 'Creator Float', id: 'vfloating789' },
         { title: 'Alpha Report', channel: 'Creator Alpha', id: 'valpha123' },
         { title: 'Beta Briefing', channel: 'Creator Beta', id: 'vbeta456' },
     ]);
 
     const filtered = await inContent(serviceWorker, id, 'relatedFilter', ['beta']);
-    expect(filtered).toEqual([true, false]);
+    expect(filtered).toEqual([true, true, false]);
 
     const watched = await inContent(serviceWorker, id, 'watchedFilter');
-    expect(watched).toEqual([{ hidden: true, progress: true }, { hidden: false, progress: false }]);
+    expect(watched).toEqual([
+        { hidden: false, progress: false },
+        { hidden: true, progress: true },
+        { hidden: false, progress: false },
+    ]);
 
     const keyword = await inContent(serviceWorker, id, 'keywordFilter');
-    expect(keyword).toEqual([true, false]);
+    expect(keyword).toEqual([false, true, false]);
 });
 
 test('Theater opens with a usable full-height panel, keyboard semantics, exit, and route remounting', async ({ context, serviceWorker }) => {

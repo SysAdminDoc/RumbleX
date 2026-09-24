@@ -1020,7 +1020,8 @@ const FeedCleanup = {
             width: 100% !important;
             gap: 12px !important;
         }
-        .homepage-content--inner rum-video-thumbnail[role="listitem"] {
+        .homepage-content--inner rum-video-thumbnail[role="listitem"],
+        .homepage-content--inner rum-card-video[role="listitem"] {
             min-width: min(320px, 28vw);
         }
         .thumbnail__grid { gap: 12px !important; }
@@ -1039,7 +1040,8 @@ const FeedCleanup = {
         @media (max-width: 600px) {
             @supports (display:grid) { .thumbnail__grid { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; } }
             .constrained { padding-left: .75rem !important; padding-right: .75rem !important; }
-            .homepage-content--inner rum-video-thumbnail[role="listitem"] { min-width: min(78vw, 300px); }
+            .homepage-content--inner rum-video-thumbnail[role="listitem"],
+            .homepage-content--inner rum-card-video[role="listitem"] { min-width: min(78vw, 300px); }
         }
         .videostream__footer { padding: 6px 4px 8px !important; }
         .homepage-section .constrained { max-width: 100% !important; }
@@ -1461,6 +1463,10 @@ const DarkEnhance = {
         html.rumblex-active .user-notifications {
             background: var(--rx-base) !important;
             border-color: var(--rx-surface0) !important;
+            color: var(--rx-text) !important;
+        }
+        html.rumblex-active .user-notifications * {
+            color: var(--rx-text) !important;
         }
         html.rumblex-active .user-notifications--header {
             border-color: var(--rx-surface0) !important;
@@ -1675,6 +1681,7 @@ const DarkEnhance = {
 
         /* Video cards */
         html.rumblex-active rum-video-thumbnail[role="listitem"],
+        html.rumblex-active rum-card-video[role="listitem"],
         html.rumblex-active .videostream {
             display: block !important;
             box-sizing: border-box !important;
@@ -1685,6 +1692,7 @@ const DarkEnhance = {
             transition: transform 180ms ease, background-color 180ms ease, box-shadow 180ms ease !important;
         }
         html.rumblex-active rum-video-thumbnail[role="listitem"]:hover,
+        html.rumblex-active rum-card-video[role="listitem"]:hover,
         html.rumblex-active .videostream:hover {
             background: var(--rx-site-raised) !important;
             box-shadow: var(--rx-site-shadow-soft) !important;
@@ -1693,6 +1701,9 @@ const DarkEnhance = {
         html.rumblex-active rum-video-thumbnail[role="listitem"] img.rum-video-thumbnail__image,
         html.rumblex-active rum-video-thumbnail[role="listitem"] .rum-video-thumbnail__image,
         html.rumblex-active rum-video-thumbnail[role="listitem"] .rum-video-thumbnail__image img,
+        html.rumblex-active rum-card-video[role="listitem"] img.rum-video-thumbnail__image,
+        html.rumblex-active rum-card-video[role="listitem"] .rum-video-thumbnail__image,
+        html.rumblex-active rum-card-video[role="listitem"] .rum-video-thumbnail__image img,
         html.rumblex-active .videostream img,
         html.rumblex-active .thumbnail__image {
             border-radius: var(--rx-site-radius-lg) !important;
@@ -1700,6 +1711,9 @@ const DarkEnhance = {
         html.rumblex-active rum-video-thumbnail[role="listitem"] h3,
         html.rumblex-active rum-video-thumbnail[role="listitem"] rum-text[role="heading"],
         html.rumblex-active rum-video-thumbnail[role="listitem"] [role="heading"],
+        html.rumblex-active rum-card-video[role="listitem"] h3,
+        html.rumblex-active rum-card-video[role="listitem"] rum-text[role="heading"],
+        html.rumblex-active rum-card-video[role="listitem"] [role="heading"],
         html.rumblex-active .thumbnail__title,
         html.rumblex-active .videostream__link {
             color: var(--rx-text) !important;
@@ -1709,7 +1723,10 @@ const DarkEnhance = {
         }
         html.rumblex-active rum-video-thumbnail[role="listitem"] a:not(.btn),
         html.rumblex-active rum-video-thumbnail[role="listitem"] .channel__link,
-        html.rumblex-active rum-video-thumbnail[role="listitem"] [class*="channel"] {
+        html.rumblex-active rum-video-thumbnail[role="listitem"] [class*="channel"],
+        html.rumblex-active rum-card-video[role="listitem"] a:not(.btn),
+        html.rumblex-active rum-card-video[role="listitem"] .channel__link,
+        html.rumblex-active rum-card-video[role="listitem"] [class*="channel"] {
             color: var(--rx-subtext) !important;
         }
         html.rumblex-active rum-video-thumbnail-footer {
@@ -1728,7 +1745,13 @@ const DarkEnhance = {
             color: var(--rx-text) !important;
             border-color: var(--rx-site-border) !important;
         }
-        html.rumblex-active rum-video-thumbnail[role="listitem"]:focus-within {
+        html.rumblex-active .media-page-related-media-desktop-floating {
+            background: var(--rx-site-panel) !important;
+            color: var(--rx-text) !important;
+            border-color: var(--rx-site-border) !important;
+        }
+        html.rumblex-active rum-video-thumbnail[role="listitem"]:focus-within,
+        html.rumblex-active rum-card-video[role="listitem"]:focus-within {
             outline: 2px solid var(--rx-accent) !important;
             outline-offset: 3px !important;
         }
@@ -1853,11 +1876,18 @@ const DarkEnhance = {
 
         /* Chat and comments */
         html.rumblex-active .media-page-chat-aside-chat,
+        html.rumblex-active .media-page-chat-aside-chat-wrapper-fixed,
+        html.rumblex-active .media-page-chat-aside-chat-wrapper-fixed > .chat,
+        html.rumblex-active .chat--container,
+        html.rumblex-active .chat--height,
+        html.rumblex-active .chat-history,
+        html.rumblex-active #chat-history-list,
         html.rumblex-active .chat--header,
         html.rumblex-active .chat--input,
         html.rumblex-active .chat-form-overflow-wrapper {
-            background: var(--rx-site-panel) !important;
-            border-color: var(--rx-site-border) !important;
+            background: var(--rx-theater-panel, var(--rx-site-panel)) !important;
+            border-color: var(--rx-theater-border, var(--rx-site-border)) !important;
+            color: var(--rx-theater-text, var(--rx-text)) !important;
         }
         html.rumblex-active .chat--input,
         html.rumblex-active .comments-create-textarea,
@@ -1928,6 +1958,7 @@ const DarkEnhance = {
             html.rumblex-active .main-menu-item-channel { margin-inline: 4px !important; }
             html.rumblex-active .rum-featured-pills-row__pill { min-height: 44px !important; }
             html.rumblex-active rum-video-thumbnail[role="listitem"]:hover,
+            html.rumblex-active rum-card-video[role="listitem"]:hover,
             html.rumblex-active .videostream:hover,
             html.rumblex-active .video-listing-entry .video-item:hover { transform: none; }
         }
@@ -11368,7 +11399,7 @@ const RelatedFilter = {
         if (!Page.isWatch()) return;
         this._styleEl = injectStyle(this._css, 'rx-related-filter-css');
 
-        waitForFeature(this, '.mediaList-list, .media-page-related-media-desktop-sidebar').then(sidebar => {
+        waitForFeature(this, '.mediaList-list, .media-page-related-media-desktop-sidebar, .media-page-related-media-desktop-floating').then(sidebar => {
             const bar = document.createElement('div');
             bar.className = 'rx-related-filter';
             bar.setAttribute('role', 'region');
@@ -12330,6 +12361,10 @@ const NotifEnhance = {
             box-shadow: 0 12px 40px rgba(0,0,0,0.5) !important;
             max-height: 500px !important;
             overflow-y: auto !important;
+            color: var(--rx-text, #cdd6f4) !important;
+        }
+        .user-notifications * {
+            color: var(--rx-text, #cdd6f4) !important;
         }
         .user-notifications--header {
             background: var(--rx-mantle, #181825) !important;
@@ -17375,6 +17410,7 @@ const BatchDownload = {
         .videostream:hover .rx-batch-chk,
         article.video-item:hover .rx-batch-chk,
         rum-video-thumbnail[role="listitem"]:hover .rx-batch-chk,
+        rum-card-video[role="listitem"]:hover .rx-batch-chk,
         .rx-batch-chk:focus-visible,
         .rx-batch-mode .rx-batch-chk { opacity: 1; }
         .rx-batch-chk:focus-visible { outline: 2px solid var(--rx-accent, #89b4fa); outline-offset: 2px; }
@@ -18686,7 +18722,11 @@ const RealFramePreviews = {
             }
             if (signal.aborted || generation !== this._rxLifecycleGeneration) return;
             for (const waitingCard of waiters.get(key) || []) this._mount(waitingCard, blob);
-        }).catch(() => {}).finally(() => {
+        }).catch((error) => {
+            if (error?.name !== 'AbortError') {
+                RxErrorLog?.record?.(this.id, error, `frame preview ${key}`);
+            }
+        }).finally(() => {
             pending.delete(key);
             waiters.delete(key);
         });
@@ -18867,8 +18907,10 @@ const DenseMode = {
         html.rumblex-active body.rx-dense .mediaList-item { margin-bottom: 6px !important; }
         html.rumblex-active body.rx-dense .video-listing-entry { margin-bottom: 6px !important; }
         html.rumblex-active body.rx-dense .video-item--title { line-height: 1.25 !important; margin-top: 4px !important; }
-        html.rumblex-active body.rx-dense rum-video-thumbnail[role="listitem"] { margin-bottom: 6px !important; }
-        html.rumblex-active body.rx-dense rum-video-thumbnail rum-text[role="heading"] { line-height: 1.25 !important; }
+        html.rumblex-active body.rx-dense rum-video-thumbnail[role="listitem"],
+        html.rumblex-active body.rx-dense rum-card-video[role="listitem"] { margin-bottom: 6px !important; }
+        html.rumblex-active body.rx-dense rum-video-thumbnail rum-text[role="heading"],
+        html.rumblex-active body.rx-dense rum-card-video rum-text[role="heading"] { line-height: 1.25 !important; }
         html.rumblex-active body.rx-dense h1.video-header-container__title { margin: 4px 0 !important; }
     `,
     init() {

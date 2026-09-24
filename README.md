@@ -166,7 +166,7 @@ Live chat got the things every other chat platform already has, and rants became
 - **Proven Firefox MV2 runtime**. a repeatable Firefox temporary-addon smoke covers content injection, storage, deletion, response messaging, and bundled media assets. Shield UI now distinguishes Chromium DNR, Firefox `webRequest`, and manager-dependent userscripts.
 
 - **One shared feature core**. Chrome MV3, Firefox MV2, Tampermonkey, and Violentmonkey now execute the same canonical page-feature code. A build-time guard rejects stale userscripts, version drift, missing settings/modules, direct `chrome.*` use, and remote code loading.
-- **Current Rumble support**. modern `<rum-video-thumbnail>` cards, SPA watch-route changes, visible action anchors, and every current embed HLS response shape are covered by committed fixtures and loaded-extension tests.
+- **Current Rumble support**. public `<rum-video-thumbnail>` cards, signed-in `<rum-card-video>` feeds, SPA watch-route changes, the floating related grid, visible action anchors, and every current embed HLS response shape are covered by committed fixtures and loaded-extension tests.
 - **Safer downloads and imports**. downloads are cancellable and bounded before large media can exhaust tab memory; imported settings, snapshots, queue URLs, and compressed backups are size- and schema-validated.
 - **Complete local media bundle**. the userscript embeds the pinned mux.js and Mediabunny workers/libraries. It never fetches or evaluates executable code from a CDN.
 - **Request-level ad shield**. Chrome/Edge/Brave use a Rumble-scoped MV3 ruleset and Firefox uses a scoped MV2 blocking listener for the verified ad-delivery/measurement surface; Ad Nuker remains the DOM cleanup layer for sponsored cards, overlays, and reserved space.
@@ -222,7 +222,7 @@ Live chat got the things every other chat platform already has, and rants became
 - **Logo to Feed**. Rumble logo navigates to Subscriptions feed
 - **Auto Expand**. Auto-expand descriptions and comments
 - **Auto Load Comments**. Scroll-triggered *Show more comments* clicks
-- **Notif Enhance**. Themed notification dropdown + bell pulse
+- **Notif Enhance**. Themed notification drawer with readable current-site text and a bell pulse
 - **Full Titles**. Remove title truncation on video cards
 - **Title Font**. Unbold + normalize title typography
 - **Real Frame Previews**. Off by default. Pause over a feed card to capture one frame from the lowest Rumble MP4 rendition. The frame stays local, is cached for 30 days, and fades away on hover or keyboard focus so the original artwork is always available.

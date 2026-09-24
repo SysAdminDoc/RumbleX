@@ -37,6 +37,13 @@ const CASES = [
         surfaces: ['header.root', 'nav.mainMenu', 'search.form', 'search.input',
             'feed.card', 'feed.cardTitle', 'feed.author', 'modal.portal'],
     },
+    {
+        name: 'current-feed.html',
+        path: '/subscriptions',
+        route: 'feed',
+        surfaces: ['header.root', 'nav.mainMenu', 'search.form', 'search.input',
+            'feed.card', 'feed.cardTitle', 'feed.author', 'modal.portal'],
+    },
 ];
 
 function fixture(name) {
@@ -164,6 +171,51 @@ test('current custom card exposes creator metadata without a legacy author link'
         thumbnail: 'IMG',
         authorSurface: 'RUM-VIDEO-THUMBNAIL',
         legacyAuthorLinks: 0,
+    });
+});
+
+test('signed-in feed card uses the shared card adapter', async ({ context, serviceWorker }) => {
+    const url = 'https://rumble.com/subscriptions';
+    await context.route(url, (route) => route.fulfill({
+        status: 200,
+        contentType: 'text/html',
+        body: fixture('current-feed.html'),
+    }));
+    const page = await context.newPage();
+    await page.goto(url, { waitUntil: 'domcontentloaded' });
+    const tabId = await findTabId(serviceWorker, page.url());
+
+    let result;
+    await expect.poll(async () => {
+        result = await serviceWorker.evaluate(async (id) => {
+            const [execution] = await chrome.scripting.executeScript({
+                target: { tabId: id },
+                world: 'ISOLATED',
+                func: () => {
+                    if (typeof VideoCards === 'undefined') return { ready: false };
+                    const card = VideoCards.all()[0];
+                    return {
+                        ready: !!card,
+                        count: VideoCards.all().length,
+                        tag: card?.tagName || null,
+                        title: card ? VideoCards.title(card) : '',
+                        channel: card ? VideoCards.channel(card) : '',
+                        id: card ? VideoCards.videoId(card) : null,
+                    };
+                },
+            });
+            return execution?.result || { ready: false };
+        }, tabId);
+        return result.ready;
+    }, { timeout: 15_000 }).toBe(true);
+
+    expect(result).toEqual({
+        ready: true,
+        count: 1,
+        tag: 'RUM-CARD-VIDEO',
+        title: 'Fixture Feed Video',
+        channel: 'Fixture Feed Creator',
+        id: 'vfixture601',
     });
 });
 

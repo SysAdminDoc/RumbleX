@@ -3,11 +3,13 @@
 
 // ── Video Card + Active Media Adapters (v3.36.0) ──
 // Rumble currently mixes legacy `.videostream` nodes with the newer
-// `<rum-video-thumbnail>` custom element. Consumers use this adapter so a
-// future card migration is repaired in one place instead of per feature.
+// `<rum-video-thumbnail>` and `<rum-card-video>` custom elements. Consumers
+// use this adapter so a future card migration is repaired in one place instead
+// of per feature.
 const VideoCards = {
     selector: [
         'rum-video-thumbnail[role="listitem"]',
+        'rum-card-video[role="listitem"]',
         '[role="listitem"][data-video-id]',
         '.videostream',
         'article.video-item',
@@ -18,7 +20,11 @@ const VideoCards = {
     related(root = document) {
         return qsa(
             '.media-page-related-media-desktop-sidebar rum-video-thumbnail[role="listitem"], ' +
-            '.media-page-related-media-desktop-sidebar .mediaList-item',
+            '.media-page-related-media-desktop-sidebar rum-card-video[role="listitem"], ' +
+            '.media-page-related-media-desktop-sidebar .mediaList-item, ' +
+            '.media-page-related-media-desktop-floating rum-video-thumbnail[role="listitem"], ' +
+            '.media-page-related-media-desktop-floating rum-card-video[role="listitem"], ' +
+            '.media-page-related-media-desktop-floating .mediaList-item',
             root
         );
     },
@@ -75,5 +81,3 @@ const VideoCards = {
         return card.querySelector('.rum-video-thumbnail__image, .videostream__image, .thumbnail__image, .videostream__thumbnail, .video-item--img-wrapper, [class*="thumbnail"]');
     },
 };
-
-

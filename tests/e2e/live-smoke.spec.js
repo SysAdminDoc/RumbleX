@@ -55,6 +55,12 @@ async function openLivePage(page) {
         return /this video is (?:restricted|private)|sign in to access it/i.test(text);
     });
     test.skip(accessRestricted, 'The isolated live-smoke profile cannot access this private/restricted video');
+
+    const acceptCookies = page.getByRole('button', { name: /accept(?: all)?/i }).first();
+    if (await acceptCookies.isVisible({ timeout: 2_000 }).catch(() => false)) {
+        await acceptCookies.click();
+        await page.waitForTimeout(300);
+    }
 }
 
 test.describe('live rumble.com smoke', () => {
@@ -148,17 +154,18 @@ test.describe('live rumble.com smoke', () => {
         expect(result.requestShield?.enforcement).toBe('chromium-dnr');
     });
 
-    test('real frame previews capture from the live CDN and restore on disable', async ({ context, serviceWorker }) => {
+    test('real frame previews capture from the live CDN and stay off after an external disable plus reload', async ({ context, serviceWorker }) => {
+        test.setTimeout(150_000);
         await serviceWorker.evaluate(async () => {
             const stored = await chrome.storage.local.get('rx_settings');
             await chrome.storage.local.set({
-                rx_settings: { ...(stored.rx_settings || {}), realFramePreviews: true },
+                rx_settings: { ...(stored.rx_settings || {}), realFramePreviews: true, debugErrorLog: true },
             });
         });
 
         const page = await context.newPage();
         await openLivePage(page);
-        const candidatePath = await page.evaluate(async () => {
+        const candidatePaths = await page.evaluate(async () => {
             const html = await fetch(location.href, { credentials: 'omit', cache: 'no-store' }).then((response) => response.text());
             const parsed = new DOMParser().parseFromString(html, 'text/html');
             const items = [];
@@ -170,11 +177,12 @@ test.describe('live rumble.com smoke', () => {
                     if (Array.isArray(payload?.items)) items.push(...payload.items);
                 } catch {}
             }
-            return items.find((item) => item?.object_type === 'video'
+            return [...new Set(items.filter((item) => item?.object_type === 'video'
                 && item?.relative_url
-                && item?.videos?.some((video) => video?.type === 'mp4'))?.relative_url || null;
+                && item?.videos?.some((video) => video?.type === 'mp4'))
+                .map((item) => item.relative_url))];
         });
-        test.skip(!candidatePath, 'The live feed did not expose an MP4-backed card');
+        test.skip(candidatePaths.length === 0, 'The live feed did not expose an MP4-backed card');
 
         const cards = page.locator([
             'rum-video-thumbnail[role="listitem"]',
@@ -185,16 +193,45 @@ test.describe('live rumble.com smoke', () => {
             '.thumbnail__grid-item',
         ].join(', '));
         await expect.poll(() => cards.count(), { timeout: 20_000 }).toBeGreaterThan(0);
-        const cardIndex = await cards.evaluateAll((nodes, wantedPath) => nodes.findIndex((card) => {
-            const raw = card.getAttribute('url') || card.querySelector('a[href*="/v"]')?.getAttribute('href') || '';
-            try { return new URL(raw, location.origin).pathname === wantedPath; } catch { return false; }
-        }), candidatePath);
-        test.skip(cardIndex < 0, 'The MP4-backed listing item was not present in the hydrated card grid');
+        const cardIndexes = await cards.evaluateAll((nodes, wantedPaths) => {
+            const wanted = new Set(wantedPaths);
+            return nodes.map((card, index) => {
+                const raw = card.getAttribute('url') || card.querySelector('a[href*="/v"]')?.getAttribute('href') || '';
+                try { return wanted.has(new URL(raw, location.origin).pathname) ? index : -1; } catch { return -1; }
+            }).filter((index) => index >= 0);
+        }, candidatePaths);
+        test.skip(cardIndexes.length === 0, 'The MP4-backed listing items were not present in the hydrated card grid');
 
-        const card = cards.nth(cardIndex);
-        await card.hover();
-        const overlay = card.locator('.rx-real-frame-overlay');
-        await overlay.waitFor({ state: 'attached', timeout: 30_000 });
+        let card = null;
+        let overlay = null;
+        let lastCaptureError = null;
+        for (const cardIndex of cardIndexes.slice(0, 3)) {
+            card = cards.nth(cardIndex);
+            await card.hover();
+            overlay = card.locator('.rx-real-frame-overlay');
+            try {
+                await overlay.waitFor({ state: 'attached', timeout: 20_000 });
+                lastCaptureError = null;
+                break;
+            } catch (error) {
+                lastCaptureError = error;
+                await page.mouse.move(0, 0);
+                await page.waitForTimeout(300);
+            }
+        }
+        if (lastCaptureError || !card || !overlay) {
+            const diagnostics = await serviceWorker.evaluate(async (targetUrl) => {
+                const tabs = await chrome.tabs.query({ url: '*://*.rumble.com/*' });
+                const target = tabs.find((tab) => tab.url === targetUrl) || tabs[0];
+                if (!target?.id) return [];
+                return await new Promise((resolve) => chrome.tabs.sendMessage(
+                    target.id,
+                    { action: 'getErrorLog' },
+                    (response) => resolve(response?.entries || []),
+                ));
+            }, page.url());
+            throw new Error(`Live frame preview did not mount after ${Math.min(3, cardIndexes.length)} candidates: ${JSON.stringify(diagnostics)}`, { cause: lastCaptureError });
+        }
         const originalSrc = await card.locator('img:not(.rx-real-frame-overlay)').first().getAttribute('src');
         await page.mouse.move(0, 0);
         await page.waitForTimeout(200);
@@ -216,7 +253,10 @@ test.describe('live rumble.com smoke', () => {
                 rx_settings: { ...(stored.rx_settings || {}), realFramePreviews: false },
             });
         });
-        await expect(overlay).toHaveCount(0, { timeout: 10_000 });
-        expect(await card.locator('img:not(.rx-real-frame-overlay)').first().getAttribute('src')).toBe(originalSrc);
+        // Options and popup saves deliberately ask open Rumble tabs to reload;
+        // only the in-page settings panel hot-swaps feature lifecycles.
+        await page.reload({ waitUntil: 'domcontentloaded', timeout: 45_000 });
+        await page.waitForLoadState('load', { timeout: 15_000 }).catch(() => {});
+        await expect(page.locator('.rx-real-frame-overlay')).toHaveCount(0, { timeout: 10_000 });
     });
 });

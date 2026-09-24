@@ -19,8 +19,9 @@ const VIEWPORTS = Object.freeze([
     { name: '860px', width: 860, height: 900 },
 ]);
 const SURFACES = Object.freeze([
-    { name: 'home', file: 'desktop-home.html', route: '/', target: 'rum-video-thumbnail[role="listitem"]', text: 'rum-text[role="heading"]' },
-    { name: 'watch', file: 'desktop-watch.html', route: '/vfixture-watch.html', target: '.media-description-section', text: '.video-header-container__title' },
+    { name: 'home', file: 'desktop-home.html', route: '/', target: 'rum-video-thumbnail[role="listitem"]', text: 'rum-text[role="heading"]', notifications: true },
+    { name: 'feed', file: 'current-feed.html', route: '/subscriptions', target: 'rum-card-video[role="listitem"]', text: 'rum-card-video rum-text[role="heading"]' },
+    { name: 'watch', file: 'desktop-watch.html', route: '/vfixture-watch.html', target: '.media-description-section', text: '.video-header-container__title', chat: true },
     { name: 'search', file: 'desktop-search.html', route: '/search/video?q=fixture', target: '.video-listing-entry .video-item', text: '.video-item--title' },
     { name: 'channel', file: 'desktop-channel.html', route: '/c/fixture-channel', target: 'rum-video-thumbnail[role="listitem"]', text: '.channel-header--title' },
 ]);
@@ -33,9 +34,9 @@ const HOST_LAYOUT = `
     .header-search { width: min(560px, calc(100vw - 80px)); margin: 0 auto; }
     .header-search-field { width: 100%; padding: 0 14px; }
     main { width: min(1200px, calc(100% - 32px)); margin: 24px auto; }
-    rum-video-thumbnail { display: block; width: min(320px, 100%); }
-    rum-video-thumbnail > a, rum-video-thumbnail > section, rum-video-thumbnail-footer, rum-text { display: block; }
-    rum-video-thumbnail img { display: block; width: 100%; aspect-ratio: 16 / 9; background: #090909; object-fit: cover; }
+    rum-video-thumbnail, rum-card-video { display: block; width: min(320px, 100%); }
+    rum-video-thumbnail > a, rum-video-thumbnail > section, rum-video-thumbnail-footer, rum-card-video-details, rum-text { display: block; }
+    rum-video-thumbnail img, rum-card-video img { display: block; width: 100%; aspect-ratio: 16 / 9; background: #090909; object-fit: cover; }
     .media-container { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 18px; }
     .media-container > section, .media-page-related-media-desktop-sidebar { min-width: 0; }
     #videoPlayer { width: 100%; aspect-ratio: 16 / 9; background: #000; }
@@ -126,11 +127,62 @@ for (const [themeId, palette] of Object.entries(THEMES)) {
                 await page.setViewportSize({ width: viewport.width, height: viewport.height });
 
                 for (const surface of SURFACES) {
-                    await page.evaluate(({ body, route, theme, hostLayout }) => {
+                    await page.evaluate(({ body, route, theme, hostLayout, includeChat, includeNotifications }) => {
                         const harness = globalThis.__RumbleXFeatureHarness;
                         const feature = harness.features.find((candidate) => candidate.id === 'darkEnhance');
                         feature.destroy();
                         document.body.innerHTML = body;
+                        if (includeChat) {
+                            const aside = document.createElement('aside');
+                            aside.className = 'media-page-chat-aside-chat';
+                            const wrapper = document.createElement('div');
+                            wrapper.className = 'media-page-chat-aside-chat-wrapper-fixed';
+                            const chat = document.createElement('section');
+                            chat.className = 'chat relative';
+                            chat.style.backgroundColor = 'rgb(255, 255, 255)';
+                            const container = document.createElement('div');
+                            container.className = 'chat--container';
+                            const historyPanel = document.createElement('div');
+                            historyPanel.className = 'chat-history';
+                            const list = document.createElement('ul');
+                            list.id = 'chat-history-list';
+                            const row = document.createElement('li');
+                            row.className = 'chat-history--row';
+                            const message = document.createElement('span');
+                            message.className = 'chat-history--message';
+                            message.textContent = 'Current live chat fixture';
+                            row.appendChild(message);
+                            list.appendChild(row);
+                            historyPanel.appendChild(list);
+                            container.appendChild(historyPanel);
+                            chat.appendChild(container);
+                            wrapper.appendChild(chat);
+                            aside.appendChild(wrapper);
+                            document.querySelector('main')?.appendChild(aside);
+                            const related = document.createElement('div');
+                            related.className = 'media-page-related-media-desktop-floating';
+                            related.style.backgroundColor = 'rgb(255, 255, 255)';
+                            related.textContent = 'Current related-video fixture';
+                            document.querySelector('main')?.appendChild(related);
+                        }
+                        if (includeNotifications) {
+                            const notifications = document.createElement('aside');
+                            notifications.className = 'user-notifications';
+                            notifications.style.backgroundColor = 'rgb(255, 255, 255)';
+                            const header = document.createElement('div');
+                            header.className = 'user-notifications--header';
+                            header.style.color = 'rgb(0, 0, 0)';
+                            header.textContent = 'Notifications';
+                            const list = document.createElement('div');
+                            list.className = 'user-notifications--list-wrapper';
+                            const item = document.createElement('a');
+                            item.href = '/account/notifications';
+                            item.style.color = 'rgb(0, 0, 0)';
+                            item.textContent = 'Current notification fixture';
+                            list.appendChild(item);
+                            notifications.append(header, list);
+                            document.body.appendChild(notifications);
+                        }
                         history.replaceState({}, '', route);
                         document.documentElement.className = 'rumblex-active';
                         document.querySelector('#rx-theme-fixture-host')?.remove();
@@ -146,6 +198,8 @@ for (const [themeId, palette] of Object.entries(THEMES)) {
                         route: surface.route,
                         theme: themeId,
                         hostLayout: HOST_LAYOUT,
+                        includeChat: surface.chat === true,
+                        includeNotifications: surface.notifications === true,
                     });
                     await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(resolve)));
 
@@ -174,6 +228,24 @@ for (const [themeId, palette] of Object.entries(THEMES)) {
                             },
                             targetClipped: target.scrollWidth > target.clientWidth + 1,
                             horizontalScroll: document.documentElement.scrollWidth > document.documentElement.clientWidth + 1,
+                            chatBackground: document.querySelector('.media-page-chat-aside-chat-wrapper-fixed > .chat')
+                                ? getComputedStyle(document.querySelector('.media-page-chat-aside-chat-wrapper-fixed > .chat')).backgroundColor
+                                : null,
+                            chatText: document.querySelector('.chat-history--message')
+                                ? getComputedStyle(document.querySelector('.chat-history--message')).color
+                                : null,
+                            relatedFloatingBackground: document.querySelector('.media-page-related-media-desktop-floating')
+                                ? getComputedStyle(document.querySelector('.media-page-related-media-desktop-floating')).backgroundColor
+                                : null,
+                            notificationBackground: document.querySelector('.user-notifications')
+                                ? getComputedStyle(document.querySelector('.user-notifications')).backgroundColor
+                                : null,
+                            notificationHeaderText: document.querySelector('.user-notifications--header')
+                                ? getComputedStyle(document.querySelector('.user-notifications--header')).color
+                                : null,
+                            notificationItemText: document.querySelector('.user-notifications--list-wrapper a')
+                                ? getComputedStyle(document.querySelector('.user-notifications--list-wrapper a')).color
+                                : null,
                         };
                     }, { targetSelector: surface.target, textSelector: surface.text });
 
@@ -193,6 +265,16 @@ for (const [themeId, palette] of Object.entries(THEMES)) {
                     expect(state.targetRect.right, `${surface.name} right edge`).toBeLessThanOrEqual(viewport.width + 1);
                     expect(state.targetClipped, `${surface.name} clipping`).toBe(false);
                     expect(state.horizontalScroll, `${surface.name} horizontal scroll`).toBe(false);
+                    if (surface.chat) {
+                        expect(state.chatBackground, 'watch chat panel').toBe(rgb(palette.base));
+                        expect(state.chatText, 'watch chat text').toBe(rgb(palette.text));
+                        expect(state.relatedFloatingBackground, 'watch related panel').toBe(rgb(palette.base));
+                    }
+                    if (surface.notifications) {
+                        expect(state.notificationBackground, 'notification panel').toBe(rgb(palette.base));
+                        expect(state.notificationHeaderText, 'notification header text').toBe(rgb(palette.text));
+                        expect(state.notificationItemText, 'notification item text').toBe(rgb(palette.text));
+                    }
 
 
                     if (surface.name === 'watch' && viewport.width === 860) {

@@ -14,16 +14,16 @@ const Selectors = {
         'search.form':        { stable: 'form[data-js="search_form"]', fallback: '.header-search' },
         'search.input':       { stable: '[data-js="search_input"]', fallback: '.header-search-field' },
         'search.autocomplete':{ stable: '[data-js="autocomplete_results_container"]', fallback: '[hx-post="/search/htmx/get-autocomplete-results"]' },
-        'feed.card':          { stable: 'rum-video-thumbnail[role="listitem"], [role="listitem"][data-video-id], article.video-item', fallback: '.videostream.thumbnail__grid--item' },
+        'feed.card':          { stable: 'rum-video-thumbnail[role="listitem"], rum-card-video[role="listitem"], [role="listitem"][data-video-id], article.video-item', fallback: '.videostream.thumbnail__grid--item' },
         'feed.cardTitle':     { stable: '[video-title], rum-text[role="heading"], .thumbnail__title, .video-item--title', fallback: '.thumbnail__title.line-clamp-2' },
-        'feed.author':        { stable: 'rum-video-thumbnail[name], a[rel="author"].channel__link, article.video-item a[rel="author"]', fallback: '.channel__link' },
+        'feed.author':        { stable: 'rum-video-thumbnail[name], rum-card-video a[href*="/c/"], rum-card-video a[href*="/user/"], a[rel="author"].channel__link, article.video-item a[rel="author"]', fallback: '.channel__link' },
         'watch.media':        { stable: '[data-js="media_container"]', fallback: '.media-page' },
         'watch.player':       { stable: '#videoPlayer, video', fallback: '.videoPlayer-Rumble-cls' },
         'watch.title':        { stable: '.video-header-container__title', fallback: '[class*="video-header"] [class*="title"]' },
         'watch.share':        { stable: '[data-js="media_engage_share"]', fallback: '[data-js="video_action_sub_menu_button"], .round-button.media-by-actions-button' },
         'watch.description':  { stable: '[data-js="media_description_section"], .media-description-section', fallback: '.container.content.media-description' },
-        'watch.related':      { stable: '.media-page-related-media-desktop-sidebar', fallback: '.mediaList-list' },
-        'watch.relatedCard':  { stable: '.media-page-related-media-desktop-sidebar rum-video-thumbnail[role="listitem"]', fallback: '.media-page-related-media-desktop-sidebar .mediaList-item' },
+        'watch.related':      { stable: '.media-page-related-media-desktop-sidebar, .media-page-related-media-desktop-floating', fallback: '.mediaList-list' },
+        'watch.relatedCard':  { stable: '.media-page-related-media-desktop-sidebar rum-video-thumbnail[role="listitem"], .media-page-related-media-desktop-sidebar rum-card-video[role="listitem"], .media-page-related-media-desktop-floating rum-video-thumbnail[role="listitem"], .media-page-related-media-desktop-floating rum-card-video[role="listitem"]', fallback: '.media-page-related-media-desktop-sidebar .mediaList-item, .media-page-related-media-desktop-floating .mediaList-item' },
         'comments.root':      { stable: '[data-js="media_page_comments_container"], #video-comments', fallback: '.media-page-comments-container' },
         'comments.item':      { stable: 'li.comment-item[data-comment-id]', fallback: '.comment-item' },
         'comments.text':      { stable: '.comment-text', fallback: '[class*="comment"] [class*="text"]' },
@@ -209,7 +209,12 @@ const Selectors = {
             // Related cards are required only when the sidebar already shows
             // video-link evidence; an empty/disabled related rail is valid.
             try {
-                if (scope.querySelector('.media-page-related-media-desktop-sidebar a[href^="/v"], .media-page-related-media-desktop-sidebar a[href*="rumble.com/v"]')) {
+                if (scope.querySelector([
+                    '.media-page-related-media-desktop-sidebar a[href^="/v"]',
+                    '.media-page-related-media-desktop-sidebar a[href*="rumble.com/v"]',
+                    '.media-page-related-media-desktop-floating a[href^="/v"]',
+                    '.media-page-related-media-desktop-floating a[href*="rumble.com/v"]',
+                ].join(', '))) {
                     add('watch.relatedCard');
                 }
             } catch {}
@@ -306,5 +311,3 @@ const Selectors = {
         return out;
     },
 };
-
-
