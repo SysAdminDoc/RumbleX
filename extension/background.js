@@ -607,10 +607,24 @@ async function rxGetSettings() {
 // old object and let the last full-object write erase the others.
 let rxSettingsWriteChain = Promise.resolve();
 
-function rxQueueSettingsWrite(data, { replace = false, extraValues = null } = {}) {
+function rxQueueSettingsWrite(data, {
+    replace = false,
+    preserveOmittedSecrets = false,
+    extraValues = null,
+} = {}) {
     const commit = async () => {
-        const current = replace ? {} : (await chrome.storage.local.get('rx_settings')).rx_settings || {};
-        const next = rxNormalizeSettings(replace ? data : { ...current, ...data });
+        const current = (!replace || preserveOmittedSecrets)
+            ? (await chrome.storage.local.get('rx_settings')).rx_settings || {}
+            : {};
+        const candidate = replace ? { ...data } : { ...current, ...data };
+        if (replace && preserveOmittedSecrets) {
+            for (const key of RXSettingsSchema.SECRET_SETTING_KEYS) {
+                if (!Object.hasOwn(data, key) && Object.hasOwn(current, key)) {
+                    candidate[key] = current[key];
+                }
+            }
+        }
+        const next = rxNormalizeSettings(candidate);
         await chrome.storage.local.set({ ...(extraValues || {}), rx_settings: next });
         return next;
     };
@@ -2513,6 +2527,9 @@ const RX_MESSAGE_ACTIONS = Object.freeze({
     saveSettings: rxMessageRule(RX_EXTENSION_ONLY, {
         data: rxMessageField('json-object', { required: true, maxBytes: 2 * 1024 * 1024 }),
     }),
+    importSettings: rxMessageRule(RX_EXTENSION_ONLY, {
+        data: rxMessageField('json-object', { required: true, maxBytes: 2 * 1024 * 1024 }),
+    }),
     probeMedia: rxMessageRule(RX_EXTENSION_OR_CONTENT, {
         url: rxMessageField('download-url', { required: true }),
         scanId: rxMessageField('id', { required: true }),
@@ -2775,6 +2792,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message.action === 'saveSettings') {
         rxQueueSettingsWrite(message.data, { replace: true })
             .then(() => sendResponse({ success: true }))
+            .catch((error) => sendResponse({ success: false, error: error?.message || String(error) }));
+        return true;
+    }
+
+    if (message.action === 'importSettings') {
+        rxQueueSettingsWrite(message.data, { replace: true, preserveOmittedSecrets: true })
+            .then((settings) => sendResponse({ success: true, settings }))
             .catch((error) => sendResponse({ success: false, error: error?.message || String(error) }));
         return true;
     }
@@ -3461,15 +3485,14 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                     while (arr.length > 50) arr.shift();
                     await new Promise((resolve) => chrome.storage.local.set({ rx_settings_snapshots: arr }, resolve));
                 } catch {}
-                // Preserve every local credential so a remote payload can
-                // neither replace nor clear the user's sync and notifier keys.
-                const next = rxNormalizeSettings({
-                    ...pulled,
-                    ...Object.fromEntries(RXSettingsSchema.SECRET_SETTING_KEYS.map((key) => [key, settings[key] || ''])),
-                    encryptedGistSyncToken: token,
-                    encryptedGistSyncId: gistId,
+                // Remote payloads never own local credentials. Preserve the
+                // values that are current when this queued replacement commits,
+                // not the snapshot read before the network request started.
+                const portable = RXSettingsSchema.sanitizeSettingsForTransport(pulled);
+                const next = await rxQueueSettingsWrite(portable, {
+                    replace: true,
+                    preserveOmittedSecrets: true,
                 });
-                await rxQueueSettingsWrite(next, { replace: true });
                 sendResponse({ ok: true, encryptedAt: env.encryptedAt || null, keyCount: Object.keys(next).length });
             } catch (e) {
                 sendResponse({ ok: false, reason: String(e?.message || e) });

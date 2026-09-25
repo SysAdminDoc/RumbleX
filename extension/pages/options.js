@@ -21,6 +21,7 @@
 
     const patchStoredSettings = (patch) => writeSettings('patchSettings', patch);
     const replaceStoredSettings = (settings) => writeSettings('saveSettings', settings);
+    const importStoredSettings = (settings) => writeSettings('importSettings', settings);
     const applyWelcomeSettings = (patch) => writeSettings('applyWelcomeSettings', patch);
     // Mirrors RX_EXTENSION_STORAGE_RESET_KEYS in content.js. The two lists are
     // held in sync by `npm run test:local-storage-keys`, which fails if either
@@ -1020,23 +1021,17 @@
             if (isPlainObject(data.settings)) incoming = data.settings;
             else if (isPlainObject(data)) incoming = data;
             else throw new Error('No settings block found');
-            const currentStore = await chrome.storage.local.get(STORAGE_KEY);
-            const currentSettings = normaliseImported(currentStore[STORAGE_KEY] || {});
-            const mergedIncoming = { ...incoming };
-            // Ordinary exports intentionally omit credentials. Importing one
-            // must update portable preferences without blanking secrets that
-            // never left this browser.
-            for (const key of RXSettingsSchema.SECRET_SETTING_KEYS) {
-                if (!Object.hasOwn(incoming, key)) mergedIncoming[key] = currentSettings[key] || '';
-            }
-            const sanitized = normaliseImported(mergedIncoming);
+            // Ordinary exports omit credentials. The background writer keeps
+            // omitted secrets at commit time, after earlier queued writes land.
+            // A credential-bearing export still replaces keys it includes.
+            const sanitized = normaliseImported(incoming);
 
             if (new Blob([JSON.stringify(sanitized)]).size > IMPORT_LIMITS.totalBytes) {
                 throw new Error('Import data is too large for extension storage');
             }
 
             const snapshot = await createSettingsSnapshot('pre-import-settings');
-            await replaceStoredSettings(sanitized);
+            await importStoredSettings(sanitized);
 
             // v2+: restore per-site data to any open Rumble tabs. If no tab
             // is open we silently skip — the payload is already gone from the

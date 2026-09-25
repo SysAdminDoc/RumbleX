@@ -34,6 +34,14 @@ const stored = { rx_settings: { alpha: 0, beta: 0 } };
 let failNextWrite = false;
 const context = vm.createContext({
     console,
+    RXSettingsSchema: {
+        SECRET_SETTING_KEYS: Object.freeze([
+            'discordWebhookUrl',
+            'encryptedGistSyncToken',
+            'encryptedGistSyncId',
+            'liveStreamApiUrl',
+        ]),
+    },
     chrome: {
         storage: {
             local: {
@@ -81,7 +89,38 @@ async function main() {
     assert.deepEqual(stored.rx_settings, { replacement: true },
         'explicit restore/import did not replace the stored profile');
 
-    console.log('Settings write contract OK: concurrent patches serialize, failures recover, and full restores stay explicit.');
+    stored.rx_settings = {
+        portable: 'old',
+        encryptedGistSyncToken: 'old-local-token',
+        discordWebhookUrl: 'https://discord.com/api/webhooks/1/newest-local-secret',
+    };
+    await Promise.all([
+        context.queueWrite({ encryptedGistSyncToken: 'newest-local-token' }),
+        context.queueWrite({ portable: 'imported' }, {
+            replace: true,
+            preserveOmittedSecrets: true,
+        }),
+    ]);
+    assert.deepEqual(stored.rx_settings, {
+        portable: 'imported',
+        encryptedGistSyncToken: 'newest-local-token',
+        discordWebhookUrl: 'https://discord.com/api/webhooks/1/newest-local-secret',
+    }, 'credential-safe replacement did not preserve omitted secrets at commit time');
+
+    await context.queueWrite({
+        portable: 'credential-bearing-import',
+        encryptedGistSyncToken: 'explicit-import-token',
+    }, {
+        replace: true,
+        preserveOmittedSecrets: true,
+    });
+    assert.deepEqual(stored.rx_settings, {
+        portable: 'credential-bearing-import',
+        encryptedGistSyncToken: 'explicit-import-token',
+        discordWebhookUrl: 'https://discord.com/api/webhooks/1/newest-local-secret',
+    }, 'credential-safe replacement did not honor an explicitly imported secret');
+
+    console.log('Settings write contract OK: writes serialize, failures recover, restores replace, and omitted secrets stay current.');
 }
 
 main().catch((error) => {

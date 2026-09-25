@@ -1,6 +1,6 @@
 # RumbleX
 
-![Version](https://img.shields.io/badge/version-v3.61.0-blue) ![License](https://img.shields.io/badge/license-MIT-green) ![Platform](https://img.shields.io/badge/platform-Extension%20%2B%20Userscript-lightgrey) ![Firefox](https://img.shields.io/badge/firefox-113%2B-orange)
+![Version](https://img.shields.io/badge/version-v3.61.0-blue) ![License](https://img.shields.io/badge/license-MIT-green) ![Platform](https://img.shields.io/badge/platform-Extension%20%2B%20Userscript-lightgrey) ![Chromium](https://img.shields.io/badge/chromium-111%2B-blue) ![Firefox](https://img.shields.io/badge/firefox-113%2B-orange)
 
 **A large Rumble enhancement suite.** Its 141 feature modules cover ad blocking, theater mode, downloads, playback, chat, local history, feed controls, and granular page cleanup. It runs as a browser extension or userscript.
 
@@ -339,7 +339,7 @@ Click the extension icon for quick toggles, grouped by category with enabled-cou
 
 Install instructions for every browser, plus the checksum and signature commands, also live on the project page at **<https://sysadmindoc.github.io/RumbleX/>**. That page and this repository are the only official sources.
 
-### Chrome / Edge / Brave (MV3)
+### Chrome / Edge / Brave (111+)
 1. Grab `RumbleX-chrome.zip` from [Releases](https://github.com/SysAdminDoc/RumbleX/releases)
 2. Extract the zip
 3. Visit `chrome://extensions` and enable **Developer mode**
@@ -347,7 +347,7 @@ Install instructions for every browser, plus the checksum and signature commands
 
 Each release also includes `RumbleX-chrome.crx`, signed with the project's local self-host key. It is a secondary package for managed or policy-enabled browsers. Standard Chrome, Edge and Brave installs outside their stores can reject direct CRX installation, so the ZIP and **Load unpacked** remain the dependable path.
 
-No minimum Chrome version is declared beyond what MV3 itself requires. Chrome 148 added a `browser` namespace alongside `chrome`, which would let the Firefox compatibility shim go away, but only by refusing to run on anything older. RumbleX detects whichever namespace the browser offers instead, so it works on Chrome 148, on Chrome well below it, and on Firefox, and the page-feature core touches neither namespace directly.
+Chromium 111 is the minimum because RumbleX uses `color-mix()` for themed translucent controls and the modern abort timeout API for bounded network work. Current Chrome, Edge, and Brave releases meet that floor. RumbleX still detects either the `chrome` or `browser` extension namespace so the shared page-feature core remains browser neutral.
 
 ### Firefox (113+)
 1. Download `RumbleX-firefox-amo-unsigned.zip` from [Releases](https://github.com/SysAdminDoc/RumbleX/releases) and extract it

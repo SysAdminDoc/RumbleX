@@ -102,6 +102,21 @@ function main() {
     }
     addVersionError(errors, canonicalVersion, 'store screenshot capture', listing.assets.captured_version);
 
+    const chromiumMinimum = manifest.minimum_chrome_version || '';
+    const chromiumMajor = chromiumMinimum.match(/^(\d+)/)?.[1] || '';
+    if (!chromiumMajor) {
+        errors.push('Chromium minimum_chrome_version is missing or invalid');
+    } else {
+        const supportCopy = [
+            [readme, `chromium-${chromiumMajor}%2B`, 'README Chromium badge'],
+            [readme, `Chrome / Edge / Brave (${chromiumMajor}+)`, 'README Chromium install heading'],
+            [landing, `Chromium ${chromiumMajor} and newer`, 'project page Chromium support copy'],
+        ];
+        for (const [surface, snippet, label] of supportCopy) {
+            if (!surface.includes(snippet)) errors.push(`${label} does not match manifest minimum ${chromiumMinimum}`);
+        }
+    }
+
     const firefoxMinimum = firefoxManifest.browser_specific_settings?.gecko?.strict_min_version || '';
     const firefoxMajor = firefoxMinimum.match(/^(\d+)/)?.[1] || '';
     if (!firefoxMajor) {
@@ -241,7 +256,7 @@ function main() {
     console.log(
         `check-store-listing OK: v${canonicalVersion}, ${featureCount} public feature modules, `
         + `${chromiumPerms} Chromium and ${firefoxPermissions.length} Firefox permissions justified, `
-        + `Firefox ${firefoxMinimum}+ support copy aligned, `
+        + `Chromium ${chromiumMinimum}+ and Firefox ${firefoxMinimum}+ support copy aligned, `
         + `${REQUIRED_LOCALES.length} locales of copy within the ${SHORT_DESCRIPTION_MAX}-character cap, `
         + `${declared.length} assets at their exact required sizes.`,
     );
