@@ -917,7 +917,7 @@
         next.push(snapshot);
         while (next.length > limit) next.shift();
         await chrome.storage.local.set({ rx_settings_snapshots: next });
-        return { ok: true, count: next.length };
+        return { ok: true, count: next.length, at: snapshot.at };
     }
 
     async function listSettingsSnapshots() {
@@ -1007,7 +1007,16 @@
             if (isPlainObject(data.settings)) incoming = data.settings;
             else if (isPlainObject(data)) incoming = data;
             else throw new Error('No settings block found');
-            const sanitized = normaliseImported(incoming);
+            const currentStore = await chrome.storage.local.get(STORAGE_KEY);
+            const currentSettings = normaliseImported(currentStore[STORAGE_KEY] || {});
+            const mergedIncoming = { ...incoming };
+            // Ordinary exports intentionally omit credentials. Importing one
+            // must update portable preferences without blanking secrets that
+            // never left this browser.
+            for (const key of RXSettingsSchema.SECRET_SETTING_KEYS) {
+                if (!Object.hasOwn(incoming, key)) mergedIncoming[key] = currentSettings[key] || '';
+            }
+            const sanitized = normaliseImported(mergedIncoming);
 
             if (new Blob([JSON.stringify(sanitized)]).size > IMPORT_LIMITS.totalBytes) {
                 throw new Error('Import data is too large for extension storage');
@@ -1021,6 +1030,7 @@
             // imported file after this return, so the user should reimport
             // after opening a Rumble tab. We tell them so in the toast.
             let restoreSummary = '';
+            const restoreErrors = [];
 
             // v3+: extension-storage activity restores without needing a tab.
             // Only the allowlisted keys are written, so a crafted file cannot
@@ -1037,7 +1047,9 @@
                         await chrome.storage.local.set(restorable);
                         restoreSummary += ` Restored ${Object.keys(restorable).length} stored activity `
                             + `${Object.keys(restorable).length === 1 ? 'record' : 'records'}.`;
-                    } catch { /* storage write refused → settings still imported */ }
+                    } catch (error) {
+                        restoreErrors.push('Stored activity could not be restored: ' + (error?.message || error));
+                    }
                 }
             }
 
@@ -1054,15 +1066,37 @@
                         } else {
                             restoreSummary += ` Restored ${resp.written} per-site ${resp.written === 1 ? 'key' : 'keys'} to ${resp.tabs} open ${resp.tabs === 1 ? 'tab' : 'tabs'}.`;
                         }
+                    } else if (resp?.pending) {
+                        const staged = resp.pendingKeys || Object.keys(localData).length;
+                        restoreErrors.push(`Only ${resp.written || 0} of ${staged} per-site keys were written. The full restore is staged to retry on the next Rumble tab.`);
+                    } else {
+                        restoreErrors.push('Per-site data could not be restored: ' + (resp?.reason || 'no response'));
                     }
-                } catch { /* no receiver — silently skip */ }
+                } catch (error) {
+                    restoreErrors.push('Per-site data could not be restored: ' + (error?.message || error));
+                }
             }
 
             await renderStorageInfo();
             await refreshSettingsState({ resetDraft: true });
+            await refreshSnapshotList();
             if (state.modalOpen) renderSettingsWorkspace();
-            const snapshotNote = snapshot?.ok ? ' Snapshot captured first.' : '';
-            showStatus('Settings imported.' + snapshotNote + ' Reload open Rumble tabs to apply.' + restoreSummary, 'success');
+            const snapshotNote = snapshot?.ok
+                ? ' Snapshot captured first.'
+                : ' Backup history is disabled, so this import cannot be undone automatically.';
+            const message = 'Settings imported.' + snapshotNote + ' Reload open Rumble tabs to apply.' + restoreSummary
+                + (restoreErrors.length ? ' ' + restoreErrors.join(' ') : '');
+            if (snapshot?.ok) {
+                showStatusWithAction(message, restoreErrors.length ? 'error' : 'success', 'Undo import', async () => {
+                    const restored = await restoreSettingsSnapshot(snapshot.at);
+                    await refreshSettingsState({ resetDraft: true });
+                    await refreshSnapshotList();
+                    if (state.modalOpen) renderSettingsWorkspace();
+                    showStatus(restored?.ok ? 'Import undone.' : 'Undo failed.', restored?.ok ? 'success' : 'error');
+                });
+            } else {
+                showStatus(message, restoreErrors.length ? 'error' : 'success');
+            }
         } catch (err) {
             showStatus('Import failed: ' + err.message, 'error');
         } finally {

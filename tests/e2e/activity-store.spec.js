@@ -18,16 +18,16 @@ const SEEDED = { rx_watch_progress: PROGRESS, rx_bookmarks: BOOKMARKS, rx_rants_
 // and the comparisons leave it out.
 const LIVE_ARCHIVE = 'rx_rants_vactivity';
 
-async function openRumble(context) {
+async function openRumble(context, url = PAGE) {
     const page = await context.newPage();
     await page.route('**/*', (route) => {
         const request = route.request();
-        if (request.isNavigationRequest() && request.url().startsWith('https://rumble.com/')) {
+        if (request.isNavigationRequest() && /^https:\/\/(?:www\.)?rumble\.com\//.test(request.url())) {
             return route.fulfill({ status: 200, contentType: 'text/html', body: OFFLINE_RUMBLE_FIXTURE });
         }
         return route.abort();
     });
-    await page.goto(PAGE, { waitUntil: 'domcontentloaded' });
+    await page.goto(url, { waitUntil: 'domcontentloaded' });
     await page.waitForSelector('#rx-settings-btn', { state: 'attached', timeout: 15_000 });
     return page;
 }
@@ -153,7 +153,7 @@ test('a move interrupted after it committed keeps the real copies and adopts wha
     // Committed: the version is recorded and the extension copies are the
     // real ones, but the tab closed before the page copies were removed.
     await serviceWorker.evaluate((progress) => chrome.storage.local.set({
-        rx_activity_meta: { version: 1, migratedAt: 1, keys: 1 },
+        rx_activity_meta: { version: 1, migratedAt: 1, keys: 1, origins: ['https://rumble.com'] },
         'rx_act:rx_watch_progress': progress,
     }), PROGRESS);
     await reload(page);
@@ -165,6 +165,85 @@ test('a move interrupted after it committed keeps the real copies and adopts wha
         'rx_act:rx_rants_vseeded': RANTS,
     });
     expect(await pageStorage(page)).toEqual({ rumble_own_key: 'belongs to rumble' });
+});
+
+test('a second Rumble origin merges its legacy collections before deleting them', async ({ context, serviceWorker }) => {
+    const first = await plantLegacy(context, serviceWorker);
+    await serviceWorker.evaluate(() => chrome.storage.local.remove('rx_activity_meta'));
+    await reload(first);
+
+    const secondProgress = JSON.stringify({ vsecond: { t: 45, d: 300, ts: 1_700_000_200_000 } });
+    const secondBookmarks = JSON.stringify([{
+        url: 'https://rumble.com/vbookmark-two.html',
+        title: 'Second origin bookmark',
+        ts: 1_700_000_200_000,
+    }]);
+    const second = await openRumble(context, 'https://www.rumble.com/vactivity-second-origin.html');
+    await second.evaluate(({ progress, bookmarks }) => {
+        localStorage.setItem('rx_watch_progress', progress);
+        localStorage.setItem('rx_bookmarks', bookmarks);
+    }, { progress: secondProgress, bookmarks: secondBookmarks });
+    await reload(second);
+
+    const copies = await activityKeys(serviceWorker);
+    expect(JSON.parse(copies['rx_act:rx_watch_progress'])).toMatchObject({
+        vactivity: JSON.parse(PROGRESS).vactivity,
+        vsecond: JSON.parse(secondProgress).vsecond,
+    });
+    expect(JSON.parse(copies['rx_act:rx_bookmarks']).map((entry) => entry.url).sort()).toEqual([
+        'https://rumble.com/vbookmark-one.html',
+        'https://rumble.com/vbookmark-two.html',
+    ]);
+    expect(await second.evaluate(() => ({
+        progress: localStorage.getItem('rx_watch_progress'),
+        bookmarks: localStorage.getItem('rx_bookmarks'),
+    }))).toEqual({ progress: null, bookmarks: null });
+});
+
+test('a transient activity-storage failure keeps the write dirty and retries it', async ({ context, serviceWorker }) => {
+    const page = await plantLegacy(context, serviceWorker);
+    await serviceWorker.evaluate(() => chrome.storage.local.remove('rx_activity_meta'));
+    await reload(page);
+    const payload = JSON.stringify([{ url: 'https://rumble.com/vretry.html', title: 'Retry me', ts: Date.now() }]);
+
+    const result = await serviceWorker.evaluate(async ({ id, value }) => {
+        const [execution] = await chrome.scripting.executeScript({
+            target: { tabId: id },
+            world: 'ISOLATED',
+            func: async (nextValue) => {
+                const realSet = chrome.storage.local.set.bind(chrome.storage.local);
+                let failed = false;
+                chrome.storage.local.set = (items, callback) => {
+                    if (!failed && Object.hasOwn(items, 'rx_act:rx_bookmarks')) {
+                        failed = true;
+                        throw new Error('transient storage failure');
+                    }
+                    return realSet(items, callback);
+                };
+                try {
+                    RxActivity.setItem('rx_bookmarks', nextValue);
+                    const first = await RxActivity.flush();
+                    const dirtyAfterFailure = RxActivity._dirty.get('rx_bookmarks');
+                    chrome.storage.local.set = realSet;
+                    const second = await RxActivity.flush();
+                    return { first, second, dirtyAfterFailure, dirtyAfterRetry: RxActivity._dirty.has('rx_bookmarks') };
+                } finally {
+                    chrome.storage.local.set = realSet;
+                }
+            },
+            args: [value],
+        });
+        return execution.result;
+    }, { id: await tabIdOf(serviceWorker, page), value: payload });
+
+    expect(result).toEqual({
+        first: false,
+        second: true,
+        dirtyAfterFailure: payload,
+        dirtyAfterRetry: false,
+    });
+    await expect.poll(async () => (await storage(serviceWorker, 'rx_act:rx_bookmarks'))['rx_act:rx_bookmarks'])
+        .toBe(payload);
 });
 
 test('a copy that does not read back identically rolls back and leaves the page copies in charge', async ({ context, serviceWorker }) => {

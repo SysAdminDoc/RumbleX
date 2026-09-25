@@ -306,15 +306,23 @@ const MediaProbeCache = {
     _KEY: 'rx_probe_cache',
     _mem: null,       // { [key]: { at: number, val: any } }
     _ready: false,
+    _loadPromise: null,
     async _load() {
         if (this._ready) return;
-        try {
-            const data = await RXPlatform.storage.get(this._KEY);
-            this._mem = (data && data[this._KEY]) || {};
-        } catch {
-            this._mem = {};
+        if (!this._loadPromise) {
+            this._loadPromise = (async () => {
+                let stored = {};
+                try {
+                    const data = await RXPlatform.storage.get(this._KEY);
+                    stored = (data && data[this._KEY]) || {};
+                } catch {}
+                // Preserve writes made by a test/runtime caller that reached
+                // the in-memory cache while the first storage read was open.
+                this._mem = { ...stored, ...(this._mem || {}) };
+                this._ready = true;
+            })().finally(() => { this._loadPromise = null; });
         }
-        this._ready = true;
+        await this._loadPromise;
     },
     _ttlMs() {
         const hrs = Number(Settings.get('downloadProbeCacheTtlHours'));
@@ -355,6 +363,7 @@ const MediaProbeCache = {
         this._scheduleFlush();
     },
     async clear() {
+        await this._load();
         clearTimeout(this._flushTimer);
         this._flushTimer = null;
         this._mem = {};
@@ -371,4 +380,3 @@ const MediaProbeCache = {
         }, 250);
     },
 };
-

@@ -23,7 +23,7 @@
 // @updateURL    https://github.com/SysAdminDoc/RumbleX/raw/main/RumbleX.lite.user.js
 // ==/UserScript==
 
-// Generated from the shared extension core files. Shared runtime SHA-256: eabb8ccc3ed1cb27582e45648c9fcda7b60d99287495e224281a609a3e350a1b
+// Generated from the shared extension core files. Shared runtime SHA-256: 7f0197cbecd93fed2b2b5cedc7007b6ce35752b86257aace429126eca3b216eb
 // RumbleX shared settings schema. This file is the canonical source for
 // defaults and trust-boundary normalization across content, options, popup,
 // background profile/Gist restores, and the generated userscript.
@@ -2827,15 +2827,23 @@ const MediaProbeCache = {
     _KEY: 'rx_probe_cache',
     _mem: null,       // { [key]: { at: number, val: any } }
     _ready: false,
+    _loadPromise: null,
     async _load() {
         if (this._ready) return;
-        try {
-            const data = await RXPlatform.storage.get(this._KEY);
-            this._mem = (data && data[this._KEY]) || {};
-        } catch {
-            this._mem = {};
+        if (!this._loadPromise) {
+            this._loadPromise = (async () => {
+                let stored = {};
+                try {
+                    const data = await RXPlatform.storage.get(this._KEY);
+                    stored = (data && data[this._KEY]) || {};
+                } catch {}
+                // Preserve writes made by a test/runtime caller that reached
+                // the in-memory cache while the first storage read was open.
+                this._mem = { ...stored, ...(this._mem || {}) };
+                this._ready = true;
+            })().finally(() => { this._loadPromise = null; });
         }
-        this._ready = true;
+        await this._loadPromise;
     },
     _ttlMs() {
         const hrs = Number(Settings.get('downloadProbeCacheTtlHours'));
@@ -2876,6 +2884,7 @@ const MediaProbeCache = {
         this._scheduleFlush();
     },
     async clear() {
+        await this._load();
         clearTimeout(this._flushTimer);
         this._flushTimer = null;
         this._mem = {};
@@ -2892,7 +2901,6 @@ const MediaProbeCache = {
         }, 250);
     },
 };
-
 
 
 // RumbleX v3.60.1 - Shared Content Core
@@ -3147,12 +3155,70 @@ const RX_ACTIVITY_META = 'rx_activity_meta';
 const RX_ACTIVITY_SNAPSHOT = 'rx_activity_premigration';
 const RX_ACTIVITY_VERSION = 1;
 
+function rxMergeActivityJson(current, legacy, depth = 0) {
+    if (depth > 4) return current;
+    if (Array.isArray(current) && Array.isArray(legacy)) {
+        const identity = (item) => {
+            if (item === null || typeof item !== 'object') return `${typeof item}:${String(item)}`;
+            for (const key of ['id', 'videoId', 'url', 'query', 'username', 'channelId']) {
+                if (item[key] !== undefined && item[key] !== null) return `${key}:${String(item[key])}`;
+            }
+            try { return `json:${JSON.stringify(item)}`; } catch { return null; }
+        };
+        const merged = [];
+        const positions = new Map();
+        // Legacy entries go first. A matching extension entry then replaces it,
+        // because the extension store is authoritative once migration commits.
+        for (const item of [...legacy, ...current]) {
+            const key = identity(item);
+            if (key === null || !positions.has(key)) {
+                if (key !== null) positions.set(key, merged.length);
+                merged.push(item);
+            } else {
+                merged[positions.get(key)] = item;
+            }
+        }
+        return merged;
+    }
+    const currentPlain = current && typeof current === 'object' && !Array.isArray(current);
+    const legacyPlain = legacy && typeof legacy === 'object' && !Array.isArray(legacy);
+    if (currentPlain && legacyPlain) {
+        const merged = Object.create(null);
+        for (const [key, value] of Object.entries(legacy)) {
+            if (!['__proto__', 'prototype', 'constructor'].includes(key)) merged[key] = value;
+        }
+        for (const [key, value] of Object.entries(current)) {
+            if (['__proto__', 'prototype', 'constructor'].includes(key)) continue;
+            merged[key] = Object.hasOwn(merged, key)
+                ? rxMergeActivityJson(value, merged[key], depth + 1)
+                : value;
+        }
+        return merged;
+    }
+    return current;
+}
+
+function rxMergeActivityValue(current, legacy) {
+    if (typeof current !== 'string') return legacy;
+    if (typeof legacy !== 'string' || current === legacy) return current;
+    try {
+        return JSON.stringify(rxMergeActivityJson(JSON.parse(current), JSON.parse(legacy)));
+    } catch {
+        // Scalar and malformed legacy values cannot be merged safely. Keep the
+        // committed extension copy and leave the page copy alone until the
+        // caller has verified the authoritative value.
+        return current;
+    }
+}
+
 const RxActivity = {
     _mode: 'page',
     _cache: new Map(),
     _dirty: new Map(),
     _inFlight: new Set(),
     _flushQueued: false,
+    _retryTimer: null,
+    _retryDelay: 250,
     _unsubscribe: null,
 
     get mode() { return this._mode; },
@@ -3214,8 +3280,22 @@ const RxActivity = {
         try {
             if (Object.keys(set).length) await RXPlatform.storage.set(set);
             if (remove.length) await RXPlatform.storage.remove(remove);
+            clearTimeout(this._retryTimer);
+            this._retryTimer = null;
+            this._retryDelay = 250;
+            return true;
         } catch (error) {
             try { RxErrorLog.record('ActivityStore', error, 'flush'); } catch {}
+            // Restore only values that have not been superseded while this
+            // batch was in flight. The cache already reflects newer writes.
+            for (const [key, value] of batch) {
+                if (!this._dirty.has(key)) this._dirty.set(key, value);
+            }
+            clearTimeout(this._retryTimer);
+            const delay = this._retryDelay;
+            this._retryDelay = Math.min(this._retryDelay * 2, 10_000);
+            this._retryTimer = setTimeout(() => { void this.flush(); }, delay);
+            return false;
         } finally {
             for (const [key] of batch) {
                 if (!this._dirty.has(key)) this._inFlight.delete(key);
@@ -3258,29 +3338,47 @@ const RxActivity = {
     async _migrate() {
         const run = async () => {
             const meta = (await RXPlatform.storage.get(RX_ACTIVITY_META))?.[RX_ACTIVITY_META];
-            if (meta?.version === RX_ACTIVITY_VERSION) return { ok: true, already: true };
+            if (meta?.version === RX_ACTIVITY_VERSION) return { ok: true, already: true, meta };
             if (meta?.hold) return { ok: false, reason: 'held' };
             const snapshot = this._readPageStore();
             const keys = Object.keys(snapshot);
             await RXPlatform.storage.set({
                 [RX_ACTIVITY_SNAPSHOT]: { at: Date.now(), version: RX_ACTIVITY_VERSION, data: snapshot },
             });
+            const storageKeys = keys.map((key) => RX_ACTIVITY_PREFIX + key);
+            const previous = keys.length ? await RXPlatform.storage.get(storageKeys) : {};
+            // No committed version exists here, so the page snapshot remains
+            // authoritative. Existing extension keys are partial debris from
+            // an interrupted attempt and must not be merged back in.
+            const copies = Object.fromEntries(keys.map((key) => [RX_ACTIVITY_PREFIX + key, snapshot[key]]));
             if (keys.length) {
-                await RXPlatform.storage.set(Object.fromEntries(keys.map((key) => [RX_ACTIVITY_PREFIX + key, snapshot[key]])));
+                await RXPlatform.storage.set(copies);
             }
             const readBack = keys.length
-                ? await RXPlatform.storage.get(keys.map((key) => RX_ACTIVITY_PREFIX + key))
+                ? await RXPlatform.storage.get(storageKeys)
                 : {};
             const mismatched = keys.filter((key) => readBack?.[RX_ACTIVITY_PREFIX + key] !== snapshot[key]);
             if (mismatched.length) {
-                await this._undoCopies(keys);
+                const restore = {};
+                const remove = [];
+                for (const storageKey of storageKeys) {
+                    if (previous?.[storageKey] === undefined) remove.push(storageKey);
+                    else restore[storageKey] = previous[storageKey];
+                }
+                if (Object.keys(restore).length) await RXPlatform.storage.set(restore);
+                if (remove.length) await RXPlatform.storage.remove(remove);
                 await RXPlatform.storage.set({
                     [RX_ACTIVITY_META]: { version: 0, failedAt: Date.now(), reason: 'verify', mismatched: mismatched.length },
                 });
                 return { ok: false, reason: 'verify', mismatched };
             }
             await RXPlatform.storage.set({
-                [RX_ACTIVITY_META]: { version: RX_ACTIVITY_VERSION, migratedAt: Date.now(), keys: keys.length },
+                [RX_ACTIVITY_META]: {
+                    version: RX_ACTIVITY_VERSION,
+                    migratedAt: Date.now(),
+                    keys: keys.length,
+                    origins: [location.origin],
+                },
             });
             for (const key of keys) {
                 try { localStorage.removeItem(key); } catch {}
@@ -3345,15 +3443,32 @@ const RxActivity = {
         // rather than thrown away, and page copies go only once that landed.
         const leftovers = this._readPageStore();
         const adopted = {};
+        const knownOrigins = Array.isArray(migration.meta?.origins) ? migration.meta.origins : [];
+        const originAlreadyMigrated = knownOrigins.includes(location.origin);
         for (const [key, value] of Object.entries(leftovers)) {
-            if (this._cache.has(key)) continue;
-            this._cache.set(key, value);
-            adopted[RX_ACTIVITY_PREFIX + key] = value;
+            const merged = originAlreadyMigrated && this._cache.has(key)
+                ? this._cache.get(key)
+                : rxMergeActivityValue(this._cache.get(key), value);
+            if (this._cache.get(key) === merged) continue;
+            this._cache.set(key, merged);
+            adopted[RX_ACTIVITY_PREFIX + key] = merged;
         }
         try {
             if (Object.keys(adopted).length) await RXPlatform.storage.set(adopted);
+            if (Object.keys(adopted).length) {
+                const verified = await RXPlatform.storage.get(Object.keys(adopted));
+                const failed = Object.keys(adopted).filter((key) => verified?.[key] !== adopted[key]);
+                if (failed.length) throw new Error(`activity adoption verification failed for ${failed.length} keys`);
+            }
             for (const key of Object.keys(leftovers)) {
                 try { localStorage.removeItem(key); } catch {}
+            }
+            const meta = (await RXPlatform.storage.get(RX_ACTIVITY_META))?.[RX_ACTIVITY_META];
+            if (Object.keys(leftovers).length && meta?.version === RX_ACTIVITY_VERSION) {
+                const origins = [...new Set([...(Array.isArray(meta.origins) ? meta.origins : []), location.origin])];
+                if (!Array.isArray(meta.origins) || origins.length !== meta.origins.length) {
+                    await RXPlatform.storage.set({ [RX_ACTIVITY_META]: { ...meta, origins } });
+                }
             }
         } catch (error) {
             try { RxErrorLog.record('ActivityStore', error, 'adopt'); } catch {}
@@ -23635,13 +23750,16 @@ async function rxApplyPendingLocalDataOperation() {
     let written = 0;
     if (op.clear) cleared = rxClearLocalStorage();
     if (op.data && typeof op.data === 'object') written = rxWriteLocalStorage(op.data);
+    const persisted = await RxActivity.flush();
+    if (persisted === false) return { ok: false, reason: 'storage', cleared, written, pending: true };
     try {
-        await RXPlatform.sendMessage({
+        const completed = await RXPlatform.sendMessage({
             action: 'completePendingLocalDataOperation',
             id: op.id,
             cleared,
             written,
         });
+        if (completed?.ok === false) return { ...completed, pending: true };
     } catch {}
     return { ok: true, cleared, written };
 }
@@ -23895,7 +24013,11 @@ RXPlatform.onMessage((msg, sender, sendResponse) => {
     }
     if (msg.action === 'clearLocalData') {
         const cleared = rxClearLocalStorage();
-        sendResponse({ ok: true, cleared });
+        RxActivity.flush()
+            .then((persisted) => sendResponse(persisted === false
+                ? { ok: false, reason: 'storage', cleared }
+                : { ok: true, cleared }))
+            .catch((error) => sendResponse({ ok: false, reason: String(error?.message || error), cleared }));
         return true; // keep the channel open for async sendResponse
     }
     if (msg.action === 'getLocalData') {
@@ -23905,7 +24027,11 @@ RXPlatform.onMessage((msg, sender, sendResponse) => {
     }
     if (msg.action === 'setLocalData') {
         const written = rxWriteLocalStorage(msg.data);
-        sendResponse({ ok: true, written });
+        RxActivity.flush()
+            .then((persisted) => sendResponse(persisted === false
+                ? { ok: false, reason: 'storage', written }
+                : { ok: true, written }))
+            .catch((error) => sendResponse({ ok: false, reason: String(error?.message || error), written }));
         return true;
     }
     if (msg.action === 'directDownloadInterrupted') {

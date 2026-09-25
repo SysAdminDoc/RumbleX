@@ -69,6 +69,10 @@ test('registry rejects unknown fields and unsafe extension-page URLs', async ({ 
             }],
         },
     }))).toEqual({ ok: false, reason: 'invalid-payload', field: 'payload' });
+    expect(await options.evaluate(() => chrome.runtime.sendMessage({
+        action: 'recordDownloadDiagnostic',
+        diagnostic: { message: '\ud83d\ude80'.repeat(66_000) },
+    }))).toEqual({ ok: false, reason: 'invalid-payload', field: 'diagnostic' });
     for (const url of [
         'http://rumble.com/file.mp4',
         'https://user:pass@rumble.com/file.mp4',

@@ -217,3 +217,53 @@ test('loaded extension shares routing, selectors, cards, and media helpers acros
         disabledNotStored: true,
     });
 });
+
+test('media probe cache shares one first load across concurrent writers', async ({ context, serviceWorker }) => {
+    const html = read('tests/fixtures/platform/modern-watch.html');
+    const url = 'https://rumble.com/vprobe-cache-race.html';
+    await context.route(url, (route) => route.fulfill({ status: 200, contentType: 'text/html', body: html }));
+    const page = await context.newPage();
+    await page.goto(url, { waitUntil: 'domcontentloaded' });
+    const id = await tabId(serviceWorker, page.url());
+
+    const result = await serviceWorker.evaluate(async (targetTabId) => {
+        const [execution] = await chrome.scripting.executeScript({
+            target: { tabId: targetTabId },
+            world: 'ISOLATED',
+            func: async () => {
+                const originalTtl = Settings._cache.downloadProbeCacheTtlHours;
+                const realGet = chrome.storage.local.get.bind(chrome.storage.local);
+                let reads = 0;
+                try {
+                    Settings._cache.downloadProbeCacheTtlHours = 1;
+                    await MediaProbeCache.clear();
+                    MediaProbeCache._ready = false;
+                    MediaProbeCache._mem = null;
+                    MediaProbeCache._loadPromise = null;
+                    chrome.storage.local.get = (keys, callback) => {
+                        reads++;
+                        const delay = reads === 1 ? 20 : 60;
+                        setTimeout(() => realGet(keys, callback), delay);
+                    };
+                    await Promise.all([
+                        MediaProbeCache.set('race-a', { value: 'a' }),
+                        MediaProbeCache.set('race-b', { value: 'b' }),
+                    ]);
+                    chrome.storage.local.get = realGet;
+                    return {
+                        reads,
+                        a: (await MediaProbeCache.get('race-a'))?.value,
+                        b: (await MediaProbeCache.get('race-b'))?.value,
+                    };
+                } finally {
+                    chrome.storage.local.get = realGet;
+                    Settings._cache.downloadProbeCacheTtlHours = originalTtl;
+                    await MediaProbeCache.clear();
+                }
+            },
+        });
+        return execution.result;
+    }, id);
+
+    expect(result).toEqual({ reads: 1, a: 'a', b: 'b' });
+});

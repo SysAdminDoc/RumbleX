@@ -74,6 +74,8 @@ test('encrypted Gist pull preserves local credentials but rejects unsafe setting
     const passphrase = 'correct horse battery staple';
     const localToken = 'github_pat_local_fixture';
     const gistId = 'gist-fixture-id';
+    const webhook = 'https://discord.com/api/webhooks/123456789/local-secret';
+    const liveApiUrl = 'https://rumble.com/-livestream-api/account?key=local-api-secret';
     const pulled = {
         ...MALICIOUS_SETTINGS,
         autoplayQueue: [
@@ -83,9 +85,11 @@ test('encrypted Gist pull preserves local credentials but rejects unsafe setting
         ],
         encryptedGistSyncToken: 'remote-token-must-not-win',
         encryptedGistSyncId: 'remote-id-must-not-win',
+        discordWebhookUrl: 'https://discord.com/api/webhooks/123456789/remote-must-not-win',
+        liveStreamApiUrl: 'https://rumble.com/-livestream-api/account?key=remote-must-not-win',
     };
 
-    await page.evaluate(({ localToken, gistId }) => chrome.storage.local.set({
+    await page.evaluate(({ localToken, gistId, webhook, liveApiUrl }) => chrome.storage.local.set({
         rx_settings: {
             schemaVersion: 2,
             backupHistory: true,
@@ -93,8 +97,10 @@ test('encrypted Gist pull preserves local credentials but rejects unsafe setting
             encryptedGistSync: true,
             encryptedGistSyncToken: localToken,
             encryptedGistSyncId: gistId,
+            discordWebhookUrl: webhook,
+            liveStreamApiUrl: liveApiUrl,
         },
-    }), { localToken, gistId });
+    }), { localToken, gistId, webhook, liveApiUrl });
 
     await serviceWorker.evaluate(async ({ passphrase, pulled }) => {
         const enc = new TextEncoder();
@@ -152,6 +158,8 @@ test('encrypted Gist pull preserves local credentials but rejects unsafe setting
     expectSanitized(stored, 'https://rumble.com/vsafe-gist.html');
     expect(stored.encryptedGistSyncToken).toBe(localToken);
     expect(stored.encryptedGistSyncId).toBe(gistId);
+    expect(stored.discordWebhookUrl).toBe(webhook);
+    expect(stored.liveStreamApiUrl).toBe(liveApiUrl);
 
     const snapshots = await page.evaluate(async () => (
         (await chrome.storage.local.get('rx_settings_snapshots')).rx_settings_snapshots || []

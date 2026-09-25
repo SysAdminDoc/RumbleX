@@ -14,6 +14,35 @@ async function openArchivePanel(page) {
     await expect(details).toHaveAttribute('open', '');
 }
 
+test('worker restart recovery requeues only abandoned archive stages', async ({ serviceWorker }) => {
+    const result = await serviceWorker.evaluate(() => {
+        const root = {
+            jobs: [
+                { id: 'discover', status: 'discovering', startedAt: RX_ARCHIVE_WORKER_EPOCH - 1, retryCount: 0 },
+                { id: 'folder', status: 'downloading', startedAt: RX_ARCHIVE_WORKER_EPOCH - 1, downloadId: null, retryCount: 2 },
+                { id: 'browser', status: 'downloading', startedAt: RX_ARCHIVE_WORKER_EPOCH - 1, downloadId: 42 },
+                { id: 'current', status: 'discovering', startedAt: RX_ARCHIVE_WORKER_EPOCH + 1 },
+            ],
+        };
+        return { recovered: rxRecoverAbandonedArchiveJobs(root), jobs: root.jobs };
+    });
+    expect(result.recovered).toBe(2);
+    expect(result.jobs.find((job) => job.id === 'discover')).toMatchObject({
+        status: 'pending',
+        recoveredFromStatus: 'discovering',
+        recoveryReason: 'worker-restart',
+        retryCount: 1,
+    });
+    expect(result.jobs.find((job) => job.id === 'folder')).toMatchObject({
+        status: 'pending',
+        recoveredFromStatus: 'downloading',
+        recoveryReason: 'worker-restart',
+        retryCount: 3,
+    });
+    expect(result.jobs.find((job) => job.id === 'browser')).toMatchObject({ status: 'downloading', downloadId: 42 });
+    expect(result.jobs.find((job) => job.id === 'current')).toMatchObject({ status: 'discovering' });
+});
+
 test('archive queue import/export normalizes active jobs and retries failures', async ({ context, extensionId }) => {
     const page = await context.newPage();
     await page.goto(`chrome-extension://${extensionId}/pages/options.html`);

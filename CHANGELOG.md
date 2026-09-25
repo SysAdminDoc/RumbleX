@@ -4,6 +4,14 @@ All notable changes to RumbleX will be documented in this file.
 
 ## Unreleased
 
+### Fixed
+
+- Activity migration now merges history, bookmarks, progress, and other JSON collections from both Rumble origins before removing legacy copies. Failed extension-storage writes stay queued and retry with backoff instead of disappearing after a reload.
+- Backup imports and encrypted Gist pulls preserve every local credential that was omitted from the incoming file, including the Live Stream API URL. Partial activity restores now stay staged and report the failure instead of claiming full success.
+- Runtime message limits now measure UTF-8 bytes, settings saves report storage failures, and a started browser download is no longer reported as rejected only because recovery metadata could not be saved.
+- Archive discovery has a deadline, notifier checks are single-flight and time bounded, and abandoned archive work is requeued after a service-worker restart.
+- Concurrent media-probe cache callers now share one initial storage read, preventing one scan from erasing another scan's first cached result.
+
 ## [3.60.1] - 2026-09-24
 
 ### Fixed

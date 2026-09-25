@@ -91,9 +91,26 @@ async function rxStagePendingLocalDataOperation({ source, clear = false, data = 
     return op;
 }
 
-async function rxCompletePendingLocalDataOperation(id) {
+async function rxCompletePendingLocalDataOperation(id, { cleared = 0, written = 0 } = {}) {
     const current = await rxGetPendingLocalDataOperation();
     if (!current || current.id !== id) return { ok: true, cleared: false };
+    if (current.keyCount > 0 && written < current.keyCount) {
+        await chrome.storage.local.set({
+            [PENDING_LOCAL_DATA_OP_KEY]: {
+                ...current,
+                lastAttemptAt: Date.now(),
+                lastWritten: Math.max(0, Number(written) || 0),
+                lastCleared: Math.max(0, Number(cleared) || 0),
+            },
+        });
+        return {
+            ok: false,
+            cleared: false,
+            reason: 'partial-write',
+            expected: current.keyCount,
+            written: Math.max(0, Number(written) || 0),
+        };
+    }
     await chrome.storage.local.remove(PENDING_LOCAL_DATA_OP_KEY);
     return { ok: true, cleared: true };
 }
@@ -942,7 +959,9 @@ if (chrome.notifications?.onClicked) {
     chrome.notifications.onClicked.addListener(rxNotificationClickListener);
 }
 
-async function rxRunNotifierPass() {
+let rxNotifierPassPromise = null;
+
+async function rxRunNotifierPassOnce() {
     const s = await rxGetSettings();
     if (!s.channelNotifierEnabled) return;
     const channels = Array.isArray(s.watchedChannels) ? s.watchedChannels : [];
@@ -960,7 +979,11 @@ async function rxRunNotifierPass() {
             lastChecked: Number.isFinite(ch.lastChecked) ? ch.lastChecked : null,
         };
         try {
-            const resp = await fetch(channelUrl, { method: 'GET', credentials: 'omit' });
+            const resp = await fetch(channelUrl, {
+                method: 'GET',
+                credentials: 'omit',
+                signal: AbortSignal.timeout(15_000),
+            });
             if (!resp.ok) {
                 updated.push({ ...safeChannel, lastChecked: Date.now(), lastError: 'http-' + resp.status });
                 dirty = true;
@@ -1018,6 +1041,14 @@ async function rxRunNotifierPass() {
     if (dirty) await rxSetSettings({ watchedChannels: updated });
 }
 
+function rxRunNotifierPass() {
+    if (rxNotifierPassPromise) return rxNotifierPassPromise;
+    rxNotifierPassPromise = rxRunNotifierPassOnce().finally(() => {
+        rxNotifierPassPromise = null;
+    });
+    return rxNotifierPassPromise;
+}
+
 if (chrome.alarms?.onAlarm) {
     chrome.alarms.onAlarm.addListener((alarm) => {
         if (alarm.name === RX_NOTIFIER_ALARM) {
@@ -1047,6 +1078,7 @@ const RX_ARCHIVE_KEY = 'rx_archive_queue';
 const RX_ARCHIVE_MAX_JOBS = 500;
 const RX_ARCHIVE_COMPLETED_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const RX_ARCHIVE_EXPORT_SCHEMA = 1;
+const RX_ARCHIVE_WORKER_EPOCH = Date.now();
 let rxArchiveMutationQueue = Promise.resolve();
 
 async function rxSyncArchiveAlarm() {
@@ -1118,7 +1150,7 @@ async function rxDiscoverVideoQuality(videoSlug, maxHeight) {
     const numericId = String(videoSlug || '').replace(/^v/, '');
     if (!numericId) throw new Error('bad-video-id');
     const url = 'https://rumble.com/embedJS/u3/?request=video&ver=2&v=' + encodeURIComponent(numericId);
-    const resp = await fetch(url);
+    const resp = await fetch(url, { signal: AbortSignal.timeout(30_000) });
     if (!resp.ok) throw new Error('embedJS http-' + resp.status);
     const data = await resp.json();
     const src = data.ua || data.u || {};
@@ -1358,6 +1390,7 @@ async function rxRunArchiveTick() {
             if (job.status !== 'completed') return true;
             return !(job.completedAt && (now - job.completedAt) > RX_ARCHIVE_COMPLETED_TTL_MS);
         });
+        rxRecoverAbandonedArchiveJobs(root);
         const inFlight = root.jobs.filter((job) => job.status === 'discovering' || job.status === 'downloading').length;
         const slots = Math.max(0, concurrency - inFlight);
         const pending = root.jobs.filter((job) => job.status === 'pending').slice(0, slots);
@@ -1396,6 +1429,22 @@ function rxResetArchiveJobForRetry(job) {
     job.recoveredFromStatus = null;
     job.retryCount = (Number(job.retryCount) || 0) + 1;
     job.lastRetryAt = Date.now();
+}
+
+function rxRecoverAbandonedArchiveJobs(root) {
+    let recovered = 0;
+    for (const job of root.jobs || []) {
+        const abandoned = (job.status === 'discovering'
+            || (job.status === 'downloading' && !Number.isInteger(job.downloadId)))
+            && (!Number.isFinite(job.startedAt) || job.startedAt < RX_ARCHIVE_WORKER_EPOCH);
+        if (!abandoned) continue;
+        const recoveredFromStatus = job.status;
+        rxResetArchiveJobForRetry(job);
+        job.recoveredFromStatus = recoveredFromStatus;
+        job.recoveryReason = 'worker-restart';
+        recovered++;
+    }
+    return recovered;
 }
 
 // v3.35.0 — Network-aware download recovery. Only downloads started by
@@ -1697,7 +1746,13 @@ async function rxPollLiveApi() {
 
 async function rxStartManagedDownload(options, metadata = {}) {
     const downloadId = await rxDownloadsApi.download(options);
-    await rxTrackManagedDownload(downloadId, metadata);
+    try {
+        await rxTrackManagedDownload(downloadId, metadata);
+    } catch (error) {
+        // The browser transfer already exists. Recovery metadata is secondary,
+        // so never report the started download as rejected and invite a duplicate.
+        console.warn('[RumbleX] download started without recovery tracking:', error);
+    }
     return downloadId;
 }
 
@@ -2553,7 +2608,7 @@ function rxMessageHasOnlyKeys(value, allowed) {
 
 function rxMessageJsonWithin(value, maxBytes) {
     try {
-        return JSON.stringify(value).length <= maxBytes;
+        return new TextEncoder().encode(JSON.stringify(value)).byteLength <= maxBytes;
     } catch {
         return false;
     }
@@ -2705,7 +2760,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
     if (message.action === 'saveSettings') {
         chrome.storage.local.set({ rx_settings: rxNormalizeSettings(message.data) }, () => {
-            sendResponse({ success: true });
+            const error = chrome.runtime.lastError;
+            sendResponse(error
+                ? { success: false, error: error.message || String(error) }
+                : { success: true });
         });
         return true;
     }
@@ -2908,10 +2966,17 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                     }
                     answered++;
                     if (answered === tabs.length) {
-                        const base = { ok: true, tabs: tabs.length, written: totalWritten };
-                        if (keyCount > 0 && okReplies === 0) {
+                        const complete = keyCount === 0 || totalWritten >= keyCount;
+                        const base = { ok: complete, tabs: tabs.length, written: totalWritten };
+                        if (keyCount > 0 && !complete) {
                             rxStagePendingLocalDataOperation({ source: 'import', data: payload })
-                                .then((op) => sendResponse({ ...base, pending: true, pendingId: op.id, pendingKeys: op.keyCount }))
+                                .then((op) => sendResponse({
+                                    ...base,
+                                    partial: okReplies > 0,
+                                    pending: true,
+                                    pendingId: op.id,
+                                    pendingKeys: op.keyCount,
+                                }))
                                 .catch((e) => sendResponse({ ok: false, reason: String(e?.message || e) }));
                         } else {
                             sendResponse(base);
@@ -2938,7 +3003,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     }
 
     if (message.action === 'completePendingLocalDataOperation') {
-        rxCompletePendingLocalDataOperation(String(message.id || ''))
+        rxCompletePendingLocalDataOperation(String(message.id || ''), {
+            cleared: message.cleared,
+            written: message.written,
+        })
             .then((resp) => sendResponse(resp))
             .catch((e) => sendResponse({ ok: false, reason: String(e?.message || e) }));
         return true;
@@ -3373,7 +3441,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                 // neither replace nor clear the user's sync and notifier keys.
                 const next = rxNormalizeSettings({
                     ...pulled,
-                    discordWebhookUrl: settings.discordWebhookUrl || '',
+                    ...Object.fromEntries(RXSettingsSchema.SECRET_SETTING_KEYS.map((key) => [key, settings[key] || ''])),
                     encryptedGistSyncToken: token,
                     encryptedGistSyncId: gistId,
                 });

@@ -10,6 +10,7 @@ const SECRETS = Object.freeze({
     webhook: 'https://discord.com/api/webhooks/123456789/discord-secret-token',
     token: 'github_pat_gist-secret-token-value',
     gistId: 'gist-secret-id-value',
+    liveApi: 'https://rumble.com/-livestream-api/account?key=live-api-secret-value',
 });
 
 function expectSecretsAbsent(serialized) {
@@ -43,12 +44,13 @@ test('file backups exclude credentials by default and require an explicit warned
             encryptedGistSync: true,
             encryptedGistSyncToken: secrets.token,
             encryptedGistSyncId: secrets.gistId,
+            liveStreamApiUrl: secrets.liveApi,
         },
     }), SECRETS);
 
     const includeCredentials = page.locator('#export-include-credentials');
     await expect(includeCredentials).not.toBeChecked();
-    await expect(page.locator('#export-credentials-warning')).toContainText('usable Discord webhook, GitHub token, and Gist ID');
+    await expect(page.locator('#export-credentials-warning')).toContainText('Live Stream API URL');
 
     const ordinaryDownload = page.waitForEvent('download');
     await page.locator('#export-btn').click();
@@ -58,7 +60,7 @@ test('file backups exclude credentials by default and require an explicit warned
     const ordinaryJson = JSON.parse(ordinaryText);
     expect(ordinaryJson.credentialsIncluded).toBe(false);
     expect(ordinaryJson.settings.darkEnhance).toBe(true);
-    for (const key of ['discordWebhookUrl', 'encryptedGistSyncToken', 'encryptedGistSyncId']) {
+    for (const key of ['discordWebhookUrl', 'encryptedGistSyncToken', 'encryptedGistSyncId', 'liveStreamApiUrl']) {
         expect(ordinaryJson.settings).not.toHaveProperty(key);
     }
     expectSecretsAbsent(ordinaryText);
@@ -73,6 +75,7 @@ test('file backups exclude credentials by default and require an explicit warned
         discordWebhookUrl: SECRETS.webhook,
         encryptedGistSyncToken: SECRETS.token,
         encryptedGistSyncId: SECRETS.gistId,
+        liveStreamApiUrl: SECRETS.liveApi,
     });
     await expect(page.locator('#status')).toContainText('contains usable credentials');
 });
@@ -88,6 +91,7 @@ test('in-page settings export uses the ordinary secret-free transport policy', a
             encryptedGistSync: true,
             encryptedGistSyncToken: secrets.token,
             encryptedGistSyncId: secrets.gistId,
+            liveStreamApiUrl: secrets.liveApi,
         },
     }), SECRETS);
 
@@ -109,7 +113,7 @@ test('in-page settings export uses the ordinary secret-free transport policy', a
     const text = await readDownload(await downloadEvent);
     const settings = JSON.parse(text);
     expect(settings.darkEnhance).toBe(true);
-    for (const key of ['discordWebhookUrl', 'encryptedGistSyncToken', 'encryptedGistSyncId']) {
+    for (const key of ['discordWebhookUrl', 'encryptedGistSyncToken', 'encryptedGistSyncId', 'liveStreamApiUrl']) {
         expect(settings).not.toHaveProperty(key);
     }
     expectSecretsAbsent(text);
@@ -127,6 +131,7 @@ test('privacy and error JSON exports redact token-bearing URL paths', async ({ c
             encryptedGistSync: true,
             encryptedGistSyncToken: secrets.token,
             encryptedGistSyncId: secrets.gistId,
+            liveStreamApiUrl: secrets.liveApi,
         },
     }), SECRETS);
 
@@ -191,6 +196,7 @@ test('encrypted Gist payloads omit local credentials before encryption', async (
             discordWebhookUrl: secrets.webhook,
             encryptedGistSyncToken: secrets.token,
             encryptedGistSyncId: secrets.gistId,
+            liveStreamApiUrl: secrets.liveApi,
         },
     }), SECRETS);
 
@@ -250,7 +256,7 @@ test('encrypted Gist payloads omit local credentials before encryption', async (
     const decryptedText = new TextDecoder().decode(plaintext);
     const decrypted = JSON.parse(decryptedText);
     expect(decrypted.darkEnhance).toBe(true);
-    for (const key of ['discordWebhookUrl', 'encryptedGistSyncToken', 'encryptedGistSyncId']) {
+    for (const key of ['discordWebhookUrl', 'encryptedGistSyncToken', 'encryptedGistSyncId', 'liveStreamApiUrl']) {
         expect(decrypted).not.toHaveProperty(key);
     }
     expectSecretsAbsent(decryptedText);
