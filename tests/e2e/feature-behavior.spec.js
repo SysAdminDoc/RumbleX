@@ -653,6 +653,101 @@ test('RantPersist processes only added roots and waits for staged rant identity'
     expect(result.unrelatedMarked).toBe('');
 });
 
+test('incremental chat modules revisit rows when text arrives after the elements', async () => {
+    const result = await inHarness(async ({ body }) => {
+        document.body.innerHTML = body;
+        history.replaceState({}, '', '/vchatstage123-incremental.html');
+        const harness = globalThis.__RumbleXFeatureHarness;
+        const settings = harness.resetSettings();
+        Object.assign(settings, {
+            chatMentionAutocomplete: true,
+            chatMentionHighlight: true,
+            chatHighlightKeywords: ['late'],
+            chatParticipantsList: true,
+            liveChatEnhance: true,
+            uniqueChatters: true,
+            chatUserBlock: true,
+            blockedChatters: ['lateuser'],
+            chatSpamDedup: true,
+            rantPersist: true,
+        });
+
+        const ids = [
+            'chatMentionAutocomplete', 'chatMentionHighlight', 'chatParticipantsList',
+            'liveChatEnhance', 'uniqueChatters', 'chatUserBlock', 'chatSpamDedup', 'rantPersist',
+        ];
+        const features = ids.map((id) => harness.features.find((feature) => feature.id === id));
+        const chat = document.querySelector('#chat-history-list');
+        chat.textContent = '';
+        for (const feature of features) feature.init();
+        // LiveChatEnhance deliberately waits 500 ms before attaching its row
+        // observer, so stage the fixture only after every consumer is active.
+        await new Promise((resolve) => setTimeout(resolve, 600));
+
+        const row = document.createElement('div');
+        row.className = 'chat-history--row';
+        row.innerHTML = '<button class="chat-history--username"></button><span class="chat-history--message"></span>';
+        const rant = document.createElement('div');
+        rant.className = 'chat-history--rant';
+        rant.innerHTML = '<button class="chat-history--rant-username"></button><span class="chat-history--rant-price"></span><span class="chat-history--message"></span>';
+        chat.append(row, rant);
+        await new Promise((resolve) => setTimeout(resolve, 80));
+
+        const beforeText = {
+            count: features[4]._msgCount,
+            highlighted: row.classList.contains('rx-chat-kw'),
+            cardUsers: [...features[2]._log.keys()],
+            mentionProcessed: row.dataset.rxProcessed || '',
+            rantCached: rant.dataset.rxRantCached || '',
+        };
+
+        row.querySelector('.chat-history--username').append(document.createTextNode('LateUser'));
+        row.querySelector('.chat-history--message').append(document.createTextNode('@friend arrived late'));
+        rant.querySelector('.chat-history--rant-username').append(document.createTextNode('Supporter'));
+        rant.querySelector('.chat-history--rant-price').append(document.createTextNode('$20'));
+        rant.querySelector('.chat-history--message').append(document.createTextNode('Great stream'));
+        await new Promise((resolve) => setTimeout(resolve, 120));
+
+        const afterText = {
+            count: features[4]._msgCount,
+            users: [...features[4]._users].sort(),
+            highlighted: row.classList.contains('rx-chat-kw'),
+            cardMessages: features[2]._log.get('LateUser') || [],
+            autocompleteNames: [...features[0]._names].sort(),
+            mentionCount: row.querySelectorAll('.rx-chat-mention').length,
+            blocked: row.classList.contains('rx-blocked-msg'),
+            blockButtons: row.querySelectorAll('.rx-chat-block-btn').length,
+            dedupSeen: row.dataset.rxDedupSeen || '',
+            rantCached: rant.dataset.rxRantCached || '',
+            rants: features[7]._cached.map(({ user, price, text }) => ({ user, price, text })),
+        };
+
+        for (const feature of [...features].reverse()) feature.destroy();
+        return { beforeText, afterText };
+    });
+
+    expect(result.beforeText).toEqual({
+        count: 0,
+        highlighted: false,
+        cardUsers: [],
+        mentionProcessed: '',
+        rantCached: '',
+    });
+    expect(result.afterText).toMatchObject({
+        count: 2,
+        users: ['lateuser', 'supporter'],
+        highlighted: true,
+        cardMessages: ['@friend arrived late'],
+        autocompleteNames: ['LateUser', 'Supporter'],
+        mentionCount: 1,
+        blocked: true,
+        blockButtons: 1,
+        dedupSeen: '1',
+        rantCached: '1',
+        rants: [{ user: 'Supporter', price: '$20', text: 'Great stream' }],
+    });
+});
+
 test('PopoutChat prefers the native control and only opens a scoped window otherwise', async () => {
     const result = await inHarness(({ body }) => {
         document.body.innerHTML = body;
@@ -1910,13 +2005,13 @@ test('ChatHighlights marks only messages matching configured terms and reverts o
         const marked = [...history.children].map((r) => r.classList.contains('rx-chat-kw'));
 
         // No terms configured means the feature does nothing at all.
-        for (const row of history.children) { row.classList.remove('rx-chat-kw'); delete row.dataset.rxKw; }
+        for (const row of history.children) { row.classList.remove('rx-chat-kw'); delete row.dataset.rxKwSource; }
         store.chatHighlightKeywords = [];
         hl._scan();
         const markedWithNoTerms = [...history.children].some((r) => r.classList.contains('rx-chat-kw'));
 
         store.chatHighlightKeywords = ['elections'];
-        for (const row of history.children) delete row.dataset.rxKw;
+        for (const row of history.children) delete row.dataset.rxKwSource;
         hl._scan();
         const beforeDestroy = [...history.children].some((r) => r.classList.contains('rx-chat-kw'));
         Settings.get = realGet;

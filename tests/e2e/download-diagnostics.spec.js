@@ -493,7 +493,7 @@ test('the embed payload names each format, and the harvester keeps that name', a
 });
 
 // AbortSignal.any shipped in Firefox 124; manifest-firefox.json still declares
-// strict_min_version 109. The composite was built with a `typeof` check whose
+// strict_min_version 113. The composite was built with a `typeof` check whose
 // fallback kept only the timeout, so on those builds closing the download panel
 // cancelled nothing and every probe ran its full budget. Chromium always has
 // the native method, so the fallback is only reachable here by hiding it.

@@ -19,6 +19,7 @@ All notable changes to RumbleX will be documented in this file.
 - Local releases now require a clean Git tree before verification starts. Runtime packages and the AMO source archive copy tracked files only, preventing local scratch files inside `extension/` from entering a release.
 - URL cleanup uses one immutable tracking-parameter list in the shared schema. Context-menu copies, address-bar cleanup, link clicks, timestamp sharing, and userscripts can no longer drift apart.
 - Live visual capture now checks a bounded set of watch pages for a visible public player, skips premium or verification-gated pages without trying to bypass them, and records that evidence limit instead of failing on the first unsuitable feed item.
+- Firefox 113 is now the minimum supported release. The themed translucent surfaces use `color-mix()`, which older Firefox builds discard. The public-metadata guard now keeps that floor aligned across the manifest, badge, README, and project page.
 
 ### Fixed
 
@@ -41,6 +42,8 @@ All notable changes to RumbleX will be documented in this file.
 - Chat User Block and Spam Dedup now remove their injected controls, hidden state, and processing markers during teardown.
 - Chrome's internal offscreen document is no longer web accessible to Rumble pages. The service worker can still create it through the extension-only API.
 - The store Privacy screenshot now opens the real Privacy report before capture instead of relying on a stale panel state.
+- In-page imports now reset portable settings without overwriting credentials that an ordinary export intentionally omitted.
+- Chat modules now revisit rows when Rumble adds username, message, or price text after the row element. Counts, highlights, user cards, mention styling, block controls, spam filtering, and rant archives no longer lock in an incomplete row.
 
 ## [3.60.1] - 2026-09-25
 

@@ -294,7 +294,7 @@ function rxCancelProbeScan(scanId) {
 }
 
 // AbortSignal.any shipped in Firefox 124, and manifest-firefox.json still
-// declares strict_min_version 109. Falling back to the timeout alone there
+// declares strict_min_version 113. Falling back to the timeout alone there
 // meant closing the panel cancelled nothing and every probe ran to its full
 // budget, which is the exact behaviour the scan controller exists to stop.
 // The abort reason is passed along so the caller can still tell a timeout

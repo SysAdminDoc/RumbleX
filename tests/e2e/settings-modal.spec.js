@@ -460,6 +460,65 @@ test('in-page settings search reaches every category and explains empty results'
     await page.close();
 });
 
+test('in-page import preserves credentials omitted by a portable backup', async ({ context, extensionId }) => {
+    test.setTimeout(60_000);
+    const fs = require('node:fs');
+    const path = require('node:path');
+    const fixture = fs.readFileSync(
+        path.join(__dirname, '..', 'fixtures', 'platform', 'modern-watch.html'),
+        'utf8',
+    );
+    const credentials = {
+        discordWebhookUrl: 'https://discord.com/api/webhooks/123456789/local-secret',
+        encryptedGistSyncToken: 'local-token',
+        encryptedGistSyncId: 'local-gist',
+        liveStreamApiUrl: 'https://rumble.com/-livestream-api/account?key=local-api-secret',
+    };
+
+    const admin = await context.newPage();
+    await admin.goto(`chrome-extension://${extensionId}/pages/options.html`);
+    await admin.evaluate(async (seed) => chrome.storage.local.set({
+        rx_settings: { ...seed, autoHideHeader: true, theme: 'midnight' },
+    }), credentials);
+
+    const page = await context.newPage();
+    await page.route('https://rumble.com/vsettings-import.html', (route) => route.fulfill({
+        status: 200, contentType: 'text/html', body: fixture,
+    }));
+    await page.goto('https://rumble.com/vsettings-import.html', { waitUntil: 'domcontentloaded' });
+    await page.locator('#rx-settings-btn').waitFor({ state: 'attached', timeout: 30_000 });
+    await page.evaluate(() => document.querySelector('#rx-settings-btn')?.click());
+
+    const chooserPromise = page.waitForEvent('filechooser');
+    await page.locator('.rx-m-footer-right .rx-m-btn-secondary').click();
+    const chooser = await chooserPromise;
+    await chooser.setFiles({
+        name: 'rumblex-portable.json',
+        mimeType: 'application/json',
+        buffer: Buffer.from(JSON.stringify({ theme: 'aurora' })),
+    });
+
+    await expect.poll(() => admin.evaluate(async () => {
+        const stored = await chrome.storage.local.get('rx_settings');
+        const settings = stored.rx_settings || {};
+        return {
+            theme: settings.theme,
+            autoHideHeader: settings.autoHideHeader,
+            discordWebhookUrl: settings.discordWebhookUrl,
+            encryptedGistSyncToken: settings.encryptedGistSyncToken,
+            encryptedGistSyncId: settings.encryptedGistSyncId,
+            liveStreamApiUrl: settings.liveStreamApiUrl,
+        };
+    }), { timeout: 15_000 }).toEqual({
+        theme: 'aurora',
+        autoHideHeader: false,
+        ...credentials,
+    });
+
+    await page.close();
+    await admin.close();
+});
+
 test('standalone downloader behaves as a modal and restores focus', async ({ context, extensionId }) => {
     test.setTimeout(60_000);
     const fs = require('node:fs');

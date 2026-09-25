@@ -138,6 +138,37 @@ const Settings = {
         this._pendingRevisions.set(key, ++this._writeRevision);
         this._scheduleWrite();
     },
+    async replacePortable(source) {
+        const sanitized = this._sanitize(source);
+        if (!Object.keys(sanitized).length) throw new Error('No recognized RumbleX settings found');
+
+        // A normal export omits credentials. Reset every other known setting to
+        // the imported value or its default, but leave an omitted credential out
+        // of the patch so the serialized background writer preserves the value
+        // that is current at commit time. Credential-bearing exports still opt
+        // into replacing those keys by including them explicitly.
+        const patch = { ...this._defaults, ...sanitized };
+        for (const key of RXSettingsSchema.SECRET_SETTING_KEYS) {
+            if (!Object.hasOwn(source, key)) delete patch[key];
+        }
+
+        // Import is an explicit replacement of the portable settings. Cancel
+        // debounced local edits it supersedes, then queue behind any write that
+        // has already reached storage.
+        clearTimeout(this._writeTimer);
+        this._writeTimer = null;
+        this._pendingWrite = false;
+        this._pendingKeys?.clear();
+        this._pendingRevisions.clear();
+        const commit = async () => {
+            const written = await RXPlatform.storage.patchSettings(patch);
+            this._cache = { ...this._defaults, ...(written || patch) };
+            this._lastWritten = JSON.stringify(this._cache);
+            return this._cache;
+        };
+        this._writeChain = this._writeChain.then(commit, commit);
+        return this._writeChain;
+    },
     // Coalesce rapid writes into a single storage.local.set call. Without
     // this, features that update settings on keystroke (search history,
     // volume slider, etc.) could thrash storage. 120ms is short enough to
@@ -8272,7 +8303,8 @@ function scheduleChatMutationRoots(owner, key, records, callback) {
     const pending = owner._rxChatMutationRoots || (owner._rxChatMutationRoots = new Set());
     for (const record of records) {
         for (const node of record.addedNodes || []) {
-            if (node instanceof Element) pending.add(node);
+            const root = node instanceof Element ? node : node?.parentElement;
+            if (root instanceof Element) pending.add(root);
         }
     }
     if (!pending.size) return;
@@ -8577,13 +8609,13 @@ const ChatHighlights = {
         if (!terms.length) return false;
         let matched = false;
         for (const row of ChatDom.rows(root)) {
-            if (row.dataset.rxKw) continue;
-            row.dataset.rxKw = '1';
             const haystack = `${ChatDom.username(row)} ${ChatDom.message(row)}`.toLowerCase();
-            if (terms.some((term) => haystack.includes(term))) {
-                row.classList.add('rx-chat-kw');
-                matched = true;
-            }
+            if (!haystack.trim() || row.dataset.rxKwSource === haystack) continue;
+            row.dataset.rxKwSource = haystack;
+            const wasMatched = row.classList.contains('rx-chat-kw');
+            const isMatched = terms.some((term) => haystack.includes(term));
+            row.classList.toggle('rx-chat-kw', isMatched);
+            if (isMatched && !wasMatched) matched = true;
         }
         if (matched && notify) this._ping();
         return matched;
@@ -8610,7 +8642,7 @@ const ChatHighlights = {
         this._styleEl?.remove();
         this._styleEl = null;
         for (const row of qsa('.rx-chat-kw')) row.classList.remove('rx-chat-kw');
-        for (const row of ChatDom.rows()) delete row.dataset.rxKw;
+        for (const row of ChatDom.rows()) delete row.dataset.rxKwSource;
         try { this._audio?.close(); } catch { /* already closed */ }
         this._audio = null;
         clearChatMutationRoots(this);
@@ -8703,9 +8735,14 @@ const ChatUserCards = {
 
     _index(root = document) {
         for (const row of ChatDom.rows(root)) {
-            if (row.dataset.rxCard) continue;
-            row.dataset.rxCard = '1';
-            this._record(ChatDom.username(row), ChatDom.message(row));
+            const usernameEl = ChatDom.usernameEl(row);
+            const name = (usernameEl?.dataset.rxRealName || ChatDom.username(row)).trim();
+            const text = ChatDom.message(row);
+            if (!name || !text) continue;
+            const signature = JSON.stringify([name, text]);
+            if (row.dataset.rxCardSource === signature) continue;
+            row.dataset.rxCardSource = signature;
+            this._record(name, text);
         }
     },
 
@@ -8939,7 +8976,7 @@ const ChatUserCards = {
                 el.textContent = el.dataset.rxRealName;
                 delete el.dataset.rxRealName;
             }
-            delete row.dataset.rxCard;
+            delete row.dataset.rxCardSource;
         }
         this._log = null;
         clearChatMutationRoots(this);
@@ -9100,10 +9137,8 @@ const LiveChatEnhance = {
     `,
 
     _highlightMentions(msgEl) {
-        const textEls = msgEl.querySelectorAll('.chat--message-text, .chat--message');
+        const textEls = msgEl.querySelectorAll('.chat--message-text, .chat--message, .chat-history--message');
         for (const el of textEls) {
-            if (el.dataset.rxMentionDone) continue;
-            el.dataset.rxMentionDone = '1';
             // Walk the element's text nodes and replace @mentions *in place*.
             // Previously we did `el.innerHTML = el.innerHTML.replace(...)` which
             // re-parses the whole subtree — accidentally re-triggering any
@@ -9143,8 +9178,10 @@ const LiveChatEnhance = {
 
     _processMessages(root = document) {
         for (const msg of ChatDom.rows(root)) {
-            if (msg.dataset.rxProcessed) continue;
+            const source = ChatDom.message(msg);
+            if (!source || msg.dataset.rxProcessedSource === source) continue;
             msg.dataset.rxProcessed = '1';
+            msg.dataset.rxProcessedSource = source;
             this._highlightMentions(msg);
         }
 
@@ -9181,6 +9218,15 @@ const LiveChatEnhance = {
         this._obs?.disconnect();
         qs('#rx-chat-filter')?.remove();
         for (const msg of qsa('.rx-chat-hidden')) msg.classList.remove('rx-chat-hidden');
+        for (const msg of ChatDom.rows()) {
+            delete msg.dataset.rxProcessed;
+            delete msg.dataset.rxProcessedSource;
+        }
+        for (const mention of qsa('.rx-chat-mention')) {
+            const parent = mention.parentNode;
+            mention.replaceWith(document.createTextNode(mention.textContent || ''));
+            parent?.normalize();
+        }
         clearChatMutationRoots(this);
     }
 };
@@ -14096,8 +14142,7 @@ const SettingsPanel = {
                             throw new Error('Sanitized settings exceed the storage-safe size limit');
                         }
                         await rxBackupSnapshot('pre-in-page-import');
-                        Settings._cache = { ...Settings._defaults, ...sanitized };
-                        await RXPlatform.storage.patchSettings(Settings._cache);
+                        await Settings.replacePortable(source);
                         location.reload();
                     } catch (e) {
                         console.error('[RumbleX] Import failed:', e);
@@ -14691,9 +14736,11 @@ const UniqueChatters = {
     _process(root = document) {
         for (const m of ChatDom.rows(root)) {
             if (this._seenMessages.has(m)) continue;
-            this._seenMessages.add(m);
             const u = rxReadUsername(m);
-            if (u) { this._users.add(u); this._msgCount++; }
+            if (!u) continue;
+            this._seenMessages.add(m);
+            this._users.add(u);
+            this._msgCount++;
         }
     },
 
@@ -14733,7 +14780,7 @@ const UniqueChatters = {
 // badge). Without this, ChatUserBlock's own button text would be appended to
 // the username and break exact-match blocking.
 function rxReadUsername(msg) {
-    const el = msg.querySelector('.chat-history--username, .chat--message-username, [data-username]');
+    const el = msg.querySelector('.chat-history--username, .chat-history--rant-username, .chat--message-username, [data-username]');
     if (!el) return null;
     if (el.dataset && el.dataset.username) return el.dataset.username.trim().toLowerCase();
     const clone = el.cloneNode(true);
@@ -15399,7 +15446,6 @@ const RantPersist = {
         const textEl = rantEl.querySelector('.chat--message, .chat-history--message');
         // Rumble stages row children across several mutations. Wait for the
         // identifying fields instead of permanently caching a half-built row.
-        if (!priceEl || !userEl) return false;
         const level = rantEl.getAttribute('data-level') || '1';
         // Strip RX-injected children when reading the username so the cache
         // stores the real chatter name (consistent with rxReadUsername).
@@ -15409,8 +15455,10 @@ const RantPersist = {
             clone.querySelectorAll('.rx-chat-block-btn, .rx-rant-persist-badge').forEach((n) => n.remove());
             user = (clone.textContent || '').trim();
         }
+        const price = (priceEl?.textContent || '').trim();
+        if (!user || !price) return false;
         const entry = {
-            price: priceEl ? priceEl.textContent.trim() : '',
+            price,
             user,
             text: textEl ? textEl.textContent.trim() : '',
             level, ts: Date.now(),

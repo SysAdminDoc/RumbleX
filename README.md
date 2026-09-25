@@ -1,6 +1,6 @@
 # RumbleX
 
-![Version](https://img.shields.io/badge/version-v3.61.0-blue) ![License](https://img.shields.io/badge/license-MIT-green) ![Platform](https://img.shields.io/badge/platform-Extension%20%2B%20Userscript-lightgrey) ![Firefox](https://img.shields.io/badge/firefox-109%2B-orange)
+![Version](https://img.shields.io/badge/version-v3.61.0-blue) ![License](https://img.shields.io/badge/license-MIT-green) ![Platform](https://img.shields.io/badge/platform-Extension%20%2B%20Userscript-lightgrey) ![Firefox](https://img.shields.io/badge/firefox-113%2B-orange)
 
 **A large Rumble enhancement suite.** Its 141 feature modules cover ad blocking, theater mode, downloads, playback, chat, local history, feed controls, and granular page cleanup. It runs as a browser extension or userscript.
 
@@ -349,10 +349,12 @@ Each release also includes `RumbleX-chrome.crx`, signed with the project's local
 
 No minimum Chrome version is declared beyond what MV3 itself requires. Chrome 148 added a `browser` namespace alongside `chrome`, which would let the Firefox compatibility shim go away, but only by refusing to run on anything older. RumbleX detects whichever namespace the browser offers instead, so it works on Chrome 148, on Chrome well below it, and on Firefox, and the page-feature core touches neither namespace directly.
 
-### Firefox (109+)
+### Firefox (113+)
 1. Download `RumbleX-firefox-amo-unsigned.zip` from [Releases](https://github.com/SysAdminDoc/RumbleX/releases) and extract it
 2. Go to `about:debugging#/runtime/this-firefox`
 3. Click **Load Temporary Add-on** and select `manifest.json` inside the extracted folder
+
+Firefox 113 is the minimum because RumbleX uses `color-mix()` to keep translucent controls consistent across all seven themes.
 
 That ZIP is the reproducible AMO submission and a temporary testing package. It is not a permanently installable add-on. An installable `RumbleX-firefox.xpi` is published only after Mozilla returns a signed package and the artifact check confirms its signature entries.
 

@@ -102,6 +102,21 @@ function main() {
     }
     addVersionError(errors, canonicalVersion, 'store screenshot capture', listing.assets.captured_version);
 
+    const firefoxMinimum = firefoxManifest.browser_specific_settings?.gecko?.strict_min_version || '';
+    const firefoxMajor = firefoxMinimum.match(/^(\d+)/)?.[1] || '';
+    if (!firefoxMajor) {
+        errors.push('Firefox strict_min_version is missing or invalid');
+    } else {
+        const supportCopy = [
+            [readme, `firefox-${firefoxMajor}%2B`, 'README Firefox badge'],
+            [readme, `Firefox (${firefoxMajor}+)`, 'README Firefox install heading'],
+            [landing, `Firefox ${firefoxMajor} and newer`, 'project page Firefox support copy'],
+        ];
+        for (const [surface, snippet, label] of supportCopy) {
+            if (!surface.includes(snippet)) errors.push(`${label} does not match manifest minimum ${firefoxMinimum}`);
+        }
+    }
+
     const landingFeatureCount = Number(
         landing.match(/data-rumblex-feature-count=["'](\d+)["']/i)?.[1] || NaN,
     );
@@ -226,6 +241,7 @@ function main() {
     console.log(
         `check-store-listing OK: v${canonicalVersion}, ${featureCount} public feature modules, `
         + `${chromiumPerms} Chromium and ${firefoxPermissions.length} Firefox permissions justified, `
+        + `Firefox ${firefoxMinimum}+ support copy aligned, `
         + `${REQUIRED_LOCALES.length} locales of copy within the ${SHORT_DESCRIPTION_MAX}-character cap, `
         + `${declared.length} assets at their exact required sizes.`,
     );
