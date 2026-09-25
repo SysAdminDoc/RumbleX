@@ -4,6 +4,27 @@ All notable changes to RumbleX will be documented in this file.
 
 ## Unreleased
 
+## [3.59.0] - 2026-09-24
+
+### Changed
+
+- Mediabunny is updated from 1.55.7 to 1.59.1. The newer bundle improves HLS handling and request cancellation, and fixes copy-conversion edge cases plus a worker-startup hang. The registry tarball, bundle hash, license, and packaged bytes are pinned together.
+- First-run presets now use a two-column layout on wide screens, stronger selected and focus states, and a compact single-column layout when space is tight. The action buttons stay together, and the modal backdrop is opaque enough to keep the dashboard from competing with the editor.
+- The dedicated settings editor has clearer group navigation, stronger card hierarchy, taller controls, and a useful narrow layout. Cards keep their natural height while scrolling, which prevents mixed control types from collapsing into one another.
+- The popup now shows active counts for each feature group, exposes expanded and selected states to assistive technology, and keeps save or update results visible in its footer. Controls become truly disabled while an operation is running.
+- In-page settings now take every major surface color from the active site palette. Catppuccin, YouTube, Midnight, Rumble Green, and OLED Green all keep readable cards, controls, navigation, notices, and footer text.
+- Theater Split has firmer panel edges, clearer tabs and 36-pixel header controls. Its title can be inspected when truncated, the signed-out chat action uses a compact rectangular shape, and the comments loading state is centered in the available panel.
+
+### Fixed
+
+- Narrow settings windows no longer let flex layout compress cards until their labels and controls overlap.
+- Secondary text in the themed in-page editor now meets WCAG AA contrast across all five palettes.
+
+### Added
+
+- The visual audit now captures first run, dashboard, clean and dirty editor states, empty search, popup, in-page settings, live chat, comments, and clean-player layouts at desktop and narrow sizes. Live titles and chat text are replaced with neutral fixture copy before permanent screenshots are saved.
+- Browser tests now reject overlapping settings cards, missing popup state semantics, weak modal contrast, broken Theater loading geometry, and palette drift in the in-page editor.
+
 ## [3.58.0] - 2026-09-24
 
 ### Added

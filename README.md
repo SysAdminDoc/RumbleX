@@ -1,27 +1,19 @@
 # RumbleX
 
-![Version](https://img.shields.io/badge/version-v3.58.0-blue) ![License](https://img.shields.io/badge/license-MIT-green) ![Platform](https://img.shields.io/badge/platform-Extension%20%2B%20Userscript-lightgrey) ![Firefox](https://img.shields.io/badge/firefox-109%2B-orange)
-
-<p align="center">
-  <a href="https://ko-fi.com/X8K126YVER">
-    <img height="42" src="https://storage.ko-fi.com/cdn/kofi2.png?v=3" alt="Buy me a coffee on Ko-fi" />
-  </a>
-</p>
-
-<p align="center">
-  <sub><em>If this project helps you, a coffee helps me keep working on it.</em></sub>
-</p>
+![Version](https://img.shields.io/badge/version-v3.59.0-blue) ![License](https://img.shields.io/badge/license-MIT-green) ![Platform](https://img.shields.io/badge/platform-Extension%20%2B%20Userscript-lightgrey) ![Firefox](https://img.shields.io/badge/firefox-109%2B-orange)
 
 **A large Rumble enhancement suite.** More than 130 feature modules cover ad blocking, theater mode, downloads, playback, chat, local history, feed controls, and granular page cleanup. It runs as a browser extension or userscript.
 
-### What's new in v3.56
+### What's new in v3.59
 
-Watch pages now give the video and conversation every usable pixel.
+The extension controls and Theater panel have had a complete visual and accessibility pass.
 
-- **Theater opens ready to use.** Live streams start with Live Chat selected, recorded videos start on Comments, and the active panel fills the right side immediately.
-- **Chat has no stacked utility bars.** The native chat header, local rant archive, running rant tracker, filter field, chatter counter, and header export controls no longer consume message space.
-- **The player stays clear.** The panel reveal, player close control, Player Tools launcher, and floating site toolbar no longer sit over the video or chat composer.
-- **Exit belongs with the panel.** A compact button in the panel header leaves Theater without putting another control over the player.
+- **First run is easier to scan.** Optional presets use a clear two-column grid on wide screens, while small windows collapse cleanly without squeezing the choices.
+- **The settings editor keeps its shape.** Stronger hierarchy, an opaque backdrop, one-row navigation on narrow windows, and non-shrinking cards prevent content from bleeding through or overlapping.
+- **Popup feedback is visible.** Group counts, expanded-state semantics, busy states, and a persistent status line make saves and updates clear without relying on a temporary tooltip.
+- **In-page settings follow the selected palette.** Every surface now uses the active theme tokens across Catppuccin, YouTube, Midnight, Rumble Green, and OLED Green.
+- **Theater controls are calmer.** Tabs and header controls have clearer states, the comments loader is centered, and the signed-out chat action no longer looks like a floating pill.
+- **Visual checks cover the real states.** Desktop and narrow captures now include first run, clean and dirty editors, empty search, popup, in-page settings, live chat, comments, and the clean player.
 
 ### What's new in v3.55
 
@@ -389,7 +381,7 @@ ssh-keygen -Y verify -f allowed_signers -I release@rumblex -n file \
 
 A `Good "file" signature` result means the checksums came from the key published in this repository. If either check fails, do not install the files. The only official sources are this repository's Releases page and the raw userscript URLs above; copies elsewhere are not ours.
 
-v3.58.0 is unsigned because the project does not yet have a published release signing identity. Its release page states that directly; use `SHA256SUMS.txt` to verify download integrity.
+v3.59.0 is unsigned because the project does not yet have a published release signing identity. Its release page states that directly; use `SHA256SUMS.txt` to verify download integrity.
 
 ### Request-shield support matrix
 
@@ -410,7 +402,7 @@ RumbleX intentionally does not request Declarative Net Request feedback/debug pe
 - Chrome Extension Manifest V3 + Firefox Manifest V2 (parallel manifests)
 - `chrome.storage.local` (extensions) or `GM_*Value` (userscript) for settings persistence
 - Activity (watch progress, volume memory, history, bookmarks, rant archives) lives in extension storage in the extension builds, so clearing rumble.com's site data leaves it alone. Userscripts have no extension storage and keep it in rumble.com's `localStorage`. Existing installs move it over once, on the first Rumble page after updating, keeping a copy of what was there to roll back to.
-- Mediabunny 1.55.7 (bundled) for default HLS-to-MP4 conversion, including direct-to-disk streaming
+- Mediabunny 1.59.1 (bundled) for default HLS-to-MP4 conversion, including direct-to-disk streaming
 - mux.js 7.1.0 (bundled) as the bounded fallback when Mediabunny or WebCodecs is unavailable
 - `AbortController` + generation-counter guards for cancellable async work
 - Anti-FOUC: CSS injected at `document_start`
