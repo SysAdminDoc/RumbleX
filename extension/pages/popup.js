@@ -42,7 +42,7 @@ const GROUPS = [
     {
         id: 'theme-layout', label: 'Theme & Layout',
         features: [
-            { id: 'darkEnhance', label: 'Dark Theme' },
+            { id: 'darkEnhance', label: 'Site Theme' },
             { id: 'wideLayout', label: 'Wide Layout' },
             { id: 'logoToFeed', label: 'Logo to Feed' },
             { id: 'autoExpand', label: 'Auto Expand' },
@@ -51,6 +51,7 @@ const GROUPS = [
             { id: 'titleFont', label: 'Title Font' },
             { id: 'titleNormalizer', label: 'Title Normalizer' },
             { id: 'realFramePreviews', label: 'Real Frame Previews' },
+            { id: 'denseMode', label: 'Custom Page Density' },
             { id: 'perChannelVolumeMemory', label: 'Per-Channel Playback' },
             { id: 'rssExportEnabled', label: 'Channel RSS' },
         ],
@@ -155,6 +156,7 @@ const GROUPS = [
         id: 'video-page', label: 'Video Page Layout',
         features: [
             { id: 'fullWidthPlayer', label: 'Full-Width Player' },
+            { id: 'ambientPlayer', label: 'Ambient Player' },
             { id: 'adaptiveLiveLayout', label: 'Adaptive Live Layout' },
             { id: 'hideRelatedSidebar', label: 'Hide Related Sidebar' },
             { id: 'hideRelatedOnLive', label: 'Hide Related on Live' },
@@ -486,23 +488,21 @@ async function init() {
 
     const themeGrid = document.createElement('div');
     themeGrid.className = 'theme-grid';
-    // Colors must match THEMES[id].accent in content.js
-    const themes = [
-        { id: 'catppuccin', label: 'Catppuccin Mocha', color: '#89b4fa' },
-        { id: 'youtube', label: 'YouTubify', color: '#3ea6ff' },
-        { id: 'midnight', label: 'Midnight AMOLED', color: '#818cf8' },
-        { id: 'rumbleGreen', label: 'Rumble Green', color: '#85c742' },
-        { id: 'oledGreen', label: 'OLED Green', color: '#85c742' },
-    ];
+    const themes = Object.entries(RXSettingsSchema.THEMES).map(([id, palette]) => ({ id, ...palette }));
     for (const t of themes) {
         const chip = document.createElement('button');
         chip.type = 'button';
         chip.className = 'theme-chip' + (settings.theme === t.id ? ' active' : '');
         chip.setAttribute('aria-pressed', settings.theme === t.id ? 'true' : 'false');
-        const dot = document.createElement('span');
-        dot.className = 'theme-dot';
-        dot.style.background = t.color;
-        chip.append(dot, t.label);
+        const swatch = document.createElement('span');
+        swatch.className = 'theme-swatch';
+        swatch.setAttribute('aria-hidden', 'true');
+        for (const color of [t.crust, t.base, t.accent]) {
+            const tone = document.createElement('span');
+            tone.style.background = color;
+            swatch.appendChild(tone);
+        }
+        chip.append(swatch, t.label);
         chip.addEventListener('click', () => {
             settings.theme = t.id;
             saveSettings(settings);
@@ -516,6 +516,38 @@ async function init() {
         themeGrid.appendChild(chip);
     }
     themeSection.appendChild(themeGrid);
+
+    const densityLabel = document.createElement('div');
+    densityLabel.className = 'theme-label';
+    densityLabel.textContent = i18n('pageDensityLabel', 'Page density');
+    themeSection.appendChild(densityLabel);
+
+    const densityGrid = document.createElement('div');
+    densityGrid.className = 'theme-grid density-grid';
+    const densityChoices = [
+        { id: 'dense', label: i18n('pageDensityCompact', 'Compact') },
+        { id: 'normal', label: i18n('pageDensityBalanced', 'Balanced') },
+        { id: 'showcase', label: i18n('pageDensityShowcase', 'Showcase') },
+    ];
+    for (const density of densityChoices) {
+        const chip = document.createElement('button');
+        chip.type = 'button';
+        chip.className = 'theme-chip density-chip' + (settings.pageDensity === density.id ? ' active' : '');
+        chip.textContent = density.label;
+        chip.setAttribute('aria-pressed', settings.pageDensity === density.id ? 'true' : 'false');
+        chip.addEventListener('click', () => {
+            settings.pageDensity = density.id;
+            saveSettings(settings);
+            for (const candidate of densityGrid.querySelectorAll('.density-chip')) {
+                candidate.classList.remove('active');
+                candidate.setAttribute('aria-pressed', 'false');
+            }
+            chip.classList.add('active');
+            chip.setAttribute('aria-pressed', 'true');
+        });
+        densityGrid.appendChild(chip);
+    }
+    themeSection.appendChild(densityGrid);
     container.appendChild(themeSection);
 
     // Prominent CTA — opens the full options page.

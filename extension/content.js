@@ -1159,60 +1159,7 @@ const CategoryFilter = {
 // ═══════════════════════════════════════════
 //  FEATURE: Dark Theme Enhancement
 // ═══════════════════════════════════════════
-const THEMES = {
-    catppuccin: {
-        label: 'Catppuccin Mocha',
-        base: '#1e1e2e', mantle: '#181825', crust: '#11111b',
-        surface0: '#313244', surface1: '#45475a', surface2: '#585b70',
-        text: '#cdd6f4', subtext: '#a6adc8', subtext0: '#6c7086',
-        accent: '#89b4fa', green: '#a6e3a1', red: '#f38ba8',
-        yellow: '#f9e2af', peach: '#fab387', brand: '#89b4fa',
-        selectionBg: 'rgba(137,180,250,0.25)',
-        hoverBg: 'rgba(49,50,68,0.3)',
-    },
-    youtube: {
-        label: 'YouTubify',
-        base: '#0f0f0f', mantle: '#0f0f0f', crust: '#0f0f0f',
-        surface0: '#272727', surface1: '#3f3f3f', surface2: '#535353',
-        text: '#f1f1f1', subtext: '#aaaaaa', subtext0: '#717171',
-        accent: '#3ea6ff', green: '#2ba640', red: '#ff0000',
-        yellow: '#ffb84d', peach: '#ff8c42', brand: '#ff0000',
-        selectionBg: 'rgba(62,166,255,0.25)',
-        hoverBg: 'rgba(255,255,255,0.1)',
-    },
-    midnight: {
-        label: 'Midnight AMOLED',
-        base: '#000000', mantle: '#000000', crust: '#000000',
-        surface0: '#111111', surface1: '#1a1a1a', surface2: '#2a2a2a',
-        text: '#e4e4e7', subtext: '#a1a1aa', subtext0: '#71717a',
-        accent: '#818cf8', green: '#4ade80', red: '#f87171',
-        yellow: '#fbbf24', peach: '#fb923c', brand: '#818cf8',
-        selectionBg: 'rgba(129,140,248,0.25)',
-        hoverBg: 'rgba(255,255,255,0.06)',
-    },
-    rumbleGreen: {
-        label: 'Rumble Green',
-        base: '#141c0f', mantle: '#0f1509', crust: '#0a0f06',
-        surface0: '#1e2a14', surface1: '#2a3a1e', surface2: '#3a4f2a',
-        text: '#d6e8c4', subtext: '#a8c490', subtext0: '#6e8f56',
-        accent: '#85c742', green: '#85c742', red: '#e55c5c',
-        yellow: '#d4a843', peach: '#c98042', brand: '#85c742',
-        selectionBg: 'rgba(133,199,66,0.25)',
-        hoverBg: 'rgba(30,42,20,0.5)',
-    },
-    // v2.0.0 — OLED Green: pure-black surfaces, premium dark RumbleX-owned UI.
-    // Tuned for AMOLED, denser borders, no backdrop-filter (per house style).
-    oledGreen: {
-        label: 'OLED Green',
-        base: '#000000', mantle: '#000000', crust: '#000000',
-        surface0: '#0a0f06', surface1: '#11170c', surface2: '#1b2412',
-        text: '#e7f1dc', subtext: '#a8c490', subtext0: '#6e8f56',
-        accent: '#85c742', green: '#85c742', red: '#e55c5c',
-        yellow: '#d4a843', peach: '#c98042', brand: '#85c742',
-        selectionBg: 'rgba(133,199,66,0.28)',
-        hoverBg: 'rgba(133,199,66,0.08)',
-    },
-};
+const THEMES = RXSettingsSchema.THEMES;
 
 const DarkEnhance = {
     id: 'darkEnhance',
@@ -1673,7 +1620,7 @@ const DarkEnhance = {
             width: 36px !important;
             height: 36px !important;
             border: 1px solid var(--rx-site-border-strong) !important;
-            border-radius: 999px !important;
+            border-radius: 10px !important;
             background: var(--rx-site-raised) !important;
             color: var(--rx-text) !important;
             box-shadow: var(--rx-site-shadow-soft) !important;
@@ -2394,6 +2341,53 @@ const TheaterSplit = {
         #rx-tab-chat #chat-history-list::-webkit-scrollbar-thumb {
             background: var(--rx-theater-border-strong, rgba(255,255,255,0.14));
             border-radius: 3px;
+        }
+        #rx-tab-chat .chat-sticky-rants__container:not(.hidden) {
+            box-sizing: border-box;
+            display: block !important;
+            flex: 0 0 auto;
+            min-height: 48px;
+            max-height: 72px;
+            padding: 7px 8px !important;
+            overflow: hidden;
+            background: var(--rx-theater-shell, #0b0b0f) !important;
+            border-bottom: 1px solid var(--rx-theater-border, rgba(255,255,255,0.1));
+        }
+        #rx-tab-chat .chat-sticky-rants__container .swipe-slider {
+            display: grid !important;
+            grid-template-columns: 32px minmax(0, 1fr) 32px;
+            align-items: center;
+            gap: 6px;
+            min-width: 0;
+        }
+        #rx-tab-chat [data-js="chat-sticky-rants-list"] {
+            display: flex !important;
+            gap: 7px !important;
+            min-width: 0;
+            margin: 0 !important;
+            padding: 0 !important;
+            overflow-x: auto !important;
+            overflow-y: hidden !important;
+            scrollbar-width: none;
+        }
+        #rx-tab-chat [data-js="chat-sticky-rants-list"]::-webkit-scrollbar { display: none; }
+        #rx-tab-chat [data-js="chat-sticky-rants-list"] > .chat-history--rant-sticky {
+            flex: 0 0 auto;
+            max-width: calc(100% - 8px);
+            margin: 0 !important;
+            border-radius: 7px !important;
+            border: 1px solid var(--rx-theater-border-strong, rgba(255,255,255,0.14));
+            overflow: hidden !important;
+        }
+        #rx-tab-chat .chat-sticky-rants__container .swipe-slider__button {
+            width: 32px !important;
+            height: 32px !important;
+            min-width: 32px !important;
+            padding: 0 !important;
+            border-radius: 6px !important;
+            background: var(--rx-theater-raised, rgba(255,255,255,0.06)) !important;
+            border: 1px solid var(--rx-theater-border, rgba(255,255,255,0.1)) !important;
+            color: var(--rx-theater-text, #f5f7fb) !important;
         }
         #rx-tab-chat .chat-form-overflow-wrapper {
             flex-shrink: 0;
@@ -7370,7 +7364,7 @@ const ChannelBlocker = {
             justify-content: center;
             width: 20px;
             height: 20px;
-            border-radius: 50%;
+            border-radius: 5px;
             background: transparent;
             border: 1px solid transparent;
             color: rgba(255,255,255,0.3);
@@ -12645,7 +12639,7 @@ const RX_CATEGORIES = [
         id: 'theme-layout', label: 'Theme & Layout', color: 'var(--rx-peach, #fab387)',
         icon: '<path d="M12 2a1 1 0 011 1v1a1 1 0 01-2 0V3a1 1 0 011-1zm6.36 3.05a1 1 0 010 1.41l-.7.71a1 1 0 01-1.42-1.42l.71-.7a1 1 0 011.41 0zM21 11a1 1 0 010 2h-1a1 1 0 010-2h1zM4 11a1 1 0 010 2H3a1 1 0 010-2h1zm2.05-5.95a1 1 0 011.41 0l.71.7a1 1 0 01-1.42 1.42l-.7-.71a1 1 0 010-1.41zM12 7a5 5 0 100 10 5 5 0 000-10z"/>',
         features: [
-            { id: 'darkEnhance', label: 'Dark Theme', desc: 'Theme engine with player bar coloring' },
+            { id: 'darkEnhance', label: 'Site Theme', desc: 'Apply the selected palette across Rumble, Theater, and RumbleX controls' },
             { id: 'wideLayout', label: 'Wide Layout', desc: 'Full-width responsive grid on home & subs' },
             { id: 'logoToFeed', label: 'Logo to Feed', desc: 'Rumble logo navigates to Subscriptions' },
             { id: 'autoExpand', label: 'Auto Expand', desc: 'Auto-expand descriptions & comments' },
@@ -12657,7 +12651,7 @@ const RX_CATEGORIES = [
             { id: 'perChannelVolumeMemory', label: 'Per-Channel Playback', desc: 'Remember volume, speed and a quality ceiling for each channel' },
             { id: 'titleNormalizer', label: 'Title Normalizer', desc: 'Calm ALL-CAPS, emoji spray and repeated !!! in video titles; original stays on hover' },
             // v2.1.0 — Premium UI and Layout Superset
-            { id: 'denseMode', label: 'Dense Mode', desc: 'Compact spacing across grids and the watch page' },
+            { id: 'denseMode', label: 'Custom Page Density', desc: 'Apply compact, balanced, or showcase spacing across feeds and watch pages' },
             { id: 'reducedMotion', label: 'Reduced Motion', desc: 'Disable shimmer/stagger/spring animations' },
             { id: 'hideThumbnails', label: 'Hide Thumbnails', desc: 'Hide all thumbnails (master toggle)' },
             { id: 'hideThumbnailsFeeds', label: 'Hide Thumbs (Feeds)', desc: 'Hide thumbnails on home/subs/for-you only' },
@@ -12790,6 +12784,7 @@ const RX_CATEGORIES = [
         icon: '<path d="M4 5h16v11H4zM4 18h8v2H4zM14 18h6v2h-6z"/>',
         features: [
             { id: 'fullWidthPlayer', label: 'Full-Width Player', desc: 'Maximize player width; live = side-by-side chat' },
+            { id: 'ambientPlayer', label: 'Ambient Player', desc: 'Frame the standard player with a subtle glow from the active palette' },
             { id: 'adaptiveLiveLayout', label: 'Adaptive Live Layout', desc: 'On live, expand main content when chat is visible' },
             { id: 'hideRelatedSidebar', label: 'Hide Related Sidebar', desc: 'Hide the related-videos sidebar' },
             { id: 'hideRelatedOnLive', label: 'Hide Related on Live', desc: 'Hide related media under the player on live' },
@@ -12845,12 +12840,11 @@ const SettingsPanel = {
             position: fixed; bottom: 18px; right: 18px; z-index: 10010;
             display: flex; flex-direction: row; align-items: center; gap: 2px;
             padding: 4px;
-            background: var(--rx-site-panel, rgba(17,17,22,0.94));
+            background: var(--rx-site-panel, #111116);
             border: 1px solid var(--rx-site-border-strong, rgba(255,255,255,0.12));
             border-radius: 10px;
             box-shadow: 0 12px 34px rgba(0,0,0,0.4);
             opacity: 0.72;
-            backdrop-filter: blur(14px);
             transition: opacity 160ms ease, transform 160ms ease, border-color 160ms ease;
         }
         #rx-toolbar:hover,
@@ -13083,7 +13077,7 @@ const SettingsPanel = {
         .rx-m-chip-grid { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
         .rx-m-chip {
             appearance: none; font-family: inherit; text-align: left;
-            font-size: 11px; padding: 5px 12px; border-radius: 10px;
+            font-size: 11px; padding: 5px 12px; border-radius: 6px;
             border: 1px solid var(--rx-modal-border); background: var(--rx-modal-raised);
             color: var(--rx-modal-text); cursor: pointer; user-select: none;
             transition: all 180ms; display: flex; align-items: center; gap: 6px;
@@ -13098,7 +13092,13 @@ const SettingsPanel = {
             opacity: 0.52; text-decoration: line-through; background: var(--rx-modal-canvas);
             border-color: var(--rx-modal-border);
         }
-        .rx-m-theme-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+        .rx-m-theme-swatch {
+            width: 34px; height: 16px; display: grid;
+            grid-template-columns: repeat(3, 1fr); overflow: hidden;
+            flex: 0 0 auto; border: 1px solid var(--rx-modal-border-strong);
+            border-radius: 4px; box-shadow: var(--rx-site-shadow-soft, 0 1px 5px rgba(0,0,0,0.28));
+        }
+        .rx-m-theme-swatch > span { display: block; min-width: 0; }
         .rx-m-unblock-chip svg { width: 10px; height: 10px; margin-left: 4px; flex-shrink: 0; }
         .rx-m-slider-row {
             display: flex; align-items: center; gap: 12px; padding: 4px 0 8px;
@@ -13317,7 +13317,10 @@ const SettingsPanel = {
         pane.appendChild(grid);
 
         // Special sections per category
-        if (cat.id === 'theme-layout') this._buildThemeSection(pane, cat.color);
+        if (cat.id === 'theme-layout') {
+            this._buildThemeSection(pane, cat.color);
+            this._buildDensitySection(pane, cat.color);
+        }
         if (cat.id === 'video-player') this._buildSpeedSection(pane);
         if (cat.id === 'feed-controls') { this._buildBlockedSection(pane); this._buildKeywordSection(pane); }
         if (cat.id === 'ad-blocking') this._buildCategorySection(pane);
@@ -13423,10 +13426,15 @@ const SettingsPanel = {
             chip.className = 'rx-m-chip' + (id === currentTheme ? ' rx-m-chip-active' : '');
             chip.setAttribute('aria-pressed', String(id === currentTheme));
             chip.style.setProperty('--rx-cat-color', color);
-            const dot = document.createElement('span');
-            dot.className = 'rx-m-theme-dot';
-            dot.style.background = theme.accent;
-            chip.append(dot, theme.label);
+            const swatch = document.createElement('span');
+            swatch.className = 'rx-m-theme-swatch';
+            swatch.setAttribute('aria-hidden', 'true');
+            for (const toneValue of [theme.crust, theme.base, theme.accent]) {
+                const tone = document.createElement('span');
+                tone.style.background = toneValue;
+                swatch.appendChild(tone);
+            }
+            chip.append(swatch, theme.label);
             chip.addEventListener('click', () => {
                 Settings.set('theme', id);
                 for (const c of grid.querySelectorAll('.rx-m-chip')) c.classList.remove('rx-m-chip-active');
@@ -13434,6 +13442,44 @@ const SettingsPanel = {
                 chip.classList.add('rx-m-chip-active');
                 chip.setAttribute('aria-pressed', 'true');
                 RxToast.show(rxT('toastThemeChanged', 'Theme changed. Reload page to apply'));
+            });
+            grid.appendChild(chip);
+        }
+        pane.appendChild(grid);
+    },
+
+    _buildDensitySection(pane, color) {
+        const title = document.createElement('div');
+        title.className = 'rx-m-section-title';
+        title.textContent = rxT('pageDensityLabel', 'Page density');
+        pane.appendChild(title);
+
+        const grid = document.createElement('div');
+        grid.className = 'rx-m-chip-grid';
+        const choices = [
+            { id: 'dense', label: rxT('pageDensityCompact', 'Compact') },
+            { id: 'normal', label: rxT('pageDensityBalanced', 'Balanced') },
+            { id: 'showcase', label: rxT('pageDensityShowcase', 'Showcase') },
+        ];
+        const current = Settings.get('pageDensity') || 'dense';
+        for (const choice of choices) {
+            const chip = document.createElement('button');
+            chip.type = 'button';
+            chip.className = 'rx-m-chip' + (choice.id === current ? ' rx-m-chip-active' : '');
+            chip.textContent = choice.label;
+            chip.setAttribute('aria-pressed', String(choice.id === current));
+            chip.style.setProperty('--rx-cat-color', color);
+            chip.addEventListener('click', () => {
+                Settings.set('pageDensity', choice.id);
+                for (const candidate of grid.querySelectorAll('.rx-m-chip')) {
+                    candidate.classList.remove('rx-m-chip-active');
+                    candidate.setAttribute('aria-pressed', 'false');
+                }
+                chip.classList.add('rx-m-chip-active');
+                chip.setAttribute('aria-pressed', 'true');
+                DenseMode.destroy();
+                DenseMode.init();
+                RxToast.show(rxT('toastPageDensityChanged', 'Page density updated'));
             });
             grid.appendChild(chip);
         }
@@ -17475,7 +17521,7 @@ const BatchDownload = {
         .rx-batch-chk.checked {
             background: var(--rx-accent, #89b4fa); border-color: var(--rx-accent, #89b4fa);
         }
-        .rx-batch-chk.checked::after { content: '✓'; color: #0f0f0f; font: 700 12px system-ui; }
+        .rx-batch-chk.checked::after { content: '✓'; color: var(--rx-crust, #11111b); font: 700 12px system-ui; }
 
         .rx-batch-bar {
             position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
@@ -18954,40 +19000,123 @@ const ThumbnailHider = {
 // ═══════════════════════════════════════════
 //  FEATURE: Dense Mode (v2.1.0)
 // ═══════════════════════════════════════════
-// Tightens spacing across feed grids and the watch page. Affects layout
-// padding only — never overlaps content or changes column counts. Designed
-// to pair with wideLayout for power users who want maximum signal density.
+// Three spacing presets for feed grids and the watch page. The existing
+// denseMode boolean remains the master switch for backwards compatibility;
+// pageDensity selects the actual rhythm without changing column counts.
 const DenseMode = {
     id: 'denseMode',
-    name: 'Dense Mode',
+    name: 'Page Density',
     _styleEl: null,
     _css: `
-        html.rumblex-active body.rx-dense .thumbnail__grid { gap: 8px !important; }
-        html.rumblex-active body.rx-dense .thumbnail__title { line-height: 1.25 !important; margin-top: 4px !important; }
-        html.rumblex-active body.rx-dense .videostream__footer { padding: 4px 2px 6px !important; }
-        html.rumblex-active body.rx-dense .videostream { margin-bottom: 8px !important; }
-        html.rumblex-active body.rx-dense .homepage-section { padding-top: 8px !important; padding-bottom: 8px !important; }
-        html.rumblex-active body.rx-dense .homepage-heading { margin: 6px 0 6px !important; }
-        html.rumblex-active body.rx-dense .container.content { padding-top: 8px !important; }
-        html.rumblex-active body.rx-dense .media-page-comments-container { gap: 8px !important; }
-        html.rumblex-active body.rx-dense .comment-item { padding: 6px 0 !important; }
-        html.rumblex-active body.rx-dense .mediaList-item { margin-bottom: 6px !important; }
-        html.rumblex-active body.rx-dense .video-listing-entry { margin-bottom: 6px !important; }
-        html.rumblex-active body.rx-dense .video-item--title { line-height: 1.25 !important; margin-top: 4px !important; }
-        html.rumblex-active body.rx-dense rum-video-thumbnail[role="listitem"],
-        html.rumblex-active body.rx-dense rum-card-video[role="listitem"] { margin-bottom: 6px !important; }
-        html.rumblex-active body.rx-dense rum-video-thumbnail rum-text[role="heading"],
-        html.rumblex-active body.rx-dense rum-card-video rum-text[role="heading"] { line-height: 1.25 !important; }
-        html.rumblex-active body.rx-dense h1.video-header-container__title { margin: 4px 0 !important; }
+        html.rumblex-active body[data-rx-density="dense"] .thumbnail__grid { gap: 8px !important; }
+        html.rumblex-active body[data-rx-density="dense"] .thumbnail__title { line-height: 1.25 !important; margin-top: 4px !important; }
+        html.rumblex-active body[data-rx-density="dense"] .videostream__footer { padding: 4px 2px 6px !important; }
+        html.rumblex-active body[data-rx-density="dense"] .videostream { margin-bottom: 8px !important; }
+        html.rumblex-active body[data-rx-density="dense"] .homepage-section { padding-top: 8px !important; padding-bottom: 8px !important; }
+        html.rumblex-active body[data-rx-density="dense"] .homepage-heading { margin: 6px 0 !important; }
+        html.rumblex-active body[data-rx-density="dense"] .container.content { padding-top: 8px !important; }
+        html.rumblex-active body[data-rx-density="dense"] .media-page-comments-container { gap: 8px !important; }
+        html.rumblex-active body[data-rx-density="dense"] .comment-item { padding: 6px 0 !important; }
+        html.rumblex-active body[data-rx-density="dense"] .mediaList-item,
+        html.rumblex-active body[data-rx-density="dense"] .video-listing-entry { margin-bottom: 6px !important; }
+        html.rumblex-active body[data-rx-density="dense"] .video-item--title { line-height: 1.25 !important; margin-top: 4px !important; }
+        html.rumblex-active body[data-rx-density="dense"] rum-video-thumbnail[role="listitem"],
+        html.rumblex-active body[data-rx-density="dense"] rum-card-video[role="listitem"] { margin-bottom: 6px !important; }
+        html.rumblex-active body[data-rx-density="dense"] rum-video-thumbnail rum-text[role="heading"],
+        html.rumblex-active body[data-rx-density="dense"] rum-card-video rum-text[role="heading"] { line-height: 1.25 !important; }
+        html.rumblex-active body[data-rx-density="dense"] h1.video-header-container__title { margin: 4px 0 !important; }
+
+        html.rumblex-active body[data-rx-density="normal"] .thumbnail__grid { gap: 14px !important; }
+        html.rumblex-active body[data-rx-density="normal"] .thumbnail__title,
+        html.rumblex-active body[data-rx-density="normal"] .video-item--title { line-height: 1.32 !important; margin-top: 6px !important; }
+        html.rumblex-active body[data-rx-density="normal"] .videostream__footer { padding: 7px 4px 9px !important; }
+        html.rumblex-active body[data-rx-density="normal"] .videostream { margin-bottom: 12px !important; }
+        html.rumblex-active body[data-rx-density="normal"] .homepage-section { padding-top: 14px !important; padding-bottom: 14px !important; }
+        html.rumblex-active body[data-rx-density="normal"] .homepage-heading { margin: 10px 0 !important; }
+        html.rumblex-active body[data-rx-density="normal"] .container.content { padding-top: 14px !important; }
+        html.rumblex-active body[data-rx-density="normal"] .media-page-comments-container { gap: 12px !important; }
+        html.rumblex-active body[data-rx-density="normal"] .comment-item { padding: 10px 0 !important; }
+        html.rumblex-active body[data-rx-density="normal"] .mediaList-item,
+        html.rumblex-active body[data-rx-density="normal"] .video-listing-entry,
+        html.rumblex-active body[data-rx-density="normal"] rum-video-thumbnail[role="listitem"],
+        html.rumblex-active body[data-rx-density="normal"] rum-card-video[role="listitem"] { margin-bottom: 10px !important; }
+        html.rumblex-active body[data-rx-density="normal"] h1.video-header-container__title { margin: 8px 0 !important; }
+
+        html.rumblex-active body[data-rx-density="showcase"] .thumbnail__grid { gap: 20px !important; }
+        html.rumblex-active body[data-rx-density="showcase"] .thumbnail__title,
+        html.rumblex-active body[data-rx-density="showcase"] .video-item--title { line-height: 1.4 !important; margin-top: 9px !important; }
+        html.rumblex-active body[data-rx-density="showcase"] .videostream__footer { padding: 11px 6px 14px !important; }
+        html.rumblex-active body[data-rx-density="showcase"] .videostream { margin-bottom: 18px !important; }
+        html.rumblex-active body[data-rx-density="showcase"] .homepage-section { padding-top: 22px !important; padding-bottom: 22px !important; }
+        html.rumblex-active body[data-rx-density="showcase"] .homepage-heading { margin: 16px 0 !important; }
+        html.rumblex-active body[data-rx-density="showcase"] .container.content { padding-top: 22px !important; }
+        html.rumblex-active body[data-rx-density="showcase"] .media-page-comments-container { gap: 18px !important; }
+        html.rumblex-active body[data-rx-density="showcase"] .comment-item { padding: 14px 0 !important; }
+        html.rumblex-active body[data-rx-density="showcase"] .mediaList-item,
+        html.rumblex-active body[data-rx-density="showcase"] .video-listing-entry,
+        html.rumblex-active body[data-rx-density="showcase"] rum-video-thumbnail[role="listitem"],
+        html.rumblex-active body[data-rx-density="showcase"] rum-card-video[role="listitem"] { margin-bottom: 16px !important; }
+        html.rumblex-active body[data-rx-density="showcase"] rum-video-thumbnail rum-text[role="heading"],
+        html.rumblex-active body[data-rx-density="showcase"] rum-card-video rum-text[role="heading"] { line-height: 1.4 !important; }
+        html.rumblex-active body[data-rx-density="showcase"] h1.video-header-container__title { margin: 14px 0 !important; }
     `,
     init() {
         if (!Settings.get(this.id)) return;
+        const requested = Settings.get('pageDensity');
+        const mode = ['dense', 'normal', 'showcase'].includes(requested) ? requested : 'dense';
         this._styleEl = injectStyle(this._css, 'rx-densemode');
-        document.body?.classList.add('rx-dense');
+        if (document.body) document.body.dataset.rxDensity = mode;
     },
     destroy() {
         this._styleEl?.remove();
-        document.body?.classList.remove('rx-dense');
+        this._styleEl = null;
+        if (document.body) delete document.body.dataset.rxDensity;
+    },
+};
+
+// ═══════════════════════════════════════════
+//  FEATURE: Ambient Player
+// ═══════════════════════════════════════════
+// Palette-driven framing for the standard watch page. Theater owns the whole
+// viewport, so the effect deliberately turns itself off there.
+const AmbientPlayer = {
+    id: 'ambientPlayer',
+    name: 'Ambient Player',
+    _styleEl: null,
+    _css: `
+        html.rumblex-active:not(.rx-theater) body.rx-ambient-player #videoPlayer {
+            border-radius: var(--rx-site-radius-lg, 12px) !important;
+            outline: 1px solid color-mix(in srgb, var(--rx-accent, #89b4fa) 34%, transparent);
+            outline-offset: 0;
+            box-shadow:
+                0 20px 68px color-mix(in srgb, var(--rx-accent, #89b4fa) 24%, transparent),
+                -28px 10px 82px color-mix(in srgb, var(--rx-peach, #fab387) 12%, transparent),
+                28px 18px 82px color-mix(in srgb, var(--rx-green, #a6e3a1) 10%, transparent) !important;
+            transition: box-shadow 220ms ease, outline-color 220ms ease;
+        }
+        html.rumblex-active:not(.rx-theater) body.rx-ambient-player #videoPlayer > .videoPlayer-Rumble-cls {
+            border-radius: inherit !important;
+            overflow: hidden !important;
+        }
+        @media (prefers-reduced-motion: reduce) {
+            html.rumblex-active:not(.rx-theater) body.rx-ambient-player #videoPlayer { transition: none !important; }
+        }
+        @media (forced-colors: active) {
+            html.rumblex-active:not(.rx-theater) body.rx-ambient-player #videoPlayer {
+                box-shadow: none !important;
+                outline: 1px solid CanvasText;
+            }
+        }
+    `,
+    init() {
+        if (!Settings.get(this.id) || !Page.isWatch()) return;
+        this._styleEl = injectStyle(this._css, 'rx-ambient-player');
+        document.body?.classList.add('rx-ambient-player');
+    },
+    destroy() {
+        this._styleEl?.remove();
+        this._styleEl = null;
+        document.body?.classList.remove('rx-ambient-player');
     },
 };
 
@@ -20363,7 +20492,7 @@ const features = [
     AutoHideHeader, AutoHideNavSidebar, AutoLike, AutoLoadComments,
     FullWidthPlayer, AdaptiveLiveLayout, CommentBlocking, SiteTheme,
     // v2.1.0 — Premium UI and Layout Superset
-    RealFramePreviews, ThumbnailHider, DenseMode, AccountPaginationCompact, ReducedMotion, HomeCleanupPreset,
+    RealFramePreviews, ThumbnailHider, DenseMode, AmbientPlayer, AccountPaginationCompact, ReducedMotion, HomeCleanupPreset,
     // v2.2.0 — Download Manager 2.0 (visible surfaces; cache module is global)
     ExternalPlayer,
     // v2.3.0 — Live Chat, Rants, and Multi-Stream

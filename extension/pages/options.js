@@ -120,7 +120,7 @@
         autoplayScheduler: { group: 'video-player', label: 'Autoplay Queue', desc: 'Queue Rumble URLs, auto-advance at end' },
         playbackSpeed: { group: 'video-player', label: 'Playback Speed', desc: 'Saved playback rate (0.25-3x)' },
 
-        darkEnhance: { group: 'theme-layout', label: 'Dark Theme', desc: 'Theme engine with player bar coloring' },
+        darkEnhance: { group: 'theme-layout', label: 'Site Theme', desc: 'Apply the selected palette across Rumble, Theater, and RumbleX controls' },
         wideLayout: { group: 'theme-layout', label: 'Wide Layout', desc: 'Full-width responsive grid on home & subs' },
         logoToFeed: { group: 'theme-layout', label: 'Logo to Feed', desc: 'Rumble logo navigates to Subscriptions' },
         autoExpand: { group: 'theme-layout', label: 'Auto Expand', desc: 'Auto-expand descriptions & comments' },
@@ -129,7 +129,7 @@
         titleFont: { group: 'theme-layout', label: 'Title Font', desc: 'Unbold + normalize title typography' },
         titleNormalizer: { group: 'theme-layout', label: 'Title Normalizer', desc: 'Calm ALL-CAPS, emoji spray and repeated !!! in video titles; original stays on hover' },
         titleNormalizerMode: { group: 'theme-layout', label: 'Title Normalizer Style', desc: 'sentence | title. How a shouty title is re-cased.' },
-        theme: { group: 'theme-layout', label: 'Theme', desc: 'catppuccin | youtube | midnight | rumbleGreen' },
+        theme: { group: 'theme-layout', label: 'Theme', desc: 'Choose the site palette. Preview swatches are available in the popup and in-page settings.' },
         splitRatio: { group: 'theme-layout', label: 'Split Ratio', desc: 'Default video width % for Theater Split (30-80). Live streams and recorded videos start here, then each remembers where you leave the divider.' },
         theaterLayout: { group: 'theme-layout', label: 'Theater Layout Memory', desc: 'Where the divider sits and whether Theater was left open, kept separately for live streams (live) and recorded videos (vod). Reset it to send both back to the Split Ratio default with Theater open.' },
         theaterChannelLayout: { group: 'theme-layout', label: 'Per-Channel Theater Layout', desc: 'Keep a separate Theater layout for each channel. A channel\'s own layout wins over the live and recorded defaults, and resetting Theater Layout Memory clears it too.' },
@@ -185,6 +185,7 @@
         autoLike: { group: 'video-player', label: 'Auto Like', desc: 'Auto-click the like button when a watch page opens.' },
         autoLoadComments: { group: 'comments-chat', label: 'Auto Load Comments', desc: 'Automatically click "Show more comments" as you scroll.' },
         fullWidthPlayer: { group: 'video-page', label: 'Full-Width Player', desc: 'Maximize player width. On live streams, switches to a side-by-side chat layout.' },
+        ambientPlayer: { group: 'video-page', label: 'Ambient Player', desc: 'Frame the standard watch player with a subtle glow from the active RumbleX palette. Theater mode stays distraction-free.' },
         adaptiveLiveLayout: { group: 'video-page', label: 'Adaptive Live Layout', desc: 'On live, widens main content whenever the chat is visible.' },
         commentBlocking: { group: 'comments-chat', label: 'Comment Blocking', desc: 'Adds a Block button to comments; hides blocked users.' },
         siteThemeSync: { group: 'theme-layout', label: 'Sync Rumble Site Theme', desc: 'Mirror Rumble\u2019s native system/dark/light theme setting.' },
@@ -256,7 +257,7 @@
         // ── v2.0.0 — Schema v2, Core Engine, Settings Superset ──
         schemaVersion: { group: 'advanced', label: 'Schema Version', desc: 'Storage migration version. Managed automatically.' },
         // Core & theming
-        denseMode: { group: 'core', label: 'Dense Mode', desc: 'Compact spacing across RumbleX panels and page surfaces.' },
+        denseMode: { group: 'core', label: 'Custom Page Density', desc: 'Apply the selected spacing preset to feeds, cards, comments, and watch pages.' },
         reducedMotion: { group: 'core', label: 'Reduced Motion', desc: 'Disable shimmer, stagger, and spring animations.' },
         glassIntensity: { group: 'core', label: 'Glass Intensity', desc: 'low | medium | high — alpha/border/shadow only, no backdrop-filter.' },
         accentColor: { group: 'core', label: 'Accent Color', desc: 'Maps to CSS custom properties for RumbleX-owned UI.' },
@@ -268,7 +269,7 @@
         realFramePreviews: { group: 'layout', label: 'Real Frame Previews', desc: 'Replace feed artwork with a locally captured video frame after deliberate hover or keyboard focus. Hover again to reveal the original.' },
         compactAccountPagination: { group: 'layout', label: 'Compact Account Pagination', desc: 'Shrink the autoPg pagination on /account/content pages.' },
         homeCleanupPreset: { group: 'layout', label: 'Home Cleanup Preset', desc: 'none | focused | minimal | custom.' },
-        pageDensity: { group: 'layout', label: 'Page Density', desc: 'dense | normal — RumbleX UI density only.' },
+        pageDensity: { group: 'layout', label: 'Page Density', desc: 'Choose compact, balanced, or showcase spacing for Rumble feeds and watch surfaces.' },
         // Player
         qualityMode: { group: 'video-player', label: 'Quality Mode', desc: 'best picks the highest rendition, lowest and bandwidthSaver pick the smallest, manual leaves quality to you.' },
         qualityCeiling: { group: 'video-player', label: 'Maximum Resolution', desc: 'Never select a rendition taller than this. auto means no ceiling.' },
@@ -1314,17 +1315,19 @@
     // as <select> dropdowns prevents users from typing typos that would
     // silently fall back to the default at runtime.
     const ENUM_CHOICES = {
-        theme: [
-            { value: 'catppuccin', label: 'Catppuccin Mocha' },
-            { value: 'youtube', label: 'YouTubify' },
-            { value: 'midnight', label: 'Midnight AMOLED' },
-            { value: 'rumbleGreen', label: 'Rumble Green' },
-            { value: 'oledGreen', label: 'OLED Green' },
-        ],
+        theme: Object.entries(RXSettingsSchema.THEMES).map(([value, palette]) => ({
+            value,
+            label: palette.label,
+        })),
         siteTheme: [
             { value: 'system', label: 'System' },
             { value: 'dark', label: 'Dark' },
             { value: 'light', label: 'Light' },
+        ],
+        pageDensity: [
+            { value: 'dense', label: 'Compact' },
+            { value: 'normal', label: 'Balanced' },
+            { value: 'showcase', label: 'Showcase' },
         ],
         titleNormalizerMode: [
             { value: 'sentence', label: 'Sentence case' },

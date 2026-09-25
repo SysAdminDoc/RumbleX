@@ -7,6 +7,84 @@
     if (globalThis.RumbleXSettingsSchema) return;
 
     const SCHEMA_VERSION = 4;
+    // One canonical palette registry feeds the site runtime, popup, full
+    // settings editor, injected settings panel, tests, and generated
+    // userscripts. Keeping labels and preview swatches beside the actual
+    // colours prevents the pickers from drifting away from what the page
+    // renders.
+    const THEMES = Object.freeze({
+        catppuccin: Object.freeze({
+            label: 'Catppuccin Mocha',
+            base: '#1e1e2e', mantle: '#181825', crust: '#11111b',
+            surface0: '#313244', surface1: '#45475a', surface2: '#585b70',
+            text: '#cdd6f4', subtext: '#a6adc8', subtext0: '#6c7086',
+            accent: '#89b4fa', green: '#a6e3a1', red: '#f38ba8',
+            yellow: '#f9e2af', peach: '#fab387', brand: '#89b4fa',
+            selectionBg: 'rgba(137,180,250,0.25)',
+            hoverBg: 'rgba(49,50,68,0.3)',
+        }),
+        youtube: Object.freeze({
+            label: 'YouTubify',
+            base: '#0f0f0f', mantle: '#0f0f0f', crust: '#0f0f0f',
+            surface0: '#272727', surface1: '#3f3f3f', surface2: '#535353',
+            text: '#f1f1f1', subtext: '#aaaaaa', subtext0: '#717171',
+            accent: '#3ea6ff', green: '#2ba640', red: '#ff0000',
+            yellow: '#ffb84d', peach: '#ff8c42', brand: '#ff0000',
+            selectionBg: 'rgba(62,166,255,0.25)',
+            hoverBg: 'rgba(255,255,255,0.1)',
+        }),
+        midnight: Object.freeze({
+            label: 'Midnight AMOLED',
+            base: '#000000', mantle: '#000000', crust: '#000000',
+            surface0: '#111111', surface1: '#1a1a1a', surface2: '#2a2a2a',
+            text: '#e4e4e7', subtext: '#a1a1aa', subtext0: '#71717a',
+            accent: '#818cf8', green: '#4ade80', red: '#f87171',
+            yellow: '#fbbf24', peach: '#fb923c', brand: '#818cf8',
+            selectionBg: 'rgba(129,140,248,0.25)',
+            hoverBg: 'rgba(255,255,255,0.06)',
+        }),
+        rumbleGreen: Object.freeze({
+            label: 'Rumble Green',
+            base: '#141c0f', mantle: '#0f1509', crust: '#0a0f06',
+            surface0: '#1e2a14', surface1: '#2a3a1e', surface2: '#3a4f2a',
+            text: '#d6e8c4', subtext: '#a8c490', subtext0: '#6e8f56',
+            accent: '#85c742', green: '#85c742', red: '#e55c5c',
+            yellow: '#d4a843', peach: '#c98042', brand: '#85c742',
+            selectionBg: 'rgba(133,199,66,0.25)',
+            hoverBg: 'rgba(30,42,20,0.5)',
+        }),
+        oledGreen: Object.freeze({
+            label: 'OLED Green',
+            base: '#000000', mantle: '#000000', crust: '#000000',
+            surface0: '#0a0f06', surface1: '#11170c', surface2: '#1b2412',
+            text: '#e7f1dc', subtext: '#a8c490', subtext0: '#6e8f56',
+            accent: '#85c742', green: '#85c742', red: '#e55c5c',
+            yellow: '#d4a843', peach: '#c98042', brand: '#85c742',
+            selectionBg: 'rgba(133,199,66,0.28)',
+            hoverBg: 'rgba(133,199,66,0.08)',
+        }),
+        aurora: Object.freeze({
+            label: 'Aurora',
+            base: '#111827', mantle: '#0b1220', crust: '#070d18',
+            surface0: '#1f2a44', surface1: '#2f3d5c', surface2: '#435577',
+            text: '#e6f1ff', subtext: '#b2c2d6', subtext0: '#7f93ad',
+            accent: '#67e8f9', green: '#5eead4', red: '#fb7185',
+            yellow: '#fde68a', peach: '#fdba74', brand: '#67e8f9',
+            selectionBg: 'rgba(103,232,249,0.22)',
+            hoverBg: 'rgba(103,232,249,0.08)',
+        }),
+        ember: Object.freeze({
+            label: 'Solar Ember',
+            base: '#211814', mantle: '#17100e', crust: '#0d0908',
+            surface0: '#35231d', surface1: '#50342a', surface2: '#6d493a',
+            text: '#fff1e6', subtext: '#d4b9a8', subtext0: '#a17f6d',
+            accent: '#f59e0b', green: '#84cc16', red: '#fb7185',
+            yellow: '#fbbf24', peach: '#fb923c', brand: '#f59e0b',
+            selectionBg: 'rgba(245,158,11,0.22)',
+            hoverBg: 'rgba(245,158,11,0.09)',
+        }),
+    });
+    const THEME_IDS = Object.freeze(Object.keys(THEMES));
     const DEFAULTS = Object.freeze({
         adNuker: true,
         theaterSplit: true,
@@ -98,6 +176,7 @@
         autoLike: false,
         autoLoadComments: true,
         fullWidthPlayer: false,
+        ambientPlayer: false,
         adaptiveLiveLayout: true,
         commentBlocking: true,
         siteThemeSync: false,
@@ -343,11 +422,11 @@
         'blockedChannels', 'blockedChatters', 'blockedKeywords', 'blockedCommenters',
     ]);
     const ENUM_VALUES = Object.freeze({
-        theme: ['catppuccin', 'youtube', 'midnight', 'rumbleGreen', 'oledGreen'],
+        theme: THEME_IDS,
         siteTheme: ['system', 'dark', 'light'],
         glassIntensity: ['low', 'medium', 'high'],
         homeCleanupPreset: ['none', 'focused', 'minimal', 'custom'],
-        pageDensity: ['dense', 'normal'],
+        pageDensity: ['dense', 'normal', 'showcase'],
         qualityMode: ['best', 'lowest', 'manual', 'bandwidthSaver'],
         qualityCeiling: ['auto', '2160', '1440', '1080', '720', '480', '360'],
         qualityFloor: ['auto', '2160', '1440', '1080', '720', '480', '360'],
@@ -769,8 +848,6 @@
         // Appearance preferences the theme engine does not consult.
         glassIntensity: 'Theme engine applies a fixed glass treatment.',
         accentColor: 'Theme engine applies the active theme accent.',
-        pageDensity: 'Layout density is fixed by the active theme.',
-
         // Playback preferences with no consumer.
 
         // Download and export preferences the download pipeline ignores.
@@ -820,6 +897,8 @@
         value: Object.freeze({
             SCHEMA_VERSION,
             DEFAULTS,
+            THEMES,
+            THEME_IDS,
             migrate,
             normalize,
             normalizeStored,

@@ -864,11 +864,11 @@
     "description": "In-page UI string (shared core)."
   },
   "feat_darkEnhance_label": {
-    "message": "Dark Theme",
+    "message": "Site Theme",
     "description": "In-page UI string (shared core)."
   },
   "feat_darkEnhance_desc": {
-    "message": "Theme engine with player bar coloring",
+    "message": "Apply the selected palette across Rumble, Theater, and RumbleX controls",
     "description": "In-page UI string (shared core)."
   },
   "feat_wideLayout_label": {
@@ -920,11 +920,11 @@
     "description": "In-page UI string (shared core)."
   },
   "feat_denseMode_label": {
-    "message": "Dense Mode",
+    "message": "Custom Page Density",
     "description": "In-page UI string (shared core)."
   },
   "feat_denseMode_desc": {
-    "message": "Compact spacing across grids and the watch page",
+    "message": "Apply compact, balanced, or showcase spacing across feeds and watch pages",
     "description": "In-page UI string (shared core)."
   },
   "feat_reducedMotion_label": {
@@ -2501,6 +2501,34 @@
   },
   "dlFetchingViaManager": {
     "message": "Fetching the file through your userscript manager. It saves once all of it has arrived…",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_ambientPlayer_label": {
+    "message": "Ambient Player",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_ambientPlayer_desc": {
+    "message": "Frame the standard player with a subtle glow from the active palette",
+    "description": "In-page UI string (shared core)."
+  },
+  "pageDensityLabel": {
+    "message": "Page density",
+    "description": "In-page UI string (shared core)."
+  },
+  "pageDensityCompact": {
+    "message": "Compact",
+    "description": "In-page UI string (shared core)."
+  },
+  "pageDensityBalanced": {
+    "message": "Balanced",
+    "description": "In-page UI string (shared core)."
+  },
+  "pageDensityShowcase": {
+    "message": "Showcase",
+    "description": "In-page UI string (shared core)."
+  },
+  "toastPageDensityChanged": {
+    "message": "Page density updated",
     "description": "In-page UI string (shared core)."
   }
 }

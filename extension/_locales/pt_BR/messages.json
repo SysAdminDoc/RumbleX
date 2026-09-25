@@ -2500,5 +2500,33 @@
   "dlFetchingViaManager": {
     "message": "Buscando o arquivo pelo seu gerenciador de userscripts. Ele será salvo quando chegar por completo…",
     "description": "In-page UI string (shared core)."
+  },
+  "feat_ambientPlayer_label": {
+    "message": "Player ambiente",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_ambientPlayer_desc": {
+    "message": "Emoldura o player padrão com um brilho sutil da paleta ativa",
+    "description": "In-page UI string (shared core)."
+  },
+  "pageDensityLabel": {
+    "message": "Densidade da página",
+    "description": "In-page UI string (shared core)."
+  },
+  "pageDensityCompact": {
+    "message": "Compacta",
+    "description": "In-page UI string (shared core)."
+  },
+  "pageDensityBalanced": {
+    "message": "Equilibrada",
+    "description": "In-page UI string (shared core)."
+  },
+  "pageDensityShowcase": {
+    "message": "Espaçosa",
+    "description": "In-page UI string (shared core)."
+  },
+  "toastPageDensityChanged": {
+    "message": "Densidade da página atualizada",
+    "description": "In-page UI string (shared core)."
   }
 }

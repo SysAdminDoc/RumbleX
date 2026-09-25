@@ -4,16 +4,23 @@
 const { test, expect, chromium } = require('@playwright/test');
 const fs = require('fs');
 const path = require('path');
+const vm = require('vm');
 const { createHarnessPage } = require('./_harness');
 
 const FIXTURE_DIR = path.join(__dirname, '..', 'fixtures', 'platform');
-const THEMES = Object.freeze({
-    catppuccin: { base: '#1e1e2e', mantle: '#181825', crust: '#11111b', text: '#cdd6f4', accent: '#89b4fa' },
-    youtube: { base: '#0f0f0f', mantle: '#0f0f0f', crust: '#0f0f0f', text: '#f1f1f1', accent: '#3ea6ff' },
-    midnight: { base: '#000000', mantle: '#000000', crust: '#000000', text: '#e4e4e7', accent: '#818cf8' },
-    rumbleGreen: { base: '#141c0f', mantle: '#0f1509', crust: '#0a0f06', text: '#d6e8c4', accent: '#85c742' },
-    oledGreen: { base: '#000000', mantle: '#000000', crust: '#000000', text: '#e7f1dc', accent: '#85c742' },
-});
+const schemaSource = fs.readFileSync(path.join(__dirname, '..', '..', 'extension', 'settings-schema.js'), 'utf8');
+const schemaContext = vm.createContext({ URL });
+vm.runInContext(schemaSource, schemaContext, { filename: 'settings-schema.js' });
+const THEME_REGISTRY = JSON.parse(JSON.stringify(schemaContext.RumbleXSettingsSchema.THEMES));
+const THEMES = Object.freeze(Object.fromEntries(
+    Object.entries(THEME_REGISTRY).map(([id, palette]) => [id, {
+        base: palette.base,
+        mantle: palette.mantle,
+        crust: palette.crust,
+        text: palette.text,
+        accent: palette.accent,
+    }]),
+));
 const VIEWPORTS = Object.freeze([
     { name: 'desktop', width: 1440, height: 900 },
     { name: '860px', width: 860, height: 900 },
@@ -78,21 +85,18 @@ function boxesOverlap(a, b) {
     return a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top;
 }
 
-// The THEMES constant above is a five-key summary used for the token
-// assertions. Uniqueness has to be computed against the complete palettes or a
+// The THEMES constant above is a compact summary used for token assertions.
+// Uniqueness has to be computed against the complete palettes or a
 // colour that two themes genuinely share looks exclusive to whichever one the
 // summary happens to list it under: rumbleGreen.crust and oledGreen.surface0
 // are both #0a0f06, and only the full registry says so.
 const FULL_PALETTES = (() => {
-    const source = fs.readFileSync(path.join(__dirname, '..', '..', 'extension', 'content.js'), 'utf8');
-    const registry = source.match(/const THEMES = \{([\s\S]*?)\n\};/);
-    if (!registry) throw new Error('THEMES registry not found in extension/content.js');
-    const palettes = {};
-    for (const block of registry[1].split(/\n {4}(?=[a-zA-Z]+: \{)/)) {
-        const id = block.match(/^\s*([a-zA-Z]+): \{/)?.[1];
-        if (!id) continue;
-        palettes[id] = [...block.matchAll(/#([0-9a-f]{6})\b/gi)].map((match) => `#${match[1]}`);
-    }
+    const palettes = Object.fromEntries(Object.entries(THEME_REGISTRY).map(([id, palette]) => [
+        id,
+        Object.values(palette).flatMap((value) => (
+            [...String(value).matchAll(/#([0-9a-f]{6})\b/gi)].map((match) => `#${match[1]}`)
+        )),
+    ]));
     if (Object.keys(palettes).length !== Object.keys(THEMES).length) {
         throw new Error(`parsed ${Object.keys(palettes).length} palettes, expected ${Object.keys(THEMES).length}`);
     }
@@ -445,7 +449,7 @@ for (const [themeId, palette] of Object.entries(THEMES)) {
 
 // RumbleX-owned surfaces used to pin Catppuccin hexes, so the watch-progress
 // bar, the resume toast and the toast stack rendered in Catppuccin pink and
-// blue on all five themes. They read var(--rx-token, #hex) now, which follows
+// blue on every non-default theme. They read var(--rx-token, #hex) now, which follows
 // the palette when the theme engine is on and keeps the readable Catppuccin
 // value when it is off.
 test('RumbleX-owned surfaces repaint when the palette changes, with no reload', async () => {
@@ -527,6 +531,112 @@ test('RumbleX-owned surfaces repaint when the palette changes, with no reload', 
         expect(unthemed.token).toBe('');
         expect(unthemed.progressFill).toBe('rgb(243, 139, 168)');
 
+        await context.close();
+    } finally {
+        await browser.close();
+    }
+});
+
+test('page density presets change content rhythm and clean up completely', async () => {
+    const browser = await chromium.launch({ headless: true });
+    try {
+        const { context, page } = await createHarnessPage(browser);
+        const result = await page.evaluate(() => {
+            document.documentElement.classList.add('rumblex-active');
+            const harness = globalThis.__RumbleXFeatureHarness;
+            const feature = harness.features.find((candidate) => candidate.id === 'denseMode');
+            const probe = document.createElement('section');
+            probe.id = 'rx-density-probe';
+            probe.innerHTML = '<div class="thumbnail__grid"><article class="videostream"><div class="thumbnail__title">Title</div><footer class="videostream__footer">Footer</footer></article></div>';
+            document.body.appendChild(probe);
+            const read = (mode) => {
+                feature.destroy();
+                const settings = harness.resetSettings();
+                Object.assign(settings, { denseMode: true, pageDensity: mode });
+                feature.init();
+                const grid = probe.querySelector('.thumbnail__grid');
+                const footer = probe.querySelector('.videostream__footer');
+                return {
+                    mode: document.body.dataset.rxDensity,
+                    gap: getComputedStyle(grid).gap,
+                    paddingTop: getComputedStyle(footer).paddingTop,
+                };
+            };
+            const modes = ['dense', 'normal', 'showcase'].map(read);
+            feature.destroy();
+            return {
+                modes,
+                cleanedAttribute: !document.body.hasAttribute('data-rx-density'),
+                cleanedStyle: !document.getElementById('rx-densemode'),
+            };
+        });
+
+        expect(result.modes).toEqual([
+            { mode: 'dense', gap: '8px', paddingTop: '4px' },
+            { mode: 'normal', gap: '14px', paddingTop: '7px' },
+            { mode: 'showcase', gap: '20px', paddingTop: '11px' },
+        ]);
+        expect(result.cleanedAttribute).toBe(true);
+        expect(result.cleanedStyle).toBe(true);
+        await context.close();
+    } finally {
+        await browser.close();
+    }
+});
+
+test('ambient player follows palette tokens, yields to Theater, and cleans up', async () => {
+    const browser = await chromium.launch({ headless: true });
+    try {
+        const { context, page } = await createHarnessPage(browser);
+        const result = await page.evaluate(() => {
+            document.documentElement.classList.add('rumblex-active');
+            const harness = globalThis.__RumbleXFeatureHarness;
+            const ambient = harness.features.find((candidate) => candidate.id === 'ambientPlayer');
+            const theme = harness.features.find((candidate) => candidate.id === 'darkEnhance');
+
+            ambient.destroy();
+            let settings = harness.resetSettings();
+            ambient.init();
+            const disabledStyle = !!document.getElementById('rx-ambient-player');
+
+            settings = harness.resetSettings();
+            Object.assign(settings, { ambientPlayer: true, darkEnhance: true, theme: 'aurora' });
+            theme.destroy();
+            theme.init();
+            ambient.init();
+            const player = document.querySelector('#videoPlayer');
+            const standard = getComputedStyle(player);
+            const active = {
+                className: document.body.classList.contains('rx-ambient-player'),
+                boxShadow: standard.boxShadow,
+                outlineColor: standard.outlineColor,
+                accentToken: getComputedStyle(document.documentElement).getPropertyValue('--rx-accent').trim(),
+                cssHasNoBackdropFilter: !document.getElementById('rx-ambient-player').textContent.includes('backdrop-filter'),
+            };
+
+            document.documentElement.classList.add('rx-theater');
+            const theaterShadow = getComputedStyle(player).boxShadow;
+            document.documentElement.classList.remove('rx-theater');
+            ambient.destroy();
+            theme.destroy();
+            return {
+                disabledStyle,
+                active,
+                theaterShadow,
+                cleanedClass: !document.body.classList.contains('rx-ambient-player'),
+                cleanedStyle: !document.getElementById('rx-ambient-player'),
+            };
+        });
+
+        expect(result.disabledStyle).toBe(false);
+        expect(result.active.className).toBe(true);
+        expect(result.active.boxShadow).not.toBe('none');
+        expect(result.active.accentToken).toBe('#67e8f9');
+        expect(result.active.outlineColor).not.toBe('rgba(0, 0, 0, 0)');
+        expect(result.active.cssHasNoBackdropFilter).toBe(true);
+        expect(result.theaterShadow).toBe('none');
+        expect(result.cleanedClass).toBe(true);
+        expect(result.cleanedStyle).toBe(true);
         await context.close();
     } finally {
         await browser.close();

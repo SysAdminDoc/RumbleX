@@ -16,6 +16,15 @@ async function mountLiveTheater(page, { width = 1440, height = 900 } = {}) {
                                 <button type="button" aria-label="Chat settings">Settings</button>
                             </header>
                             <div id="js-chat--height" class="chat--height">
+                                <div class="chat-sticky-rants__container" data-js="chat-sticky-rants-container">
+                                    <div class="swipe-slider" data-js-swipe-slider="swipe-slider">
+                                        <button aria-label="Scroll left" data-js-swipe-slider="swipe-slider__button-start" class="swipe-slider__button swipe-slider__button--start">&lt;</button>
+                                        <ul class="swipe-slider__scroll-container" data-js="chat-sticky-rants-list" data-js-swipe-slider="swipe-slider__scroll-container">
+                                            <li class="chat-history--rant-sticky"><div class="chat-history--rant-sticky--pill"><span class="chat-history--rant-price">$25</span></div></li>
+                                        </ul>
+                                        <button aria-label="Scroll right" data-js-swipe-slider="swipe-slider__button-end" class="swipe-slider__button swipe-slider__button--end">&gt;</button>
+                                    </div>
+                                </div>
                                 <div class="chat-history" style="display:flex;flex:1 1 0%">
                                     <ul id="chat-history-list">
                                         ${Array.from({ length: 36 }, (_, index) => `
@@ -78,6 +87,9 @@ test('live Theater Split gives chat the full side-panel height with no utility b
             const right = document.querySelector('#rx-split-right').getBoundingClientRect();
             const panel = document.querySelector('#rx-tab-chat').getBoundingClientRect();
             const history = document.querySelector('#chat-history-list').getBoundingClientRect();
+            const historyShell = document.querySelector('.chat-history').getBoundingClientRect();
+            const sticky = document.querySelector('.chat-sticky-rants__container').getBoundingClientRect();
+            const stickyButton = document.querySelector('.swipe-slider__button');
             const nativeHeader = document.querySelector('.chat--header');
             return {
                 panelBottomGap: Math.abs(right.bottom - panel.bottom),
@@ -91,6 +103,9 @@ test('live Theater Split gives chat the full side-panel height with no utility b
                     '#rx-split-reveal', '#rx-theater-close',
                 ].join(',')).length,
                 horizontalOverflow: document.querySelector('#rx-tab-chat').scrollWidth > document.querySelector('#rx-tab-chat').clientWidth,
+                stickyHeight: sticky.height,
+                stickyClearance: historyShell.top - sticky.bottom,
+                stickyButtonRadius: getComputedStyle(stickyButton).borderRadius,
             };
         });
 
@@ -101,6 +116,10 @@ test('live Theater Split gives chat the full side-panel height with no utility b
         expect(layout.nativeHeaderHeight).toBe(0);
         expect(layout.removedSurfaceCount).toBe(0);
         expect(layout.horizontalOverflow).toBe(false);
+        expect(layout.stickyHeight).toBeGreaterThanOrEqual(48);
+        expect(layout.stickyHeight).toBeLessThanOrEqual(72);
+        expect(layout.stickyClearance).toBeGreaterThanOrEqual(0);
+        expect(layout.stickyButtonRadius).toBe('6px');
         await expect(page.locator('.rx-panel-header h3')).toHaveAttribute('title', 'Feature Fixture Video');
         const signInGeometry = await page.locator('.chat--signin-container button').evaluate((button) => ({
             radius: getComputedStyle(button).borderRadius,

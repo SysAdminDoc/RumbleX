@@ -51,6 +51,7 @@ globalThis.__RumbleXFeatureHarness = {
         else if (id === 'homeCleanupPreset') next.homeCleanupPreset = 'focused';
         else if (id === 'rantTierFilter') next.rantTierFilter = 5;
         else if (id === 'chatUsernameColors') next.chatUsernameColors = 'deterministic';
+        else if (id === 'denseMode') Object.assign(next, { denseMode: true, pageDensity: 'showcase' });
         else if (id === 'autoplayBlock') Object.assign(next, { autoplayBlock: true, autoplayBlockMode: 'playerOnly' });
         else if (id === 'bulkUnsubscribeEnabled') Object.assign(next, { bulkUnsubscribeEnabled: true, bulkUnsubscribeDryRun: true });
         else if (Object.hasOwn(next, id)) next[id] = true;
@@ -188,7 +189,7 @@ const INIT_STYLE_IDS = Object.freeze({
     autoHideHeader: 'rx-autohide-header-css', autoHideNavSidebar: 'rx-autohide-nav-css',
     fullWidthPlayer: 'rx-fullwidth-css', adaptiveLiveLayout: 'rx-adaptive-live-css',
     commentBlocking: 'rx-commentblock-css', realFramePreviews: 'rx-real-frame-previews-css',
-    hideThumbnails: 'rx-thumbnailhider', denseMode: 'rx-densemode',
+    hideThumbnails: 'rx-thumbnailhider', denseMode: 'rx-densemode', ambientPlayer: 'rx-ambient-player',
     compactAccountPagination: 'rx-acct-pagination', reducedMotion: 'rx-reduced-motion',
     homeCleanupPreset: 'rx-home-cleanup-preset', externalPlayerEnabled: 'rx-extplayer-css',
     rantTierFilter: 'rx-rant-tier-filter',

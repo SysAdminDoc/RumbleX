@@ -3,11 +3,11 @@
 
 // RumbleX-owned surfaces must follow the active palette.
 //
-// The failure this prevents: the project ships five palettes, but ~190 lines of
+// The failure this prevents: the project ships multiple palettes, but ~190 lines of
 // injected CSS pinned Catppuccin Mocha hexes outright, so the watch-progress
 // bar, the resume toast and the toast stack rendered in Catppuccin pink and
 // blue no matter which theme the user picked. Nothing failed. The colours were
-// simply wrong on four themes out of five, and only a screenshot of the right
+// simply wrong on nearly every alternative theme, and only a screenshot of the right
 // surface in the right theme would ever have shown it.
 //
 // The rule: a palette hex may appear in the THEMES registry, which is where the
@@ -20,40 +20,33 @@
 const assert = require('assert/strict');
 const fs = require('fs');
 const path = require('path');
+const vm = require('vm');
 
 const ROOT = path.resolve(__dirname, '..');
 const CONTENT = path.join(ROOT, 'extension', 'content.js');
 const source = fs.readFileSync(CONTENT, 'utf8');
 const lines = source.split(/\r?\n/);
+const schemaSource = fs.readFileSync(path.join(ROOT, 'extension', 'settings-schema.js'), 'utf8');
+const schemaContext = vm.createContext({ URL });
+vm.runInContext(schemaSource, schemaContext, { filename: 'settings-schema.js' });
+const themes = schemaContext.RumbleXSettingsSchema.THEMES;
+assert.ok(themes && Object.keys(themes).length >= 7, 'canonical theme registry is missing palettes');
 
-// Every colour in the Catppuccin Mocha palette the registry declares, which is
-// the set a hardcoded value would be drawn from.
-const PALETTE = Object.freeze([
-    '1e1e2e', '181825', '11111b',
-    '313244', '45475a', '585b70',
-    'cdd6f4', 'a6adc8', '6c7086',
-    '89b4fa', 'a6e3a1', 'f38ba8',
-    'f9e2af', 'fab387',
-]);
+// Derive every six-digit palette colour from the canonical schema. A newly
+// added theme is protected automatically instead of requiring a second list.
+const PALETTE = Object.freeze([...new Set(
+    Object.values(themes)
+        .flatMap((theme) => Object.values(theme))
+        .flatMap((value) => [...String(value).matchAll(/#([0-9a-f]{6})\b/gi)].map((match) => match[1].toLowerCase())),
+)]);
+assert.ok(PALETTE.length > 20, 'canonical theme registry exposes too few palette colours');
 const HEX = new RegExp(`#(${PALETTE.join('|')})\\b`, 'gi');
-
-const themesStart = lines.findIndex((line) => line.startsWith('const THEMES = {'));
-assert.ok(themesStart >= 0, 'THEMES registry not found in extension/content.js');
-const themesEnd = lines.findIndex((line, index) => index > themesStart && line.startsWith('};'));
-assert.ok(themesEnd > themesStart, 'THEMES registry has no closing brace');
-
-// Registry sanity: every palette colour this guard polices must actually be
-// declared there. Otherwise the list rots and the guard quietly polices less.
-const registry = lines.slice(themesStart, themesEnd + 1).join('\n');
-const missing = PALETTE.filter((hex) => !new RegExp(`#${hex}\\b`, 'i').test(registry));
-assert.deepEqual(missing, [],
-    `palette colours this guard polices but the THEMES registry no longer declares: ${missing.join(', ')}. `
-    + 'Update the PALETTE list to match the registry.');
+assert.match(source, /const THEMES = RXSettingsSchema\.THEMES;/,
+    'content runtime no longer reads the canonical schema palette registry');
 
 const offenders = [];
 lines.forEach((line, index) => {
     const number = index + 1;
-    if (number >= themesStart + 1 && number <= themesEnd + 1) return;
     for (const match of line.matchAll(HEX)) {
         // Allowed only as the fallback of an rx token: var(--rx-token, #hex).
         const before = line.slice(0, match.index);

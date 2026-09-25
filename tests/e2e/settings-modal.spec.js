@@ -477,13 +477,6 @@ test('in-page settings follows every active site palette', async ({ context, ext
         path.join(__dirname, '..', 'fixtures', 'platform', 'modern-watch.html'),
         'utf8',
     );
-    const palettes = {
-        catppuccin: { base: '#1e1e2e', mantle: '#181825', crust: '#11111b', surface0: '#313244', text: '#cdd6f4' },
-        youtube: { base: '#0f0f0f', mantle: '#0f0f0f', crust: '#0f0f0f', surface0: '#272727', text: '#f1f1f1' },
-        midnight: { base: '#000000', mantle: '#000000', crust: '#000000', surface0: '#111111', text: '#e4e4e7' },
-        rumbleGreen: { base: '#141c0f', mantle: '#0f1509', crust: '#0a0f06', surface0: '#1e2a14', text: '#d6e8c4' },
-        oledGreen: { base: '#000000', mantle: '#000000', crust: '#000000', surface0: '#0a0f06', text: '#e7f1dc' },
-    };
     const rgb = (hex) => {
         const value = Number.parseInt(hex.slice(1), 16);
         return `rgb(${(value >> 16) & 255}, ${(value >> 8) & 255}, ${value & 255})`;
@@ -491,6 +484,15 @@ test('in-page settings follows every active site palette', async ({ context, ext
 
     const settingsPage = await context.newPage();
     await settingsPage.goto(`chrome-extension://${extensionId}/pages/options.html`);
+    const palettes = await settingsPage.evaluate(() => Object.fromEntries(
+        Object.entries(globalThis.RumbleXSettingsSchema.THEMES).map(([id, palette]) => [id, {
+            base: palette.base,
+            mantle: palette.mantle,
+            crust: palette.crust,
+            surface0: palette.surface0,
+            text: palette.text,
+        }]),
+    ));
     const page = await context.newPage();
     await page.route('https://rumble.com/vtheme-settings.html*', (route) => route.fulfill({
         status: 200,

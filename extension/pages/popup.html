@@ -240,10 +240,11 @@ body {
     letter-spacing: 0.5px;
 }
 .theme-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; padding: 0; }
+.density-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .theme-chip {
     min-height: 30px;
     font-size: 10px; padding: 4px 8px;
-    border-radius: 10px;
+    border-radius: 6px;
     border: 1px solid var(--border);
     background: rgba(255,255,255,0.035);
     color: var(--text-primary);
@@ -259,12 +260,16 @@ body {
     background: rgba(133,213,81,0.1);
     box-shadow: 0 0 6px rgba(133,213,81,0.15);
 }
-.theme-dot {
-    width: 8px; height: 8px;
-    border-radius: 50%;
-    display: inline-block;
-    flex-shrink: 0;
+.theme-swatch {
+    width: 30px; height: 14px;
+    display: grid; grid-template-columns: repeat(3, 1fr);
+    overflow: hidden; flex: 0 0 auto;
+    border: 1px solid rgba(255,255,255,0.16);
+    border-radius: 4px;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.28);
 }
+.density-chip { justify-content: center; min-width: 0; padding-inline: 5px; }
+.theme-swatch > span { display: block; min-width: 0; }
 
 /* Footer */
 .save-error { margin: 0 12px 8px; padding: 8px 10px; border-radius: 6px;

@@ -2500,5 +2500,33 @@
   "dlFetchingViaManager": {
     "message": "Récupération du fichier via ton gestionnaire de userscripts. Il sera enregistré une fois arrivé en entier…",
     "description": "In-page UI string (shared core)."
+  },
+  "feat_ambientPlayer_label": {
+    "message": "Lecteur ambiant",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_ambientPlayer_desc": {
+    "message": "Encadre le lecteur standard avec une lueur discrète issue de la palette active",
+    "description": "In-page UI string (shared core)."
+  },
+  "pageDensityLabel": {
+    "message": "Densité de page",
+    "description": "In-page UI string (shared core)."
+  },
+  "pageDensityCompact": {
+    "message": "Compacte",
+    "description": "In-page UI string (shared core)."
+  },
+  "pageDensityBalanced": {
+    "message": "Équilibrée",
+    "description": "In-page UI string (shared core)."
+  },
+  "pageDensityShowcase": {
+    "message": "Aérée",
+    "description": "In-page UI string (shared core)."
+  },
+  "toastPageDensityChanged": {
+    "message": "Densité de page mise à jour",
+    "description": "In-page UI string (shared core)."
   }
 }

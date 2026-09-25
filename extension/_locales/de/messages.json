@@ -2500,5 +2500,33 @@
   "dlFetchingViaManager": {
     "message": "Die Datei wird über deinen Userscript-Manager geladen. Sie wird gespeichert, sobald sie vollständig angekommen ist…",
     "description": "In-page UI string (shared core)."
+  },
+  "feat_ambientPlayer_label": {
+    "message": "Ambient-Player",
+    "description": "In-page UI string (shared core)."
+  },
+  "feat_ambientPlayer_desc": {
+    "message": "Rahmt den Standardplayer mit einem dezenten Leuchten der aktiven Farbpalette",
+    "description": "In-page UI string (shared core)."
+  },
+  "pageDensityLabel": {
+    "message": "Seitendichte",
+    "description": "In-page UI string (shared core)."
+  },
+  "pageDensityCompact": {
+    "message": "Kompakt",
+    "description": "In-page UI string (shared core)."
+  },
+  "pageDensityBalanced": {
+    "message": "Ausgewogen",
+    "description": "In-page UI string (shared core)."
+  },
+  "pageDensityShowcase": {
+    "message": "Großzügig",
+    "description": "In-page UI string (shared core)."
+  },
+  "toastPageDensityChanged": {
+    "message": "Seitendichte aktualisiert",
+    "description": "In-page UI string (shared core)."
   }
 }
