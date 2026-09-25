@@ -9,6 +9,9 @@ All notable changes to RumbleX will be documented in this file.
 - Injected surfaces now use the active palette for their translucent colors instead of baking Catppuccin RGB values into individual panels. The build guard also catches palette colors written as `rgb()` or `rgba()`.
 - The new search, queue, dialog, and Watch Later control text is localized across all six shipped languages. The Options document also declares the browser UI language.
 - Options integration fields now have persistent visible labels, and their row can wrap without overflowing a narrow side panel.
+- Default chat observers now process only the rows added in the current frame. New messages no longer make mention styling, autocomplete, user blocking, spam detection, and session counts rescan the full chat history.
+- Selector contracts are matched against parsed HTML elements. A class on one node, an ID on another, or markup-like text inside a comment or script can no longer create a false pass.
+- Repeated-navigation coverage now swaps route-specific Home, Watch, Search, Channel, and Subscriptions fixtures instead of reusing one watch-page body for every URL.
 
 ### Fixed
 
@@ -25,6 +28,9 @@ All notable changes to RumbleX will be documented in this file.
 - Narrow Theater layout keeps divider input within its documented 32 to 54 percent range. Home, End, and arrow input no longer make the panel jump to desktop geometry.
 - Mention suggestions expose combobox state and the active option. Chat profile cards now have dialog semantics, a close control, Escape handling, focus containment, and viewport clamping.
 - Site Theme Sync recognizes Rumble's current button navigation and `is-selected` state. Reduced-motion preference also disables scripted smooth scrolling in Comment Navigator.
+- Page-gated modules now remount after Rumble SPA navigation. Features first initialized on Home can start after entering Watch or Channel, and watch-only observers are torn down when the tab leaves that route.
+- Auto Max Quality now owns its delayed menu-selection work, so disabling the feature or changing routes cancels every pending player click.
+- Chat User Block and Spam Dedup now remove their injected controls, hidden state, and processing markers during teardown.
 
 ## [3.60.1] - 2026-09-24
 

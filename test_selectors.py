@@ -8,10 +8,10 @@ their stable selectors. When the private MHTML captures are available, the
 harness also walks Sample Pages/ and extracts their HTML payload. Legacy
 captures may use a fallback, but every named surface must still resolve.
 
-The asserter uses regex/substring matching, not a real CSS engine. That's
-intentional — we want a stdlib-only script (matches analyze_pages.py
-precedent) and we're checking "this selector pattern appears in the HTML
-at all", not "this selector parses into a valid CSS AST".
+The asserter uses Python's HTML parser plus a small CSS-compound matcher. It
+keeps the harness dependency-free while requiring every tag, class, ID, and
+attribute in a compound to exist on the same real element. Markup-like text in
+comments or scripts cannot satisfy a selector contract.
 
 Exit codes:
   0 — every named surface resolved on every fixture
@@ -19,11 +19,8 @@ Exit codes:
   2 — usage / missing-file error
 
 Limitations:
-  - The :has(), > , + , ~ combinators aren't parsed deeply — we strip them
-    and check the leftmost compound. Good enough for our map today.
-  - A "match" can be a false positive when the same attribute value shows
-    up in JS strings or HTML comments. Live tests in v3.4's Playwright
-    suite (deferred) will catch those.
+  - The :has(), >, +, and ~ relationships aren't parsed deeply. The matcher
+    checks the final compound, which is the named surface in the current map.
 
 Usage:
   python test_selectors.py            # run all fixtures
@@ -34,6 +31,7 @@ import email
 import os
 import re
 import sys
+from html.parser import HTMLParser
 
 REPO_ROOT = os.path.dirname(os.path.abspath(__file__))
 SAMPLE_DIR = os.path.join(REPO_ROOT, 'Sample Pages')
@@ -250,58 +248,114 @@ def split_selector_list(selector):
     return parts
 
 
-def selector_to_regex(sel):
-    """Turn a compound CSS selector (last compound only) into a regex.
-    Supports tag, #id, .class, [attr], [attr="value"], [attr*="value"],
-    [attr^="value"], [attr$="value"]. Compound combinations are AND'd via
-    separate searches by the caller."""
+class ElementCollector(HTMLParser):
+    """Collect real start tags while ignoring comments and script text."""
+
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self.elements = []
+
+    def handle_starttag(self, tag, attrs):
+        self.elements.append({
+            'tag': tag.lower(),
+            'attrs': {str(name).lower(): '' if value is None else value
+                      for name, value in attrs},
+        })
+
+
+def parse_elements(html):
+    parser = ElementCollector()
+    parser.feed(html)
+    parser.close()
+    return parser.elements
+
+
+def selector_to_contract(sel):
+    """Turn one simplified compound selector into an element contract."""
     sel = sel.strip()
     if not sel:
         return None
-    patterns = []
-    # Pull out [attr*=...] etc.
-    for amatch in re.finditer(r'\[([^\]=*~^$]+)([*~^$]?=)?["\']?([^"\'\]]*)["\']?\]', sel):
-        name = re.escape(amatch.group(1).strip())
-        op = amatch.group(2) or ''
-        val = re.escape(amatch.group(3))
-        if not op:
-            patterns.append(name + r'\s*=')  # attribute presence
-        elif op == '=':
-            # exact (also allow space-separated for class-style values)
-            patterns.append(name + r'\s*=\s*["\'][^"\']*' + val + r'[^"\']*["\']')
-        else:
-            patterns.append(name + r'\s*[*~^$]?=\s*["\'][^"\']*' + val + r'[^"\']*["\']')
-    # IDs.
-    for idmatch in re.finditer(r'#([\w-]+)', sel):
-        patterns.append(r'id\s*=\s*["\']' + re.escape(idmatch.group(1)) + r'["\']')
-    # Classes.
-    for cmatch in re.finditer(r'\.([\w-]+)', sel):
-        cls = re.escape(cmatch.group(1))
-        patterns.append(
-            r'class\s*=\s*["\'](?:[^"\']+\s)?' + cls + r'(?:\s[^"\']*)?["\']'
-        )
-    # Bare tag at the start of the compound.
+    attributes = []
+    attr_re = re.compile(
+        r'\[\s*([^\s~|^$*=\]]+)\s*'
+        r'(?:(\^=|\$=|\*=|~=|\|=|=)\s*'
+        r'(?:(?:"([^"]*)")|(?:\'([^\']*)\')|([^\]\s]+)))?\s*\]'
+    )
+    for match in attr_re.finditer(sel):
+        attributes.append((
+            match.group(1).lower(),
+            match.group(2) or '',
+            next((value for value in match.group(3, 4, 5) if value is not None), ''),
+        ))
+
+    # Remove attribute bodies before looking for class dots or IDs. Values such
+    # as href="/account.html" are data, not a `.html` class selector.
+    residual = attr_re.sub('', sel)
     tag_only = re.match(r'^([a-zA-Z][\w-]*)(?:[.#\[]|$)', sel)
-    if tag_only:
-        patterns.append(r'<' + re.escape(tag_only.group(1)) + r'\b')
-    return patterns or None
+    return {
+        'tag': tag_only.group(1).lower() if tag_only else None,
+        'id': (re.search(r'#([\w-]+)', residual) or [None, None])[1],
+        'classes': re.findall(r'\.([\w-]+)', residual),
+        'attributes': attributes,
+    }
 
 
-def selector_matches(html, sel):
-    """Return True if a simplified version of `sel` plausibly resolves
-    against `html`. AND across compound patterns — every component must
-    appear at least once anywhere in the HTML (not necessarily on the
-    same element — that's the harness's documented limitation)."""
+def element_matches(element, contract):
+    if contract['tag'] and element['tag'] != contract['tag']:
+        return False
+    attrs = element['attrs']
+    if contract['id'] and attrs.get('id') != contract['id']:
+        return False
+    classes = set(attrs.get('class', '').split())
+    if any(name not in classes for name in contract['classes']):
+        return False
+    for name, op, expected in contract['attributes']:
+        if name not in attrs:
+            return False
+        actual = attrs[name]
+        if not op:
+            continue
+        if op == '=' and actual != expected:
+            return False
+        if op == '*=' and expected not in actual:
+            return False
+        if op == '^=' and not actual.startswith(expected):
+            return False
+        if op == '$=' and not actual.endswith(expected):
+            return False
+        if op == '~=' and expected not in actual.split():
+            return False
+        if op == '|=' and actual != expected and not actual.startswith(expected + '-'):
+            return False
+    return True
+
+
+def selector_matches(elements, sel):
+    """Return True when one real element satisfies a selector compound."""
     for alternative in split_selector_list(sel):
         simplified = simplify_selector(alternative)
-        patterns = selector_to_regex(simplified)
-        if patterns and all(re.search(pat, html, re.IGNORECASE) for pat in patterns):
+        contract = selector_to_contract(simplified)
+        if contract and any(element_matches(element, contract) for element in elements):
             return True
     return False
 
 
+def assert_matcher_integrity():
+    elements = parse_elements('''
+        <!-- <button id="ghost" class="ready"></button> -->
+        <script>const sample = '<button id="script-only" class="ready">';</script>
+        <div id="split"></div><span class="ready"></span>
+        <button id="real" class="ready primary" data-state="open"></button>
+    ''')
+    assert selector_matches(elements, 'button#real.ready[data-state="open"]')
+    assert not selector_matches(elements, '#split.ready')
+    assert not selector_matches(elements, '#ghost.ready')
+    assert not selector_matches(elements, '#script-only.ready')
+
+
 def main():
     verbose = '--verbose' in sys.argv or '-v' in sys.argv
+    assert_matcher_integrity()
     # v3.26.0 — Sample Pages/ is gitignored (logged-in captures may contain
     # account names / personal info), so CI checkouts never have it. Detect
     # that case and gracefully skip the fixture-replay portion while still
@@ -325,6 +379,7 @@ def main():
 
     def check_fixture(fname, html, expected, source, require_stable=False):
         nonlocal passes
+        elements = parse_elements(html)
         if verbose:
             print(f'\n[*] {source}/{fname} ({len(html):,} chars HTML, checking {len(expected)} surfaces)')
         for surface in expected:
@@ -333,8 +388,8 @@ def main():
                 failures.append((f'{source}/{fname}', surface, '<missing registry entry>', '<missing registry entry>'))
                 print(f'    FAIL   {source}/{fname} / {surface}  (missing from Selectors._map)')
                 continue
-            stable_ok = selector_matches(html, entry['stable'])
-            fallback_ok = selector_matches(html, entry['fallback'])
+            stable_ok = selector_matches(elements, entry['stable'])
+            fallback_ok = selector_matches(elements, entry['fallback'])
             if stable_ok:
                 passes += 1
                 if verbose:

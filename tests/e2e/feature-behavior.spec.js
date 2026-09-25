@@ -840,6 +840,23 @@ test('AutoMaxQuality steps down after repeated stalls and respects the floor', a
     expect(result.watchedWhenDisabled).toBe(false);
 });
 
+test('AutoMaxQuality cancels delayed player-menu work during teardown', async () => {
+    const result = await inHarness(async () => {
+        const feature = features.find((f) => f.id === 'autoMaxQuality');
+        feature._clearTimers();
+        let fired = 0;
+        feature._setTimer(() => { fired += 1; }, 40);
+        feature._setTimer(() => { fired += 1; }, 60);
+        const pendingBeforeDestroy = feature._timers.length;
+        feature.destroy();
+        const pendingAfterDestroy = feature._timers.length;
+        await new Promise((resolve) => setTimeout(resolve, 90));
+        return { fired, pendingBeforeDestroy, pendingAfterDestroy };
+    });
+
+    expect(result).toEqual({ fired: 0, pendingBeforeDestroy: 2, pendingAfterDestroy: 0 });
+});
+
 test('MiniPlayer uses Document PiP where available and unwinds it cleanly', async () => {
     // requestWindow() needs transient user activation, so PiP cannot ride the
     // scroll trigger that opens the overlay — it has to be an explicit control,
@@ -1721,6 +1738,87 @@ test('ChatComposerAssist completes @mentions from the people who actually spoke'
     expect(result.ariaAfterEscape).toEqual({ expanded: 'false', activeDescendant: null });
     expect(result.ariaAfterDestroy).toEqual({ role: null, controls: null });
     expect(result.boxGone).toBe(true);
+});
+
+test('default chat observers process only newly added rows and clean up their markers', async () => {
+    const result = await inHarness(async ({ body }) => {
+        document.body.innerHTML = body;
+        history.replaceState({}, '', '/vfeature123-live-chat.html');
+        const harness = globalThis.__RumbleXFeatureHarness;
+        harness.resetSettings();
+        for (const id of ['chatMentionAutocomplete', 'liveChatEnhance', 'uniqueChatters', 'chatUserBlock', 'chatSpamDedup']) {
+            Settings._cache[id] = true;
+        }
+        const byId = (id) => harness.features.find((feature) => feature.id === id);
+        const features = [
+            byId('chatMentionAutocomplete'),
+            byId('liveChatEnhance'),
+            byId('uniqueChatters'),
+            byId('chatUserBlock'),
+            byId('chatSpamDedup'),
+        ];
+        for (const feature of features) feature.init();
+        await new Promise((resolve) => setTimeout(resolve, 650));
+
+        const historyEl = document.querySelector('#chat-history-list');
+        const oldRow = historyEl.querySelector('.chat-history--row');
+        oldRow.querySelector('.rx-chat-block-btn')?.remove();
+        delete oldRow.dataset.rxProcessed;
+        delete oldRow.dataset.rxBlockBtn;
+        delete oldRow.dataset.rxDedupSeen;
+
+        const row = document.createElement('div');
+        row.className = 'chat-history--row';
+        const username = document.createElement('button');
+        username.className = 'chat-history--username';
+        username.textContent = 'Charlie';
+        const message = document.createElement('span');
+        message.className = 'chat-history--message chat--message-text';
+        message.textContent = 'fresh @Alice message';
+        row.append(username, message);
+        const chatterCountBefore = byId('uniqueChatters')._msgCount;
+        historyEl.appendChild(row);
+        await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+
+        const incremental = {
+            oldProcessed: oldRow.dataset.rxProcessed || null,
+            oldBlockMarker: oldRow.dataset.rxBlockBtn || null,
+            oldDedupMarker: oldRow.dataset.rxDedupSeen || null,
+            newProcessed: row.dataset.rxProcessed || null,
+            newBlockMarker: row.dataset.rxBlockBtn || null,
+            newDedupMarker: row.dataset.rxDedupSeen || null,
+            newBlockButton: !!row.querySelector('.rx-chat-block-btn'),
+            newMentionStyled: !!row.querySelector('.rx-chat-mention'),
+            indexedName: byId('chatMentionAutocomplete')._names.has('Charlie'),
+            chatterDelta: byId('uniqueChatters')._msgCount - chatterCountBefore,
+            uniqueName: byId('uniqueChatters')._users.has('charlie'),
+        };
+
+        for (const feature of [...features].reverse()) feature.destroy();
+        return {
+            incremental,
+            buttonsAfterDestroy: document.querySelectorAll('.rx-chat-block-btn').length,
+            blockedMarkersAfterDestroy: document.querySelectorAll('[data-rx-block-btn]').length,
+            dedupMarkersAfterDestroy: document.querySelectorAll('[data-rx-dedup-seen]').length,
+        };
+    });
+
+    expect(result.incremental).toEqual({
+        oldProcessed: null,
+        oldBlockMarker: null,
+        oldDedupMarker: null,
+        newProcessed: '1',
+        newBlockMarker: '1',
+        newDedupMarker: '1',
+        newBlockButton: true,
+        newMentionStyled: true,
+        indexedName: true,
+        chatterDelta: 1,
+        uniqueName: true,
+    });
+    expect(result.buttonsAfterDestroy).toBe(0);
+    expect(result.blockedMarkersAfterDestroy).toBe(0);
+    expect(result.dedupMarkersAfterDestroy).toBe(0);
 });
 
 test('ChatHighlights marks only messages matching configured terms and reverts on destroy', async () => {

@@ -6940,6 +6940,16 @@ const AutoMaxQuality = {
         this._timers = [];
     },
 
+    _setTimer(callback, delay) {
+        const timer = setTimeout(() => {
+            const index = this._timers.indexOf(timer);
+            if (index >= 0) this._timers.splice(index, 1);
+            callback();
+        }, delay);
+        this._timers.push(timer);
+        return timer;
+    },
+
     /**
      * Resolution bound as a number, or null for "no bound".
      *
@@ -7139,7 +7149,7 @@ const AutoMaxQuality = {
             if (settingsClick) settingsClick.click();
 
             // Short delay then pick highest quality (last child of quality list)
-            setTimeout(() => {
+            this._setTimer(() => {
                 const qualityList = qualitySection.lastChild;
                 if (qualityList) {
                     // Apply the same ceiling/floor/mode policy as the hls path.
@@ -7157,7 +7167,7 @@ const AutoMaxQuality = {
 
     _tryQualitySelect() {
         // Direct interaction with quality menu items
-        setTimeout(() => {
+        this._setTimer(() => {
             const items = qsa('[class*="quality"] li, [class*="quality"] div[role="option"], [class*="quality"] button');
             if (!items.length) return;
             const target = this._pickFromLabels(items);
@@ -7230,11 +7240,11 @@ const AutoMaxQuality = {
         this._timers = [];
         const attempts = [500, 1500, 3000, 5000, 8000];
         for (const delay of attempts) {
-            this._timers.push(setTimeout(() => {
+            this._setTimer(() => {
                 if (this._attempted) return;
                 if (this._tryHlsDirect()) return;
                 this._selectBest();
-            }, delay));
+            }, delay);
         }
 
         // Also watch for player DOM changes
@@ -8222,8 +8232,25 @@ const AutoTheater = {
 // Three chat modules read the same message shape. Keeping the readers here
 // means Rumble's markup is described once rather than three times.
 const ChatDom = {
+    rowSelector: [
+        '#chat-history-list .chat-history--row',
+        '.chat-history--row',
+        '.chat-history--rant',
+        '#chat-history-list > li',
+        '.chat--message-container',
+    ].join(', '),
     rows(root = document) {
-        return qsa('#chat-history-list .chat-history--row, .chat-history--row, .chat-history--rant', root);
+        const rows = [];
+        for (const candidate of Array.isArray(root) ? root : [root]) {
+            if (candidate instanceof Element) {
+                const containing = candidate.matches(this.rowSelector)
+                    ? candidate
+                    : candidate.closest(this.rowSelector);
+                if (containing) rows.push(containing);
+            }
+            if (candidate?.querySelectorAll) rows.push(...qsa(this.rowSelector, candidate));
+        }
+        return [...new Set(rows)];
     },
     usernameEl(row) {
         return row?.querySelector('.chat-history--username, .chat-history--rant-username, .js-chat-username') || null;
@@ -8245,6 +8272,30 @@ const ChatDom = {
         return Selectors.find('chat.history', root) || qs('#chat-history-list, .chat-history', root);
     },
 };
+
+// Chat rows arrive in bursts. Keep each module's observer callback O(new rows)
+// and collapse every burst into one paint instead of querying the full chat
+// history once per mutation. A child inserted into an existing row is kept as
+// a root too; ChatDom.rows() walks up to that row so staged platform renders
+// still get processed when the username or message text appears later.
+function scheduleChatMutationRoots(owner, key, records, callback) {
+    const pending = owner._rxChatMutationRoots || (owner._rxChatMutationRoots = new Set());
+    for (const record of records) {
+        for (const node of record.addedNodes || []) {
+            if (node instanceof Element) pending.add(node);
+        }
+    }
+    if (!pending.size) return;
+    scheduleFeatureFrame(owner, key, () => {
+        const roots = [...pending].filter((root) => root.isConnected);
+        pending.clear();
+        if (roots.length) callback(roots);
+    });
+}
+
+function clearChatMutationRoots(owner) {
+    owner?._rxChatMutationRoots?.clear();
+}
 
 // ═══════════════════════════════════════════
 //  FEATURE: Chat Composer Assist
@@ -8286,8 +8337,8 @@ const ChatComposerAssist = {
         .rx-chat-ac button[aria-selected="true"] { background: color-mix(in srgb, var(--rx-accent, #89b4fa) 22%, transparent); }
     `,
 
-    _indexNames() {
-        for (const row of ChatDom.rows()) {
+    _indexNames(root = document) {
+        for (const row of ChatDom.rows(root)) {
             const name = ChatDom.username(row);
             if (name) this._names.add(name);
         }
@@ -8458,8 +8509,11 @@ const ChatComposerAssist = {
 
         this._attach();
         this._indexNames();
-        this._obs = new MutationObserver(() => {
-            scheduleFeatureFrame(this, 'chat-ac', () => { this._attach(); this._indexNames(); });
+        this._obs = new MutationObserver((records) => {
+            scheduleChatMutationRoots(this, 'chat-ac', records, (roots) => {
+                this._attach();
+                for (const root of roots) this._indexNames(root);
+            });
         });
         this._obs.observe(document.documentElement, { childList: true, subtree: true });
     },
@@ -8474,6 +8528,7 @@ const ChatComposerAssist = {
         this._box = null;
         this._names = null;
         this._matches = [];
+        clearChatMutationRoots(this);
     }
 };
 
@@ -8527,11 +8582,11 @@ const ChatHighlights = {
         } catch { /* audio is a nicety, never a requirement */ }
     },
 
-    _scan() {
+    _scan(root = document, notify = true) {
         const terms = this._terms();
-        if (!terms.length) return;
+        if (!terms.length) return false;
         let matched = false;
-        for (const row of ChatDom.rows()) {
+        for (const row of ChatDom.rows(root)) {
             if (row.dataset.rxKw) continue;
             row.dataset.rxKw = '1';
             const haystack = `${ChatDom.username(row)} ${ChatDom.message(row)}`.toLowerCase();
@@ -8540,7 +8595,8 @@ const ChatHighlights = {
                 matched = true;
             }
         }
-        if (matched) this._ping();
+        if (matched && notify) this._ping();
+        return matched;
     },
 
     init() {
@@ -8548,8 +8604,12 @@ const ChatHighlights = {
         if (!Page.isWatch() && !Page.isLive()) return;
         this._styleEl = injectStyle(this._css, 'rx-chat-kw-css');
         this._scan();
-        this._obs = new MutationObserver(() => {
-            scheduleFeatureFrame(this, 'chat-kw', () => this._scan());
+        this._obs = new MutationObserver((records) => {
+            scheduleChatMutationRoots(this, 'chat-kw', records, (roots) => {
+                let matched = false;
+                for (const root of roots) matched = this._scan(root, false) || matched;
+                if (matched) this._ping();
+            });
         });
         this._obs.observe(document.documentElement, { childList: true, subtree: true });
     },
@@ -8563,6 +8623,7 @@ const ChatHighlights = {
         for (const row of ChatDom.rows()) delete row.dataset.rxKw;
         try { this._audio?.close(); } catch { /* already closed */ }
         this._audio = null;
+        clearChatMutationRoots(this);
     }
 };
 
@@ -8650,17 +8711,17 @@ const ChatUserCards = {
         if (entries.length > this._MAX_PER_USER) entries.splice(0, entries.length - this._MAX_PER_USER);
     },
 
-    _index() {
-        for (const row of ChatDom.rows()) {
+    _index(root = document) {
+        for (const row of ChatDom.rows(root)) {
             if (row.dataset.rxCard) continue;
             row.dataset.rxCard = '1';
             this._record(ChatDom.username(row), ChatDom.message(row));
         }
     },
 
-    _applyNicknames() {
+    _applyNicknames(root = document) {
         const nicks = this._nicknames();
-        for (const row of ChatDom.rows()) {
+        for (const row of ChatDom.rows(root)) {
             const el = ChatDom.usernameEl(row);
             if (!el) continue;
             const real = el.dataset.rxRealName || el.textContent.trim();
@@ -8858,8 +8919,13 @@ const ChatUserCards = {
         };
         document.addEventListener('keydown', this._onKeyDown);
 
-        this._obs = new MutationObserver(() => {
-            scheduleFeatureFrame(this, 'chat-cards', () => { this._index(); this._applyNicknames(); });
+        this._obs = new MutationObserver((records) => {
+            scheduleChatMutationRoots(this, 'chat-cards', records, (roots) => {
+                for (const root of roots) {
+                    this._index(root);
+                    this._applyNicknames(root);
+                }
+            });
         });
         this._obs.observe(document.documentElement, { childList: true, subtree: true });
     },
@@ -8886,6 +8952,7 @@ const ChatUserCards = {
             delete row.dataset.rxCard;
         }
         this._log = null;
+        clearChatMutationRoots(this);
     }
 };
 
@@ -9084,9 +9151,8 @@ const LiveChatEnhance = {
         }
     },
 
-    _processMessages() {
-        const messages = qsa('#chat-history-list li, .chat--message-container');
-        for (const msg of messages) {
+    _processMessages(root = document) {
+        for (const msg of ChatDom.rows(root)) {
             if (msg.dataset.rxProcessed) continue;
             msg.dataset.rxProcessed = '1';
             this._highlightMentions(msg);
@@ -9102,8 +9168,10 @@ const LiveChatEnhance = {
         // Wait for chat to appear
         const startObs = () => {
             this._processMessages();
-            this._obs = new MutationObserver(() => {
-                scheduleFeatureFrame(this, 'message-scan', () => this._processMessages());
+            this._obs = new MutationObserver((records) => {
+                scheduleChatMutationRoots(this, 'message-scan', records, (roots) => {
+                    this._processMessages(roots);
+                });
             });
             const chatList = qs('#chat-history-list') || qs('.chat--height');
             if (chatList) {
@@ -9123,6 +9191,7 @@ const LiveChatEnhance = {
         this._obs?.disconnect();
         qs('#rx-chat-filter')?.remove();
         for (const msg of qsa('.rx-chat-hidden')) msg.classList.remove('rx-chat-hidden');
+        clearChatMutationRoots(this);
     }
 };
 
@@ -14626,14 +14695,13 @@ const UniqueChatters = {
     _obs: null,
     _bar: null,
     _users: null,
+    _seenMessages: null,
     _msgCount: 0,
 
-    _msgSel: '#chat-history-list li, .chat--message-container',
-
-    _rescan() {
-        this._users = new Set();
-        this._msgCount = 0;
-        for (const m of qsa(this._msgSel)) {
+    _process(root = document) {
+        for (const m of ChatDom.rows(root)) {
+            if (this._seenMessages.has(m)) continue;
+            this._seenMessages.add(m);
             const u = rxReadUsername(m);
             if (u) { this._users.add(u); this._msgCount++; }
         }
@@ -14641,13 +14709,15 @@ const UniqueChatters = {
 
     init() {
         if (!Settings.get(this.id) || !Page.isWatch()) return;
+        this._users = new Set();
+        this._seenMessages = new WeakSet();
+        this._msgCount = 0;
         waitForFeature(this, '#chat-history-list').then((chatEl) => {
-            this._rescan();
-            // Debounce — a full re-scan on every message mutation is O(n) and
-            // high-traffic streams can fire many mutations per second.
-            this._obs = new MutationObserver(() => {
-                clearTimeout(this._t);
-                this._t = setTimeout(() => this._rescan(), 250);
+            this._process(chatEl);
+            this._obs = new MutationObserver((records) => {
+                scheduleChatMutationRoots(this, 'unique-chatters', records, (roots) => {
+                    for (const root of roots) this._process(root);
+                });
             });
             this._obs.observe(chatEl, { childList: true, subtree: true });
         }).catch(() => {});
@@ -14656,9 +14726,12 @@ const UniqueChatters = {
     destroy() {
         this._styleEl?.remove();
         this._obs?.disconnect();
-        clearTimeout(this._t);
         for (const bar of qsa('.rx-chatter-bar')) bar.remove();
         this._bar = null;
+        this._users = null;
+        this._seenMessages = null;
+        this._msgCount = 0;
+        clearChatMutationRoots(this);
     }
 };
 
@@ -14707,10 +14780,9 @@ const ChatUserBlock = {
         return new Set((Settings.get('blockedChatters') || []).map((u) => String(u).toLowerCase()));
     },
 
-    _process() {
+    _process(root = document) {
         const blocked = this._blocked();
-        const sel = '#chat-history-list li, .chat--message-container';
-        for (const msg of qsa(sel)) {
+        for (const msg of ChatDom.rows(root)) {
             const u = rxReadUsername(msg);
             if (!u) continue;
             msg.classList.toggle('rx-blocked-msg', blocked.has(u));
@@ -14731,7 +14803,7 @@ const ChatUserBlock = {
                     list.push(u);
                     Settings.set('blockedChatters', list);
                 }
-                this._process();
+                this._process(document);
             });
             // Insert AFTER the username element, not inside it, so other modules
             // (rxReadUsername / ChatExport) don't read "username block" as the name.
@@ -14744,7 +14816,11 @@ const ChatUserBlock = {
         this._styleEl = injectStyle(this._css, 'rx-chatuserblock-css');
         waitForFeature(this, '#chat-history-list').then((chatEl) => {
             this._process();
-            this._obs = new MutationObserver(() => this._process());
+            this._obs = new MutationObserver((records) => {
+                scheduleChatMutationRoots(this, 'chat-user-block', records, (roots) => {
+                    for (const root of roots) this._process(root);
+                });
+            });
             this._obs.observe(chatEl, { childList: true, subtree: true });
         }).catch(() => {});
     },
@@ -14752,6 +14828,12 @@ const ChatUserBlock = {
     destroy() {
         this._styleEl?.remove();
         this._obs?.disconnect();
+        for (const msg of ChatDom.rows()) {
+            msg.classList.remove('rx-blocked-msg');
+            delete msg.dataset.rxBlockBtn;
+        }
+        for (const button of qsa('.rx-chat-block-btn')) button.remove();
+        clearChatMutationRoots(this);
     }
 };
 
@@ -14773,11 +14855,12 @@ const ChatSpamDedup = {
         return (el ? el.textContent : msg.textContent || '').trim().toLowerCase();
     },
 
-    _process() {
-        for (const msg of qsa('#chat-history-list li, .chat--message-container')) {
+    _process(root = document) {
+        for (const msg of ChatDom.rows(root)) {
             if (msg.dataset.rxDedupSeen) continue;
-            msg.dataset.rxDedupSeen = '1';
             const t = this._textOf(msg);
+            if (!t) continue;
+            msg.dataset.rxDedupSeen = '1';
             if (t && t.length >= 3 && this._last.includes(t)) {
                 msg.classList.add('rx-spam-dup');
             }
@@ -14791,7 +14874,17 @@ const ChatSpamDedup = {
         this._styleEl = injectStyle(this._css, 'rx-spamdedup-css');
         waitForFeature(this, '#chat-history-list').then(chatEl => {
             this._process();
-            this._obs = new MutationObserver(() => this._process());
+            this._obs = new MutationObserver((records) => {
+                scheduleChatMutationRoots(this, 'chat-spam-dedup', records, (roots) => {
+                    const rows = [];
+                    for (const root of roots) rows.push(...ChatDom.rows(root));
+                    rows.sort((left, right) => {
+                        if (left === right) return 0;
+                        return left.compareDocumentPosition(right) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1;
+                    });
+                    for (const row of [...new Set(rows)]) this._process(row);
+                });
+            });
             this._obs.observe(chatEl, { childList: true, subtree: true });
         }).catch(() => {});
     },
@@ -14799,7 +14892,12 @@ const ChatSpamDedup = {
     destroy() {
         this._styleEl?.remove();
         this._obs?.disconnect();
+        for (const msg of ChatDom.rows()) {
+            msg.classList.remove('rx-spam-dup');
+            delete msg.dataset.rxDedupSeen;
+        }
         this._last = [];
+        clearChatMutationRoots(this);
     }
 };
 
@@ -18360,6 +18458,7 @@ function makeCssToggleFeature(entry) {
     return {
         id: entry.id,
         name: entry.label,
+        _rxRouteScoped: Boolean(entry.page),
         _styleEl: null,
         init() {
             if (!Settings.get(this.id)) return;
@@ -20844,8 +20943,37 @@ const features = [
     ...RX_CSS_FEATURES,
 ];
 
+// These modules decide whether to mount from the current route. Rumble swaps
+// page bodies without reloading the extension, so a watch-only module that was
+// initialized on Home would otherwise stay absent for the rest of the tab.
+// Modules with their own Router subscription are deliberately omitted here.
+const RX_ROUTE_SCOPED_FEATURE_IDS = new Set([
+    'feedCleanup', 'categoryFilter', 'logoToFeed', 'speedController', 'scrollVolume',
+    'autoMaxQuality', 'watchProgress', 'channelBlocker', 'rssExportEnabled',
+    'channelArchiveButton', 'legacyKeyboardNav', 'autoTheater',
+    'chatMentionAutocomplete', 'chatMentionHighlight', 'chatParticipantsList',
+    'chatClickToMention', 'chatReadability', 'liveChatEnhance', 'videoTimestamps',
+    'screenshotBtn', 'watchHistory', 'autoplayBlock', 'searchHistory', 'miniPlayer', 'videoStats',
+    'loopControl', 'quickBookmark', 'commentNav', 'rantHighlight', 'relatedFilter',
+    'exactCounts', 'shareTimestamp', 'timeRemaining', 'shortsFilter', 'chatAutoScroll',
+    'autoExpand', 'quickSave', 'perChannelVolumeMemory', 'uniqueChatters',
+    'chatUserBlock', 'chatSpamDedup', 'chatExport', 'rantStatsPanel', 'rantPersist',
+    'commentSort', 'popoutChat', 'autoplayScheduler', 'chapters', 'sponsorBlock',
+    'videoClips', 'liveDVR', 'subtitleSidecar', 'transcripts', 'audioOnly',
+    'batchDownload', 'autoLike', 'autoLoadComments', 'fullWidthPlayer',
+    'adaptiveLiveLayout', 'commentBlocking', 'ambientPlayer',
+    'compactAccountPagination', 'homeCleanupPreset', 'creatorMode',
+]);
+
+for (const id of RX_ROUTE_SCOPED_FEATURE_IDS) {
+    if (!features.some((feature) => feature?.id === id)) {
+        throw new Error(`Route-scoped feature is not registered: ${id}`);
+    }
+}
+
 for (const feature of features) {
     if (!feature || feature._rxLifecycleWrapped) continue;
+    if (RX_ROUTE_SCOPED_FEATURE_IDS.has(feature.id)) feature._rxRouteScoped = true;
     const init = feature.init;
     const destroy = feature.destroy;
     feature.init = function (...args) {
@@ -20864,6 +20992,71 @@ for (const feature of features) {
     };
     Object.defineProperty(feature, '_rxLifecycleWrapped', { value: true });
 }
+
+const FeatureRuntime = {
+    _routeOff: null,
+    _routeTimer: null,
+    _pendingUrl: null,
+    _running: false,
+
+    _schedule(detail) {
+        const reason = String(detail?.reason || '');
+        const htmxDomChanged = reason === 'htmx:afterSwap'
+            || reason === 'htmx:afterSettle'
+            || reason === 'htmx:historyRestore';
+        if (detail?.changed) this._pendingUrl = detail.url;
+        else if (!htmxDomChanged || !this._pendingUrl || detail?.url !== this._pendingUrl) return;
+        clearTimeout(this._routeTimer);
+        // afterSettle already means the replacement DOM is ready. A history
+        // signal alone gets a short fallback delay, while each later htmx
+        // signal resets the timer onto the final DOM.
+        const delay = reason === 'htmx:afterSettle' || reason === 'htmx:historyRestore'
+            ? 0
+            : reason === 'htmx:afterSwap' ? 50 : 200;
+        this._routeTimer = setTimeout(() => {
+            this._routeTimer = null;
+            this._pendingUrl = null;
+            this._remount(detail);
+        }, delay);
+    },
+
+    _remount(detail) {
+        if (this._running) return;
+        this._running = true;
+        const scoped = features.filter((feature) => feature?._rxRouteScoped);
+        for (const feature of [...scoped].reverse()) {
+            try {
+                feature.destroy();
+            } catch (error) {
+                console.warn(`[RumbleX] ${feature.id || feature.name} route teardown failed:`, error);
+                try { RxErrorLog?.record(feature.id || feature.name, error, 'route:destroy'); } catch {}
+            }
+        }
+        for (const feature of scoped) {
+            try {
+                feature.init();
+            } catch (error) {
+                console.warn(`[RumbleX] ${feature.id || feature.name} route init failed:`, error);
+                try { RxErrorLog?.record(feature.id || feature.name, error, `route:${detail?.page || '?'}`); } catch {}
+            }
+        }
+        this._running = false;
+    },
+
+    start() {
+        if (this._routeOff) return;
+        this._routeOff = Router.onChange((detail) => this._schedule(detail));
+    },
+
+    stop() {
+        clearTimeout(this._routeTimer);
+        this._routeTimer = null;
+        this._pendingUrl = null;
+        this._routeOff?.();
+        this._routeOff = null;
+        this._running = false;
+    },
+};
 
 async function boot() {
     try {
@@ -20903,6 +21096,7 @@ async function boot() {
                 RxErrorLog.record(feat.id || feat.name, e, 'init');
             }
         }
+        FeatureRuntime.start();
         try {
             SettingsPanel.init();
         } catch (e) {

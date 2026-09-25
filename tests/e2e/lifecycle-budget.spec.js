@@ -8,7 +8,7 @@
 // the shipped defaults through repeated in-app navigations and fail on any live
 // handle or scan count that does not come back down.
 const { test, expect, chromium } = require('@playwright/test');
-const { BODY, createHarnessPage } = require('./_harness');
+const { BODY, ROUTE_BODIES, createHarnessPage } = require('./_harness');
 
 // Installed before any feature runs. Counts what is still alive, not what was
 // ever created: an observer until it disconnects, an interval until cleared,
@@ -144,7 +144,7 @@ const ROUTES = ['/', '/vroute001-watch.html', '/search/video?q=fixture', '/c/fix
 // Twenty in-app navigations, the way Rumble does them: htmx swaps the page
 // body, pushes history, and fires its swap and settle events. Each sample is
 // taken once the frame-scheduled work of that navigation has run.
-const NAVIGATE = async ({ body, routes, enabled }) => {
+const NAVIGATE = async ({ body, routeBodies, routes, enabled }) => {
     const harness = globalThis.__RumbleXFeatureHarness;
     if (enabled) {
         Settings._cache = { ...Settings._defaults, schemaVersion: SCHEMA_VERSION };
@@ -153,9 +153,14 @@ const NAVIGATE = async ({ body, routes, enabled }) => {
     } else {
         harness.resetSettings();
     }
-    document.body.innerHTML = body;
-    history.replaceState({}, '', '/vroute000-start.html');
+    // Start on the route that precedes the first measured route in the loop.
+    // That makes lap one exercise the same feed-to-home transition as later
+    // laps instead of under-counting work because it began on a watch page.
+    const initialRoute = routes[routes.length - 1];
+    document.body.innerHTML = routeBodies[initialRoute] || body;
+    history.replaceState({}, '', initialRoute);
     Router.init();
+    harness.featureRuntime.start();
     await globalThis.__rxPaint();
     const baseline = globalThis.__rxLive();
     const initErrors = [];
@@ -168,7 +173,7 @@ const NAVIGATE = async ({ body, routes, enabled }) => {
     let previous = {};
     for (let i = 0; i < 20; i += 1) {
         const route = routes[i % routes.length];
-        document.body.innerHTML = body;
+        document.body.innerHTML = routeBodies[route] || body;
         history.pushState({}, '', route);
         document.dispatchEvent(new CustomEvent('htmx:afterSwap', { bubbles: true }));
         document.dispatchEvent(new CustomEvent('htmx:afterSettle', { bubbles: true }));
@@ -187,7 +192,7 @@ const NAVIGATE = async ({ body, routes, enabled }) => {
         try { feature.destroy(); } catch {}
     }
     await globalThis.__rxSleep(50);
-    return {
+    const result = {
         baseline,
         samples,
         destroyed: globalThis.__rxLive(),
@@ -195,6 +200,8 @@ const NAVIGATE = async ({ body, routes, enabled }) => {
         moduleIds: harness.features.map((feature) => feature.id),
         attributed: Object.keys(RxPerfBudget.scans()),
     };
+    harness.featureRuntime.stop();
+    return result;
 };
 
 const HANDLES = ['routerHandlers', 'observers', 'intervals', 'timeouts', 'frames', 'listeners'];
@@ -210,7 +217,11 @@ const scanTotals = (samples) => {
 
 test('twenty route transitions return live handles to baseline and never multiply scan work', async () => {
     test.setTimeout(120_000);
-    const { result, errors } = await withTrackedHarness(NAVIGATE, { routes: ROUTES, enabled: true });
+    const { result, errors } = await withTrackedHarness(NAVIGATE, {
+        routes: ROUTES,
+        routeBodies: ROUTE_BODIES,
+        enabled: true,
+    });
     expect(errors).toEqual([]);
     expect(result.initErrors).toEqual([]);
     expect(result.samples).toHaveLength(20);
@@ -256,7 +267,11 @@ test('twenty route transitions return live handles to baseline and never multipl
 
 test('with every module switched off, navigation adds no handles and no scans at all', async () => {
     test.setTimeout(120_000);
-    const { result, errors } = await withTrackedHarness(NAVIGATE, { routes: ROUTES, enabled: false });
+    const { result, errors } = await withTrackedHarness(NAVIGATE, {
+        routes: ROUTES,
+        routeBodies: ROUTE_BODIES,
+        enabled: false,
+    });
     expect(errors).toEqual([]);
     expect(result.initErrors).toEqual([]);
     // A disabled module costs nothing: no observer, timer, frame or listener
@@ -266,6 +281,65 @@ test('with every module switched off, navigation adds no handles and no scans at
     }
     expect(scanTotals(result.samples)).toEqual({});
     expect(result.destroyed).toEqual(result.baseline);
+});
+
+test('route-scoped modules mount after an SPA transition and leave unsupported pages clean', async () => {
+    const { result, errors } = await withTrackedHarness(async ({ routeBodies }) => {
+        const harness = globalThis.__RumbleXFeatureHarness;
+        harness.enable('hideRelatedSidebar');
+        const feature = harness.features.find((candidate) => candidate.id === 'hideRelatedSidebar');
+
+        document.body.innerHTML = routeBodies['/'];
+        history.replaceState({}, '', '/');
+        Router.init();
+        harness.featureRuntime.start();
+        feature.init();
+        const onHomeInitially = !!document.querySelector('#rx-css-hideRelatedSidebar');
+
+        document.body.innerHTML = routeBodies['/vroute001-watch.html'];
+        history.pushState({}, '', '/vroute001-watch.html');
+        document.dispatchEvent(new CustomEvent('htmx:afterSwap', { bubbles: true }));
+        document.dispatchEvent(new CustomEvent('htmx:afterSettle', { bubbles: true }));
+        await globalThis.__rxSleep(80);
+        const onWatch = !!document.querySelector('#rx-css-hideRelatedSidebar');
+
+        let sameUrlLifecycleCalls = 0;
+        const originalInit = feature.init;
+        const originalDestroy = feature.destroy;
+        feature.init = function (...args) {
+            sameUrlLifecycleCalls += 1;
+            return originalInit.apply(this, args);
+        };
+        feature.destroy = function (...args) {
+            sameUrlLifecycleCalls += 1;
+            return originalDestroy.apply(this, args);
+        };
+        document.dispatchEvent(new CustomEvent('htmx:afterSwap', { bubbles: true }));
+        document.dispatchEvent(new CustomEvent('htmx:afterSettle', { bubbles: true }));
+        await globalThis.__rxSleep(80);
+        feature.init = originalInit;
+        feature.destroy = originalDestroy;
+
+        document.body.innerHTML = routeBodies['/'];
+        history.pushState({}, '', '/');
+        document.dispatchEvent(new CustomEvent('htmx:afterSwap', { bubbles: true }));
+        document.dispatchEvent(new CustomEvent('htmx:afterSettle', { bubbles: true }));
+        await globalThis.__rxSleep(80);
+        const backOnHome = !!document.querySelector('#rx-css-hideRelatedSidebar');
+
+        feature.destroy();
+        harness.featureRuntime.stop();
+        return { routeScoped: feature._rxRouteScoped, onHomeInitially, onWatch, sameUrlLifecycleCalls, backOnHome };
+    }, { routeBodies: ROUTE_BODIES });
+
+    expect(errors).toEqual([]);
+    expect(result).toEqual({
+        routeScoped: true,
+        onHomeInitially: false,
+        onWatch: true,
+        sameUrlLifecycleCalls: 0,
+        backOnHome: false,
+    });
 });
 
 test('frame-scheduled scans are attributed to their module, and only an opted-in report keeps slow ones', async () => {

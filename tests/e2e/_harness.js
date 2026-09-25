@@ -23,6 +23,8 @@ const CORE = CORE_FILES
 const HARNESS_INJECTION = `
 globalThis.__RumbleXFeatureHarness = {
     features,
+    featureRuntime: FeatureRuntime,
+    routeScopedIds: RX_ROUTE_SCOPED_FEATURE_IDS,
     cssToggles: RX_CSS_TOGGLES,
     resetSettings() {
         const next = { ...Settings._defaults };
@@ -167,6 +169,19 @@ const BODY = `
 <div class="pagination autoPg"></div><footer class="page__footer foot nav--transition"></footer><div id="portal" data-js="portal"></div>
 `;
 
+function platformFixtureBody(name) {
+    const source = readSource(path.join(ROOT, 'tests', 'fixtures', 'platform', name));
+    return source.match(/<body[^>]*>([\s\S]*?)<\/body>/i)?.[1] || source;
+}
+
+const ROUTE_BODIES = Object.freeze({
+    '/': platformFixtureBody('desktop-home.html'),
+    '/vroute001-watch.html': platformFixtureBody('desktop-watch.html'),
+    '/search/video?q=fixture': platformFixtureBody('desktop-search.html'),
+    '/c/fixture': platformFixtureBody('desktop-channel.html'),
+    '/subscriptions': platformFixtureBody('desktop-home.html'),
+});
+
 const INIT_STYLE_IDS = Object.freeze({
     adNuker: 'rx-adnuker', feedCleanup: 'rx-feedcleanup', hidePremium: 'rx-hidepremium',
     categoryFilter: 'rx-catfilter', darkEnhance: 'rx-darkenhance', theaterSplit: 'rx-theater-css',
@@ -228,6 +243,6 @@ async function createHarnessPage(browser, contextOptions = {}) {
 }
 
 module.exports = {
-    ROOT, VERSION, SCHEMA, CORE, INSTRUMENTED_CORE, PLATFORM, BODY,
+    ROOT, VERSION, SCHEMA, CORE, INSTRUMENTED_CORE, PLATFORM, BODY, ROUTE_BODIES,
     INIT_STYLE_IDS, HOME_FEATURES, ACCOUNT_FEATURES, routeFor, createHarnessPage,
 };

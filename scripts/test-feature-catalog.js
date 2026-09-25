@@ -20,6 +20,14 @@ function objectBlock(symbol) {
     return match[0];
 }
 
+function featureSource(symbol) {
+    const marker = `const ${symbol} = {`;
+    const start = core.indexOf(marker);
+    assert.ok(start >= 0, `feature source is missing: ${symbol}`);
+    const next = core.indexOf('\nconst ', start + marker.length);
+    return core.slice(start, next >= 0 ? next : core.length);
+}
+
 function property(block, key) {
     return block.match(new RegExp(`^\\s*${key}:\\s*'([^']+)'`, 'm'))?.[1] || '';
 }
@@ -52,6 +60,24 @@ assert.equal(handwritten.length + cssIds.length, 141, 'total feature catalog cha
 
 const allIds = [...handwritten.map(({ id }) => id), ...cssIds];
 assert.equal(new Set(allIds).size, allIds.length, 'feature ids must be unique across both registries');
+
+// Any module that decides whether to mount from Page.is* must either subscribe
+// to Router itself or participate in the shared SPA remount runtime. Otherwise
+// opening the tab on one page permanently decides whether the feature exists.
+const routeIdsBody = core.match(/const RX_ROUTE_SCOPED_FEATURE_IDS = new Set\(\[([\s\S]*?)\]\);/)?.[1] || '';
+assert.ok(routeIdsBody, 'route-scoped feature registry is missing');
+const routeIds = [...routeIdsBody.matchAll(/'([^']+)'/g)].map((match) => match[1]);
+assert.equal(routeIds.length, new Set(routeIds).size, 'route-scoped feature registry contains duplicates');
+for (const id of routeIds) {
+    assert.ok(allIds.includes(id), `route-scoped feature is not in the runtime registry: ${id}`);
+}
+for (const { symbol, id } of handwritten) {
+    const block = featureSource(symbol);
+    if (!/\bPage\.is[A-Z]/.test(block)) continue;
+    const selfManaged = /\bRouter\.onChange\(/.test(block);
+    assert.ok(selfManaged || routeIds.includes(id),
+        `${symbol} gates itself on the current page but has no SPA route lifecycle`);
+}
 
 for (const id of cssIds) {
     assert.ok(Object.hasOwn(defaults, id), `CSS feature has no canonical setting: ${id}`);
@@ -166,6 +192,7 @@ assert.deepEqual(staleExclusions, [],
 
 const cssFactory = core.match(/function makeCssToggleFeature\(entry\) \{([\s\S]*?)\n\}/)?.[0] || '';
 assert.match(cssFactory, /id:\s*entry\.id/);
+assert.match(cssFactory, /_rxRouteScoped:\s*Boolean\(entry\.page\)/);
 assert.match(cssFactory, /injectStyle\(entry\.css, 'rx-css-' \+ entry\.id\)/);
 assert.match(cssFactory, /this\._styleEl\?\.remove\(\)/);
 
