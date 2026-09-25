@@ -44,6 +44,7 @@ All notable changes to RumbleX will be documented in this file.
 - Chrome's internal offscreen document is no longer web accessible to Rumble pages. The service worker can still create it through the extension-only API.
 - Offscreen-backed downloads and archive controls now detect existing documents on Chromium 111 through 149 with the browser's documented compatibility paths instead of calling the Chrome 150 API unconditionally.
 - Reset All Data now crosses the serialized settings queue. It refreshes the undo snapshot after earlier writes finish, then removes the profile, so an already queued save cannot recreate data behind the success notice.
+- JSON exports keep their Blob URL alive long enough for Chromium to finish the download on a busy or slow profile instead of cancelling the file after the click succeeds.
 - The store Privacy screenshot now opens the real Privacy report before capture instead of relying on a stale panel state.
 - In-page imports now reset portable settings without overwriting credentials that an ordinary export intentionally omitted.
 - Chat modules now revisit rows when Rumble adds username, message, or price text after the row element. Counts, highlights, user cards, mention styling, block controls, spam filtering, and rant archives no longer lock in an incomplete row.

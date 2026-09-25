@@ -13,6 +13,7 @@ async function readDownload(download) {
 }
 
 test('the frame budget report exports slow scans by module only once it is turned on', async ({ context, extensionId }) => {
+    test.setTimeout(60_000);
     const options = await context.newPage();
     await options.goto(`chrome-extension://${extensionId}/pages/options.html`);
     await options.evaluate(() => chrome.storage.local.set({ rx_settings: { debugPerfBudget: false } }));

@@ -1959,7 +1959,9 @@
             document.body.appendChild(a);
             a.click();
             a.remove();
-            setTimeout(() => URL.revokeObjectURL(url), 5000);
+            // A download event can fire before Chromium has finished reading
+            // the Blob. Keep the URL alive through slow disks and busy profiles.
+            setTimeout(() => URL.revokeObjectURL(url), 60_000);
         } catch (e) {
             showStatus('Export failed: ' + String(e?.message || e), 'error');
         }
