@@ -492,8 +492,8 @@ test('the embed payload names each format, and the harvester keeps that name', a
     expect(result.tinyAudioRejected).toBe('reject');
 });
 
-// AbortSignal.any shipped in Firefox 124; manifest-firefox.json still declares
-// strict_min_version 113. The composite was built with a `typeof` check whose
+// AbortSignal.any shipped in Firefox 124; RumbleX supports Firefox 121 through
+// 123 too. The composite was built with a `typeof` check whose
 // fallback kept only the timeout, so on those builds closing the download panel
 // cancelled nothing and every probe ran its full budget. Chromium always has
 // the native method, so the fallback is only reachable here by hiding it.
@@ -640,4 +640,98 @@ test('scan cancellation still reaches the fetch where AbortSignal.any is missing
         expect(path.sawAbort, label).toBe(true);
         expect(path.probeReason, label).toBe('aborted');
     }
+});
+
+test('direct content probes relay cancellation and dispose fallback listeners', async ({ context, serviceWorker }) => {
+    const page = await context.newPage();
+    await page.route('**/*', (route) => {
+        if (route.request().isNavigationRequest() && route.request().url().startsWith('https://rumble.com/')) {
+            return route.fulfill({ status: 200, contentType: 'text/html', body: OFFLINE_RUMBLE_FIXTURE });
+        }
+        return route.abort();
+    });
+    await page.goto('https://rumble.com/vdirect-probe-fallback.html', { waitUntil: 'domcontentloaded' });
+    await page.waitForSelector('#rx-settings-btn', { state: 'attached' });
+    const tabId = await serviceWorker.evaluate(async (url) => {
+        const tab = (await chrome.tabs.query({})).find((entry) => entry.url === url);
+        return tab?.id;
+    }, page.url());
+
+    const result = await serviceWorker.evaluate(async (targetTabId) => {
+        const [execution] = await chrome.scripting.executeScript({
+            target: { tabId: targetTabId },
+            world: 'ISOLATED',
+            func: async () => {
+                const nativeAny = AbortSignal.any;
+                const nativeFetch = globalThis.fetch;
+                const scan = new AbortController();
+                let attached = 0;
+                const add = scan.signal.addEventListener.bind(scan.signal);
+                const remove = scan.signal.removeEventListener.bind(scan.signal);
+                scan.signal.addEventListener = (type, ...args) => {
+                    if (type === 'abort') attached += 1;
+                    return add(type, ...args);
+                };
+                scan.signal.removeEventListener = (type, ...args) => {
+                    if (type === 'abort') attached -= 1;
+                    return remove(type, ...args);
+                };
+                try {
+                    delete AbortSignal.any;
+                    globalThis.fetch = async () => new Response(null, {
+                        status: 200,
+                        headers: { 'content-length': '1048576' },
+                    });
+                    let successes = 0;
+                    for (let index = 0; index < 25; index += 1) {
+                        const probe = await VideoDownloader._probeUrlDirect(
+                            `https://1a-1791.com/video/fx/direct-${index}.mp4`,
+                            scan.signal,
+                        );
+                        if (probe.ok) successes += 1;
+                    }
+                    const attachedAfterSuccess = attached;
+
+                    let fetchSawAbort = false;
+                    globalThis.fetch = (_url, init) => new Promise((_resolve, reject) => {
+                        init.signal.addEventListener('abort', () => {
+                            fetchSawAbort = true;
+                            const error = new Error('aborted');
+                            error.name = 'AbortError';
+                            reject(error);
+                        }, { once: true });
+                    });
+                    const pending = VideoDownloader._probeUrlDirect(
+                        'https://1a-1791.com/video/fx/direct-never-settles.mp4',
+                        scan.signal,
+                    );
+                    await new Promise((resolve) => setTimeout(resolve, 20));
+                    scan.abort();
+                    const cancelled = await Promise.race([
+                        pending,
+                        new Promise((resolve) => setTimeout(() => resolve({ reason: 'never-settled' }), 2000)),
+                    ]);
+                    return {
+                        hasNative: typeof AbortSignal.any === 'function',
+                        successes,
+                        attachedAfterSuccess,
+                        attachedAfterCancel: attached,
+                        fetchSawAbort,
+                        cancelledReason: cancelled.reason,
+                    };
+                } finally {
+                    AbortSignal.any = nativeAny;
+                    globalThis.fetch = nativeFetch;
+                }
+            },
+        });
+        return execution.result;
+    }, tabId);
+
+    expect(result.hasNative).toBe(false);
+    expect(result.successes).toBe(25);
+    expect(result.attachedAfterSuccess).toBe(0);
+    expect(result.attachedAfterCancel).toBe(0);
+    expect(result.fetchSawAbort).toBe(true);
+    expect(result.cancelledReason).toBe('aborted');
 });

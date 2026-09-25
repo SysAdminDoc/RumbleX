@@ -545,6 +545,51 @@ test('a settings write during the boot window is not discarded by init', async (
     expect(outcome.persisted).toBe(outcome.target);
 });
 
+test('a local flush adopts unrelated settings committed while its cache was stale', async ({ context, serviceWorker }) => {
+    const page = await openWatch(context, 'vstale-settings-cache.html');
+    const id = await tabId(serviceWorker, page.url());
+
+    const outcome = await serviceWorker.evaluate(async (targetTabId) => {
+        const [execution] = await chrome.scripting.executeScript({
+            target: { tabId: targetTabId },
+            world: 'ISOLATED',
+            func: async () => {
+                const externalKey = 'hideReposts';
+                const localKey = 'wideLayout';
+                const externalTarget = !Settings.get(externalKey);
+                const localTarget = !Settings.get(localKey);
+                const realApplyExternal = Settings._applyExternal;
+                Settings._applyExternal = () => {};
+                try {
+                    await RXPlatform.storage.patchSettings({ [externalKey]: externalTarget });
+                    const staleBeforeFlush = Settings.get(externalKey);
+                    Settings.set(localKey, localTarget);
+                    await Settings._flush();
+                    const stored = (await RXPlatform.storage.get('rx_settings')).rx_settings;
+                    return {
+                        staleBeforeFlush,
+                        externalTarget,
+                        localTarget,
+                        cachedExternal: Settings.get(externalKey),
+                        cachedLocal: Settings.get(localKey),
+                        storedExternal: stored[externalKey],
+                        storedLocal: stored[localKey],
+                    };
+                } finally {
+                    Settings._applyExternal = realApplyExternal;
+                }
+            },
+        });
+        return execution.result;
+    }, id);
+
+    expect(outcome.staleBeforeFlush).not.toBe(outcome.externalTarget);
+    expect(outcome.cachedExternal).toBe(outcome.externalTarget);
+    expect(outcome.cachedLocal).toBe(outcome.localTarget);
+    expect(outcome.storedExternal).toBe(outcome.externalTarget);
+    expect(outcome.storedLocal).toBe(outcome.localTarget);
+});
+
 test('errors raised before Settings.init resolves are still captured', async ({ context, serviceWorker }) => {
     // RxErrorLog.record() carried a `if (!Settings._ready) return;` guard left
     // over from when capture itself consulted `debugErrorLog`. It silently

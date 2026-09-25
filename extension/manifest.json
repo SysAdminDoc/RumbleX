@@ -15,6 +15,7 @@
   },
   "permissions": [
     "storage",
+    "unlimitedStorage",
     "downloads",
     "offscreen",
     "contextMenus",
@@ -74,6 +75,7 @@
       ],
       "js": [
         "settings-schema.js",
+        "activity-store.js",
         "platform.js",
         "core-routing.js",
         "core-selectors.js",

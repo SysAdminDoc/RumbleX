@@ -8,6 +8,8 @@ All notable changes to RumbleX will be documented in this file.
 
 ### Changed
 
+- The README and project page now lead with the practical reasons to install RumbleX, show real product screens earlier, explain the three available builds, and give the current release a direct download path.
+- The project page has a new responsive visual system with stronger contrast, clearer feature grouping, release facts, and a compact screenshot gallery built from current product captures.
 - Injected surfaces now use the active palette for their translucent colors instead of baking Catppuccin RGB values into individual panels. The build guard also catches palette colors written as `rgb()` or `rgba()`.
 - The new search, queue, dialog, and Watch Later control text is localized across all six shipped languages. The Options document also declares the browser UI language.
 - Options integration fields now have persistent visible labels, and their row can wrap without overflowing a narrow side panel.
@@ -19,13 +21,23 @@ All notable changes to RumbleX will be documented in this file.
 - Local releases now require a clean Git tree before verification starts. Runtime packages and the AMO source archive copy tracked files only, preventing local scratch files inside `extension/` from entering a release.
 - URL cleanup uses one immutable tracking-parameter list in the shared schema. Context-menu copies, address-bar cleanup, link clicks, timestamp sharing, and userscripts can no longer drift apart.
 - Live visual capture now checks a bounded set of watch pages for a visible public player, skips premium or verification-gated pages without trying to bypass them, and records that evidence limit instead of failing on the first unsuitable feed item.
-- Firefox 113 is now the minimum supported release. The themed translucent surfaces use `color-mix()`, which older Firefox builds discard. The public-metadata guard now keeps that floor aligned across the manifest, badge, README, and project page.
+- Firefox 121 is now the minimum supported release. RumbleX uses `:has()` selectors in its cleanup rules and `color-mix()` across themed surfaces. The public-metadata guard keeps that floor aligned across the manifest, badge, README, and project page.
 - Chromium 111 is now the minimum supported release. That floor covers the themed `color-mix()` surfaces and bounded network aborts. The same metadata guard keeps the manifest, badge, README, and project page aligned.
 
 ### Fixed
 
-- Activity migration now merges history, bookmarks, progress, and other JSON collections from both Rumble origins before removing legacy copies. Failed extension-storage writes stay queued and retry with backoff instead of disappearing after a reload.
+- Reset, snapshot restore, import cleanup, and rant deletion now fence tab migrations with a durable operation identity. A tab opening during cleanup can no longer submit a stale page copy after the cleanup finishes.
+- Activity journal recovery now runs before ordinary activity writes and rant-history changes. A later migration recovery can no longer roll back a newer write.
+- Downloads and local failure diagnostics now honor reset generations. Work started before Reset All Data cannot recreate recovery records or diagnostics afterward.
+- Creator API polls and comment-draft timers now stop at activity replacement boundaries, preventing an in-flight response or stale composer from restoring data that was just cleared.
+- Interrupted reset recovery now retries after a storage read error instead of caching a false clean result for the service-worker lifetime.
+- Activity migration now merges history, bookmarks, progress, and other JSON collections from both Rumble origins before removing legacy copies. Failed extension-storage writes stay queued and retry with backoff while the tab remains open.
+- Simultaneous first migrations from rumble.com and www.rumble.com now share one extension-wide queue. Both origin snapshots are kept, copied values are verified before commit, and either the data or metadata failing verification rolls back without deleting the page copies.
 - Backup imports and encrypted Gist pulls preserve every local credential that was omitted from the incoming file, including the Live Stream API URL. Preservation and Gist undo snapshots now happen inside the serialized commit, so changes made during a file read or network pull stay recoverable. The 4.5 MiB UI import limit now fits through the message boundary. Partial activity restores stay staged and report the failure instead of claiming full success.
+- Reset, Import, profile switching, activity writes, pending restores, and rant-history updates now share the same durable-write queue. Reset snapshots include dynamic activity, named profiles, pending work, archive state, diagnostics, and download recovery. Undo restores the exact prior activity set even with no Rumble tab open.
+- Large settings profiles no longer hit the default extension-storage quota or fail Gist encryption at the base64 step. The manifests declare local-only unlimited storage, save and profile boundaries match the 4.5 MiB import contract, snapshot history has a 64 MiB budget, and multi-megabyte ciphertext is encoded in bounded chunks.
+- A tab that flushes one setting now adopts the full committed profile returned by the background writer while keeping any newer local edits. Unrelated changes made from another surface no longer leave its in-memory cache stale.
+- Direct media probes now relay scan cancellation on Firefox 121 through 123, where `AbortSignal.any()` is unavailable, and detach their fallback listeners after every probe.
 - Runtime message limits now measure UTF-8 bytes, settings saves report storage failures, and a started browser download is no longer reported as rejected only because recovery metadata could not be saved.
 - Archive discovery has a deadline, notifier checks are single-flight and time bounded, and abandoned archive work is requeued after a service-worker restart.
 - Concurrent media-probe cache callers now share one initial storage read, preventing one scan from erasing another scan's first cached result.

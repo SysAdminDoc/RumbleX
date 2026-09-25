@@ -19,6 +19,7 @@ const chromeManifest = json('extension/manifest.json');
 const firefoxManifest = json('extension/manifest-firefox.json');
 const schema = read('extension/settings-schema.js');
 const CORE_FILES = [
+    'extension/activity-store.js',
     'extension/core-routing.js',
     'extension/core-selectors.js',
     'extension/core-video-cards.js',
@@ -53,7 +54,12 @@ if (!generated.includes(schema + '\n\n// RumbleX platform adapter')) {
 
 for (const [name, manifest] of [['Chrome', chromeManifest], ['Firefox', firefoxManifest]]) {
     const scripts = manifest.content_scripts?.[0]?.js || [];
-    const expected = ['settings-schema.js', 'platform.js', ...CORE_FILES.map((file) => path.basename(file))];
+    const expected = [
+        'settings-schema.js',
+        'activity-store.js',
+        'platform.js',
+        ...CORE_FILES.slice(1).map((file) => path.basename(file)),
+    ];
     const actual = scripts.slice(-expected.length);
     if (JSON.stringify(actual) !== JSON.stringify(expected)) {
         fail(`${name} content scripts do not load the shared page core in canonical order`);
@@ -61,7 +67,8 @@ for (const [name, manifest] of [['Chrome', chromeManifest], ['Firefox', firefoxM
 }
 if (firefoxManifest.content_scripts?.[0]?.js?.[0] !== 'browser-polyfill.js'
     || firefoxManifest.background?.scripts?.[0] !== 'browser-polyfill.js'
-    || !firefoxManifest.background?.scripts?.includes('settings-schema.js')) {
+    || !firefoxManifest.background?.scripts?.includes('settings-schema.js')
+    || !firefoxManifest.background?.scripts?.includes('activity-store.js')) {
     fail('Firefox MV2 must load browser-polyfill.js before every Promise-based extension surface');
 }
 
@@ -119,7 +126,7 @@ for (const [surface, source, snippet] of [
     ['options HTML', optionsHtml, '<script src="../settings-schema.js"></script>'],
     ['popup', popup, 'const DEFAULTS = RXSettingsSchema.DEFAULTS;'],
     ['popup HTML', popupHtml, '<script src="../settings-schema.js"></script>'],
-    ['release build', buildScript, 'settings-schema.js ad-blocker.js'],
+    ['release build', buildScript, 'settings-schema.js activity-store.js ad-blocker.js'],
 ]) {
     if (!source.includes(snippet)) fail(`${surface} no longer consumes/packages the canonical settings schema`);
 }

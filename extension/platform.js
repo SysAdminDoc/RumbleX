@@ -34,9 +34,21 @@
         set(values) {
             return callAsync(ext.storage.local, 'set', values);
         },
-        async patchSettings(patch) {
-            const response = await callAsync(ext.runtime, 'sendMessage', { action: 'patchSettings', data: patch });
-            if (!response?.success) throw new Error(response?.error || 'Settings update failed');
+        async patchSettings(patch, generation) {
+            const message = { action: 'patchSettings', data: patch };
+            if (Number.isInteger(generation) && generation >= 0) message.generation = generation;
+            const response = await callAsync(ext.runtime, 'sendMessage', message);
+            if (!response?.success) {
+                const error = new Error(response?.error || 'Settings update failed');
+                error.code = response?.reason || 'storage';
+                error.generation = response?.generation;
+                throw error;
+            }
+            return response.settings;
+        },
+        async importSettings(settings) {
+            const response = await callAsync(ext.runtime, 'sendMessage', { action: 'importSettings', data: settings });
+            if (!response?.success) throw new Error(response?.error || 'Settings import failed');
             return response.settings;
         },
         remove(keys) {

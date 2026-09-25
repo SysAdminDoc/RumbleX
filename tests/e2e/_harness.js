@@ -10,6 +10,7 @@ const VERSION = require(path.join(ROOT, 'package.json')).version;
 const readSource = (file) => fs.readFileSync(file, 'utf8').replace(/\r\n?/g, '\n');
 const SCHEMA = readSource(path.join(ROOT, 'extension', 'settings-schema.js'));
 const CORE_FILES = [
+    'activity-store.js',
     'core-routing.js',
     'core-selectors.js',
     'core-video-cards.js',

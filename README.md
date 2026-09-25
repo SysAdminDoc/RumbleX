@@ -1,19 +1,57 @@
 # RumbleX
 
-![Version](https://img.shields.io/badge/version-v3.61.0-blue) ![License](https://img.shields.io/badge/license-MIT-green) ![Platform](https://img.shields.io/badge/platform-Extension%20%2B%20Userscript-lightgrey) ![Chromium](https://img.shields.io/badge/chromium-111%2B-blue) ![Firefox](https://img.shields.io/badge/firefox-113%2B-orange)
+![Version](https://img.shields.io/badge/version-v3.61.0-blue) ![License](https://img.shields.io/badge/license-MIT-green) ![Platform](https://img.shields.io/badge/platform-Extension%20%2B%20Userscript-lightgrey) ![Chromium](https://img.shields.io/badge/chromium-111%2B-blue) ![Firefox](https://img.shields.io/badge/firefox-121%2B-orange)
 
-**A large Rumble enhancement suite.** Its 141 feature modules cover ad blocking, theater mode, downloads, playback, chat, local history, feed controls, and granular page cleanup. It runs as a browser extension or userscript.
+**Rumble, rebuilt around the way you watch.** RumbleX is an open-source control layer for Rumble with cleaner pages, serious download tools, a better player, and local-first privacy. Pick only the features you want. Leave the rest off.
+
+[Get the latest release](https://github.com/SysAdminDoc/RumbleX/releases/latest) | [Installation guide](https://sysadmindoc.github.io/RumbleX/) | [See every change](CHANGELOG.md)
+
+![RumbleX: ad blocking, downloads, 140+ controls, no telemetry, local storage, and open source](design/store/promo-marquee-1400x560.png)
+
+## Make Rumble yours
+
+| What you get | What changes |
+|---|---|
+| **A calmer site** | Remove ads, premium prompts, Shorts, noisy feed rows, overlays, and 50 more pieces of page clutter. |
+| **A player built for long sessions** | Use Theater Split, persistent speed and volume, chapters, SponsorBlock, transcripts, a mini player, and per-channel preferences. |
+| **Downloads that explain themselves** | Save direct MP4, convert HLS, export clips, batch a feed, or queue a channel. When something fails, RumbleX names the failed stage and gives you a useful next step. |
+| **Your own visual system** | Choose from seven complete themes, three density levels, an optional ambient player, and layouts that hold up from a narrow side panel to a wide display. |
+| **Better live chat and comments** | Keep paid messages, block noisy users, remove repeated spam, highlight keywords, sort comments, and export the conversation. |
+| **Privacy you can inspect** | No telemetry, remote configuration, or RumbleX account. Settings, watch activity, bookmarks, diagnostics, and undo snapshots stay in your browser. |
+
+## See it before you install
+
+| Control center | Full settings editor |
+|---|---|
+| ![RumbleX control center and guided first run](design/store/screenshot-1-options-1280x800.png) | ![RumbleX searchable settings editor](design/store/screenshot-2-editor-1280x800.png) |
+
+| Built-in privacy report | Quick controls on Rumble |
+|---|---|
+| ![RumbleX local privacy report](design/store/screenshot-3-privacy-1280x800.png) | ![RumbleX in-page settings](design/store/screenshot-4-in-page-1280x800.png) |
+
+## Pick the build that fits
+
+- **Chrome, Edge, or Brave:** the complete Chromium extension, including the archive queue, browser-managed downloads, side panel, context menus, and request-level ad blocking.
+- **Firefox:** the complete Firefox build with scoped request blocking. The current public package is for temporary installation while store signing remains pending.
+- **Tampermonkey, Violentmonkey, or ScriptCat:** the portable userscript build. It carries the page features and media tools without the extension-only background services.
+
+All builds use the same checked page-feature core. Release checks verify that the extension and generated userscripts have not drifted apart.
 
 ### What's new in v3.61.0
 
 This release is a full reliability and interface pass across the extension, userscripts, Options, popup, Theater, chat, downloads, backups, and release tooling.
 
-- **Stored activity survives interrupted work.** Cross-origin migrations merge before cleanup, failed writes retry, and partial restores stay recoverable instead of reporting success.
+- **Stored activity survives interrupted work.** Cross-origin migrations merge before cleanup, failed writes retry while the tab remains open, and partial restores stay recoverable instead of reporting success.
 - **Settings changes no longer overwrite each other.** Tabs, the popup, Options, profiles, and background jobs share one serialized patch writer.
+- **Reset and Import have complete Undo paths.** Snapshots now carry settings, saved activity, profiles, pending restores, and recovery records. Undo also works when no Rumble tab is open.
+- **Large local libraries stay usable.** The extension requests local storage capacity for multi-megabyte SponsorBlock profiles and bounded history, while encrypted Gist backups encode large payloads without overflowing the JavaScript call stack.
 - **Secondary screens are easier to use.** Settings search covers every group, dialogs manage focus correctly, narrow Theater controls stay within their real limits, and chat cards expose complete keyboard semantics.
 - **Themes now reach every owned surface.** Injected panels use the active palette rather than hidden Catppuccin color literals. Aurora and Solar Ember remain first-class choices beside the five established palettes.
 - **Long-running pages do less work.** Route-bound features remount cleanly, staged chat rows are processed once, and concurrent media probes share their first storage read.
 - **Release packages are harder to contaminate.** The release gate requires a clean tree, copies tracked files only, verifies Firefox source contents, and ships Mediabunny 1.60.0 with pinned provenance.
+
+<details>
+<summary><strong>Earlier release highlights</strong></summary>
 
 ### What's new in v3.60
 
@@ -194,6 +232,8 @@ Live chat got the things every other chat platform already has, and rants became
 - **v2.3 / v2.4**. Live chat hardening + feed moderation: rant-tier filter, chat username colors (deterministic/tiered), keyword-filter modes (literal/regex/wildcard), tracking-param stripping (e9s, utm_*, fbclid, gclid, etc.).
 - **v2.6**. Privacy & data: privacy report API, backup-snapshot history, selector-telemetry export.
 
+</details>
+
 ## Features
 
 ### Ad Blocking
@@ -349,12 +389,12 @@ Each release also includes `RumbleX-chrome.crx`, signed with the project's local
 
 Chromium 111 is the minimum because RumbleX uses `color-mix()` for themed translucent controls and the modern abort timeout API for bounded network work. Current Chrome, Edge, and Brave releases meet that floor. RumbleX still detects either the `chrome` or `browser` extension namespace so the shared page-feature core remains browser neutral.
 
-### Firefox (113+)
+### Firefox (121+)
 1. Download `RumbleX-firefox-amo-unsigned.zip` from [Releases](https://github.com/SysAdminDoc/RumbleX/releases) and extract it
 2. Go to `about:debugging#/runtime/this-firefox`
 3. Click **Load Temporary Add-on** and select `manifest.json` inside the extracted folder
 
-Firefox 113 is the minimum because RumbleX uses `color-mix()` to keep translucent controls consistent across all seven themes.
+Firefox 121 is the minimum because RumbleX uses `:has()` selectors and `color-mix()` across its cleanup rules and seven themes.
 
 That ZIP is the reproducible AMO submission and a temporary testing package. It is not a permanently installable add-on. An installable `RumbleX-firefox.xpi` is published only after Mozilla returns a signed package and the artifact check confirms its signature entries.
 
@@ -455,7 +495,7 @@ flowchart LR
     Userscript --> Embedded[Embedded pinned media workers]
 ```
 
-`settings-schema.js` owns defaults, migration, and validation for every runtime. Four small shared files own routing, selector health, card adaptation, and media/probe helpers. `content.js` holds the injected feature modules. The browser extension and generated userscripts load those sources in the same order, with a hash guard that catches drift. `extension/platform.js` and `userscript/platform.js` adapt storage, downloads, network requests, assets, localization, and capabilities. `background.js` remains the extension-only privileged boundary for persistent downloads, context menus, notifications, tab operations, queue alarms, and offscreen work. Popup, options, and side-panel pages edit the same validated settings catalog in `chrome.storage.local`. Browser-extension activity such as history and bookmarks also lives in extension storage. Userscripts keep that activity on the Rumble origin because they have no extension store.
+`settings-schema.js` owns defaults, migration, and validation for every runtime. `activity-store.js` owns activity merge rules and the snapshot key registry. Four `core-*.js` files own routing, selector health, card adaptation, and media/probe helpers. `content.js` holds the injected feature modules. The browser extension and generated userscripts load those sources in the same order, with a hash guard that catches drift. `extension/platform.js` and `userscript/platform.js` adapt storage, downloads, network requests, assets, localization, and capabilities. `background.js` remains the extension-only privileged boundary for serialized durable writes, persistent downloads, context menus, notifications, tab operations, queue alarms, and offscreen work. Popup, options, and side-panel pages edit the same validated settings catalog in `chrome.storage.local`. Browser-extension activity such as history and bookmarks also lives in extension storage. Userscripts keep that activity on the Rumble origin because they have no extension store.
 
 ### Feature-module template
 

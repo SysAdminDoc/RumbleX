@@ -17,8 +17,8 @@
 // change, and the list cannot rot into stale entries that make the reset look
 // more thorough than it is.
 //
-// It also proves the extension-storage half is not decorative: the options page
-// has to actually remove those keys, or the list is a comment.
+// It also proves the extension-storage half is not decorative: the background
+// reset queue has to remove those keys, or the list is a comment.
 
 const assert = require('assert/strict');
 const fs = require('fs');
@@ -29,6 +29,7 @@ const read = (relative) => fs.readFileSync(path.join(ROOT, relative), 'utf8');
 
 const core = read('extension/content.js');
 const optionsSource = read('extension/pages/options.js');
+const backgroundSource = read('extension/background.js');
 
 // The content runtime is every file the manifest injects, not just content.js.
 // Scanning content.js alone missed `rx_probe_cache` in core-media.js, which is
@@ -211,17 +212,25 @@ assert.ok(core.includes('if (RX_BACKUP_EXCLUDED_KEYS.includes(k)) continue;'),
 assert.ok(core.includes('const allowed = (k) => !RX_BACKUP_EXCLUDED_KEYS.includes(k)'),
     'rxWriteLocalStorage no longer refuses RX_BACKUP_EXCLUDED_KEYS, so an imported file can restore them');
 
-// The extension-storage half is the options page's job. Without this the list
-// above could name keys that nothing ever removes and the guard would still be
-// green.
+// Options mirrors this list because its backup UI consumes the same registry.
+// The serialized background reset owns the actual removal so a live activity
+// flush cannot race the destructive operation.
 const mirror = optionsSource.match(/const EXTENSION_STORAGE_RESET_KEYS = \[([\s\S]*?)\];/);
 assert.ok(mirror, 'options.js no longer declares EXTENSION_STORAGE_RESET_KEYS');
 const mirrored = quotedStrings(mirror[1]);
 assert.deepEqual(mirrored.slice().sort(), extensionKeys.slice().sort(),
     `options.js EXTENSION_STORAGE_RESET_KEYS drifted from content.js RX_EXTENSION_STORAGE_RESET_KEYS: `
     + `${mirrored.join(', ')} vs ${extensionKeys.join(', ')}`);
-assert.ok(/storage\.local\.remove\(EXTENSION_STORAGE_RESET_KEYS\)/.test(optionsSource),
-    'options.js declares EXTENSION_STORAGE_RESET_KEYS but never removes them, so the list clears nothing');
+const backgroundReset = backgroundSource.match(/const RX_RESET_REMOVE_KEYS = Object\.freeze\(\[([\s\S]*?)\]\);/);
+assert.ok(backgroundReset, 'background.js no longer declares RX_RESET_REMOVE_KEYS');
+const backgroundResetKeys = quotedStrings(backgroundReset[1]);
+const missingFromBackgroundReset = extensionKeys.filter((key) => !backgroundResetKeys.includes(key));
+assert.deepEqual(missingFromBackgroundReset, [],
+    `background reset queue does not clear: ${missingFromBackgroundReset.join(', ')}`);
+assert.ok(
+    /const removedKeys = \[\.\.\.new Set\(\[\.\.\.RX_RESET_REMOVE_KEYS, \.\.\.activityKeys\]\)\][\s\S]*?storage\.local\.remove\(removedKeys\)/.test(backgroundSource),
+    'background.js declares RX_RESET_REMOVE_KEYS but never removes it with dynamic activity',
+);
 
 // The localStorage half runs in the content script. Same reasoning.
 assert.ok(/for \(const k of RX_LOCAL_STORAGE_KEYS\)/.test(core),

@@ -175,6 +175,21 @@ test('snapshot restore applies the same trust boundary as file import', async ({
     await page.locator('#snapshot-refresh-btn').click();
     await expect(page.locator('#snapshot-list')).toContainText('legacy-malicious-fixture');
 
+    // Another surface may append or trim history after this list renders. The
+    // button must restore the stable timestamp it displays, not the array slot
+    // that happened to hold it during refresh.
+    await page.evaluate(({ snapshotAt }) => new Promise((resolve) => {
+        chrome.storage.local.get('rx_settings_snapshots', (stored) => {
+            chrome.storage.local.set({
+                rx_settings_snapshots: [{
+                    at: snapshotAt + 1,
+                    reason: 'inserted-after-render',
+                    settings: { theme: 'light' },
+                }, ...(stored.rx_settings_snapshots || [])],
+            }, resolve);
+        });
+    }), { snapshotAt });
+
     await page.locator('#snapshot-list li')
         .filter({ hasText: 'legacy-malicious-fixture' })
         .getByRole('button', { name: 'Restore' })

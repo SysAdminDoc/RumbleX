@@ -28,7 +28,7 @@ const tabSees = (options, count) => expect.poll(() => options.evaluate(async () 
     return state?.keys || 0;
 })).toBeGreaterThanOrEqual(count);
 
-test('staged per-site data restores and clears on the next Rumble tab', async ({ context, extensionId, serviceWorker }) => {
+test('central activity restore cleans each Rumble origin on first open and reset reuses the durable barrier', async ({ context, extensionId, serviceWorker }) => {
     const payload = {
         rx_watch_progress: '{"video-a":{"time":42}}',
         rx_rants_video_a: '{"items":[{"amount":5}]}',
@@ -40,7 +40,7 @@ test('staged per-site data restores and clears on the next Rumble tab', async ({
     const staged = await options.evaluate((data) => new Promise((resolve) => {
         chrome.runtime.sendMessage({ action: 'setLocalData', data }, resolve);
     }), payload);
-    expect(staged).toMatchObject({ ok: true, tabs: 0, written: 0, pending: true, pendingKeys: 2 });
+    expect(staged).toMatchObject({ ok: true, tabs: 0, written: 2, pending: true, pendingKeys: 2 });
 
     await context.route('https://rumble.com/**', (route) => route.fulfill({
         status: 200,
@@ -53,22 +53,157 @@ test('staged per-site data restores and clears on the next Rumble tab', async ({
     await expect.poll(() => readActivity(options, 'rx_watch_progress')).toBe(payload.rx_watch_progress);
     expect(await rumble.evaluate(() => localStorage.getItem('rx_watch_progress'))).toBe(null);
     await expect.poll(() => serviceWorker.evaluate(() => new Promise((resolve) => {
-        chrome.storage.local.get('rx_pending_local_data_op', (got) => resolve(Boolean(got.rx_pending_local_data_op)));
-    }))).toBe(false);
+        chrome.storage.local.get('rx_pending_local_data_op', (got) => resolve(
+            got.rx_pending_local_data_op?.completedOrigins || [],
+        ));
+    }))).toContain('https://rumble.com');
 
     await rumble.close();
 
     const clear = await options.evaluate(() => new Promise((resolve) => {
-        chrome.runtime.sendMessage({ action: 'clearLocalData' }, resolve);
+        chrome.runtime.sendMessage({ action: 'resetSettings' }, resolve);
     }));
-    expect(clear).toMatchObject({ ok: true, tabs: 0, cleared: 0, pendingClear: true });
+    expect(clear).toMatchObject({ success: true, tabs: 0, cleared: 0, pendingClear: true });
 
     const reopened = await context.newPage();
     await reopened.goto('https://rumble.com/vtest-local-data-clear');
     await expect.poll(() => activityLeft(options)).toEqual([]);
     await expect.poll(() => serviceWorker.evaluate(() => new Promise((resolve) => {
-        chrome.storage.local.get('rx_pending_local_data_op', (got) => resolve(Boolean(got.rx_pending_local_data_op)));
-    }))).toBe(false);
+        chrome.storage.local.get('rx_pending_local_data_op', (got) => resolve(
+            got.rx_pending_local_data_op?.completedOrigins || [],
+        ));
+    }))).toContain('https://rumble.com');
+
+    await context.addInitScript(() => {
+        if (location.hostname === 'studio.rumble.com') {
+            localStorage.setItem('rx_watch_history', '[{"id":"stale-studio-copy"}]');
+        }
+    });
+    await context.route('https://studio.rumble.com/**', (route) => route.fulfill({
+        status: 200,
+        contentType: 'text/html',
+        body: '<!doctype html><html><head><title>Studio fixture</title></head><body><main></main></body></html>',
+    }));
+    const studio = await context.newPage();
+    await studio.goto('https://studio.rumble.com/dashboard');
+    await expect.poll(() => studio.evaluate(() => localStorage.getItem('rx_watch_history'))).toBe(null);
+    await expect.poll(() => serviceWorker.evaluate(() => new Promise((resolve) => {
+        chrome.storage.local.get('rx_pending_local_data_op', (got) => resolve(
+            got.rx_pending_local_data_op?.completedOrigins || [],
+        ));
+    }))).toContain('https://studio.rumble.com');
+});
+
+test('service-worker startup finishes interrupted reset storage without an open Rumble tab', async ({ context, extensionId, serviceWorker }) => {
+    const options = await context.newPage();
+    await options.goto(`chrome-extension://${extensionId}/pages/options.html`);
+    const result = await serviceWorker.evaluate(async () => {
+        await rxSettingsWriteChain.catch(() => {});
+        await chrome.storage.local.set({
+            rx_settings: { backupHistory: true, wideLayout: false },
+            rx_popup_ui: { tab: 'quick' },
+            rx_probe_cache: { stale: true },
+            rx_settings_profiles: [{ id: 'stale-profile' }],
+            rx_archive_queue: { jobs: [{ id: 'stale-job', status: 'pending' }] },
+            rx_download_diagnostics: [{ id: 'stale-diagnostic' }],
+            rx_download_recovery: { jobs: [{ downloadId: 91 }] },
+            rx_welcome_seen: true,
+            'rx_act:rx_watch_history': '[{"id":"stale-history"}]',
+            rx_activity_generation: 7,
+            rx_settings_generation: 5,
+            rx_pending_local_data_op: {
+                id: 'interrupted-reset',
+                source: 'reset',
+                createdAt: Date.now(),
+                clear: true,
+                data: null,
+                keyCount: 0,
+                targetOrigins: ['https://rumble.com', 'https://www.rumble.com'],
+                remainingOrigins: ['https://rumble.com', 'https://www.rumble.com'],
+                allTrustedOrigins: true,
+                completedOrigins: [],
+                extensionApplied: false,
+                archiveHandleApplied: true,
+                activityGeneration: 7,
+                settingsGeneration: 5,
+            },
+        });
+        rxPendingResetStartupRecovery = null;
+        const replay = await rxEnsurePendingResetStartupRecovery();
+        return { replay, stored: await chrome.storage.local.get(null) };
+    });
+
+    expect(result.replay).toMatchObject({ ok: true, replayed: true, generation: 7 });
+    for (const key of [
+        'rx_settings',
+        'rx_popup_ui',
+        'rx_probe_cache',
+        'rx_settings_profiles',
+        'rx_archive_queue',
+        'rx_download_diagnostics',
+        'rx_download_recovery',
+        'rx_welcome_seen',
+        'rx_act:rx_watch_history',
+    ]) {
+        expect(result.stored[key], key).toBeUndefined();
+    }
+    expect(result.stored.rx_activity_generation).toBe(7);
+    expect(result.stored.rx_settings_generation).toBe(5);
+    expect(result.stored.rx_pending_local_data_op).toMatchObject({
+        id: 'interrupted-reset',
+        extensionApplied: true,
+        archiveHandleApplied: true,
+        allTrustedOrigins: true,
+    });
+});
+
+test('a delayed rant mirror write cannot recreate history after clear', async ({ context, extensionId, serviceWorker }) => {
+    await context.route('https://rumble.com/**', (route) => route.fulfill({
+        status: 200,
+        contentType: 'text/html',
+        body: '<!doctype html><html><head><title>Rant reset fixture</title></head><body><main><video></video><div id="chat-history-list"></div></main></body></html>',
+    }));
+    const rumble = await context.newPage();
+    await rumble.goto('https://rumble.com/vrant-reset');
+    const options = await context.newPage();
+    await options.goto(`chrome-extension://${extensionId}/pages/options.html`);
+
+    await serviceWorker.evaluate(() => {
+        globalThis.__rxOriginalSendTabMessage = rxSendTabMessage;
+        rxSendTabMessage = async (...args) => {
+            await new Promise((resolve) => setTimeout(resolve, 1_800));
+            return globalThis.__rxOriginalSendTabMessage(...args);
+        };
+    });
+    try {
+        await rumble.evaluate(() => {
+            const row = document.createElement('div');
+            row.className = 'chat-history--rant';
+            row.dataset.level = '5';
+            row.innerHTML = '<span class="chat-history--username">Late</span>'
+                + '<span class="chat-history--rant-price">$5</span>'
+                + '<span class="chat-history--message">stale</span>';
+            document.querySelector('#chat-history-list').appendChild(row);
+        });
+        await expect.poll(() => readActivity(options, 'rx_rants_vrant')).not.toBe(null);
+        const clear = await options.evaluate(() => new Promise((resolve) => {
+            chrome.runtime.sendMessage({ action: 'clearRantMirror' }, resolve);
+        }));
+        expect(clear).toMatchObject({ ok: true });
+        await rumble.waitForTimeout(1_900);
+        const mirror = await options.evaluate(async () => {
+            const got = await chrome.storage.local.get('rx_rant_stats_mirror');
+            return got.rx_rant_stats_mirror || { videos: {} };
+        });
+        expect(mirror.videos?.vrant).toBeUndefined();
+    } finally {
+        await serviceWorker.evaluate(() => {
+            if (globalThis.__rxOriginalSendTabMessage) {
+                rxSendTabMessage = globalThis.__rxOriginalSendTabMessage;
+                delete globalThis.__rxOriginalSendTabMessage;
+            }
+        });
+    }
 });
 
 test('Reset All Data clears every rx_ key the runtime writes', async ({ context, extensionId }) => {
@@ -150,21 +285,22 @@ test('Reset All Data clears every rx_ key the runtime writes', async ({ context,
     })).toBe(true);
 });
 
-test('reset aborts and preserves settings when the pre-reset snapshot fails', async ({ context, extensionId }) => {
+test('reset aborts and preserves settings when the pre-reset snapshot fails', async ({ context, extensionId, serviceWorker }) => {
     const options = await context.newPage();
     await options.goto(`chrome-extension://${extensionId}/pages/options.html`);
 
-    const marker = { adNuker: false, schemaVersion: 2 };
+    const marker = { adNuker: false, schemaVersion: 4, backupHistory: true, backupHistoryLimit: 10 };
     await options.evaluate((seed) => new Promise((resolve) => {
         chrome.storage.local.set({ rx_settings: seed }, resolve);
     }), marker);
 
     // The reset button has no confirmation dialog by design: the pre-reset
     // snapshot is the undo. Make capturing it fail and the wipe must not run.
-    await options.evaluate(() => {
+    await serviceWorker.evaluate(() => {
         const realSet = chrome.storage.local.set.bind(chrome.storage.local);
-        chrome.storage.local.set = (items, cb) => {
+        chrome.storage.local.set = async (items, cb) => {
             if (items && Object.prototype.hasOwnProperty.call(items, 'rx_settings_snapshots')) {
+                chrome.storage.local.set = realSet;
                 throw new Error('snapshot storage unavailable');
             }
             return realSet(items, cb);
@@ -178,6 +314,102 @@ test('reset aborts and preserves settings when the pre-reset snapshot fails', as
         chrome.storage.local.get('rx_settings', (got) => resolve(got.rx_settings));
     }));
     expect(after).toMatchObject({ adNuker: false });
+});
+
+test('Undo reset restores settings, dynamic activity, profiles, recovery data, and the prior pending operation', async ({ context, extensionId, serviceWorker }) => {
+    const options = await context.newPage();
+    await options.goto(`chrome-extension://${extensionId}/pages/options.html`);
+    const seed = {
+        rx_settings: { schemaVersion: 4, backupHistory: true, backupHistoryLimit: 10, wideLayout: false },
+        'rx_act:rx_watch_history': '[{"id":"before-reset"}]',
+        'rx_act:rx_bookmarks': '[{"id":"saved"}]',
+        rx_rant_stats_mirror: { videos: { vundo: { title: 'Undo me', lastTs: 1 } } },
+        rx_pending_local_data_op: { id: 'prior-op', source: 'import', data: { rx_search_history: '["old"]' }, keyCount: 1 },
+        rx_settings_profiles: [{ id: 'p_undo', name: 'Undo', createdAt: 1, settings: { wideLayout: true } }],
+        rx_archive_queue: { jobs: [{ id: 'archive-undo' }] },
+        rx_download_diagnostics: [{ id: 'diagnostic-undo' }],
+        rx_download_recovery: {
+            version: 1,
+            networkStatus: 'online',
+            lastTransitionAt: null,
+            jobs: [],
+        },
+        rx_welcome_seen: true,
+    };
+    await serviceWorker.evaluate(async () => {
+        await rxNetworkTransitionQueue.catch(() => {});
+        await rxSettingsWriteChain.catch(() => {});
+    });
+    await options.evaluate((values) => chrome.storage.local.set(values), seed);
+
+    await options.locator('#reset-btn').click();
+    await expect(options.locator('#status .status-action')).toHaveText('Undo reset', { timeout: 15_000 });
+    await options.evaluate(() => chrome.storage.local.set({
+        'rx_act:rx_imported_only': 'true',
+        rx_pending_local_data_op: { id: 'new-clear', source: 'reset', clear: true, keyCount: 0 },
+    }));
+    await options.locator('#status .status-action').click();
+    await expect(options.locator('#status')).toContainText('Reset undone.', { timeout: 15_000 });
+
+    const restored = await options.evaluate(() => chrome.storage.local.get(null));
+    expect(restored.rx_settings.wideLayout).toBe(false);
+    expect(restored['rx_act:rx_watch_history']).toBe(seed['rx_act:rx_watch_history']);
+    expect(restored['rx_act:rx_bookmarks']).toBe(seed['rx_act:rx_bookmarks']);
+    expect(restored['rx_act:rx_imported_only']).toBeUndefined();
+    expect(restored.rx_rant_stats_mirror).toEqual(seed.rx_rant_stats_mirror);
+    expect(restored.rx_pending_local_data_op.id).toBe('prior-op');
+    expect(restored.rx_settings_profiles).toEqual([
+        expect.objectContaining({
+            id: 'p_undo',
+            name: 'Undo',
+            createdAt: 1,
+            settings: expect.objectContaining({ wideLayout: true }),
+        }),
+    ]);
+    expect(restored.rx_archive_queue).toEqual(seed.rx_archive_queue);
+    expect(restored.rx_download_diagnostics).toEqual(seed.rx_download_diagnostics);
+    expect(restored.rx_download_recovery).toEqual(seed.rx_download_recovery);
+    expect(restored.rx_welcome_seen).toBe(true);
+});
+
+test('Undo import works without a Rumble tab and removes imported-only activity', async ({ context, extensionId }) => {
+    const options = await context.newPage();
+    await options.goto(`chrome-extension://${extensionId}/pages/options.html`);
+    const before = {
+        rx_settings: { schemaVersion: 4, backupHistory: true, backupHistoryLimit: 10, wideLayout: false },
+        'rx_act:rx_watch_history': '[{"id":"before-import"}]',
+        rx_rant_stats_mirror: { videos: { vbefore: { title: 'Before', lastTs: 1 } } },
+    };
+    await options.evaluate((values) => chrome.storage.local.set(values), before);
+    const importPath = path.join(os.tmpdir(), `rumblex-undo-import-${Date.now()}.json`);
+    fs.writeFileSync(importPath, JSON.stringify({
+        exportVersion: 3,
+        settings: { wideLayout: true },
+        localData: { rx_bookmarks: '[{"id":"imported"}]' },
+        extensionData: { rx_rant_stats_mirror: { videos: { vimported: { title: 'Imported', lastTs: 2 } } } },
+    }));
+    try {
+        await options.setInputFiles('#import-file', importPath);
+        await expect(options.locator('#status .status-action')).toHaveText('Undo import', { timeout: 30_000 });
+        expect((await options.evaluate(() => chrome.storage.local.get('rx_pending_local_data_op'))).rx_pending_local_data_op)
+            .toBeTruthy();
+        await options.locator('#status .status-action').click();
+        await expect(options.locator('#status')).toContainText('Import undone.', { timeout: 15_000 });
+        const restored = await options.evaluate(() => chrome.storage.local.get(null));
+        expect(restored.rx_settings.wideLayout).toBe(false);
+        expect(restored['rx_act:rx_watch_history']).toBe(before['rx_act:rx_watch_history']);
+        expect(restored['rx_act:rx_bookmarks']).toBeUndefined();
+        expect(restored.rx_rant_stats_mirror).toEqual(before.rx_rant_stats_mirror);
+        expect(restored.rx_pending_local_data_op).toMatchObject({
+            source: 'snapshot-restore',
+            clear: true,
+            allTrustedOrigins: true,
+            extensionApplied: true,
+            activityGeneration: expect.any(Number),
+        });
+    } finally {
+        fs.rmSync(importPath, { force: true });
+    }
 });
 
 test('a backup round-trips every kind of user activity, not just settings', async ({ context, extensionId }) => {

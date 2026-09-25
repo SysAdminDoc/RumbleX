@@ -13,26 +13,44 @@
     const BRAND_NAME = 'RumbleX';
     const STORAGE_KEY = 'rx_settings';
 
-    async function writeSettings(action, data) {
-        const response = await chrome.runtime.sendMessage({ action, data });
-        if (!response?.success) throw new Error(response?.error || 'Settings update failed');
-        return response.settings;
-    }
+async function requestSettingsAction(action, data) {
+const message = data === undefined ? { action } : { action, data };
+const response = await chrome.runtime.sendMessage(message);
+if (!response?.success) throw new Error(response?.error || 'Settings update failed');
+return response;
+}
 
-    const patchStoredSettings = (patch) => writeSettings('patchSettings', patch);
-    const replaceStoredSettings = (settings) => writeSettings('saveSettings', settings);
-    const importStoredSettings = (settings) => writeSettings('importSettings', settings);
-    const applyWelcomeSettings = (patch) => writeSettings('applyWelcomeSettings', patch);
-    async function resetStoredSettings(snapshotAt) {
-        const message = { action: 'resetSettings' };
-        if (snapshotAt !== undefined) message.snapshotAt = snapshotAt;
-        const response = await chrome.runtime.sendMessage(message);
-        if (!response?.success) throw new Error(response?.error || 'Settings reset failed');
-    }
+async function writeSettings(action, data) {
+return (await requestSettingsAction(action, data)).settings;
+}
+
+const patchStoredSettings = (patch) => writeSettings('patchSettings', patch);
+const replaceStoredSettings = (settings) => writeSettings('saveSettings', settings);
+async function importStoredSettings(settings, { localData = null, mirrorProvided = false, mirror = null } = {}) {
+const response = await chrome.runtime.sendMessage({
+    action: 'importSettings',
+    data: settings,
+    ...(localData && Object.keys(localData).length ? { localData } : {}),
+    ...(mirrorProvided ? { mirror } : {}),
+});
+if (!response?.success) throw new Error(response?.error || 'Settings import failed');
+return response;
+}
+const applyWelcomeSettings = (patch) => writeSettings('applyWelcomeSettings', patch);
+async function resetStoredSettings() {
+const response = await chrome.runtime.sendMessage({ action: 'resetSettings' });
+if (!response?.success) {
+const error = new Error(response?.error || 'Settings reset failed');
+error.partial = response?.partial === true;
+throw error;
+}
+return response;
+}
     // Mirrors RX_EXTENSION_STORAGE_RESET_KEYS in content.js. The two lists are
     // held in sync by `npm run test:local-storage-keys`, which fails if either
     // side drifts — this page cannot import from the content runtime.
     const EXTENSION_STORAGE_RESET_KEYS = [
+        'rx_popup_ui',
         'rx_rant_stats_mirror',
         'rx_probe_cache',
         'rx_settings_profiles',
@@ -41,6 +59,7 @@
         'rx_download_recovery',
         'rx_welcome_seen',
         'rx_activity_premigration',
+        'rx_activity_migration_journal',
     ];
     // Extension-storage keys worth carrying in a backup. Deliberately narrower
     // than the reset list: rx_probe_cache is a CDN probe cache that rebuilds
@@ -822,8 +841,7 @@
 
     async function exportSettings() {
         try {
-            const store = await chrome.storage.local.get(STORAGE_KEY);
-            const settings = store[STORAGE_KEY] || {};
+            let store = await chrome.storage.local.get(null);
             const includeCredentials = elements.exportCredentialsInput?.checked === true;
 
             // Collect per-site data from an open Rumble tab if one exists.
@@ -836,21 +854,32 @@
             try {
                 const resp = await chrome.runtime.sendMessage({ action: 'getLocalData' });
                 if (resp?.ok) {
-                    localData = resp.data || {};
+                    localData = { ...localData, ...(resp.data || {}) };
                     tabsTouched = resp.tabs || 0;
                 }
             } catch { /* no tabs / no receiver → settings-only export */ }
+
+            // Re-read after the tab responds: its flush may have committed
+            // while the first snapshot was in flight. The live tab remains
+            // authoritative for any still-dirty key.
+            store = await chrome.storage.local.get(null);
+            localData = {
+                ...Object.fromEntries(Object.entries(store)
+                    .filter(([key, value]) => key.startsWith(ACTIVITY_PREFIX) && typeof value === 'string')
+                    .map(([key, value]) => [key.slice(ACTIVITY_PREFIX.length), value])),
+                ...localData,
+            };
+            const settings = store[STORAGE_KEY] || {};
 
             // Extension-storage activity that lives outside rx_settings. The
             // rant mirror is the only cross-video record of rants and no tab
             // has to be open to read it, unlike localData.
             let extensionData = {};
             try {
-                const stored = await chrome.storage.local.get(EXTENSION_STORAGE_BACKUP_KEYS);
                 extensionData = Object.fromEntries(
                     EXTENSION_STORAGE_BACKUP_KEYS
-                        .filter((key) => stored[key] !== undefined)
-                        .map((key) => [key, stored[key]]),
+                        .filter((key) => store[key] !== undefined)
+                        .map((key) => [key, store[key]]),
                 );
             } catch { /* storage unavailable → settings and per-site data only */ }
 
@@ -866,7 +895,7 @@
 
             // v3.6.0 — Compression Streams API gzip export.
             // Universally supported across all browsers we ship to (Chrome 80+,
-            // Firefox 113+, Safari 16.4+ — covers MV3 reality). Cuts the export
+            // Firefox 121+, Safari 16.4+ — covers supported extension builds). Cuts the export
             // size by ~80% for typical settings JSON. Falls back to plain JSON
             // if CompressionStream is somehow unavailable (very old Chromium).
             const jsonText = JSON.stringify(data, null, 2);
@@ -896,11 +925,11 @@
             const sizeSuffix = ext === '.json.gz' ? ` (gzip, ${Math.round(blob.size / 1024)} KB)` : '';
             const activityKeys = Object.keys(extensionData).length;
             const activitySuffix = activityKeys
-                ? ` Included  stored activity ${activityKeys === 1 ? 'record' : 'records'} (rant history). The download probe cache is left out on purpose; it rebuilds itself.`
+                ? ` Included stored activity ${activityKeys === 1 ? 'record' : 'records'} (rant history). The download probe cache is left out on purpose; it rebuilds itself.`
                 : ' No stored activity records were present. The download probe cache is never exported; it rebuilds itself.';
             const suffix = localKeys
-                ? ` Included ${localKeys} per-site ${localKeys === 1 ? 'key' : 'keys'} from your open Rumble tab.`
-                : (tabsTouched === 0 ? ' Tip: open a Rumble tab first to include watch history, bookmarks, etc.' : '');
+                ? ` Included ${localKeys} local activity ${localKeys === 1 ? 'record' : 'records'}.`
+                : (tabsTouched === 0 ? ' No local watch activity was present.' : '');
             const credentialSuffix = includeCredentials
                 ? ' This file contains usable credentials. Store it securely.'
                 : ' Credentials were excluded.';
@@ -915,57 +944,21 @@
     }
 
     async function createSettingsSnapshot(reason) {
-        const cur = await chrome.storage.local.get([STORAGE_KEY, 'rx_settings_snapshots', ...EXTENSION_STORAGE_BACKUP_KEYS]);
-        const settings = normaliseImported(cur[STORAGE_KEY] || {});
-        if (settings.backupHistory === false) return { ok: false, reason: 'disabled' };
-        const limit = Math.max(1, Number(settings.backupHistoryLimit ?? DEFAULTS.backupHistoryLimit) || 10);
-        // Activity kept in extension storage is replaced wholesale by an import
-        // and dropped by a reset, so a snapshot carrying only rx_settings could
-        // undo neither. Capture it here as well.
-        const activity = Object.fromEntries(
-            EXTENSION_STORAGE_BACKUP_KEYS
-                .filter((key) => cur[key] !== undefined)
-                .map((key) => [key, cur[key]]),
-        );
-        const snapshot = {
-            at: Date.now(),
-            reason: typeof reason === 'string' ? reason.slice(0, 80) : 'manual',
-            settings,
-            activity,
-        };
-        const next = Array.isArray(cur.rx_settings_snapshots) ? cur.rx_settings_snapshots.slice() : [];
-        next.push(snapshot);
-        while (next.length > limit) next.shift();
-        await chrome.storage.local.set({ rx_settings_snapshots: next });
-        return { ok: true, count: next.length, at: snapshot.at };
+        return chrome.runtime.sendMessage({
+            action: 'createSettingsSnapshot',
+            reason,
+            captureActivity: true,
+        });
     }
 
     async function listSettingsSnapshots() {
-        const cur = await chrome.storage.local.get('rx_settings_snapshots');
-        const list = Array.isArray(cur.rx_settings_snapshots) ? cur.rx_settings_snapshots : [];
-        return list.map((s, i) => ({ index: i, at: s.at, reason: s.reason }));
+        const response = await chrome.runtime.sendMessage({ action: 'listSettingsSnapshots' });
+        if (!response?.ok) throw new Error(response?.error || response?.reason || 'Snapshot list failed');
+        return response.snapshots || [];
     }
 
     async function restoreSettingsSnapshot(indexOrAt) {
-        const cur = await chrome.storage.local.get('rx_settings_snapshots');
-        const list = Array.isArray(cur.rx_settings_snapshots) ? cur.rx_settings_snapshots : [];
-        const snap = typeof indexOrAt === 'number' && indexOrAt < list.length
-            ? list[indexOrAt]
-            : list.find((s) => s.at === indexOrAt);
-        if (!snap) return { ok: false, reason: 'not-found' };
-        await createSettingsSnapshot('pre-restore');
-        await replaceStoredSettings(normaliseImported(snap.settings || {}));
-        // Snapshots taken before activity was captured carry no `activity` key,
-        // and restore settings only, exactly as they always did.
-        if (snap.activity && typeof snap.activity === 'object') {
-            const activity = Object.fromEntries(
-                EXTENSION_STORAGE_BACKUP_KEYS
-                    .filter((key) => snap.activity[key] !== undefined)
-                    .map((key) => [key, snap.activity[key]]),
-            );
-            if (Object.keys(activity).length) await chrome.storage.local.set(activity);
-        }
-        return { ok: true, restored: { at: snap.at, reason: snap.reason } };
+        return chrome.runtime.sendMessage({ action: 'restoreSettingsSnapshot', indexOrAt });
     }
 
     async function readUtf8StreamLimited(stream, maxBytes) {
@@ -1036,58 +1029,29 @@
                 throw new Error('Import data is too large for extension storage');
             }
 
-            const snapshot = await createSettingsSnapshot('pre-import-settings');
-            await importStoredSettings(sanitized);
+            const extensionData = isPlainObject(data.extensionData) ? data.extensionData : null;
+            const localData = isPlainObject(data.localData) ? data.localData : null;
+            const hasMirror = extensionData?.rx_rant_stats_mirror !== undefined;
+            const imported = await importStoredSettings(sanitized, {
+                localData,
+                mirrorProvided: hasMirror,
+                mirror: extensionData?.rx_rant_stats_mirror,
+            });
+            const snapshot = imported.snapshot;
 
-            // v2+: restore per-site data to any open Rumble tabs. If no tab
-            // is open we silently skip — the payload is already gone from the
-            // imported file after this return, so the user should reimport
-            // after opening a Rumble tab. We tell them so in the toast.
+            // v2+: restore per-site data centrally, then ask open Rumble tabs
+            // to discard legacy page copies. Closed origins carry a durable
+            // cleanup marker that is consumed when each one next opens.
             let restoreSummary = '';
             const restoreErrors = [];
 
-            // v3+: extension-storage activity restores without needing a tab.
-            // Only the allowlisted keys are written, so a crafted file cannot
-            // reach arbitrary extension storage.
-            const extensionData = isPlainObject(data.extensionData) ? data.extensionData : null;
-            if (extensionData) {
-                const restorable = Object.fromEntries(
-                    EXTENSION_STORAGE_BACKUP_KEYS
-                        .filter((key) => extensionData[key] !== undefined)
-                        .map((key) => [key, extensionData[key]]),
-                );
-                if (Object.keys(restorable).length) {
-                    try {
-                        await chrome.storage.local.set(restorable);
-                        restoreSummary += ` Restored ${Object.keys(restorable).length} stored activity `
-                            + `${Object.keys(restorable).length === 1 ? 'record' : 'records'}.`;
-                    } catch (error) {
-                        restoreErrors.push('Stored activity could not be restored: ' + (error?.message || error));
-                    }
-                }
-            }
-
-            const localData = isPlainObject(data.localData) ? data.localData : null;
-            if (localData && Object.keys(localData).length) {
-                try {
-                    const resp = await chrome.runtime.sendMessage({ action: 'setLocalData', data: localData });
-                    if (resp?.ok) {
-                        if (resp.pending) {
-                            const staged = resp.pendingKeys || Object.keys(localData).length;
-                            restoreSummary += ` Staged ${staged} per-site ${staged === 1 ? 'key' : 'keys'}; it will restore automatically next time a Rumble tab opens.`;
-                        } else if (resp.tabs === 0) {
-                            restoreSummary += ' No Rumble tab was open; per-site data restore was skipped.';
-                        } else {
-                            restoreSummary += ` Restored ${resp.written} per-site ${resp.written === 1 ? 'key' : 'keys'} to ${resp.tabs} open ${resp.tabs === 1 ? 'tab' : 'tabs'}.`;
-                        }
-                    } else if (resp?.pending) {
-                        const staged = resp.pendingKeys || Object.keys(localData).length;
-                        restoreErrors.push(`Only ${resp.written || 0} of ${staged} per-site keys were written. The full restore is staged to retry on the next Rumble tab.`);
-                    } else {
-                        restoreErrors.push('Per-site data could not be restored: ' + (resp?.reason || 'no response'));
-                    }
-                } catch (error) {
-                    restoreErrors.push('Per-site data could not be restored: ' + (error?.message || error));
+            if ((localData && Object.keys(localData).length) || hasMirror) {
+                const activity = imported.activity || {};
+                if (hasMirror && activity.mirrorWritten) restoreSummary += ' Restored stored rant activity.';
+                if (activity.pending) {
+                    restoreSummary += ' Saved activity was restored; legacy page copies will be cleaned when each Rumble origin opens.';
+                } else if (activity.written) {
+                    restoreSummary += ` Restored ${activity.written} saved activity ${activity.written === 1 ? 'item' : 'items'}.`;
                 }
             }
 
@@ -1106,7 +1070,12 @@
                     await refreshSettingsState({ resetDraft: true });
                     await refreshSnapshotList();
                     if (state.modalOpen) renderSettingsWorkspace();
-                    showStatus(restored?.ok ? 'Import undone.' : 'Undo failed.', restored?.ok ? 'success' : 'error');
+                    const undoMessage = restored?.ok
+                        ? 'Import undone.'
+                        : restored?.partial
+                            ? 'Undo could not fully restore the prior data. Reload RumbleX and use the newest snapshot.'
+                            : 'Undo failed: ' + (restored?.error || restored?.reason || 'unknown') + '.';
+                    showStatus(undoMessage, restored?.ok ? 'success' : 'error');
                 });
             } else {
                 showStatus(message, restoreErrors.length ? 'error' : 'success');
@@ -1126,65 +1095,64 @@
             // gone, so abort rather than performing an irreversible reset.
             // A user who deliberately disabled backup history is a different
             // case: that is an informed opt-out, so proceed and say so.
-            let snapshot;
+            let resetResult;
             try {
-                snapshot = await createSettingsSnapshot('pre-reset-all-data');
+                resetResult = await resetStoredSettings();
             } catch (snapshotError) {
+                const detail = snapshotError?.partial
+                    ? 'Reset failed and automatic recovery was incomplete. Reload RumbleX and use the newest snapshot to restore your data.'
+                    : 'Reset cancelled: ' + (snapshotError?.message || snapshotError) + '. Nothing was changed.';
                 showStatus(
-                    'Reset cancelled: could not capture the pre-reset snapshot ('
-                    + (snapshotError?.message || snapshotError)
-                    + '). Nothing was changed.',
+                    detail,
                     'error',
                 );
                 return;
             }
 
-            // 1) Clear extension storage (settings + popup UI state + the
-            // per-feature extension-storage caches listed in content.js as
-            // RX_EXTENSION_STORAGE_RESET_KEYS). The snapshot history is
-            // deliberately kept: it is this reset's undo.
-            await resetStoredSettings(snapshot?.ok ? snapshot.at : undefined);
-            try { await chrome.storage.local.remove('rx_popup_ui'); } catch {}
-            try { await chrome.storage.local.remove(EXTENSION_STORAGE_RESET_KEYS); } catch {}
-            // Activity that moved into extension storage is cleared here
-            // directly, so the reset reaches it with no Rumble tab open. Open
-            // tabs drop it from memory through their own change listener.
-            let activityCleared = 0;
-            try {
-                const everything = await chrome.storage.local.get(null);
-                const activity = Object.keys(everything).filter((key) => key.startsWith(ACTIVITY_PREFIX));
-                if (activity.length) await chrome.storage.local.remove(activity);
-                activityCleared = activity.length;
-            } catch {}
-
-            // 2) Ask any open Rumble tabs to wipe their own localStorage.
-            // Tabs that aren't open simply won't be touched — next time they
-            // load, their defaults kick in. We report what the broadcast
-            // cleared so users get honest feedback.
-            let broadcast = { ok: false };
-            try {
-                broadcast = await chrome.runtime.sendMessage({ action: 'clearLocalData' });
-            } catch (e) {
-                // No response is fine; it just means no Rumble tabs were open.
-            }
+            // The background captured the snapshot, cleared extension-owned
+            // records, and coordinated open Rumble origins on one serialized
+            // write lane. Closed origins retain a first-open cleanup marker.
+            const snapshot = resetResult.snapshot;
+            const activityCleared = Number(resetResult.activityCleared) || 0;
 
             await renderStorageInfo();
             await refreshSettingsState({ resetDraft: true });
             if (state.modalOpen) renderSettingsWorkspace();
-            const tabsTouched = broadcast?.tabs || 0;
-            const cleared = broadcast?.cleared || 0;
+            const tabsTouched = resetResult.tabs || 0;
+            const cleared = resetResult.cleared || 0;
             const suffix = tabsTouched
                 ? ` Cleared ${cleared} per-site ${cleared === 1 ? 'key' : 'keys'} across ${tabsTouched} open ${tabsTouched === 1 ? 'Rumble tab' : 'Rumble tabs'}.`
-                : (broadcast?.pendingClear
+                : (resetResult.pendingClear
                     ? ' Per-site data clear is staged and will run automatically next time a Rumble tab opens.'
                     : ' No Rumble tab was open; per-site data was not reachable.');
             const snapshotNote = snapshot?.ok
                 ? ' Snapshot captured first.'
-                : ' No snapshot was taken because backup history is turned off — this reset cannot be undone.';
+                : ' No snapshot was taken because backup history is turned off. This reset cannot be undone.';
             const activityNote = activityCleared
                 ? ` Cleared ${activityCleared} saved activity ${activityCleared === 1 ? 'item' : 'items'}.`
                 : '';
-            showStatus('All settings cleared.' + snapshotNote + activityNote + suffix, 'success');
+            const message = 'All settings cleared.' + snapshotNote + activityNote + suffix;
+            const archiveFolderNote = resetResult.archiveFolderCleared
+                ? ' Saved folder access was disconnected and is not included in Undo.'
+                : '';
+            await refreshSnapshotList();
+            if (snapshot?.ok) {
+                showStatusWithAction(message + archiveFolderNote, 'success', 'Undo reset', async () => {
+                    const restored = await restoreSettingsSnapshot(snapshot.at);
+                    await refreshSettingsState({ resetDraft: true });
+                    await renderStorageInfo();
+                    await refreshSnapshotList();
+                    if (state.modalOpen) renderSettingsWorkspace();
+                    const undoMessage = restored?.ok
+                        ? 'Reset undone. Select saved download folders again if you previously used them.'
+                        : restored?.partial
+                            ? 'Undo could not fully restore the prior data. Reload RumbleX and use the newest snapshot.'
+                            : 'Undo failed: ' + (restored?.error || restored?.reason || 'unknown') + '.';
+                    showStatus(undoMessage, restored?.ok ? 'success' : 'error');
+                });
+            } else {
+                showStatus(message + archiveFolderNote, 'success');
+            }
         } catch (err) {
             showStatus('Reset failed: ' + err.message, 'error');
         }
@@ -1847,8 +1815,9 @@
     }
 
     function formatTimestamp(ms) {
-        if (!Number.isFinite(ms)) return '—';
-        try { return new Date(ms).toISOString().replace('T', ' ').replace(/\..+$/, ''); }
+        const value = Number.isFinite(ms) ? ms : Date.parse(ms);
+        if (!Number.isFinite(value)) return '—';
+        try { return new Date(value).toISOString().replace('T', ' ').replace(/\..+$/, ''); }
         catch { return String(ms); }
     }
 
@@ -1902,7 +1871,9 @@
                     // Refresh in case the restore created a pre-restore snapshot.
                     await refreshSnapshotList();
                 } else {
-                    showStatus('Restore failed: ' + (r?.reason || 'unknown') + '.', 'error');
+                    showStatus(r?.partial
+                        ? 'Restore could not fully recover the saved state. Reload RumbleX and use the newest snapshot.'
+                        : 'Restore failed: ' + (r?.error || r?.reason || 'unknown') + '.', 'error');
                 }
             });
             li.append(meta, btn);
@@ -2860,13 +2831,6 @@
         });
     }
 
-    async function _saveRantMirror(root) {
-        return new Promise((resolve) => {
-            try { chrome.storage.local.set({ [RANT_STATS_MIRROR_KEY]: root }, () => resolve(true)); }
-            catch { resolve(false); }
-        });
-    }
-
     function _flattenRants(root) {
         const flat = [];
         for (const [videoId, v] of Object.entries(root.videos || {})) {
@@ -2945,12 +2909,14 @@
                 readBtn.textContent = v.read ? 'Mark unread' : 'Mark read';
                 readBtn.addEventListener('click', async () => {
                     readBtn.disabled = true;
-                    const cur = await _loadRantMirror();
-                    if (cur.videos && cur.videos[v.id]) {
-                        cur.videos[v.id].read = !cur.videos[v.id].read;
-                        await _saveRantMirror(cur);
+                    try {
+                        const response = await chrome.runtime.sendMessage({ action: 'setRantRead', videoId: v.id, read: !v.read });
+                        if (!response?.ok) throw new Error(response?.error || response?.reason || 'storage failed');
+                        await refreshRantStats();
+                    } catch (error) {
+                        showStatus('Could not update rant status: ' + String(error?.message || error), 'error');
+                        readBtn.disabled = false;
                     }
-                    await refreshRantStats();
                 });
                 const delBtn = document.createElement('button');
                 delBtn.type = 'button';
@@ -2958,11 +2924,15 @@
                 delBtn.textContent = 'Remove';
                 delBtn.addEventListener('click', async () => {
                     delBtn.disabled = true;
-                    const cur = await _loadRantMirror();
-                    if (cur.videos) delete cur.videos[v.id];
-                    await _saveRantMirror(cur);
-                    showStatus('Removed ' + v.id + ' from rant stats.', 'success');
-                    await refreshRantStats();
+                    try {
+                        const response = await chrome.runtime.sendMessage({ action: 'removeRantVideo', videoId: v.id });
+                        if (!response?.ok) throw new Error(response?.error || response?.reason || 'storage failed');
+                        showStatus('Removed ' + v.id + ' from rant stats.', 'success');
+                        await refreshRantStats();
+                    } catch (error) {
+                        showStatus('Could not remove rant history: ' + String(error?.message || error), 'error');
+                        delBtn.disabled = false;
+                    }
                 });
                 row.append(openLink, readBtn, delBtn);
                 li.append(meta, row);
@@ -3033,12 +3003,17 @@
     }
 
     async function clearRantStats() {
-        const root = await _loadRantMirror();
-        const had = Object.keys(root.videos || {}).length;
-        if (had === 0) { showStatus('Nothing to clear.', 'info'); return; }
-        await _saveRantMirror({ videos: {} });
-        showStatus('Cleared rant stats for ' + had + ' video' + (had === 1 ? '' : 's') + '.', 'success');
-        await refreshRantStats();
+        try {
+            const root = await _loadRantMirror();
+            const had = Object.keys(root.videos || {}).length;
+            if (had === 0) { showStatus('Nothing to clear.', 'info'); return; }
+            const response = await chrome.runtime.sendMessage({ action: 'clearRantMirror' });
+            if (!response?.ok) throw new Error(response?.error || response?.reason || 'storage failed');
+            showStatus('Cleared rant stats for ' + had + ' video' + (had === 1 ? '' : 's') + '.', 'success');
+            await refreshRantStats();
+        } catch (error) {
+            showStatus('Could not clear rant history: ' + String(error?.message || error), 'error');
+        }
     }
 
     async function saveCurrentAsProfile() {

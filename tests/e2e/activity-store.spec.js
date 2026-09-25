@@ -178,19 +178,24 @@ test('a second Rumble origin merges its legacy collections before deleting them'
         title: 'Second origin bookmark',
         ts: 1_700_000_200_000,
     }]);
+    const committedMeta = (await storage(serviceWorker, 'rx_activity_meta')).rx_activity_meta;
+    await serviceWorker.evaluate((meta) => chrome.storage.local.set({
+        rx_activity_meta: { ...meta, hold: true },
+    }), committedMeta);
     const second = await openRumble(context, 'https://www.rumble.com/vactivity-second-origin.html');
     await second.evaluate(({ progress, bookmarks }) => {
         localStorage.setItem('rx_watch_progress', progress);
         localStorage.setItem('rx_bookmarks', bookmarks);
     }, { progress: secondProgress, bookmarks: secondBookmarks });
+    await serviceWorker.evaluate((meta) => chrome.storage.local.set({ rx_activity_meta: meta }), committedMeta);
     await reload(second);
 
-    const copies = await activityKeys(serviceWorker);
-    expect(JSON.parse(copies['rx_act:rx_watch_progress'])).toMatchObject({
+    await expect.poll(async () => JSON.parse((await activityKeys(serviceWorker))['rx_act:rx_watch_progress'])).toMatchObject({
         vactivity: JSON.parse(PROGRESS).vactivity,
         vsecond: JSON.parse(secondProgress).vsecond,
     });
-    expect(JSON.parse(copies['rx_act:rx_bookmarks']).map((entry) => entry.url).sort()).toEqual([
+    await expect.poll(async () => JSON.parse((await activityKeys(serviceWorker))['rx_act:rx_bookmarks'])
+        .map((entry) => entry.url).sort()).toEqual([
         'https://rumble.com/vbookmark-one.html',
         'https://rumble.com/vbookmark-two.html',
     ]);
@@ -200,41 +205,82 @@ test('a second Rumble origin merges its legacy collections before deleting them'
     }))).toEqual({ progress: null, bookmarks: null });
 });
 
+test('simultaneous first migrations from both Rumble origins keep the union and both recovery copies', async ({ context, serviceWorker }) => {
+    await serviceWorker.evaluate(() => chrome.storage.local.set({ rx_activity_meta: { version: 0, hold: true } }));
+    const first = await openRumble(context);
+    const second = await openRumble(context, 'https://www.rumble.com/vactivity-concurrent.html');
+    const firstProgress = JSON.stringify({ vfirst: { t: 10, d: 100, ts: 1 } });
+    const secondProgress = JSON.stringify({ vsecond: { t: 20, d: 200, ts: 2 } });
+    const firstBookmarks = JSON.stringify([{ url: 'https://rumble.com/vfirst.html', title: 'First', ts: 1 }]);
+    const secondBookmarks = JSON.stringify([{ url: 'https://rumble.com/vsecond.html', title: 'Second', ts: 2 }]);
+    await first.evaluate(({ progress, bookmarks }) => {
+        localStorage.setItem('rx_watch_progress', progress);
+        localStorage.setItem('rx_bookmarks', bookmarks);
+    }, { progress: firstProgress, bookmarks: firstBookmarks });
+    await second.evaluate(({ progress, bookmarks }) => {
+        localStorage.setItem('rx_watch_progress', progress);
+        localStorage.setItem('rx_bookmarks', bookmarks);
+    }, { progress: secondProgress, bookmarks: secondBookmarks });
+
+    await serviceWorker.evaluate(() => chrome.storage.local.remove('rx_activity_meta'));
+    await Promise.all([reload(first), reload(second)]);
+
+    await expect.poll(async () => JSON.parse((await activityKeys(serviceWorker))['rx_act:rx_watch_progress'])).toEqual({
+        vfirst: { t: 10, d: 100, ts: 1 },
+        vsecond: { t: 20, d: 200, ts: 2 },
+    });
+    await expect.poll(async () => JSON.parse((await activityKeys(serviceWorker))['rx_act:rx_bookmarks'])
+        .map((entry) => entry.url).sort()).toEqual([
+        'https://rumble.com/vfirst.html',
+        'https://rumble.com/vsecond.html',
+    ]);
+    const beforeEmptyReload = (await storage(serviceWorker, 'rx_activity_premigration')).rx_activity_premigration;
+    expect(Object.keys(beforeEmptyReload.dataByOrigin).sort()).toEqual([
+        'https://rumble.com',
+        'https://www.rumble.com',
+    ]);
+    expect(await first.evaluate(() => localStorage.getItem('rx_watch_progress'))).toBeNull();
+    expect(await second.evaluate(() => localStorage.getItem('rx_watch_progress'))).toBeNull();
+
+    await Promise.all([reload(first), reload(second)]);
+    expect((await storage(serviceWorker, 'rx_activity_premigration')).rx_activity_premigration)
+        .toEqual(beforeEmptyReload);
+});
+
 test('a transient activity-storage failure keeps the write dirty and retries it', async ({ context, serviceWorker }) => {
     const page = await plantLegacy(context, serviceWorker);
     await serviceWorker.evaluate(() => chrome.storage.local.remove('rx_activity_meta'));
     await reload(page);
     const payload = JSON.stringify([{ url: 'https://rumble.com/vretry.html', title: 'Retry me', ts: Date.now() }]);
 
+    await serviceWorker.evaluate(() => {
+        const realSet = chrome.storage.local.set.bind(chrome.storage.local);
+        globalThis.__rxTestRestoreStorageSet = () => { chrome.storage.local.set = realSet; };
+        let failed = false;
+        chrome.storage.local.set = (items, callback) => {
+            if (!failed && Object.hasOwn(items, 'rx_act:rx_bookmarks')) {
+                failed = true;
+                return Promise.reject(new Error('transient storage failure'));
+            }
+            return realSet(items, callback);
+        };
+    });
     const result = await serviceWorker.evaluate(async ({ id, value }) => {
         const [execution] = await chrome.scripting.executeScript({
             target: { tabId: id },
             world: 'ISOLATED',
             func: async (nextValue) => {
-                const realSet = chrome.storage.local.set.bind(chrome.storage.local);
-                let failed = false;
-                chrome.storage.local.set = (items, callback) => {
-                    if (!failed && Object.hasOwn(items, 'rx_act:rx_bookmarks')) {
-                        failed = true;
-                        throw new Error('transient storage failure');
-                    }
-                    return realSet(items, callback);
-                };
-                try {
-                    RxActivity.setItem('rx_bookmarks', nextValue);
-                    const first = await RxActivity.flush();
-                    const dirtyAfterFailure = RxActivity._dirty.get('rx_bookmarks');
-                    chrome.storage.local.set = realSet;
-                    const second = await RxActivity.flush();
-                    return { first, second, dirtyAfterFailure, dirtyAfterRetry: RxActivity._dirty.has('rx_bookmarks') };
-                } finally {
-                    chrome.storage.local.set = realSet;
-                }
+                RxActivity.setItem('rx_bookmarks', nextValue);
+                const first = await RxActivity.flush();
+                const dirtyAfterFailure = RxActivity._dirty.get('rx_bookmarks');
+                const second = await RxActivity.flush();
+                return { first, second, dirtyAfterFailure, dirtyAfterRetry: RxActivity._dirty.has('rx_bookmarks') };
             },
             args: [value],
         });
         return execution.result;
     }, { id: await tabIdOf(serviceWorker, page), value: payload });
+    await serviceWorker.evaluate(() => globalThis.__rxTestRestoreStorageSet?.());
 
     expect(result).toEqual({
         first: false,
@@ -249,23 +295,24 @@ test('a transient activity-storage failure keeps the write dirty and retries it'
 test('a copy that does not read back identically rolls back and leaves the page copies in charge', async ({ context, serviceWorker }) => {
     const page = await plantLegacy(context, serviceWorker);
     await serviceWorker.evaluate(() => chrome.storage.local.remove('rx_activity_meta'));
-    // Drive the move directly with a snapshot whose value changes between the
-    // write and the read-back, the shape of a copy corrupted in transit.
+    await serviceWorker.evaluate(() => {
+        const realSet = chrome.storage.local.set.bind(chrome.storage.local);
+        let corruptOnce = true;
+        chrome.storage.local.set = async (items, callback) => {
+            if (corruptOnce && Object.hasOwn(items, 'rx_act:rx_watch_progress')) {
+                corruptOnce = false;
+                await realSet({ ...items, 'rx_act:rx_watch_progress': '{"corrupt":true}' }, callback);
+                chrome.storage.local.set = realSet;
+                return;
+            }
+            return realSet(items, callback);
+        };
+    });
     const result = await serviceWorker.evaluate(async (id) => {
         const [execution] = await chrome.scripting.executeScript({
             target: { tabId: id },
             world: 'ISOLATED',
-            func: async () => {
-                let reads = 0;
-                RxActivity._readPageStore = () => ({
-                    rx_bookmarks: localStorage.getItem('rx_bookmarks'),
-                    // Different on every read. The snapshot is structured-cloned
-                    // into storage before the copy, so a value that settles after
-                    // two reads would line up again by the comparison.
-                    get rx_watch_progress() { reads += 1; return `value-${reads}`; },
-                });
-                return RxActivity._migrate();
-            },
+            func: async () => RxActivity._migrate(),
         });
         return execution.result;
     }, await tabIdOf(serviceWorker, page));
@@ -273,6 +320,37 @@ test('a copy that does not read back identically rolls back and leaves the page 
     expect(await activityKeys(serviceWorker)).toEqual({});
     expect((await storage(serviceWorker, 'rx_activity_meta')).rx_activity_meta).toMatchObject({ version: 0, reason: 'verify' });
     // Nothing was removed from the page.
+    expect(await pageStorage(page)).toEqual({ ...SEEDED, rumble_own_key: 'belongs to rumble' });
+});
+
+test('a metadata commit that does not verify rolls back copied activity too', async ({ context, serviceWorker }) => {
+    const page = await plantLegacy(context, serviceWorker);
+    await serviceWorker.evaluate(() => chrome.storage.local.remove('rx_activity_meta'));
+    await serviceWorker.evaluate(() => {
+        const realSet = chrome.storage.local.set.bind(chrome.storage.local);
+        let corruptOnce = true;
+        chrome.storage.local.set = async (items, callback) => {
+            if (corruptOnce && items.rx_activity_meta?.version === 1) {
+                corruptOnce = false;
+                await realSet({ ...items, rx_activity_meta: { version: 0, reason: 'corrupt-meta' } }, callback);
+                chrome.storage.local.set = realSet;
+                return;
+            }
+            return realSet(items, callback);
+        };
+    });
+    const result = await serviceWorker.evaluate(async (id) => {
+        const [execution] = await chrome.scripting.executeScript({
+            target: { tabId: id },
+            world: 'ISOLATED',
+            func: async () => RxActivity._migrate(),
+        });
+        return execution.result;
+    }, await tabIdOf(serviceWorker, page));
+
+    expect(result).toMatchObject({ ok: false, reason: 'verify-meta' });
+    expect(await activityKeys(serviceWorker)).toEqual({});
+    expect((await storage(serviceWorker, 'rx_activity_meta')).rx_activity_meta).toBeUndefined();
     expect(await pageStorage(page)).toEqual({ ...SEEDED, rumble_own_key: 'belongs to rumble' });
 });
 

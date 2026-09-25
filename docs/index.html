@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>RumbleX</title>
-<meta name="description" content="RumbleX is a local-first enhancement suite for Rumble.com. Chrome, Firefox, and userscript builds, with no telemetry and no remote code.">
+<meta name="description" content="Take control of Rumble with ad blocking, serious download tools, seven themes, Theater Split, chat controls, and local-first privacy.">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%2385c742'/%3E%3Cpath d='M11 9h7a5 5 0 0 1 1.6 9.7L23 25h-4.3l-3-5.6H15V25h-4z' fill='%2307090d'/%3E%3C/svg%3E">
 <style>
   :root {
@@ -21,28 +21,36 @@
   * { box-sizing: border-box; }
   body {
     margin: 0;
-    background: var(--bg);
+    background:
+      radial-gradient(circle at 12% -10%, rgba(123,167,255,.14), transparent 34rem),
+      radial-gradient(circle at 90% 8%, rgba(133,199,66,.10), transparent 30rem),
+      var(--bg);
     color: var(--text);
     font: 16px/1.65 system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
     -webkit-font-smoothing: antialiased;
   }
-  .wrap { max-width: 880px; margin: 0 auto; padding: 0 20px 72px; }
-  header { padding: 64px 0 40px; border-bottom: 1px solid var(--border); }
+  .wrap { max-width: 1120px; margin: 0 auto; padding: 0 24px 80px; }
+  header { padding: 34px 0 54px; border-bottom: 1px solid var(--border); }
   .brand { display: flex; align-items: center; gap: 14px; }
   .mark {
     width: 46px; height: 46px; border-radius: 10px; background: var(--accent);
     color: #07090d; display: grid; place-items: center; font-weight: 800; font-size: 24px;
     flex: none;
   }
-  h1 { margin: 0; font-size: 30px; letter-spacing: -.02em; }
-  .tag { color: var(--muted); margin: 14px 0 0; font-size: 17px; max-width: 62ch; }
+  .wordmark { font-size: 20px; font-weight: 760; letter-spacing: -.02em; }
+  .brand-note { color: var(--muted); font-size: 13px; }
+  .hero { display: grid; grid-template-columns: minmax(0, .92fr) minmax(420px, 1.08fr); gap: 48px; align-items: center; padding-top: 58px; }
+  .eyebrow { color: var(--accent); font-size: 12px; font-weight: 760; letter-spacing: .14em; text-transform: uppercase; }
+  h1 { margin: 12px 0 0; font-size: clamp(40px, 6vw, 68px); line-height: 1.02; letter-spacing: -.045em; max-width: 11ch; }
+  .tag { color: var(--muted); margin: 22px 0 0; font-size: 18px; max-width: 52ch; }
+  .hero-shot { width: 100%; border-radius: 16px; border: 1px solid rgba(133,199,66,.24); box-shadow: 0 28px 80px rgba(0,0,0,.42); }
   .pills { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 22px; }
   .pill {
     border: 1px solid var(--border); background: var(--surface);
     border-radius: 6px; padding: 5px 11px; font-size: 13px; color: var(--muted);
   }
   .pill strong { color: var(--accent); font-weight: 600; }
-  h2 { font-size: 21px; margin: 44px 0 6px; letter-spacing: -.01em; }
+  h2 { font-size: 28px; margin: 54px 0 8px; letter-spacing: -.025em; }
   h3 { font-size: 16px; margin: 26px 0 8px; }
   p { margin: 10px 0; }
   a { color: var(--accent); }
@@ -74,6 +82,18 @@
     border-radius: 8px; margin: 8px 8px 8px 0;
   }
   .btn.ghost { background: transparent; color: var(--text); border: 1px solid var(--border); }
+  .metrics { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-top: 32px; }
+  .metric { border: 1px solid var(--border); background: rgba(14,18,24,.78); border-radius: 10px; padding: 14px 16px; }
+  .metric strong { display: block; color: var(--text); font-size: 20px; }
+  .metric span { color: var(--muted); font-size: 12px; }
+  .feature-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px; margin-top: 22px; }
+  .feature { background: linear-gradient(145deg, var(--surface), rgba(20,26,34,.72)); border: 1px solid var(--border); border-radius: 12px; padding: 22px; }
+  .feature h3 { margin-top: 0; font-size: 18px; }
+  .feature p { color: var(--muted); margin-bottom: 0; }
+  .gallery { display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px; margin-top: 22px; }
+  .gallery figure { margin: 0; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; }
+  .gallery img { display: block; width: 100%; }
+  .gallery figcaption { padding: 12px 14px; color: var(--muted); font-size: 13px; }
   table { border-collapse: collapse; width: 100%; margin: 14px 0; font-size: 14.5px; }
   th, td { text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--border); vertical-align: top; }
   th { color: var(--muted); font-weight: 600; }
@@ -82,6 +102,15 @@
   @media (max-width: 560px) {
     header { padding-top: 44px; }
     h1 { font-size: 25px; }
+  }
+  @media (max-width: 860px) {
+    .hero { grid-template-columns: 1fr; gap: 28px; padding-top: 42px; }
+    .hero-shot { max-width: 680px; }
+    .metrics { grid-template-columns: repeat(2, 1fr); }
+  }
+  @media (max-width: 620px) {
+    .feature-grid, .gallery { grid-template-columns: 1fr; }
+    h1 { font-size: 42px; }
   }
 </style>
 </head>
@@ -92,24 +121,64 @@
   <div class="brand">
     <div class="mark">R</div>
     <div>
-      <h1>RumbleX</h1>
-      <div style="color:var(--muted);font-size:14px">Enhancement suite for Rumble.com</div>
+      <div class="wordmark">RumbleX</div>
+      <div class="brand-note">Open-source enhancement suite for Rumble</div>
     </div>
   </div>
-  <p class="tag">Ad and clutter removal, a theater layout, downloads, seven dark themes, live chat tooling, watch progress, chapters, transcripts, and more than a hundred other controls. Everything runs on your machine.</p>
-  <div class="pills">
-    <span class="pill" data-rumblex-version="3.61.0"><strong>v3.61.0</strong> current build</span>
-    <span class="pill" data-rumblex-feature-count="141"><strong>141</strong> feature modules</span>
-    <span class="pill"><strong>6</strong> languages</span>
-    <span class="pill"><strong>0</strong> trackers</span>
-    <span class="pill">Chromium 111+, Firefox 113+, userscript</span>
-    <span class="pill">MIT</span>
+  <div class="hero">
+    <div>
+      <div class="eyebrow">Your Rumble. Your rules.</div>
+      <h1>Watch cleaner. Control more.</h1>
+      <p class="tag">Block ads, reshape the player, download what you chose to watch, and tune the whole site to fit you. RumbleX brings 141 focused modules together without telemetry or an account.</p>
+      <div style="margin-top:26px">
+        <a class="btn" href="https://github.com/SysAdminDoc/RumbleX/releases/latest">Get RumbleX</a>
+        <a class="btn ghost" href="https://github.com/SysAdminDoc/RumbleX">View the source</a>
+      </div>
+      <div class="pills">
+<span class="pill" data-rumblex-version="3.61.0"><strong>v3.61.0</strong> current build</span>
+        <span class="pill">Chrome, Edge, Brave, Firefox, userscript</span>
+        <span class="pill">MIT licensed</span>
+      </div>
+    </div>
+    <img class="hero-shot" src="assets/control-center-1280x800.png" alt="RumbleX control center showing guided feature choices">
   </div>
-  <div style="margin-top:24px">
-    <a class="btn" href="https://github.com/SysAdminDoc/RumbleX/releases/latest">Get the latest release</a>
-    <a class="btn ghost" href="https://github.com/SysAdminDoc/RumbleX">Source on GitHub</a>
+  <div class="metrics" aria-label="Project facts">
+<div class="metric" data-rumblex-feature-count="141"><strong>141</strong> feature modules</div>
+    <div class="metric"><strong>7</strong><span>complete themes</span></div>
+    <div class="metric"><strong>6</strong><span>languages</span></div>
+    <div class="metric"><strong>0</strong><span>trackers</span></div>
   </div>
 </header>
+
+<h2>One extension, four big upgrades</h2>
+<p class="lead">Start with a cleaner Rumble. Add only the tools that earn a place in your browser.</p>
+<div class="feature-grid">
+  <article class="feature">
+    <h3>Clean the page before it distracts you</h3>
+    <p>Scoped request blocking handles known ad hosts. Page cleanup removes overlays, premium prompts, Shorts, sponsored cards, and the empty space they leave behind.</p>
+  </article>
+  <article class="feature">
+    <h3>Turn the player into a workspace</h3>
+    <p>Theater Split puts video beside live chat, comments, or downloads. Add per-channel playback memory, chapters, transcripts, SponsorBlock, and a mini player when you want them.</p>
+  </article>
+  <article class="feature">
+    <h3>Save media with useful fallbacks</h3>
+    <p>Download direct MP4, convert HLS, export a clip, batch a feed, or queue a channel. Failure messages identify the stage that broke and point to the next practical option.</p>
+  </article>
+  <article class="feature">
+    <h3>Keep your viewing data yours</h3>
+    <p>Settings, watch activity, bookmarks, diagnostics, and undo snapshots stay local. The built-in Privacy Report shows every permission and network destination in plain language.</p>
+  </article>
+</div>
+
+<h2>Designed for the whole session</h2>
+<p class="lead">The same dark visual system covers setup, deep settings, privacy, and controls on Rumble itself.</p>
+<div class="gallery">
+  <figure><img src="assets/settings-editor-640x400.png" alt="Searchable RumbleX settings editor"><figcaption>Search 141 modules from one editor.</figcaption></figure>
+  <figure><img src="assets/privacy-640x400.png" alt="RumbleX privacy report"><figcaption>See what is stored and why each permission exists.</figcaption></figure>
+  <figure><img src="assets/in-page-640x400.png" alt="RumbleX settings on a Rumble page"><figcaption>Change the essentials without leaving the video.</figcaption></figure>
+  <figure><img src="assets/popup-640x400.png" alt="RumbleX extension popup"><figcaption>Reach everyday controls from a compact popup.</figcaption></figure>
+</div>
 
 <h2>Install</h2>
 <p class="lead">Pick your browser. Every download comes from this project's Releases page.</p>
@@ -127,7 +196,7 @@
 
 <div class="card">
   <h3>Firefox</h3>
-  <p>Firefox 113 and newer. That is the first release with the <code>color-mix()</code> support RumbleX uses across its themed controls. The current release provides an unsigned AMO submission for temporary testing. It is not a permanently installable add-on.</p>
+  <p>Firefox 121 and newer. That release supports the <code>:has()</code> selectors and <code>color-mix()</code> styles RumbleX uses across its cleanup rules and themes. The current release provides an unsigned AMO submission for temporary testing. It is not a permanently installable add-on.</p>
   <ol>
     <li>Download <code>RumbleX-firefox-amo-unsigned.zip</code> from the <a href="https://github.com/SysAdminDoc/RumbleX/releases/latest">latest release</a> and extract it.</li>
     <li>Open <code>about:debugging#/runtime/this-firefox</code> and click <strong>Load Temporary Add-on</strong>.</li>
@@ -171,10 +240,10 @@
 
 <h2>What it does to your data</h2>
 <div class="note">
-  Nothing leaves your browser unless you ask it to. There's no analytics, no remote logging, and no usage beacons anywhere in the code. Settings live in browser storage. Watch progress, history, and bookmarks live in Rumble's own local storage on your machine.
+  Nothing leaves your browser unless you ask it to. There's no analytics, no remote logging, and no usage beacons anywhere in the code. Settings, watch progress, history, and bookmarks live in extension storage on your machine. Userscript installs keep activity in Rumble's site storage because a userscript has no extension store.
 </div>
 <p>RumbleX only reaches the network for things you trigger: fetching a video you chose to download, checking GitHub for a newer release, and, if you switch it on yourself, syncing settings to a private Gist you own or posting to a Discord webhook you configured. The built-in Privacy Report lists every one of these, generated from the actual manifest rather than written by hand.</p>
-<p>Permissions stay narrow on purpose. RumbleX asks for Rumble's own domains and the ad hosts it blocks, and nothing else.</p>
+<p>Permissions stay narrow on purpose. RumbleX asks for Rumble's domains, the ad hosts it blocks, and optional GitHub access for update checks or encrypted Gist sync.</p>
 
 <h2>Ad blocking, honestly</h2>
 <p>The request-level shield works differently on each runtime, so here's what actually happens:</p>

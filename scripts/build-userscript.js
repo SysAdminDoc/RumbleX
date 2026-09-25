@@ -17,6 +17,7 @@ const LITE_OUTPUT = path.join(ROOT, 'RumbleX.lite.user.js');
 const LITE_OMITTED_ASSETS = ['worker.js', 'lib/mux.min.js', 'mediabunny-worker.js', 'lib/mediabunny.min.mjs'];
 const VERSION = require(path.join(ROOT, 'package.json')).version;
 const CORE_FILES = [
+    'extension/activity-store.js',
     'extension/core-routing.js',
     'extension/core-selectors.js',
     'extension/core-video-cards.js',

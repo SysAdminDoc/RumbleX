@@ -50,6 +50,18 @@
             await this.set({ rx_settings: next });
             return next;
         },
+        async importSettings(settings) {
+            const stored = await this.get('rx_settings');
+            const current = stored.rx_settings && typeof stored.rx_settings === 'object' ? stored.rx_settings : {};
+            const schema = globalThis.RumbleXSettingsSchema;
+            const candidate = { ...settings };
+            for (const key of schema.SECRET_SETTING_KEYS) {
+                if (!Object.hasOwn(settings, key) && Object.hasOwn(current, key)) candidate[key] = current[key];
+            }
+            const next = schema.normalizeStored(candidate, schema.DEFAULTS);
+            await this.set({ rx_settings: next });
+            return next;
+        },
         async remove(keys) {
             for (const key of (Array.isArray(keys) ? keys : [keys])) {
                 if (typeof key === 'string') await Promise.resolve(GM_deleteValue(key));

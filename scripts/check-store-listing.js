@@ -78,6 +78,7 @@ function main() {
     const packageLock = JSON.parse(fs.readFileSync(PACKAGE_LOCK, 'utf8'));
     const readme = fs.readFileSync(README, 'utf8');
     const landing = fs.readFileSync(LANDING, 'utf8');
+    const core = fs.readFileSync(CONTENT, 'utf8');
     const canonicalVersion = packageJson.version;
     const featureCount = featureCatalogCount();
 
@@ -129,6 +130,9 @@ function main() {
         ];
         for (const [surface, snippet, label] of supportCopy) {
             if (!surface.includes(snippet)) errors.push(`${label} does not match manifest minimum ${firefoxMinimum}`);
+        }
+        if (core.includes(':has(') && Number(firefoxMajor) < 121) {
+            errors.push('Firefox minimum must be 121 or newer while shipped selectors use :has()');
         }
     }
 

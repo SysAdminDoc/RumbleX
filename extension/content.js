@@ -58,6 +58,7 @@ const RXSettingsSchema = globalThis.RumbleXSettingsSchema;
 if (!RXSettingsSchema) throw new Error('RumbleX settings schema is missing');
 const SCHEMA_VERSION = RXSettingsSchema.SCHEMA_VERSION;
 const RX_TRACKING_QUERY_KEYS = new Set(RXSettingsSchema.TRACKING_QUERY_KEYS);
+const RX_SETTINGS_GENERATION = 'rx_settings_generation';
 
 // ── Settings Manager (chrome.storage.local) ──
 const Settings = {
@@ -69,6 +70,13 @@ const Settings = {
     _writeChain: Promise.resolve(),
     _writeRevision: 0,
     _pendingRevisions: new Map(),
+    _inFlightRevisions: new Map(),
+    _writeGeneration: 0,
+    _storageGeneration: 0,
+    // Advances whenever a complete durable profile replaces the cache. An
+    // init read can resolve after a flush or storage event and must not put its
+    // older snapshot back on top of that newer profile.
+    _cacheEpoch: 0,
     // Tracks keys the user has changed locally but hasn't yet been flushed to
     // chrome.storage. If an external change arrives inside the debounce
     // window, we merge external values UNDER these pending keys — otherwise
@@ -81,7 +89,10 @@ const Settings = {
     _externalHandlers: [],
 
     async init() {
-        const data = await RXPlatform.storage.get('rx_settings');
+        const cacheEpochAtStart = this._cacheEpoch;
+        const data = await RXPlatform.storage.get(['rx_settings', RX_SETTINGS_GENERATION]);
+        const readGeneration = Math.max(0, Number(data[RX_SETTINGS_GENERATION]) || 0);
+        if (this._cacheEpoch === cacheEpochAtStart) this._storageGeneration = readGeneration;
         const legacy = (!data.rx_settings || typeof data.rx_settings !== 'object')
             ? await RXPlatform.migrateLegacySettings?.(this._defaults)
             : null;
@@ -95,7 +106,9 @@ const Settings = {
         // that race an external change.
         const merged = { ...this._defaults, ...sanitized };
         const pendingDuringBoot = this._pendingKeys;
-        if (this._cache && pendingDuringBoot && pendingDuringBoot.size > 0) {
+        if (this._cache && this._cacheEpoch !== cacheEpochAtStart) {
+            Object.assign(merged, this._cache);
+        } else if (this._cache && pendingDuringBoot && pendingDuringBoot.size > 0) {
             for (const key of pendingDuringBoot) {
                 if (key in this._cache) merged[key] = this._cache[key];
             }
@@ -104,11 +117,21 @@ const Settings = {
         this._lastWritten = JSON.stringify(this._cache);
         this._pendingKeys = pendingDuringBoot || new Set();
         this._ready = true;
-        if (migrated !== stored || JSON.stringify(sanitized) !== JSON.stringify(migrated)) {
-            // Persist migrations and normalization so other extension surfaces
-            // never keep reading values the content core has already rejected.
-            try { await RXPlatform.storage.patchSettings(this._cache); } catch {}
-            this._lastWritten = JSON.stringify(this._cache);
+        if (JSON.stringify(sanitized) !== JSON.stringify(stored)) {
+            // Ask the storage adapter to normalize whatever is current when
+            // this queued write commits. Writing the full object read above
+            // can resurrect values another surface changed while init waited.
+            try {
+                const written = await RXPlatform.storage.patchSettings({}, this._storageGeneration);
+                const persisted = { ...this._defaults, ...this._sanitize(written || this._cache) };
+                const liveCache = this._cache || {};
+                for (const key of this._pendingKeys || []) {
+                    if (Object.hasOwn(liveCache, key)) persisted[key] = liveCache[key];
+                }
+                this._cache = persisted;
+                this._cacheEpoch += 1;
+                this._lastWritten = JSON.stringify(written || persisted);
+            } catch {}
         }
     },
     // Pre-v2 storage shapes:
@@ -160,8 +183,13 @@ const Settings = {
         this._pendingWrite = false;
         this._pendingKeys?.clear();
         this._pendingRevisions.clear();
+        this._inFlightRevisions.clear();
+        this._writeGeneration += 1;
         const commit = async () => {
-            const written = await RXPlatform.storage.patchSettings(patch);
+            if (!RXPlatform.capabilities.persistentBackground) {
+                await rxBackupSnapshot('pre-in-page-import');
+            }
+            const written = await RXPlatform.storage.importSettings(patch);
             this._cache = { ...this._defaults, ...(written || patch) };
             this._lastWritten = JSON.stringify(this._cache);
             return this._cache;
@@ -183,31 +211,99 @@ const Settings = {
         this._pendingWrite = false;
         const snapshotObject = JSON.parse(JSON.stringify(this._cache));
         const captured = new Map(this._pendingRevisions);
+        if (!captured.size) return this._writeChain;
+        const generation = this._writeGeneration;
         const patch = Object.fromEntries(
             [...captured.keys()]
                 .filter((key) => Object.hasOwn(snapshotObject, key))
                 .map((key) => [key, snapshotObject[key]]),
         );
-        const commit = async () => {
-            try {
-                const written = await RXPlatform.storage.patchSettings(patch);
-                this._lastWritten = JSON.stringify(written || snapshotObject);
-                for (const [key, revision] of captured) {
-                    if (this._pendingRevisions.get(key) !== revision) continue;
-                    this._pendingRevisions.delete(key);
+        for (const [key, revision] of captured) {
+            if (this._pendingRevisions.get(key) === revision) this._pendingRevisions.delete(key);
+            let revisions = this._inFlightRevisions.get(key);
+            if (!revisions) {
+                revisions = new Set();
+                this._inFlightRevisions.set(key, revisions);
+            }
+            revisions.add(revision);
+        }
+
+        const prior = this._writeChain;
+        const send = () => RXPlatform.storage.patchSettings(patch, this._storageGeneration);
+        // The background worker is the extension's canonical write lane. Send
+        // immediately so a second flush is queued there before a later reset or
+        // Options save. Userscripts have no background lane, so retain local
+        // serialization for their value-store adapter.
+        const request = RXPlatform.capabilities.persistentBackground
+            ? send()
+            : prior.then(send, send);
+        request.catch(() => {});
+        const unregister = () => {
+            for (const [key, revision] of captured) {
+                const revisions = this._inFlightRevisions.get(key);
+                revisions?.delete(revision);
+                if (revisions && revisions.size === 0) this._inFlightRevisions.delete(key);
+                if (!this._pendingRevisions.has(key) && !this._inFlightRevisions.has(key)) {
                     this._pendingKeys?.delete(key);
+                }
+            }
+        };
+        const settle = async () => {
+            try {
+                const written = await request;
+                if (generation !== this._writeGeneration) {
+                    unregister();
+                    return true;
+                }
+                const persisted = { ...this._defaults, ...this._sanitize(written || snapshotObject) };
+                const liveCache = this._cache || {};
+                // Every pending key stays authoritative until all of its local
+                // revisions settle, including a newer batch already in flight.
+                for (const key of this._pendingKeys || []) {
+                    if (Object.hasOwn(liveCache, key)) persisted[key] = liveCache[key];
+                }
+                const cacheChanged = JSON.stringify(liveCache) !== JSON.stringify(persisted);
+                this._cache = persisted;
+                this._cacheEpoch += 1;
+                this._lastWritten = JSON.stringify(written || persisted);
+                unregister();
+                if (cacheChanged) {
+                    for (const fn of this._externalHandlers) {
+                        try { fn(false); } catch (e) { console.warn('[RumbleX] settings commit handler failed:', e); }
+                    }
                 }
                 return true;
             } catch (e) {
+                if (generation !== this._writeGeneration) {
+                    unregister();
+                    return false;
+                }
+                if (e?.code === 'superseded') {
+                    unregister();
+                    await this._reloadFromStorage(e.generation);
+                    return false;
+                }
                 this._lastWritten = null;
                 console.warn('[RumbleX] settings flush failed; retrying:', e);
-                this._pendingWrite = true;
-                clearTimeout(this._writeTimer);
-                this._writeTimer = setTimeout(() => this._flush(), 1000);
+                // Requeue an old value only when no newer local revision is
+                // pending or in flight. The newest failed batch owns the retry.
+                for (const [key, revision] of captured) {
+                    const revisions = this._inFlightRevisions.get(key);
+                    revisions?.delete(revision);
+                    if (revisions && revisions.size === 0) this._inFlightRevisions.delete(key);
+                    if (this._pendingRevisions.has(key) || this._inFlightRevisions.has(key)) continue;
+                    this._pendingRevisions.set(key, revision);
+                    this._pendingKeys?.add(key);
+                }
+                if (this._pendingRevisions.size > 0) {
+                    this._pendingWrite = true;
+                    clearTimeout(this._writeTimer);
+                    this._writeTimer = setTimeout(() => this._flush(), 1000);
+                }
                 return false;
             }
         };
-        this._writeChain = this._writeChain.then(commit, commit);
+        this._writeChain = prior.then(settle, settle);
         return this._writeChain;
     },
     toggle(key) {
@@ -217,6 +313,33 @@ const Settings = {
     },
     onExternalChange(fn) {
         this._externalHandlers.push(fn);
+    },
+    _applyReplacement(newValue, generation) {
+        const isReset = newValue === undefined;
+        clearTimeout(this._writeTimer);
+        this._writeTimer = null;
+        this._pendingWrite = false;
+        this._writeGeneration += 1;
+        this._pendingKeys?.clear();
+        this._pendingRevisions.clear();
+        this._inFlightRevisions.clear();
+        this._storageGeneration = Math.max(0, Number(generation) || 0);
+        this._cache = isReset
+            ? { ...this._defaults }
+            : { ...this._defaults, ...this._sanitize(newValue) };
+        this._cacheEpoch += 1;
+        this._lastWritten = isReset ? '__reset__' : JSON.stringify(newValue);
+        for (const fn of this._externalHandlers) {
+            try { fn(isReset); } catch (e) { console.warn('[RumbleX] replacement handler failed:', e); }
+        }
+    },
+    async _reloadFromStorage(generation) {
+        const target = Math.max(0, Number(generation) || 0);
+        const data = await RXPlatform.storage.get(['rx_settings', RX_SETTINGS_GENERATION]);
+        const storedGeneration = Math.max(0, Number(data[RX_SETTINGS_GENERATION]) || 0);
+        if (storedGeneration !== target) return false;
+        this._applyReplacement(data.rx_settings, target);
+        return true;
     },
     // Called by chrome.storage.onChanged when rx_settings changed in another
     // tab or from the options page. Refreshes our cache in place and fires
@@ -235,8 +358,13 @@ const Settings = {
         if (isReset) {
             // Reset is explicit user intent: wipe pending too so we don't
             // resurrect discarded values on the next flush.
+            clearTimeout(this._writeTimer);
+            this._writeTimer = null;
+            this._pendingWrite = false;
+            this._writeGeneration += 1;
             this._pendingKeys?.clear();
             this._pendingRevisions.clear();
+            this._inFlightRevisions.clear();
             this._cache = { ...this._defaults };
         } else {
             // Build the merged cache from external, then layer our still-
@@ -250,6 +378,7 @@ const Settings = {
             }
             this._cache = merged;
         }
+        this._cacheEpoch += 1;
         this._lastWritten = incoming;
         for (const fn of this._externalHandlers) {
             try { fn(isReset); } catch (e) { console.warn('[RumbleX] external-change handler failed:', e); }
@@ -259,6 +388,15 @@ const Settings = {
 
 if (RXPlatform.storage?.onChanged) {
     RXPlatform.storage.onChanged((changes) => {
+        if (changes[RX_SETTINGS_GENERATION]) {
+            const generation = changes[RX_SETTINGS_GENERATION].newValue;
+            if (changes.rx_settings) {
+                Settings._applyReplacement(changes.rx_settings.newValue, generation);
+            } else {
+                void Settings._reloadFromStorage(generation);
+            }
+            return;
+        }
         if (!changes.rx_settings) return;
         Settings._applyExternal(changes.rx_settings.newValue);
     });
@@ -279,72 +417,25 @@ window.addEventListener('pagehide', () => Settings._flush(), { capture: true });
 // localStorage: init() loads the whole store into memory before any feature
 // starts, a write updates memory at once and reaches storage at the end of
 // the current task, and writes made in other tabs arrive through onChanged.
-const RX_ACTIVITY_PREFIX = 'rx_act:';
-const RX_ACTIVITY_META = 'rx_activity_meta';
-const RX_ACTIVITY_SNAPSHOT = 'rx_activity_premigration';
-const RX_ACTIVITY_VERSION = 1;
-
-function rxMergeActivityJson(current, legacy, depth = 0) {
-    if (depth > 4) return current;
-    if (Array.isArray(current) && Array.isArray(legacy)) {
-        const identity = (item) => {
-            if (item === null || typeof item !== 'object') return `${typeof item}:${String(item)}`;
-            for (const key of ['id', 'videoId', 'url', 'query', 'username', 'channelId']) {
-                if (item[key] !== undefined && item[key] !== null) return `${key}:${String(item[key])}`;
-            }
-            try { return `json:${JSON.stringify(item)}`; } catch { return null; }
-        };
-        const merged = [];
-        const positions = new Map();
-        // Legacy entries go first. A matching extension entry then replaces it,
-        // because the extension store is authoritative once migration commits.
-        for (const item of [...legacy, ...current]) {
-            const key = identity(item);
-            if (key === null || !positions.has(key)) {
-                if (key !== null) positions.set(key, merged.length);
-                merged.push(item);
-            } else {
-                merged[positions.get(key)] = item;
-            }
-        }
-        return merged;
-    }
-    const currentPlain = current && typeof current === 'object' && !Array.isArray(current);
-    const legacyPlain = legacy && typeof legacy === 'object' && !Array.isArray(legacy);
-    if (currentPlain && legacyPlain) {
-        const merged = Object.create(null);
-        for (const [key, value] of Object.entries(legacy)) {
-            if (!['__proto__', 'prototype', 'constructor'].includes(key)) merged[key] = value;
-        }
-        for (const [key, value] of Object.entries(current)) {
-            if (['__proto__', 'prototype', 'constructor'].includes(key)) continue;
-            merged[key] = Object.hasOwn(merged, key)
-                ? rxMergeActivityJson(value, merged[key], depth + 1)
-                : value;
-        }
-        return merged;
-    }
-    return current;
-}
-
-function rxMergeActivityValue(current, legacy) {
-    if (typeof current !== 'string') return legacy;
-    if (typeof legacy !== 'string' || current === legacy) return current;
-    try {
-        return JSON.stringify(rxMergeActivityJson(JSON.parse(current), JSON.parse(legacy)));
-    } catch {
-        // Scalar and malformed legacy values cannot be merged safely. Keep the
-        // committed extension copy and leave the page copy alone until the
-        // caller has verified the authoritative value.
-        return current;
-    }
-}
+const RXActivityStore = globalThis.RumbleXActivityStore;
+if (!RXActivityStore) throw new Error('RumbleX activity store helpers are missing');
+const RX_ACTIVITY_PREFIX = RXActivityStore.PREFIX;
+const RX_ACTIVITY_META = RXActivityStore.META_KEY;
+const RX_ACTIVITY_GENERATION = RXActivityStore.GENERATION_KEY;
+const RX_ACTIVITY_SNAPSHOT = RXActivityStore.PREMIGRATION_KEY;
+const RX_ACTIVITY_TOMBSTONES = 'rx_activity_migration_tombstones';
 
 const RxActivity = {
     _mode: 'page',
     _cache: new Map(),
     _dirty: new Map(),
     _inFlight: new Set(),
+    _dirtyRevisions: new Map(),
+    _inFlightRevisions: new Map(),
+    _cacheRevisions: new Map(),
+    _writeRevision: 0,
+    _writeGeneration: 0,
+    _storageGeneration: 0,
     _flushQueued: false,
     _retryTimer: null,
     _retryDelay: 250,
@@ -372,7 +463,6 @@ const RxActivity = {
             localStorage.removeItem(key);
             return;
         }
-        if (!this._cache.has(key)) return;
         this._cache.delete(key);
         this._queue(key, null);
     },
@@ -389,6 +479,9 @@ const RxActivity = {
 
     _queue(key, value) {
         this._dirty.set(key, value);
+        const revision = ++this._writeRevision;
+        this._dirtyRevisions.set(key, revision);
+        this._cacheRevisions.set(key, revision);
         if (this._flushQueued) return;
         this._flushQueued = true;
         queueMicrotask(() => { void this.flush(); });
@@ -397,39 +490,123 @@ const RxActivity = {
     async flush() {
         this._flushQueued = false;
         if (!this._dirty.size) return;
-        const batch = [...this._dirty];
-        this._dirty.clear();
+        const generation = this._writeGeneration;
+        const batch = [...this._dirty].map(([key, value]) => ({
+            key,
+            value,
+            revision: this._dirtyRevisions.get(key),
+        }));
         const set = {};
         const remove = [];
-        for (const [key, value] of batch) {
+        for (const { key, value, revision } of batch) {
+            if (this._dirtyRevisions.get(key) === revision) {
+                this._dirty.delete(key);
+                this._dirtyRevisions.delete(key);
+            }
+            let revisions = this._inFlightRevisions.get(key);
+            if (!revisions) {
+                revisions = new Set();
+                this._inFlightRevisions.set(key, revisions);
+            }
+            revisions.add(revision);
             this._inFlight.add(key);
             if (value === null) remove.push(RX_ACTIVITY_PREFIX + key);
             else set[RX_ACTIVITY_PREFIX + key] = value;
         }
         try {
-            if (Object.keys(set).length) await RXPlatform.storage.set(set);
-            if (remove.length) await RXPlatform.storage.remove(remove);
-            clearTimeout(this._retryTimer);
-            this._retryTimer = null;
-            this._retryDelay = 250;
+            if (RXPlatform.capabilities.persistentBackground) {
+                const response = await RXPlatform.sendMessage({
+                    action: 'writeActivity',
+                    data: { set, remove, generation: this._storageGeneration },
+                });
+                if (!response?.ok && response?.reason === 'superseded') {
+                    await this._reloadFromStorage(response.generation);
+                    return false;
+                }
+                if (!response?.ok) throw new Error(response?.error || response?.reason || 'Activity write failed');
+            } else {
+                if (Object.keys(set).length) await RXPlatform.storage.set(set);
+                if (remove.length) await RXPlatform.storage.remove(remove);
+            }
+            if (generation === this._writeGeneration && this._dirty.size === 0) {
+                clearTimeout(this._retryTimer);
+                this._retryTimer = null;
+                this._retryDelay = 250;
+            }
+            if (generation !== this._writeGeneration) return false;
             return true;
         } catch (error) {
             try { RxErrorLog.record('ActivityStore', error, 'flush'); } catch {}
+            if (generation !== this._writeGeneration) return false;
             // Restore only values that have not been superseded while this
             // batch was in flight. The cache already reflects newer writes.
-            for (const [key, value] of batch) {
-                if (!this._dirty.has(key)) this._dirty.set(key, value);
+            for (const { key, value, revision } of batch) {
+                const revisions = this._inFlightRevisions.get(key);
+                revisions?.delete(revision);
+                if (revisions && revisions.size === 0) this._inFlightRevisions.delete(key);
+                if (this._dirtyRevisions.has(key) || this._inFlightRevisions.has(key)) continue;
+                this._dirty.set(key, value);
+                this._dirtyRevisions.set(key, revision);
             }
-            clearTimeout(this._retryTimer);
-            const delay = this._retryDelay;
-            this._retryDelay = Math.min(this._retryDelay * 2, 10_000);
-            this._retryTimer = setTimeout(() => { void this.flush(); }, delay);
+            if (this._dirty.size > 0) {
+                clearTimeout(this._retryTimer);
+                const delay = this._retryDelay;
+                this._retryDelay = Math.min(this._retryDelay * 2, 10_000);
+                this._retryTimer = setTimeout(() => { void this.flush(); }, delay);
+            }
             return false;
         } finally {
-            for (const [key] of batch) {
-                if (!this._dirty.has(key)) this._inFlight.delete(key);
+            for (const { key, revision } of batch) {
+                const revisions = this._inFlightRevisions.get(key);
+                revisions?.delete(revision);
+                if (revisions && revisions.size === 0) this._inFlightRevisions.delete(key);
+                if (!this._dirty.has(key) && !this._inFlightRevisions.has(key)) this._inFlight.delete(key);
             }
         }
+    },
+
+    discardPending({ clearCache = false } = {}) {
+        this._writeGeneration += 1;
+        this._flushQueued = false;
+        clearTimeout(this._retryTimer);
+        this._retryTimer = null;
+        this._retryDelay = 250;
+        this._dirty.clear();
+        this._dirtyRevisions.clear();
+        this._inFlight.clear();
+        this._inFlightRevisions.clear();
+        if (clearCache) {
+            this._cache.clear();
+            this._cacheRevisions.clear();
+        }
+    },
+
+    async _reloadFromStorage(generation) {
+        const target = Math.max(0, Number(generation) || 0);
+        if (target !== this._storageGeneration) {
+            this._storageGeneration = target;
+            this.discardPending({ clearCache: true });
+        }
+        const revisionAtStart = this._writeRevision;
+        const all = await RXPlatform.storage.get(null) || {};
+        const storedGeneration = Math.max(0, Number(all[RX_ACTIVITY_GENERATION]) || 0);
+        if (storedGeneration !== target || this._storageGeneration !== target) return false;
+        const nextCache = new Map();
+        for (const [key, value] of Object.entries(all)) {
+            if (key.startsWith(RX_ACTIVITY_PREFIX) && typeof value === 'string') {
+                nextCache.set(key.slice(RX_ACTIVITY_PREFIX.length), value);
+            }
+        }
+        // A same-generation write can start while storage.get is waiting. Its
+        // revision is newer than this read and its synchronous cache value is
+        // authoritative, even if the returned storage snapshot predates it.
+        for (const [key, revision] of this._cacheRevisions) {
+            if (revision <= revisionAtStart) continue;
+            if (this._cache.has(key)) nextCache.set(key, this._cache.get(key));
+            else nextCache.delete(key);
+        }
+        this._cache = nextCache;
+        return true;
     },
 
     // Every RumbleX key in the page's own storage: the named ones and the
@@ -458,6 +635,64 @@ const RxActivity = {
         return out;
     },
 
+    _readPageChanges(snapshot) {
+        const current = this._readPageStore();
+        const data = {};
+        const removed = new Set(this._readMigrationTombstones());
+        for (const [key, value] of Object.entries(current)) {
+            if (snapshot[key] === value) {
+                try { localStorage.removeItem(key); } catch {}
+            } else {
+                data[key] = value;
+            }
+        }
+        for (const key of Object.keys(snapshot)) {
+            if (!Object.hasOwn(current, key)) removed.add(key);
+        }
+        for (const key of Object.keys(data)) removed.delete(key);
+        this._writeMigrationTombstones([...removed]);
+        return { data, removed: [...removed] };
+    },
+
+    _readMigrationTombstones() {
+        try {
+            const parsed = JSON.parse(localStorage.getItem(RX_ACTIVITY_TOMBSTONES) || '[]');
+            return Array.isArray(parsed) ? parsed.filter((key) => this._isActivityKey(key)) : [];
+        } catch { return []; }
+    },
+
+    _writeMigrationTombstones(keys) {
+        try {
+            const safe = [...new Set(keys)].filter((key) => this._isActivityKey(key));
+            if (safe.length) localStorage.setItem(RX_ACTIVITY_TOMBSTONES, JSON.stringify(safe));
+            else localStorage.removeItem(RX_ACTIVITY_TOMBSTONES);
+        } catch {}
+    },
+
+    async _adoptPageChanges(snapshot) {
+        const changes = this._readPageChanges(snapshot);
+        if (!Object.keys(changes.data).length && !changes.removed.length) return { ok: true, skipped: true };
+        const followUp = await RXPlatform.sendMessage({
+            action: 'migrateActivity',
+            data: changes.data,
+            removed: changes.removed,
+            generation: this._storageGeneration,
+        });
+        if (followUp?.reason === 'superseded' && Number.isInteger(followUp.generation)) {
+            this._storageGeneration = followUp.generation;
+            return followUp;
+        }
+        if (followUp?.ok) {
+            for (const [key, submitted] of Object.entries(changes.data)) {
+                try {
+                    if (localStorage.getItem(key) === submitted) localStorage.removeItem(key);
+                } catch {}
+            }
+            this._writeMigrationTombstones([]);
+        }
+        return followUp;
+    },
+
     // The move itself. Order matters, because a tab can close at any point:
     // the pre-migration snapshot is written first so a rollback always has
     // something to restore, then the copies, then every copy is read back and
@@ -465,71 +700,35 @@ const RxActivity = {
     // are the page's own copies removed. Anything short of that leaves the
     // page copies authoritative and the next load starts the move over.
     async _migrate() {
-        const run = async () => {
-            const meta = (await RXPlatform.storage.get(RX_ACTIVITY_META))?.[RX_ACTIVITY_META];
-            if (meta?.version === RX_ACTIVITY_VERSION) return { ok: true, already: true, meta };
-            if (meta?.hold) return { ok: false, reason: 'held' };
-            const snapshot = this._readPageStore();
-            const keys = Object.keys(snapshot);
-            await RXPlatform.storage.set({
-                [RX_ACTIVITY_SNAPSHOT]: { at: Date.now(), version: RX_ACTIVITY_VERSION, data: snapshot },
-            });
-            const storageKeys = keys.map((key) => RX_ACTIVITY_PREFIX + key);
-            const previous = keys.length ? await RXPlatform.storage.get(storageKeys) : {};
-            // No committed version exists here, so the page snapshot remains
-            // authoritative. Existing extension keys are partial debris from
-            // an interrupted attempt and must not be merged back in.
-            const copies = Object.fromEntries(keys.map((key) => [RX_ACTIVITY_PREFIX + key, snapshot[key]]));
-            if (keys.length) {
-                await RXPlatform.storage.set(copies);
-            }
-            const readBack = keys.length
-                ? await RXPlatform.storage.get(storageKeys)
-                : {};
-            const mismatched = keys.filter((key) => readBack?.[RX_ACTIVITY_PREFIX + key] !== snapshot[key]);
-            if (mismatched.length) {
-                const restore = {};
-                const remove = [];
-                for (const storageKey of storageKeys) {
-                    if (previous?.[storageKey] === undefined) remove.push(storageKey);
-                    else restore[storageKey] = previous[storageKey];
-                }
-                if (Object.keys(restore).length) await RXPlatform.storage.set(restore);
-                if (remove.length) await RXPlatform.storage.remove(remove);
-                await RXPlatform.storage.set({
-                    [RX_ACTIVITY_META]: { version: 0, failedAt: Date.now(), reason: 'verify', mismatched: mismatched.length },
-                });
-                return { ok: false, reason: 'verify', mismatched };
-            }
-            await RXPlatform.storage.set({
-                [RX_ACTIVITY_META]: {
-                    version: RX_ACTIVITY_VERSION,
-                    migratedAt: Date.now(),
-                    keys: keys.length,
-                    origins: [location.origin],
-                },
-            });
-            for (const key of keys) {
-                try { localStorage.removeItem(key); } catch {}
-            }
-            return { ok: true, keys: keys.length };
-        };
-        // Two tabs loading at once would otherwise both copy, and the slower
-        // one could overwrite activity the faster one had already written.
         try {
-            if (navigator.locks?.request) return await navigator.locks.request('rx-activity-migration', run);
-            return await run();
+            const snapshot = this._readPageStore();
+            const tombstones = this._readMigrationTombstones();
+            const result = await RXPlatform.sendMessage({
+                action: 'migrateActivity',
+                data: snapshot,
+                removed: tombstones,
+                generation: this._storageGeneration,
+                barrierId: rxActivityMigrationBarrierId,
+            });
+            if (result?.reason === 'superseded' && Number.isInteger(result.generation)) {
+                await this._reloadFromStorage(result.generation);
+                // Generation changes are destructive replacement barriers
+                // (reset, import, restore, rollback, or rant deletion). The
+                // page snapshot predates that decision and must never be
+                // resubmitted at the new generation.
+                return { ok: false, reason: 'superseded', generation: result.generation };
+            }
+            if (!result?.ok) return result || { ok: false, reason: 'no-response' };
+            if (tombstones.length) this._writeMigrationTombstones([]);
+            // An older tab can update the same origin while the background is
+            // committing this copy. Adopt that newer value before removing it;
+            // if it changes yet again, leave the page copy for the next pass.
+            await this._adoptPageChanges(snapshot);
+            return result;
         } catch (error) {
             try { RxErrorLog.record('ActivityStore', error, 'migrate'); } catch {}
             return { ok: false, reason: 'error', error: String(error?.message || error) };
         }
-    },
-
-    async _undoCopies(keys) {
-        const extra = Object.keys(await RXPlatform.storage.get(null) || {})
-            .filter((key) => key.startsWith(RX_ACTIVITY_PREFIX));
-        const targets = [...new Set([...keys.map((key) => RX_ACTIVITY_PREFIX + key), ...extra])];
-        if (targets.length) await RXPlatform.storage.remove(targets);
     },
 
     // Puts the page copies back exactly as they were before the move, drops
@@ -538,71 +737,42 @@ const RxActivity = {
     // arrangement; clearing the hold lets the move run again.
     async rollback() {
         const stored = (await RXPlatform.storage.get(RX_ACTIVITY_SNAPSHOT))?.[RX_ACTIVITY_SNAPSHOT];
-        if (!stored?.data || typeof stored.data !== 'object') return { ok: false, reason: 'no-snapshot' };
+        const snapshot = stored?.dataByOrigin?.[location.origin] || stored?.data;
+        if (!snapshot || typeof snapshot !== 'object') return { ok: false, reason: 'no-snapshot' };
         let restored = 0;
-        for (const [key, value] of Object.entries(stored.data)) {
+        for (const [key, value] of Object.entries(snapshot)) {
             if (typeof value !== 'string' || !this._isActivityKey(key)) continue;
             try { localStorage.setItem(key, value); restored++; } catch { break; }
         }
-        await this._undoCopies(Object.keys(stored.data));
-        await RXPlatform.storage.set({ [RX_ACTIVITY_META]: { version: 0, hold: true, rolledBackAt: Date.now() } });
+        const rollback = await RXPlatform.sendMessage({ action: 'rollbackActivity' });
+        if (!rollback?.ok) return rollback || { ok: false, reason: 'no-response' };
         this._unsubscribe?.();
         this._unsubscribe = null;
         this._cache.clear();
         this._dirty.clear();
+        this._dirtyRevisions.clear();
+        this._inFlight.clear();
+        this._inFlightRevisions.clear();
+        this._writeGeneration += 1;
         this._mode = 'page';
         return { ok: true, restored };
     },
 
     async init() {
         if (!RXPlatform.capabilities.activityStorage) return { mode: 'page' };
+        const generationState = await RXPlatform.storage.get(RX_ACTIVITY_GENERATION);
+        this._storageGeneration = Math.max(0, Number(generationState?.[RX_ACTIVITY_GENERATION]) || 0);
         const migration = await this._migrate();
         if (!migration.ok) return { mode: 'page', migration };
-        const all = await RXPlatform.storage.get(null) || {};
-        for (const [key, value] of Object.entries(all)) {
-            if (key.startsWith(RX_ACTIVITY_PREFIX) && typeof value === 'string') {
-                this._cache.set(key.slice(RX_ACTIVITY_PREFIX.length), value);
-            }
-        }
         this._mode = 'extension';
-        // A move that committed but was interrupted before it removed the page
-        // copies finishes here. Where both hold a key, the version record says
-        // the extension copy is the real one. A key only the page holds (a tab
-        // still running older code can write one after the move) is adopted
-        // rather than thrown away, and page copies go only once that landed.
-        const leftovers = this._readPageStore();
-        const adopted = {};
-        const knownOrigins = Array.isArray(migration.meta?.origins) ? migration.meta.origins : [];
-        const originAlreadyMigrated = knownOrigins.includes(location.origin);
-        for (const [key, value] of Object.entries(leftovers)) {
-            const merged = originAlreadyMigrated && this._cache.has(key)
-                ? this._cache.get(key)
-                : rxMergeActivityValue(this._cache.get(key), value);
-            if (this._cache.get(key) === merged) continue;
-            this._cache.set(key, merged);
-            adopted[RX_ACTIVITY_PREFIX + key] = merged;
-        }
-        try {
-            if (Object.keys(adopted).length) await RXPlatform.storage.set(adopted);
-            if (Object.keys(adopted).length) {
-                const verified = await RXPlatform.storage.get(Object.keys(adopted));
-                const failed = Object.keys(adopted).filter((key) => verified?.[key] !== adopted[key]);
-                if (failed.length) throw new Error(`activity adoption verification failed for ${failed.length} keys`);
-            }
-            for (const key of Object.keys(leftovers)) {
-                try { localStorage.removeItem(key); } catch {}
-            }
-            const meta = (await RXPlatform.storage.get(RX_ACTIVITY_META))?.[RX_ACTIVITY_META];
-            if (Object.keys(leftovers).length && meta?.version === RX_ACTIVITY_VERSION) {
-                const origins = [...new Set([...(Array.isArray(meta.origins) ? meta.origins : []), location.origin])];
-                if (!Array.isArray(meta.origins) || origins.length !== meta.origins.length) {
-                    await RXPlatform.storage.set({ [RX_ACTIVITY_META]: { ...meta, origins } });
-                }
-            }
-        } catch (error) {
-            try { RxErrorLog.record('ActivityStore', error, 'adopt'); } catch {}
-        }
+        // Subscribe before the first full read. A reset/import that lands in
+        // this boot window is then either in the read or delivered as a
+        // generation event, never silently missed between read and subscribe.
         this._unsubscribe = RXPlatform.storage.onChanged((changes) => {
+            if (changes[RX_ACTIVITY_GENERATION]) {
+                void this._reloadFromStorage(changes[RX_ACTIVITY_GENERATION].newValue);
+                return;
+            }
             for (const [storageKey, change] of Object.entries(changes)) {
                 if (!storageKey.startsWith(RX_ACTIVITY_PREFIX)) continue;
                 const key = storageKey.slice(RX_ACTIVITY_PREFIX.length);
@@ -612,6 +782,25 @@ const RxActivity = {
                 else this._cache.delete(key);
             }
         });
+        const all = await RXPlatform.storage.get(null) || {};
+        const initialGeneration = Math.max(0, Number(all[RX_ACTIVITY_GENERATION]) || 0);
+        if (!(await this._reloadFromStorage(initialGeneration))) {
+            const current = await RXPlatform.storage.get(RX_ACTIVITY_GENERATION);
+            await this._reloadFromStorage(Math.max(0, Number(current?.[RX_ACTIVITY_GENERATION]) || 0));
+        }
+        // A move that committed but was interrupted before it removed the page
+        // copies finishes here. Where both hold a key, the version record says
+        // the extension copy is the real one. A key only the page holds (a tab
+        // still running older code can write one after the move) is adopted
+        // rather than thrown away, and page copies go only once that landed.
+        const leftovers = this._readPageStore();
+        if (Object.keys(leftovers).length) {
+            const adoption = await this._migrate();
+            if (adoption?.ok) {
+                const refreshed = await RXPlatform.storage.get(RX_ACTIVITY_GENERATION);
+                await this._reloadFromStorage(Math.max(0, Number(refreshed?.[RX_ACTIVITY_GENERATION]) || 0));
+            }
+        }
         return { mode: 'extension', migration };
     },
 };
@@ -5034,14 +5223,40 @@ const VideoDownloader = {
     async _probeUrlDirect(url, signal) {
         const timed = () => {
             // Compose per-probe timeout with the scan-wide abort signal.
-            if (typeof AbortSignal?.any === 'function' && signal) {
-                return AbortSignal.any([signal, AbortSignal.timeout(this._PROBE_TIMEOUT_MS)]);
+            const timeout = AbortSignal.timeout(this._PROBE_TIMEOUT_MS);
+            if (!signal) return { signal: timeout, dispose() {} };
+            if (typeof AbortSignal.any === 'function') {
+                return { signal: AbortSignal.any([signal, timeout]), dispose() {} };
             }
-            return AbortSignal.timeout(this._PROBE_TIMEOUT_MS);
+            const controller = new AbortController();
+            const sources = [signal, timeout];
+            const listeners = new Map();
+            const relay = (source) => {
+                if (!controller.signal.aborted) controller.abort(source.reason);
+            };
+            for (const source of sources) {
+                if (source.aborted) {
+                    relay(source);
+                    break;
+                }
+                const listener = () => relay(source);
+                listeners.set(source, listener);
+                source.addEventListener('abort', listener, { once: true });
+            }
+            return {
+                signal: controller.signal,
+                dispose() {
+                    for (const [source, listener] of listeners) {
+                        source.removeEventListener('abort', listener);
+                    }
+                    listeners.clear();
+                },
+            };
         };
         const attempt = async (init) => {
+            const composite = timed();
             try {
-                const r = await RXPlatform.fetch(url, { ...init, signal: timed() });
+                const r = await RXPlatform.fetch(url, { ...init, signal: composite.signal });
                 // Release the body immediately; we only wanted the headers.
                 r.body?.cancel?.();
                 if (r.ok || r.status === 206) {
@@ -5058,6 +5273,8 @@ const VideoDownloader = {
                 // such file" and "this CDN stopped letting the page read it".
                 if (error instanceof TypeError) return { ok: false, reason: 'cors', via: 'direct' };
                 return { ok: false, reason: 'network', via: 'direct' };
+            } finally {
+                composite.dispose();
             }
         };
         // HEAD first — cheapest and most accurate.
@@ -14141,7 +14358,6 @@ const SettingsPanel = {
                         if (new Blob([JSON.stringify(sanitized)]).size > 4.5 * 1024 * 1024) {
                             throw new Error('Sanitized settings exceed the storage-safe size limit');
                         }
-                        await rxBackupSnapshot('pre-in-page-import');
                         await Settings.replacePortable(source);
                         location.reload();
                     } catch (e) {
@@ -15357,6 +15573,7 @@ const RantPersist = {
     _MIRROR_MAX_VIDEOS: 30,
     _MIRROR_MAX_PER_VIDEO: 200,
     _mirrorWriteTimer: null,
+    _mirrorWriteGeneration: null,
 
     _videoKey() {
         const m = location.pathname.match(/^\/(v[a-z0-9]+)/);
@@ -15382,38 +15599,60 @@ const RantPersist = {
     // storage during high-volume rant streams.
     _scheduleMirrorWrite() {
         if (this._mirrorWriteTimer) return;
+        // Capture the activity barrier when the write is scheduled. A clear,
+        // reset, or restore can advance the live generation before this timer
+        // fires; reading it inside _flushMirror would let stale rant data pass
+        // the background guard and recreate history the user just removed.
+        this._mirrorWriteGeneration = RxActivity._storageGeneration;
         this._mirrorWriteTimer = setFeatureTimeout(this, () => {
             this._mirrorWriteTimer = null;
-            void this._flushMirror();
+            const generation = this._mirrorWriteGeneration;
+            this._mirrorWriteGeneration = null;
+            void this._flushMirror(generation);
         }, 1500);
     },
 
-    async _flushMirror() {
+    async _flushMirror(scheduledGeneration) {
         const videoId = this._videoIdRaw();
         if (!videoId) return;
         try {
-            const got = await RXPlatform.storage.get([this._MIRROR_KEY]);
-            const root = (got && got[this._MIRROR_KEY] && typeof got[this._MIRROR_KEY] === 'object') ? got[this._MIRROR_KEY] : { videos: {} };
-            if (!root.videos || typeof root.videos !== 'object') root.videos = {};
             const slice = (this._cached || []).filter((entry) => entry?.kind !== 'gift').slice(-this._MIRROR_MAX_PER_VIDEO);
-            const prev = root.videos[videoId] || {};
             const lastTs = slice.length ? slice[slice.length - 1].ts || Date.now() : Date.now();
-            root.videos[videoId] = {
-                title: prev.title || this._videoTitle() || videoId,
+            const entry = {
+                title: this._videoTitle() || videoId,
                 url: location.origin + location.pathname,
                 lastTs,
-                read: prev.read === true ? true : false,
                 rants: slice,
             };
-            const ids = Object.keys(root.videos);
-            if (ids.length > this._MIRROR_MAX_VIDEOS) {
-                const sorted = ids
-                    .map((id) => ({ id, ts: root.videos[id].lastTs || 0 }))
-                    .sort((a, b) => a.ts - b.ts);
-                const drop = sorted.slice(0, ids.length - this._MIRROR_MAX_VIDEOS);
-                for (const { id } of drop) delete root.videos[id];
+            if (RXPlatform.capabilities.persistentBackground) {
+                const response = await RXPlatform.sendMessage({
+                    action: 'updateRantMirror',
+                    videoId,
+                    entry,
+                    maxVideos: this._MIRROR_MAX_VIDEOS,
+                    generation: scheduledGeneration,
+                });
+                if (response?.reason === 'superseded' && Number.isInteger(response.generation)) {
+                    await RxActivity._reloadFromStorage(response.generation);
+                    return;
+                }
+                if (!response?.ok) throw new Error(response?.error || response?.reason || 'Rant history write failed');
+            } else {
+                const got = await RXPlatform.storage.get([this._MIRROR_KEY]);
+                const root = (got && got[this._MIRROR_KEY] && typeof got[this._MIRROR_KEY] === 'object') ? got[this._MIRROR_KEY] : { videos: {} };
+                if (!root.videos || typeof root.videos !== 'object') root.videos = {};
+                const prev = root.videos[videoId] || {};
+                root.videos[videoId] = { ...entry, title: prev.title || entry.title, read: prev.read === true };
+                const ids = Object.keys(root.videos);
+                if (ids.length > this._MIRROR_MAX_VIDEOS) {
+                    const sorted = ids
+                        .map((id) => ({ id, ts: root.videos[id].lastTs || 0 }))
+                        .sort((a, b) => a.ts - b.ts);
+                    const drop = sorted.slice(0, ids.length - this._MIRROR_MAX_VIDEOS);
+                    for (const { id } of drop) delete root.videos[id];
+                }
+                await RXPlatform.storage.set({ [this._MIRROR_KEY]: root });
             }
-            await RXPlatform.storage.set({ [this._MIRROR_KEY]: root });
         } catch {}
     },
 
@@ -15587,6 +15826,7 @@ const RantPersist = {
         clearChatMutationRoots(this);
         clearTimeout(this._mirrorWriteTimer);
         this._mirrorWriteTimer = null;
+        this._mirrorWriteGeneration = null;
         for (const rant of qsa('.rx-rant-persist, [data-rx-persisted]')) {
             rant.classList.remove('rx-rant-persist');
             rant.removeAttribute('data-rx-persisted');
@@ -20542,9 +20782,10 @@ const CreatorProgram = {
 
     async _pollLive() {
         if (!this._panel?.isConnected || document.visibilityState !== 'visible') return;
+        const activityGeneration = RxActivity._storageGeneration;
         let response = null;
         try { response = await RXPlatform.sendMessage({ action: 'pollLiveStreamApi' }); } catch { response = null; }
-        if (!this._panel?.isConnected) return;
+        if (!this._panel?.isConnected || activityGeneration !== RxActivity._storageGeneration) return;
         let data = null;
         let error = null;
         if (response?.ok && response.data) {
@@ -20952,6 +21193,17 @@ const CommentDrafts = {
         this._styleEl?.remove();
         this._styleEl = null;
     },
+
+    resetAfterActivityReplacement({ restore = false } = {}) {
+        for (const timer of this._saveTimers?.values() || []) clearTimeout(timer);
+        this._saveTimers?.clear();
+        for (const note of qsa('.rx-draft-note')) note.remove();
+        for (const field of this._composers()) {
+            field.value = '';
+            delete field.dataset.rxDraftRestored;
+        }
+        if (restore && this._handlers) this._restore();
+    },
 };
 
 const features = [
@@ -21106,6 +21358,23 @@ const FeatureRuntime = {
 };
 
 async function boot() {
+    let pendingLocalDataOperation = null;
+    let pendingLocalDataReady = true;
+    // Finish a durable reset/import preflight before loading settings. This
+    // prevents a tab opened during crash recovery from briefly initializing
+    // features with settings that the pending reset is about to remove.
+    try {
+        pendingLocalDataOperation = await rxGetPendingLocalDataOperation();
+        rxPreclearPendingLocalDataOperation(pendingLocalDataOperation);
+        if (pendingLocalDataOperation?.clear) {
+            const handlesCleared = await rxClearOriginPersistentHandles();
+            if (!handlesCleared) throw new Error('origin-file-handle-clear-failed');
+        }
+    } catch (e) {
+        pendingLocalDataReady = false;
+        console.warn('[RumbleX] pending local-data preflight failed:', e);
+        try { RxErrorLog?.record('LocalDataRestore', e, 'preflight'); } catch {}
+    }
     try {
         await Settings.init();
     } catch (e) {
@@ -21120,7 +21389,7 @@ async function boot() {
         try { RxErrorLog?.record('ActivityStore', e, 'init'); } catch {}
     }
     try {
-        await rxApplyPendingLocalDataOperation();
+        if (pendingLocalDataReady) await rxApplyPendingLocalDataOperation(pendingLocalDataOperation);
     } catch (e) {
         console.warn('[RumbleX] pending local-data restore failed:', e);
         try { RxErrorLog?.record('LocalDataRestore', e, 'boot'); } catch {}
@@ -21213,6 +21482,7 @@ const RX_LOCAL_STORAGE_PREFIXES = ['rx_rants_'];
 // modules that write the keys so `scripts/check-local-storage-keys.js` can hold
 // both directions from one place.
 const RX_EXTENSION_STORAGE_RESET_KEYS = [
+    'rx_popup_ui',
     'rx_rant_stats_mirror',
     'rx_probe_cache',
     // v3.58.0 — Written from the service worker rather than here. The registry
@@ -21228,6 +21498,7 @@ const RX_EXTENSION_STORAGE_RESET_KEYS = [
     // The copy of the activity in the page, taken just before it moved
     // into extension storage. It is user activity like the rest.
     'rx_activity_premigration',
+    'rx_activity_migration_journal',
 ];
 
 // Runtime `rx_` keys the reset deliberately does not drop here, and why. The
@@ -21239,6 +21510,9 @@ const RX_RESET_EXCLUSIONS = {
     rx_pending_local_data_op: 'The reset itself stages one of these for the next Rumble tab. Clearing it would cancel the per-site wipe the reset just queued.',
     rx_notification_targets: 'Lives in chrome.storage.session, which the browser discards at the end of the session on its own.',
     rx_activity_meta: 'Records that activity already moved into extension storage. Clearing it would re-run the move against an empty page store after every reset.',
+    rx_activity_generation: 'Rejects delayed activity writes from tabs that predate a reset or snapshot restore.',
+    rx_settings_generation: 'Rejects delayed settings writes from tabs that predate an import, profile switch, reset, or snapshot restore.',
+    rx_activity_migration_tombstones: 'Internal page-origin migration state is removed directly during reset preflight before activity can migrate.',
 };
 
 function rxClearLocalStorage() {
@@ -21311,26 +21585,93 @@ function rxWriteLocalStorage(data) {
     return written;
 }
 
-async function rxApplyPendingLocalDataOperation() {
+let rxActivityMigrationBarrierId = '';
+async function rxGetPendingLocalDataOperation() {
     const resp = await RXPlatform.sendMessage({ action: 'getPendingLocalDataOperation' });
-    const op = resp?.ok && resp.operation && typeof resp.operation === 'object' ? resp.operation : null;
-    if (!op?.id) return { ok: true, skipped: true };
+    rxActivityMigrationBarrierId = resp?.ok && typeof resp.barrierId === 'string' ? resp.barrierId : '';
+    return resp?.ok && resp.operation && typeof resp.operation === 'object' ? resp.operation : null;
+}
+
+function rxPreclearPendingLocalDataOperation(op) {
+    if (!op?.id) return 0;
+    if (op.clear) {
+        try { localStorage.removeItem(RX_ACTIVITY_TOMBSTONES); } catch {}
+    }
+    const cleanupKeys = Array.isArray(op.cleanupKeys)
+        ? op.cleanupKeys.filter((key) => RXActivityStore.isLocalActivityKey(key))
+        : [];
+    const keys = op.clear
+        ? Object.keys(RxActivity._readPageStore())
+        : cleanupKeys.length
+            ? cleanupKeys
+            : Object.keys(RXActivityStore.sanitizeLocalActivity(op.data));
     let cleared = 0;
-    let written = 0;
-    if (op.clear) cleared = rxClearLocalStorage();
-    if (op.data && typeof op.data === 'object') written = rxWriteLocalStorage(op.data);
-    const persisted = await RxActivity.flush();
-    if (persisted === false) return { ok: false, reason: 'storage', cleared, written, pending: true };
+    for (const key of keys) {
+        try {
+            if (localStorage.getItem(key) !== null) {
+                localStorage.removeItem(key);
+                cleared++;
+            }
+        } catch {}
+    }
+    return cleared;
+}
+
+function rxResetRantPersistenceLocalState() {
+    if (RantPersist._mirrorWriteTimer) {
+        clearTimeout(RantPersist._mirrorWriteTimer);
+        RantPersist._rxPendingTimeouts?.delete(RantPersist._mirrorWriteTimer);
+    }
+    RantPersist._mirrorWriteTimer = null;
+    RantPersist._mirrorWriteGeneration = null;
+    RantPersist._cached = [];
+}
+
+function rxHydrateRantPersistenceLocalState() {
+    const key = RantPersist._videoKey();
+    if (!key) {
+        RantPersist._cached = [];
+        return;
+    }
     try {
-        const completed = await RXPlatform.sendMessage({
-            action: 'completePendingLocalDataOperation',
-            id: op.id,
-            cleared,
-            written,
-        });
-        if (completed?.ok === false) return { ...completed, pending: true };
-    } catch {}
-    return { ok: true, cleared, written };
+        const parsed = JSON.parse(RxActivity.getItem(key) || '[]');
+        RantPersist._cached = Array.isArray(parsed)
+            ? parsed.filter((entry) => entry && typeof entry === 'object').slice(-RantPersist._MAX_PER_VIDEO)
+            : [];
+    } catch {
+        RantPersist._cached = [];
+    }
+}
+
+async function rxClearOriginPersistentHandles() {
+    BatchDownload._folderHandle = null;
+    if (!RxFsAccess.isSupported()) return true;
+    return RxFsAccess.deleteHandle(BatchDownload._FOLDER_IDB_KEY);
+}
+
+async function rxApplyPendingLocalDataOperation(operation = null) {
+    const op = operation || await rxGetPendingLocalDataOperation();
+    if (!op?.id) return { ok: true, skipped: true };
+    const result = await RXPlatform.sendMessage({
+        action: 'applyPendingLocalDataOperation',
+        id: op.id,
+    });
+    if (!result?.ok || !result.applied) return result || { ok: false, reason: 'no-response' };
+
+    if (result.clear) rxResetRantPersistenceLocalState();
+    const data = RXActivityStore.sanitizeLocalActivity(result.data);
+    if (Number.isInteger(result.generation) && result.generation >= 0) {
+        const loaded = await RxActivity._reloadFromStorage(result.generation);
+        if (loaded && result.clear) rxHydrateRantPersistenceLocalState();
+    } else {
+        if (result.clear) RxActivity.discardPending({ clearCache: true });
+        for (const [key, value] of Object.entries(data)) RxActivity._cache.set(key, value);
+    }
+    return {
+        ...result,
+        cleared: Math.max(0, Number(result.cleared) || 0),
+        written: Object.keys(data).length,
+    };
 }
 
 // ═══════════════════════════════════════════
@@ -21342,6 +21683,7 @@ async function rxApplyPendingLocalDataOperation() {
 // counter, a storage size, or a permission boolean from the manifest.
 const RX_PRIVACY_PERMISSION_DISCLOSURES = Object.freeze({
     'storage': 'Stores RumbleX settings, backup snapshots, local queue metadata, and opt-in sync configuration in extension storage.',
+    'unlimitedStorage': 'Keeps large local settings profiles and their bounded undo snapshots from failing at the browser\'s small default extension-storage quota.',
     'downloads': 'Starts browser-managed downloads for user-requested video, archive, clip, subtitle, settings, and diagnostic exports.',
     'offscreen': 'Uses a Chrome MV3 offscreen extension page for DOM parsing and blob/hash work that service workers cannot perform.',
     'contextMenus': 'Adds local right-click actions for RumbleX-owned workflows.',
@@ -21526,20 +21868,27 @@ function rxBuildPrivacyReport() {
 // stays bounded. Called automatically before destructive ops (import,
 // reset) by the options page once it adopts the new message action.
 async function rxBackupSnapshot(reason) {
-    if (!Settings.get('backupHistory')) return { ok: false, reason: 'disabled' };
-    const limit = Math.max(1, Number(Settings.get('backupHistoryLimit')) || 10);
     try {
-        const cur = await RXPlatform.storage.get(['rx_settings', 'rx_settings_snapshots']);
-        const snapshot = {
-            at: Date.now(),
+        if (!RXPlatform.capabilities.persistentBackground) {
+            if (!Settings.get('backupHistory')) return { ok: false, reason: 'disabled' };
+            const limit = Math.max(1, Number(Settings.get('backupHistoryLimit')) || 10);
+            const cur = await RXPlatform.storage.get(['rx_settings', 'rx_settings_snapshots']);
+            const snapshot = {
+                at: Date.now(),
+                reason: typeof reason === 'string' ? reason.slice(0, 80) : 'manual',
+                settings: cur.rx_settings || {},
+            };
+            const next = Array.isArray(cur.rx_settings_snapshots) ? cur.rx_settings_snapshots.slice() : [];
+            next.push(snapshot);
+            while (next.length > limit) next.shift();
+            await RXPlatform.storage.set({ rx_settings_snapshots: next });
+            return { ok: true, count: next.length, at: snapshot.at };
+        }
+        return await RXPlatform.sendMessage({
+            action: 'createSettingsSnapshot',
             reason: typeof reason === 'string' ? reason.slice(0, 80) : 'manual',
-            settings: cur.rx_settings || {},
-        };
-        const next = Array.isArray(cur.rx_settings_snapshots) ? cur.rx_settings_snapshots.slice() : [];
-        next.push(snapshot);
-        while (next.length > limit) next.shift();
-        await RXPlatform.storage.set({ rx_settings_snapshots: next });
-        return { ok: true, count: next.length };
+            captureActivity: true,
+        });
     } catch (e) {
         return { ok: false, reason: 'storage', error: String(e?.message || e) };
     }
@@ -21547,26 +21896,35 @@ async function rxBackupSnapshot(reason) {
 
 async function rxListSnapshots() {
     try {
-        const cur = await RXPlatform.storage.get('rx_settings_snapshots');
-        const list = Array.isArray(cur.rx_settings_snapshots) ? cur.rx_settings_snapshots : [];
-        // Strip the actual settings blob so the list endpoint is cheap;
-        // a separate restore call fetches the full snapshot by index/at.
-        return list.map((s, i) => ({ index: i, at: s.at, reason: s.reason }));
+        if (!RXPlatform.capabilities.persistentBackground) {
+            const cur = await RXPlatform.storage.get('rx_settings_snapshots');
+            const list = Array.isArray(cur.rx_settings_snapshots) ? cur.rx_settings_snapshots : [];
+            return list.map((snapshot, index) => ({
+                index,
+                at: snapshot.at,
+                reason: snapshot.reason,
+            }));
+        }
+        const response = await RXPlatform.sendMessage({ action: 'listSettingsSnapshots' });
+        return response?.ok && Array.isArray(response.snapshots) ? response.snapshots : [];
     } catch { return []; }
 }
 
 async function rxRestoreSnapshot(indexOrAt) {
     try {
-        const cur = await RXPlatform.storage.get('rx_settings_snapshots');
-        const list = Array.isArray(cur.rx_settings_snapshots) ? cur.rx_settings_snapshots : [];
-        const snap = typeof indexOrAt === 'number' && indexOrAt < list.length
-            ? list[indexOrAt]
-            : list.find((s) => s.at === indexOrAt);
-        if (!snap) return { ok: false, reason: 'not-found' };
-        // Snapshot BEFORE we overwrite, so an unwanted restore is itself undoable.
-        await rxBackupSnapshot('pre-restore');
-        await RXPlatform.storage.patchSettings({ ...Settings._defaults, ...Settings._sanitize(snap.settings) });
-        return { ok: true, restored: { at: snap.at, reason: snap.reason } };
+        if (!RXPlatform.capabilities.persistentBackground) {
+            const cur = await RXPlatform.storage.get('rx_settings_snapshots');
+            const list = Array.isArray(cur.rx_settings_snapshots) ? cur.rx_settings_snapshots : [];
+            const snap = Number.isInteger(indexOrAt) && indexOrAt >= 0 && indexOrAt < list.length
+                ? list[indexOrAt]
+                : list.find((item) => item?.at === indexOrAt);
+            if (!snap) return { ok: false, reason: 'not-found' };
+            await rxBackupSnapshot('pre-restore');
+            const settings = { ...Settings._defaults, ...Settings._sanitize(snap.settings) };
+            await RXPlatform.storage.set({ rx_settings: settings });
+            return { ok: true, restored: { at: snap.at, reason: snap.reason } };
+        }
+        return await RXPlatform.sendMessage({ action: 'restoreSettingsSnapshot', indexOrAt });
     } catch (e) {
         return { ok: false, reason: 'storage', error: String(e?.message || e) };
     }
@@ -21580,13 +21938,23 @@ RXPlatform.onMessage((msg, sender, sendResponse) => {
         return;
     }
     if (msg.action === 'clearLocalData') {
-        const cleared = rxClearLocalStorage();
-        RxActivity.flush()
-            .then((persisted) => sendResponse(persisted === false
-                ? { ok: false, reason: 'storage', cleared }
-                : { ok: true, cleared }))
+        const cleared = RxActivity.clearPageCopies();
+        try { localStorage.removeItem(RX_ACTIVITY_TOMBSTONES); } catch {}
+        RxActivity.discardPending({ clearCache: true });
+        if (Number.isInteger(msg.generation) && msg.generation >= 0) {
+            RxActivity._storageGeneration = msg.generation;
+        }
+        rxResetRantPersistenceLocalState();
+        CommentDrafts.resetAfterActivityReplacement();
+        Promise.all([
+            rxClearOriginPersistentHandles(),
+            MediaProbeCache.invalidate(),
+        ])
+            .then(([handlesCleared]) => sendResponse(handlesCleared
+                ? { ok: true, cleared, handlesCleared: true, probeCacheCleared: true }
+                : { ok: false, reason: 'origin-file-handle-clear-failed', cleared }))
             .catch((error) => sendResponse({ ok: false, reason: String(error?.message || error), cleared }));
-        return true; // keep the channel open for async sendResponse
+        return true;
     }
     if (msg.action === 'getLocalData') {
         const data = rxReadLocalStorage();
@@ -21594,12 +21962,63 @@ RXPlatform.onMessage((msg, sender, sendResponse) => {
         return true;
     }
     if (msg.action === 'setLocalData') {
-        const written = rxWriteLocalStorage(msg.data);
+        const data = RXActivityStore.sanitizeLocalActivity(msg.data);
+        if (msg.clear === true) RxActivity.clearPageCopies();
+        else {
+            for (const key of Object.keys(data)) {
+                try { localStorage.removeItem(key); } catch {}
+            }
+        }
+        if (msg.resetRantCache === true) rxResetRantPersistenceLocalState();
+        if (msg.clear === true) CommentDrafts.resetAfterActivityReplacement();
+        if (Number.isInteger(msg.generation) && msg.generation >= 0) {
+            RxActivity.discardPending({ clearCache: true });
+            RxActivity._reloadFromStorage(msg.generation)
+                .then((loaded) => {
+                    if (loaded && msg.resetRantCache === true) rxHydrateRantPersistenceLocalState();
+                    if (loaded && msg.clear === true) CommentDrafts.resetAfterActivityReplacement({ restore: true });
+                    sendResponse(loaded
+                        ? { ok: true, written: Object.keys(data).length }
+                        : { ok: false, reason: 'superseded', written: 0 });
+                })
+                .catch((error) => sendResponse({ ok: false, reason: String(error?.message || error), written: 0 }));
+            return true;
+        }
+        const written = rxWriteLocalStorage(data);
         RxActivity.flush()
             .then((persisted) => sendResponse(persisted === false
                 ? { ok: false, reason: 'storage', written }
                 : { ok: true, written }))
             .catch((error) => sendResponse({ ok: false, reason: String(error?.message || error), written }));
+        return true;
+    }
+    if (msg.action === 'invalidateRantMirror') {
+        const currentVideoId = RantPersist._videoIdRaw();
+        const affectsCurrent = msg.operation === 'clear'
+            || (msg.operation === 'remove' && currentVideoId === msg.videoId)
+            || msg.operation === 'replace';
+        if (msg.operation === 'clear') {
+            for (const key of Object.keys(RxActivity._readPageStore())) {
+                if (!key.startsWith('rx_rants_')) continue;
+                try { localStorage.removeItem(key); } catch {}
+            }
+        } else if (msg.operation === 'remove' && msg.videoId) {
+            try { localStorage.removeItem('rx_rants_' + msg.videoId); } catch {}
+        }
+        if (affectsCurrent) rxResetRantPersistenceLocalState();
+        if (Number.isInteger(msg.generation) && msg.generation >= 0) {
+            RxActivity.discardPending({ clearCache: true });
+            RxActivity._reloadFromStorage(msg.generation)
+                .then((loaded) => {
+                    if (loaded && affectsCurrent) rxHydrateRantPersistenceLocalState();
+                    sendResponse(loaded
+                        ? { ok: true, invalidated: affectsCurrent }
+                        : { ok: false, reason: 'superseded' });
+                })
+                .catch((error) => sendResponse({ ok: false, reason: String(error?.message || error) }));
+            return true;
+        }
+        sendResponse({ ok: true, invalidated: affectsCurrent });
         return true;
     }
     if (msg.action === 'directDownloadInterrupted') {

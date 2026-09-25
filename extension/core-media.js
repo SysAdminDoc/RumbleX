@@ -307,6 +307,8 @@ const MediaProbeCache = {
     _mem: null,       // { [key]: { at: number, val: any } }
     _ready: false,
     _loadPromise: null,
+    _epoch: 0,
+    _held: false,
     async _load() {
         if (this._ready) return;
         if (!this._loadPromise) {
@@ -330,8 +332,9 @@ const MediaProbeCache = {
         return hrs * 3600 * 1000;
     },
     async get(key) {
-        if (!key) return null;
+        if (!key || this._held) return null;
         await this._load();
+        if (this._held) return null;
         const entry = this._mem[key];
         if (!entry) return null;
         const ttl = this._ttlMs();
@@ -349,9 +352,11 @@ const MediaProbeCache = {
     // Oldest-first eviction keeps the single storage blob well inside quota.
     _MAX_ENTRIES: 2000,
     async set(key, val) {
-        if (!key) return;
+        if (!key || this._held) return;
+        const epoch = this._epoch;
         if (this._ttlMs() === 0) return; // don't persist if cache is disabled
         await this._load();
+        if (this._held || epoch !== this._epoch) return;
         this._mem[key] = { at: Date.now(), val };
         const keys = Object.keys(this._mem);
         if (keys.length > this._MAX_ENTRIES) {
@@ -360,20 +365,26 @@ const MediaProbeCache = {
                 delete this._mem[stale];
             }
         }
-        this._scheduleFlush();
+        this._scheduleFlush(epoch);
     },
-    async clear() {
-        await this._load();
+    async clear({ hold = false } = {}) {
+        this._epoch++;
+        this._held = hold === true;
         clearTimeout(this._flushTimer);
         this._flushTimer = null;
+        await this._load();
         this._mem = {};
         try { await RXPlatform.storage.remove(this._KEY); } catch {}
     },
+    async invalidate() {
+        return this.clear({ hold: true });
+    },
     _flushTimer: null,
-    _scheduleFlush() {
+    _scheduleFlush(epoch = this._epoch) {
         clearTimeout(this._flushTimer);
         this._flushTimer = setTimeout(() => {
             this._flushTimer = null;
+            if (this._held || epoch !== this._epoch) return;
             try {
                 void Promise.resolve(RXPlatform.storage.set({ [this._KEY]: this._mem })).catch(() => {});
             } catch {}

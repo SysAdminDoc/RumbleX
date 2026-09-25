@@ -99,6 +99,130 @@ test('portable settings import accepts a valid payload above the old 2 MiB bound
     expect(result.videos).toBe(750);
 });
 
+test('partial stored settings still use the default-enabled snapshot history', async ({ context, extensionId }) => {
+    const page = await context.newPage();
+    await page.goto(`chrome-extension://${extensionId}/pages/options.html`);
+    await page.evaluate(() => chrome.storage.local.set({
+        rx_settings: { schemaVersion: 4, wideLayout: false },
+        rx_settings_snapshots: [],
+    }));
+
+    const response = await page.evaluate(() => chrome.runtime.sendMessage({
+        action: 'createSettingsSnapshot',
+        reason: 'partial-settings-defaults',
+    }));
+    expect(response.ok).toBe(true);
+    const stored = await page.evaluate(async () => (
+        (await chrome.storage.local.get('rx_settings_snapshots')).rx_settings_snapshots || []
+    ));
+    expect(stored).toHaveLength(1);
+});
+
+test('large settings can be saved, restored as a profile, and encrypted for Gist sync', async ({ context, serviceWorker, extensionId }) => {
+    test.setTimeout(120_000);
+    const page = await context.newPage();
+    await page.goto(`chrome-extension://${extensionId}/pages/options.html`);
+    const passphrase = 'large payload fixture passphrase';
+
+    const seeded = await page.evaluate(async () => {
+        const sponsorSegments = {};
+        for (let video = 0; video < 750; video += 1) {
+            sponsorSegments[`v${video}`] = Array.from({ length: 80 }, (_, segment) => ({
+                start: segment * 10,
+                end: segment * 10 + 5,
+                category: 'selfpromo',
+            }));
+        }
+        const data = {
+            sponsorSegments,
+            encryptedGistSync: true,
+            encryptedGistSyncToken: 'github_pat_large_fixture',
+            encryptedGistSyncId: 'large-fixture-id',
+            backupHistory: true,
+            backupHistoryLimit: 10,
+        };
+        const bytes = new TextEncoder().encode(JSON.stringify(data)).byteLength;
+        const save = await chrome.runtime.sendMessage({ action: 'saveSettings', data });
+        const snapshot = await chrome.runtime.sendMessage({
+            action: 'createSettingsSnapshot',
+            reason: 'large-message-receipt',
+        });
+        const restore = await chrome.runtime.sendMessage({
+            action: 'restoreProfile',
+            profile: { id: 'p_large', name: 'Large', createdAt: Date.now(), settings: data },
+        });
+        return { bytes, save, snapshot, snapshotBytes: JSON.stringify(snapshot).length, restore };
+    });
+    expect(seeded.bytes).toBeGreaterThan(2 * 1024 * 1024);
+    expect(seeded.bytes).toBeLessThan(4.5 * 1024 * 1024);
+    expect(seeded.save.success).toBe(true);
+    expect(seeded.snapshot.ok).toBe(true);
+    expect(seeded.snapshotBytes).toBeLessThan(512);
+    expect(seeded.restore.ok).toBe(true);
+
+    await serviceWorker.evaluate(() => {
+        const originalFetch = globalThis.fetch;
+        globalThis.__rxLargeGistOriginalFetch = originalFetch;
+        globalThis.fetch = async (url, init) => {
+            if (String(url).startsWith('https://api.github.com/gists/')) {
+                globalThis.__rxLargeGistBody = String(init?.body || '');
+                return new Response(JSON.stringify({ id: 'large-fixture-id' }), {
+                    status: 200,
+                    headers: { 'Content-Type': 'application/json' },
+                });
+            }
+            return originalFetch(url, init);
+        };
+    });
+
+    const pushed = await page.evaluate((secret) => chrome.runtime.sendMessage({
+        action: 'gistSyncPush',
+        passphrase: secret,
+    }), passphrase);
+    expect(pushed.ok).toBe(true);
+
+    const verified = await serviceWorker.evaluate(async (secret) => {
+        try {
+            const request = JSON.parse(globalThis.__rxLargeGistBody);
+            const payload = JSON.parse(request.files['rumblex-settings.enc.json'].content).rumblex;
+            const fromB64 = (value) => Uint8Array.from(atob(value), (char) => char.charCodeAt(0));
+            const baseKey = await crypto.subtle.importKey(
+                'raw', new TextEncoder().encode(secret), { name: 'PBKDF2' }, false, ['deriveKey'],
+            );
+            const key = await crypto.subtle.deriveKey(
+                {
+                    name: 'PBKDF2',
+                    salt: fromB64(payload.salt),
+                    iterations: 200000,
+                    hash: 'SHA-256',
+                },
+                baseKey,
+                { name: 'AES-GCM', length: 256 },
+                false,
+                ['decrypt'],
+            );
+            const plaintext = await crypto.subtle.decrypt(
+                { name: 'AES-GCM', iv: fromB64(payload.iv) },
+                key,
+                fromB64(payload.ciphertext),
+            );
+            const settings = JSON.parse(new TextDecoder().decode(plaintext));
+            return {
+                requestBytes: new TextEncoder().encode(globalThis.__rxLargeGistBody).byteLength,
+                videos: Object.keys(settings.sponsorSegments || {}).length,
+                hasToken: Object.hasOwn(settings, 'encryptedGistSyncToken'),
+            };
+        } finally {
+            globalThis.fetch = globalThis.__rxLargeGistOriginalFetch;
+            delete globalThis.__rxLargeGistOriginalFetch;
+            delete globalThis.__rxLargeGistBody;
+        }
+    }, passphrase);
+    expect(verified.requestBytes).toBeGreaterThan(2 * 1024 * 1024);
+    expect(verified.videos).toBe(750);
+    expect(verified.hasToken).toBe(false);
+});
+
 test('encrypted Gist pull preserves local credentials but rejects unsafe settings', async ({ context, serviceWorker, extensionId }) => {
     const page = await context.newPage();
     await page.goto(`chrome-extension://${extensionId}/pages/options.html`);
@@ -328,4 +452,45 @@ test('switching a profile actually writes its pre-switch snapshot', async ({ con
         (await chrome.storage.local.get('rx_settings_snapshots')).rx_settings_snapshots || []
     ));
     expect(snapshots.some((s) => s.reason === 'pre-profile-switch')).toBe(true);
+});
+
+test('a failed pre-switch snapshot leaves the current profile untouched', async ({ context, serviceWorker, extensionId }) => {
+    const page = await context.newPage();
+    await page.goto(`chrome-extension://${extensionId}/pages/options.html`);
+    await page.evaluate(() => chrome.storage.local.set({
+        rx_settings: { schemaVersion: 4, backupHistory: true, backupHistoryLimit: 10, wideLayout: false },
+        rx_settings_snapshots: [],
+        rx_settings_profiles: [{
+            id: 'p_atomic',
+            name: 'Atomic',
+            createdAt: Date.now(),
+            settings: { schemaVersion: 4, backupHistory: true, backupHistoryLimit: 10, wideLayout: true },
+        }],
+    }));
+    await serviceWorker.evaluate(() => {
+        const realSet = chrome.storage.local.set.bind(chrome.storage.local);
+        let failOnce = true;
+        chrome.storage.local.set = async (items, callback) => {
+            if (failOnce && items.rx_settings && items.rx_settings_snapshots) {
+                failOnce = false;
+                chrome.storage.local.set = realSet;
+                throw new Error('snapshot storage unavailable');
+            }
+            return realSet(items, callback);
+        };
+    });
+
+    const response = await page.evaluate(() => chrome.runtime.sendMessage({
+        action: 'switchProfile',
+        id: 'p_atomic',
+    }));
+    expect(response.ok).toBe(false);
+    expect(response.reason).toContain('snapshot storage unavailable');
+    const after = await page.evaluate(async () => chrome.storage.local.get([
+        'rx_settings',
+        'rx_settings_snapshots',
+    ]));
+    expect(after.rx_settings.wideLayout).toBe(false);
+    expect(after.rx_settings.activeProfileId).toBeUndefined();
+    expect(after.rx_settings_snapshots).toEqual([]);
 });

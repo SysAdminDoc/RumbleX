@@ -137,11 +137,12 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     }
 
     if (msg.action === 'pauseArchiveWrites') {
+        const wasPaused = rxArchiveWritesPaused;
         rxArchiveWritesPaused = true;
         rxArchiveWriteGeneration++;
         const active = rxArchiveWriteControllers.size;
         for (const controller of rxArchiveWriteControllers.values()) controller.abort('network-offline');
-        sendResponse({ ok: true, paused: true, active });
+        sendResponse({ ok: true, paused: true, wasPaused, active });
         return false;
     }
 

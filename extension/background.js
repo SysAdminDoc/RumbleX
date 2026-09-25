@@ -5,6 +5,7 @@
 // loads them before background.js through manifest-firefox.json.
 if (typeof importScripts === 'function') {
     if (!globalThis.RumbleXSettingsSchema) importScripts('settings-schema.js');
+    if (!globalThis.RumbleXActivityStore) importScripts('activity-store.js');
     try { importScripts('archive-fs.js'); } catch (error) {
         console.warn('[RumbleX] archive folder helper unavailable:', error);
     }
@@ -12,43 +13,11 @@ if (typeof importScripts === 'function') {
 
 const RXSettingsSchema = globalThis.RumbleXSettingsSchema;
 if (!RXSettingsSchema) throw new Error('RumbleX settings schema is missing');
+const RXActivityStore = globalThis.RumbleXActivityStore;
+if (!RXActivityStore) throw new Error('RumbleX activity store helpers are missing');
 
 function rxNormalizeSettings(value) {
     return RXSettingsSchema.normalizeStored(value, RXSettingsSchema.DEFAULTS);
-}
-
-// Take a settings snapshot from the service worker.
-//
-// The SW cannot reach the content script's `backupSnapshot` handler:
-// chrome.runtime.sendMessage does not deliver to content scripts (that needs
-// chrome.tabs.sendMessage), and a service worker never receives its own
-// runtime messages either. switchProfile fired exactly that call inside a
-// `try {} catch {}`, so its documented pre-switch snapshot silently never
-// happened. Write the snapshot here instead, mirroring rxBackupSnapshot in
-// content.js so both surfaces honor the same opt-out and the same limit.
-async function rxWriteSettingsSnapshot(reason, settingsOverride) {
-    try {
-        const cur = await chrome.storage.local.get(['rx_settings', 'rx_settings_snapshots']);
-        const settings = settingsOverride !== undefined
-            ? settingsOverride
-            : (cur.rx_settings || {});
-        // Respect the user's opt-out, exactly as the content-script path does.
-        if (!rxNormalizeSettings(cur.rx_settings || {}).backupHistory) {
-            return { ok: false, reason: 'disabled' };
-        }
-        const limit = Math.max(1, Number(rxNormalizeSettings(cur.rx_settings || {}).backupHistoryLimit) || 10);
-        const next = Array.isArray(cur.rx_settings_snapshots) ? cur.rx_settings_snapshots.slice() : [];
-        next.push({
-            at: Date.now(),
-            reason: typeof reason === 'string' ? reason.slice(0, 80) : 'manual',
-            settings,
-        });
-        while (next.length > limit) next.shift();
-        await chrome.storage.local.set({ rx_settings_snapshots: next });
-        return { ok: true, count: next.length };
-    } catch (e) {
-        return { ok: false, reason: 'storage', error: String(e?.message || e) };
-    }
 }
 
 // Guard rails for download URLs accepted from the content script. We trust
@@ -61,58 +30,442 @@ const ALLOWED_DOWNLOAD_HOSTS = [
     'rumble.cloud',
 ];
 const PENDING_LOCAL_DATA_OP_KEY = 'rx_pending_local_data_op';
+const RX_CANONICAL_RUMBLE_ORIGINS = Object.freeze([
+    'https://rumble.com',
+    'https://www.rumble.com',
+]);
 
-async function rxGetPendingLocalDataOperation() {
+function rxTrustedRumbleOrigin(value) {
     try {
-        const got = await chrome.storage.local.get(PENDING_LOCAL_DATA_OP_KEY);
-        const op = got[PENDING_LOCAL_DATA_OP_KEY];
-        return op && typeof op === 'object' ? op : null;
+        const parsed = new URL(String(value || ''));
+        if (!['http:', 'https:'].includes(parsed.protocol)) return null;
+        if (parsed.hostname !== 'rumble.com' && !parsed.hostname.endsWith('.rumble.com')) return null;
+        return parsed.origin;
     } catch {
         return null;
     }
 }
 
-async function rxStagePendingLocalDataOperation({ source, clear = false, data = null }) {
-    const existing = await rxGetPendingLocalDataOperation();
-    const payload = data && typeof data === 'object' ? data : null;
-    const op = {
-        id: String(Date.now()) + '-' + Math.random().toString(16).slice(2),
-        source: source || 'unknown',
-        createdAt: Date.now(),
-        clear: clear || !!existing?.clear,
-        data: payload || existing?.data || null,
-        keyCount: payload ? Object.keys(payload).length : (existing?.keyCount || 0),
-    };
-    if (clear && !payload) {
-        op.data = null;
-        op.keyCount = 0;
-    }
-    await chrome.storage.local.set({ [PENDING_LOCAL_DATA_OP_KEY]: op });
-    return op;
+function rxSenderRumbleOrigin(sender) {
+    return rxTrustedRumbleOrigin(sender?.url || sender?.tab?.url || '');
 }
 
-async function rxCompletePendingLocalDataOperation(id, { cleared = 0, written = 0 } = {}) {
-    const current = await rxGetPendingLocalDataOperation();
-    if (!current || current.id !== id) return { ok: true, cleared: false };
-    if (current.keyCount > 0 && written < current.keyCount) {
-        await chrome.storage.local.set({
-            [PENDING_LOCAL_DATA_OP_KEY]: {
+function rxPendingOperationOrigins(op) {
+    const source = Array.isArray(op?.remainingOrigins)
+        ? op.remainingOrigins
+        : Array.isArray(op?.targetOrigins)
+            ? op.targetOrigins
+            : null;
+    if (!source) return null;
+    return [...new Set(source.map(rxTrustedRumbleOrigin).filter(Boolean))];
+}
+
+function rxPendingOperationTargetsOrigin(op, origin) {
+    if (op?.allTrustedOrigins === true) {
+        if (!origin) return true;
+        const trusted = rxTrustedRumbleOrigin(origin);
+        if (!trusted) return false;
+        const completed = Array.isArray(op.completedOrigins)
+            ? op.completedOrigins.map(rxTrustedRumbleOrigin).filter(Boolean)
+            : [];
+        return !completed.includes(trusted);
+    }
+    const targets = rxPendingOperationOrigins(op);
+    return !targets || !origin || targets.includes(origin);
+}
+
+async function rxReadPendingLocalDataOperation() {
+    const got = await chrome.storage.local.get(PENDING_LOCAL_DATA_OP_KEY);
+    const op = got[PENDING_LOCAL_DATA_OP_KEY];
+    return op && typeof op === 'object' ? op : null;
+}
+
+async function rxGetPendingLocalDataOperation(origin = null) {
+    await rxSettingsWriteChain.catch(() => {});
+    const op = await rxReadPendingLocalDataOperation();
+    return op && rxPendingOperationTargetsOrigin(op, origin) ? op : null;
+}
+
+function rxCompletePendingLocalDataOperation(id, { cleared = 0, written = 0, origin = null } = {}) {
+    return rxQueueStorageMutation(async () => {
+        const current = await rxReadPendingLocalDataOperation();
+        if (!current || current.id !== id) return { ok: true, cleared: false };
+        if (!rxPendingOperationTargetsOrigin(current, origin)) {
+            return { ok: true, cleared: false, reason: 'origin-not-targeted' };
+        }
+        if (current.extensionApplied !== true && current.keyCount > 0 && written < current.keyCount) {
+            await chrome.storage.local.set({
+                [PENDING_LOCAL_DATA_OP_KEY]: {
+                    ...current,
+                    lastAttemptAt: Date.now(),
+                    lastWritten: Math.max(0, Number(written) || 0),
+                    lastCleared: Math.max(0, Number(cleared) || 0),
+                },
+            });
+            return {
+                ok: false,
+                cleared: false,
+                reason: 'partial-write',
+                expected: current.keyCount,
+                written: Math.max(0, Number(written) || 0),
+            };
+        }
+        if (current.allTrustedOrigins === true && origin) {
+            const trusted = rxTrustedRumbleOrigin(origin);
+            const completedOrigins = [...new Set([
+                ...(Array.isArray(current.completedOrigins) ? current.completedOrigins : []),
+                trusted,
+            ].map(rxTrustedRumbleOrigin).filter(Boolean))];
+            const remainingOrigins = (rxPendingOperationOrigins(current) || [])
+                .filter((item) => !completedOrigins.includes(item));
+            await chrome.storage.local.set({
+                [PENDING_LOCAL_DATA_OP_KEY]: {
+                    ...current,
+                    completedOrigins,
+                    remainingOrigins,
+                    lastAttemptAt: Date.now(),
+                    lastWritten: Math.max(0, Number(written) || 0),
+                    lastCleared: Math.max(0, Number(cleared) || 0),
+                },
+            });
+            return { ok: true, cleared: true, remainingOrigins, allTrustedOrigins: true };
+        }
+        const remaining = rxPendingOperationOrigins(current);
+        if (remaining && origin) {
+            const next = remaining.filter((item) => item !== origin);
+            if (next.length) {
+                await chrome.storage.local.set({
+                    [PENDING_LOCAL_DATA_OP_KEY]: {
+                        ...current,
+                        remainingOrigins: next,
+                        lastAttemptAt: Date.now(),
+                    },
+                });
+                return { ok: true, cleared: true, remainingOrigins: next };
+            }
+        }
+        await chrome.storage.local.remove(PENDING_LOCAL_DATA_OP_KEY);
+        return { ok: true, cleared: true, remainingOrigins: [] };
+    });
+}
+
+async function rxReplayPendingResetExtensionState(current, stored = null) {
+    const snapshot = stored || await chrome.storage.local.get(null);
+    const activityKeys = current.extensionApplied !== true
+        ? Object.keys(snapshot).filter((key) => key.startsWith(RXActivityStore.PREFIX))
+        : [];
+    if (current.extensionApplied !== true) {
+        const removeKeys = [...new Set([...RX_RESET_REMOVE_KEYS, ...activityKeys])]
+            .filter((key) => key !== PENDING_LOCAL_DATA_OP_KEY);
+        if (removeKeys.length) await chrome.storage.local.remove(removeKeys);
+    }
+    if (current.archiveHandleApplied !== true) {
+        if (!globalThis.RxArchiveFsAccess?.deleteHandle) {
+            throw new Error('Archive folder cleanup is unavailable');
+        }
+        await globalThis.RxArchiveFsAccess.deleteHandle();
+    }
+    return {
+        stored: snapshot,
+        cleared: activityKeys.length,
+        generation: Number.isInteger(current.activityGeneration)
+            ? current.activityGeneration
+            : Math.max(0, Number(snapshot[RXActivityStore.GENERATION_KEY]) || 0),
+    };
+}
+
+function rxApplyPendingLocalDataOperation(id, origin) {
+    return rxQueueStorageMutation(async () => {
+        const current = await rxReadPendingLocalDataOperation();
+        if (!current || current.id !== id) return { ok: true, applied: false, reason: 'superseded' };
+        if (!origin || !rxPendingOperationTargetsOrigin(current, origin)) {
+            return { ok: true, applied: false, reason: 'origin-not-targeted' };
+        }
+
+        const data = RXActivityStore.sanitizeLocalActivity(current.data);
+        const replaysReset = current.clear === true && current.extensionApplied !== true;
+        const replaysArchiveHandle = current.clear === true && current.archiveHandleApplied !== true;
+        const mutatesExtension = current.extensionApplied !== true && Object.keys(data).length > 0;
+        let cleared = 0;
+        let resetReplay = null;
+        let storedForMutation = null;
+        if (replaysReset || replaysArchiveHandle || mutatesExtension) {
+            storedForMutation = await chrome.storage.local.get(null);
+        }
+        if (replaysReset || replaysArchiveHandle) {
+            resetReplay = await rxReplayPendingResetExtensionState(current, storedForMutation);
+            cleared = resetReplay.cleared;
+        }
+        const values = Object.fromEntries(Object.entries(mutatesExtension ? data : {})
+            .map(([key, value]) => [RXActivityStore.PREFIX + key, value]));
+        let generation = null;
+        if (replaysReset || replaysArchiveHandle) {
+            generation = resetReplay.generation;
+        } else if (mutatesExtension) {
+            generation = Math.max(0, Number(storedForMutation[RXActivityStore.GENERATION_KEY]) || 0) + 1;
+        } else if (current.clear === true && Number.isInteger(current.activityGeneration)) {
+            generation = current.activityGeneration;
+        }
+
+        const remaining = rxPendingOperationOrigins(current);
+        const nextOrigins = remaining ? remaining.filter((item) => item !== origin) : [];
+        const completedOrigins = current.allTrustedOrigins === true
+            ? [...new Set([
+                ...(Array.isArray(current.completedOrigins) ? current.completedOrigins : []),
+                origin,
+            ].map(rxTrustedRumbleOrigin).filter(Boolean))]
+            : [];
+        const nextOperation = current.allTrustedOrigins === true || nextOrigins.length
+            ? {
                 ...current,
+                remainingOrigins: nextOrigins,
+                ...(current.allTrustedOrigins === true ? { completedOrigins } : {}),
+                extensionApplied: current.extensionApplied === true || mutatesExtension || replaysReset,
+                ...(current.clear === true ? { archiveHandleApplied: true } : {}),
                 lastAttemptAt: Date.now(),
-                lastWritten: Math.max(0, Number(written) || 0),
-                lastCleared: Math.max(0, Number(cleared) || 0),
-            },
+                lastWritten: mutatesExtension ? Object.keys(data).length : 0,
+            }
+            : null;
+        // The durable data and the replay marker land in one storage.set. If
+        // the worker dies immediately afterward, a later origin sees either
+        // the old operation and old data or the new data and an applied/null
+        // marker. It can never replay a successful import as if it were new.
+        await chrome.storage.local.set({
+            ...values,
+            ...(generation === null ? {} : { [RXActivityStore.GENERATION_KEY]: generation }),
+            [PENDING_LOCAL_DATA_OP_KEY]: nextOperation,
+        });
+        if (!nextOperation) {
+            // Null is already the crash-safe tombstone. Removing it only keeps
+            // the storage inspector tidy and is deliberately best effort.
+            try { await chrome.storage.local.remove(PENDING_LOCAL_DATA_OP_KEY); } catch {}
+        }
+        return {
+            ok: true,
+            applied: true,
+            clear: current.clear === true,
+            cleared,
+            data: mutatesExtension ? data : {},
+            written: mutatesExtension ? Object.keys(data).length : 0,
+            extensionMutated: mutatesExtension || replaysReset,
+            generation,
+            remainingOrigins: nextOrigins,
+        };
+    });
+}
+
+function rxQueryRumbleTabs() {
+    return new Promise((resolve) => {
+        try {
+            chrome.tabs.query({ url: ['*://rumble.com/*', '*://*.rumble.com/*'] }, (tabs) => {
+                void chrome.runtime.lastError;
+                resolve(Array.isArray(tabs) ? tabs : []);
+            });
+        } catch {
+            resolve([]);
+        }
+    });
+}
+
+function rxSendTabMessage(tabId, message, timeoutMs = 3_000) {
+    return new Promise((resolve) => {
+        let settled = false;
+        const finish = (value) => {
+            if (settled) return;
+            settled = true;
+            clearTimeout(timer);
+            resolve(value);
+        };
+        const timer = setTimeout(() => finish(null), timeoutMs);
+        try {
+            chrome.tabs.sendMessage(tabId, message, (response) => {
+                void chrome.runtime.lastError;
+                finish(response || null);
+            });
+        } catch {
+            finish(null);
+        }
+    });
+}
+
+async function rxBroadcastPendingLocalDataOperation(operation, message) {
+    const tabs = await rxQueryRumbleTabs();
+    const responses = await Promise.all(tabs.map(async (tab) => {
+        if (typeof tab?.id !== 'number') return { origin: null, response: null };
+        return {
+            origin: rxTrustedRumbleOrigin(tab.url),
+            response: await rxSendTabMessage(tab.id, message),
+        };
+    }));
+    const successfulOrigins = [...new Set(responses
+        .filter((item) => item.response?.ok && item.origin)
+        .map((item) => item.origin))];
+    const cleared = responses.reduce((total, item) => (
+        total + (item.response?.ok ? Math.max(0, Number(item.response.cleared) || 0) : 0)
+    ), 0);
+
+    let pending = operation || null;
+    if (operation?.id && successfulOrigins.length) {
+        const completedOrigins = [...new Set([
+            ...(Array.isArray(operation.completedOrigins) ? operation.completedOrigins : []),
+            ...successfulOrigins,
+        ].map(rxTrustedRumbleOrigin).filter(Boolean))];
+        const remainingOrigins = (rxPendingOperationOrigins(operation) || [])
+            .filter((origin) => !completedOrigins.includes(origin));
+        pending = operation.allTrustedOrigins === true || remainingOrigins.length
+            ? {
+                ...operation,
+                completedOrigins,
+                remainingOrigins,
+                lastAttemptAt: Date.now(),
+            }
+            : null;
+        try {
+            await chrome.storage.local.set({ [PENDING_LOCAL_DATA_OP_KEY]: pending });
+            if (!pending) await chrome.storage.local.remove(PENDING_LOCAL_DATA_OP_KEY);
+        } catch {
+            // The original marker remains durable and safely retries later.
+            pending = operation;
+        }
+    }
+
+    return {
+        tabs: tabs.length,
+        cleared,
+        successfulOrigins: successfulOrigins.length,
+        pending: !!pending,
+        pendingClear: pending?.clear === true,
+        pendingId: pending?.id || null,
+        pendingKeys: Math.max(0, Number(pending?.keyCount) || 0),
+        pendingOrigins: rxPendingOperationOrigins(pending)?.length || 0,
+    };
+}
+
+function rxPrepareImportedActivity(stored, data, mirrorProvided = false, mirror = null, requestedOrigins = RX_CANONICAL_RUMBLE_ORIGINS) {
+    const payload = RXActivityStore.sanitizeLocalActivity(data);
+    const generation = Math.max(0, Number(stored[RXActivityStore.GENERATION_KEY]) || 0) + 1;
+    const existing = stored[PENDING_LOCAL_DATA_OP_KEY];
+    const existingOrigins = rxPendingOperationOrigins(existing) || [];
+    const targetOrigins = [...new Set([
+        ...existingOrigins,
+        ...(Array.isArray(requestedOrigins) ? requestedOrigins : RX_CANONICAL_RUMBLE_ORIGINS),
+    ].map(rxTrustedRumbleOrigin).filter(Boolean))];
+    const existingCleanupKeys = Array.isArray(existing?.cleanupKeys)
+        ? existing.cleanupKeys.filter((key) => RXActivityStore.isLocalActivityKey(key))
+        : Object.keys(RXActivityStore.sanitizeLocalActivity(existing?.data));
+    const cleanupKeys = [...new Set([...existingCleanupKeys, ...Object.keys(payload)])];
+    const needsPageCleanup = cleanupKeys.length > 0 || existing?.clear === true;
+    const pending = needsPageCleanup
+        ? {
+            id: String(Date.now()) + '-' + Math.random().toString(16).slice(2),
+            source: 'import',
+            createdAt: Date.now(),
+            clear: existing?.clear === true,
+            data: null,
+            cleanupKeys,
+            keyCount: cleanupKeys.length,
+            targetOrigins,
+            remainingOrigins: targetOrigins,
+            allTrustedOrigins: true,
+            completedOrigins: [],
+            extensionApplied: true,
+        }
+        : null;
+    const values = Object.fromEntries(Object.entries(payload)
+        .map(([key, value]) => [RXActivityStore.PREFIX + key, value]));
+    if (mirrorProvided) values.rx_rant_stats_mirror = rxNormalizeRantMirror(mirror);
+    const priorMeta = stored[RXActivityStore.META_KEY];
+    const existingActivityKeys = Object.keys(stored)
+        .filter((key) => key.startsWith(RXActivityStore.PREFIX));
+    values[RXActivityStore.META_KEY] = {
+        ...(priorMeta && typeof priorMeta === 'object' && !Array.isArray(priorMeta) ? priorMeta : {}),
+        version: RXActivityStore.VERSION,
+        migratedAt: Number.isFinite(priorMeta?.migratedAt) ? priorMeta.migratedAt : Date.now(),
+        updatedAt: Date.now(),
+        importedAt: Date.now(),
+        keys: new Set([...existingActivityKeys, ...Object.keys(values)
+            .filter((key) => key.startsWith(RXActivityStore.PREFIX))]).size,
+        origins: Array.isArray(priorMeta?.origins) ? priorMeta.origins : [],
+    };
+    return { payload, generation, pending, values, mirrorProvided };
+}
+
+function rxPreparePageCleanupOperation(stored, {
+    source,
+    clear = false,
+    cleanupKeys = [],
+    activityGeneration,
+    existingOverride,
+    preserveExistingIdentity = false,
+} = {}) {
+    const existing = existingOverride === undefined
+        ? stored?.[PENDING_LOCAL_DATA_OP_KEY]
+        : existingOverride;
+    const existingOrigins = rxPendingOperationOrigins(existing) || [];
+    const targetOrigins = [...new Set([
+        ...existingOrigins,
+        ...RX_CANONICAL_RUMBLE_ORIGINS,
+    ].map(rxTrustedRumbleOrigin).filter(Boolean))];
+    const existingCleanup = Array.isArray(existing?.cleanupKeys)
+        ? existing.cleanupKeys.filter((key) => RXActivityStore.isLocalActivityKey(key))
+        : Object.keys(RXActivityStore.sanitizeLocalActivity(existing?.data));
+    const safeCleanup = [...new Set([...existingCleanup, ...cleanupKeys]
+        .filter((key) => RXActivityStore.isLocalActivityKey(key)))];
+    const preserveIdentity = preserveExistingIdentity && existing?.id;
+    return {
+        id: preserveIdentity
+            ? existing.id
+            : String(Date.now()) + '-' + Math.random().toString(16).slice(2),
+        source: preserveIdentity ? (existing.source || source) : source,
+        createdAt: preserveIdentity && Number.isFinite(existing.createdAt)
+            ? existing.createdAt
+            : Date.now(),
+        clear: clear === true || existing?.clear === true,
+        data: null,
+        cleanupKeys: safeCleanup,
+        keyCount: safeCleanup.length,
+        targetOrigins,
+        remainingOrigins: targetOrigins,
+        allTrustedOrigins: true,
+        completedOrigins: [],
+        extensionApplied: true,
+        archiveHandleApplied: true,
+        activityGeneration,
+    };
+}
+
+function rxQueueImportedActivity(data, mirrorProvided = false, mirror = null, requestedOrigins = RX_CANONICAL_RUMBLE_ORIGINS) {
+    return rxQueueStorageMutation(async () => {
+        let stored = await chrome.storage.local.get(null);
+        stored = await rxRecoverActivityMigration(stored);
+        const prepared = rxPrepareImportedActivity(stored, data, mirrorProvided, mirror, requestedOrigins);
+        await chrome.storage.local.set({
+            ...prepared.values,
+            [RXActivityStore.GENERATION_KEY]: prepared.generation,
+            [PENDING_LOCAL_DATA_OP_KEY]: prepared.pending,
+        });
+        if (!prepared.pending) {
+            try { await chrome.storage.local.remove(PENDING_LOCAL_DATA_OP_KEY); } catch {}
+        }
+        const broadcast = await rxBroadcastPendingLocalDataOperation(prepared.pending, {
+            action: 'setLocalData',
+            data: prepared.payload,
+            clear: prepared.pending?.clear === true,
+            generation: prepared.generation,
+            resetRantCache: prepared.mirrorProvided,
         });
         return {
-            ok: false,
-            cleared: false,
-            reason: 'partial-write',
-            expected: current.keyCount,
-            written: Math.max(0, Number(written) || 0),
+            ok: true,
+            generation: prepared.generation,
+            written: Object.keys(prepared.payload).length,
+            mirrorWritten: prepared.mirrorProvided,
+            pending: broadcast.pending,
+            pendingId: broadcast.pendingId,
+            pendingKeys: broadcast.pendingKeys,
+            pendingOrigins: broadcast.pendingOrigins,
+            tabs: broadcast.tabs,
         };
-    }
-    await chrome.storage.local.remove(PENDING_LOCAL_DATA_OP_KEY);
-    return { ok: true, cleared: true };
+    });
 }
 
 // v3.2.0 — Offscreen document lifecycle.
@@ -191,7 +544,6 @@ async function callOffscreen(action, payload) {
 // path segments, and other token-like data never enter the stored bundle.
 const RX_DOWNLOAD_DIAGNOSTICS_KEY = 'rx_download_diagnostics';
 const RX_DOWNLOAD_DIAGNOSTICS_MAX = 50;
-let rxDownloadDiagnosticWriteQueue = Promise.resolve();
 const rxRedactDiagnosticUrl = RXSettingsSchema.redactUrl;
 const rxSanitizeDiagnosticString = RXSettingsSchema.sanitizeDiagnosticText;
 const rxSanitizeDiagnostic = RXSettingsSchema.sanitizeDiagnosticValue;
@@ -224,9 +576,15 @@ async function rxLoadDownloadDiagnostics() {
     }
 }
 
-async function rxPersistDownloadDiagnostic(input) {
+async function rxPersistDownloadDiagnostic(input, expectedGeneration = null) {
+    if (expectedGeneration !== null && expectedGeneration !== rxDownloadRecoveryGeneration) {
+        return { superseded: true };
+    }
     const sanitized = rxSanitizeDiagnostic(input && typeof input === 'object' ? input : {});
     const capabilities = await rxGetDownloadDiagnosticCapabilities(false);
+    if (expectedGeneration !== null && expectedGeneration !== rxDownloadRecoveryGeneration) {
+        return { superseded: true };
+    }
     const entry = {
         ...sanitized,
         id: 'rxd-' + Date.now() + '-' + Math.random().toString(16).slice(2, 10),
@@ -242,6 +600,9 @@ async function rxPersistDownloadDiagnostic(input) {
         },
     };
     const entries = await rxLoadDownloadDiagnostics();
+    if (expectedGeneration !== null && expectedGeneration !== rxDownloadRecoveryGeneration) {
+        return { superseded: true };
+    }
     entries.push(entry);
     if (entries.length > RX_DOWNLOAD_DIAGNOSTICS_MAX) {
         entries.splice(0, entries.length - RX_DOWNLOAD_DIAGNOSTICS_MAX);
@@ -250,16 +611,12 @@ async function rxPersistDownloadDiagnostic(input) {
     return entry;
 }
 
-function rxRecordDownloadDiagnostic(input) {
-    const write = rxDownloadDiagnosticWriteQueue.then(() => rxPersistDownloadDiagnostic(input));
-    rxDownloadDiagnosticWriteQueue = write.catch(() => {});
-    return write;
+function rxRecordDownloadDiagnostic(input, expectedGeneration = null) {
+    return rxQueueStorageMutation(() => rxPersistDownloadDiagnostic(input, expectedGeneration));
 }
 
 function rxClearDownloadDiagnostics() {
-    const clear = rxDownloadDiagnosticWriteQueue.then(() => chrome.storage.local.remove(RX_DOWNLOAD_DIAGNOSTICS_KEY));
-    rxDownloadDiagnosticWriteQueue = clear.catch(() => {});
-    return clear;
+    return rxQueueStorageMutation(() => chrome.storage.local.remove(RX_DOWNLOAD_DIAGNOSTICS_KEY));
 }
 
 async function rxBuildDownloadDiagnosticsBundle() {
@@ -312,8 +669,8 @@ function rxCancelProbeScan(scanId) {
     return true;
 }
 
-// AbortSignal.any shipped in Firefox 124, and manifest-firefox.json still
-// declares strict_min_version 113. Falling back to the timeout alone there
+// AbortSignal.any shipped in Firefox 124, while RumbleX supports Firefox 121.
+// Falling back to the timeout alone on Firefox 121 through 123
 // meant closing the panel cancelled nothing and every probe ran to its full
 // budget, which is the exact behaviour the scan controller exists to stop.
 // The abort reason is passed along so the caller can still tell a timeout
@@ -436,7 +793,13 @@ function isAllowedDownloadUrl(url) {
     }
 }
 
-chrome.runtime.onInstalled.addListener((details) => {
+chrome.runtime.onInstalled.addListener(async (details) => {
+    try {
+        await rxEnsurePendingResetStartupRecovery();
+    } catch (error) {
+        console.warn('[RumbleX] install recovery gate failed:', error);
+        return;
+    }
     console.log('[RumbleX] Extension installed');
     // A fresh install lands the user on 126 modules and 208 settings with no
     // orientation at all. Open the welcome view once, on first install only —
@@ -470,7 +833,12 @@ chrome.runtime.onInstalled.addListener((details) => {
 // (chrome.alarms survive across SW restarts, but only across SW activations,
 // not full browser restarts on some platforms — sync is cheap and idempotent).
 if (chrome.runtime?.onStartup) {
-    chrome.runtime.onStartup.addListener(() => {
+    chrome.runtime.onStartup.addListener(async () => {
+        try {
+            await rxEnsurePendingResetStartupRecovery();
+        } catch {
+            return;
+        }
         rxSyncArchiveAlarm().catch(() => {});
         rxSyncChannelNotifier().catch(() => {});
         rxHandleCurrentNetworkState({ runArchive: false }).catch(() => {});
@@ -625,20 +993,175 @@ async function rxGetSettings() {
 // feature, notifier update, and Options save can otherwise all read the same
 // old object and let the last full-object write erase the others.
 let rxSettingsWriteChain = Promise.resolve();
+let rxSettingsMutationGeneration = 0;
+const RX_SETTINGS_GENERATION_KEY = 'rx_settings_generation';
+function rxQueueStorageMutation(commit) {
+    rxSettingsWriteChain = rxSettingsWriteChain.then(commit, commit);
+    return rxSettingsWriteChain;
+}
+const RX_SETTINGS_SNAPSHOT_BYTE_BUDGET = 64 * 1024 * 1024;
+const RX_RESET_SNAPSHOT_KEYS = Object.freeze([
+    'rx_archive_queue',
+    'rx_download_diagnostics',
+    'rx_download_recovery',
+    'rx_welcome_seen',
+]);
+const RX_RESET_REMOVE_KEYS = Object.freeze([
+    'rx_settings',
+    'rx_popup_ui',
+    'rx_rant_stats_mirror',
+    'rx_probe_cache',
+    'rx_settings_profiles',
+    'rx_archive_queue',
+    'rx_download_diagnostics',
+    'rx_download_recovery',
+    'rx_welcome_seen',
+    'rx_activity_premigration',
+    'rx_activity_migration_journal',
+    'rx_pending_local_data_op',
+]);
+
+// A reset is a two-phase operation because page-local data lives on every
+// Rumble origin. Finish the extension-owned half as soon as a service worker
+// wakes, even when no Rumble tab is open. Background alarms and messages wait
+// on this promise so stale settings or archive jobs cannot run in the gap.
+let rxPendingResetStartupRecovery = null;
+function rxEnsurePendingResetStartupRecovery() {
+    if (rxPendingResetStartupRecovery) return rxPendingResetStartupRecovery;
+    const recovery = rxQueueStorageMutation(async () => {
+        const current = await rxReadPendingLocalDataOperation();
+        const needsResetReplay = current?.source === 'reset'
+            && current.clear === true
+            && (current.extensionApplied !== true || current.archiveHandleApplied !== true);
+        if (!needsResetReplay) return { ok: true, replayed: false };
+        const result = await rxReplayPendingResetExtensionState(current);
+        const next = {
+            ...current,
+            extensionApplied: true,
+            archiveHandleApplied: true,
+            lastAttemptAt: Date.now(),
+            lastCleared: result.cleared,
+        };
+        await chrome.storage.local.set({ [PENDING_LOCAL_DATA_OP_KEY]: next });
+        return {
+            ok: true,
+            replayed: true,
+            cleared: result.cleared,
+            generation: result.generation,
+        };
+    });
+    const tracked = recovery.catch((error) => {
+        if (rxPendingResetStartupRecovery === tracked) rxPendingResetStartupRecovery = null;
+        throw error;
+    });
+    rxPendingResetStartupRecovery = tracked;
+    return tracked;
+}
+
+rxEnsurePendingResetStartupRecovery().catch((error) => {
+    console.warn('[RumbleX] interrupted reset recovery failed:', error);
+});
+
+function rxNextActivityGeneration(stored) {
+    return Math.max(0, Number(stored?.[RXActivityStore.GENERATION_KEY]) || 0) + 1;
+}
+
+function rxNextSettingsGeneration(stored) {
+    return Math.max(0, Number(stored?.[RX_SETTINGS_GENERATION_KEY]) || 0) + 1;
+}
+
+function rxAppendSettingsSnapshot(stored, reason, {
+    settingsOverride,
+    captureActivity = false,
+    captureProfiles = false,
+    captureResetData = false,
+} = {}) {
+    const current = rxNormalizeSettings(stored.rx_settings || {});
+    const effective = { ...RXSettingsSchema.DEFAULTS, ...current };
+    if (!effective.backupHistory) return { ok: false, reason: 'disabled' };
+    const limit = Math.max(1, Number(effective.backupHistoryLimit) || 10);
+    const snapshots = Array.isArray(stored.rx_settings_snapshots)
+        ? stored.rx_settings_snapshots.slice()
+        : [];
+    const previousAt = snapshots.length
+        ? Number.isFinite(snapshots.at(-1)?.at)
+            ? snapshots.at(-1).at
+            : Date.parse(snapshots.at(-1)?.at || '')
+        : 0;
+    const snapshot = {
+        at: Math.max(Date.now(), Number.isFinite(previousAt) ? previousAt + 1 : 0),
+        reason: typeof reason === 'string' ? reason.slice(0, 80) : 'manual',
+        settings: rxNormalizeSettings(settingsOverride === undefined ? current : settingsOverride),
+    };
+    if (captureActivity) {
+        snapshot.activity = RXActivityStore.collectStoredActivity(stored);
+        snapshot.activityComplete = true;
+    }
+    if (captureProfiles) {
+        snapshot.profiles = Array.isArray(stored.rx_settings_profiles)
+            ? stored.rx_settings_profiles.slice()
+            : [];
+    }
+    if (captureResetData) {
+        snapshot.resetData = Object.fromEntries(RX_RESET_SNAPSHOT_KEYS
+            .filter((key) => stored[key] !== undefined)
+            .map((key) => [key, stored[key]]));
+    }
+    const snapshotBytes = new TextEncoder().encode(JSON.stringify(snapshot)).byteLength;
+    if (snapshotBytes > RX_SETTINGS_SNAPSHOT_BYTE_BUDGET) {
+        throw new Error('Snapshot exceeds the 64 MiB history budget');
+    }
+    snapshots.push(snapshot);
+    while (snapshots.length > limit) snapshots.shift();
+    let totalBytes = 0;
+    const withinBudget = [];
+    for (let index = snapshots.length - 1; index >= 0; index -= 1) {
+        const entry = snapshots[index];
+        const bytes = new TextEncoder().encode(JSON.stringify(entry)).byteLength;
+        if (withinBudget.length > 0 && totalBytes + bytes > RX_SETTINGS_SNAPSHOT_BYTE_BUDGET) break;
+        totalBytes += bytes;
+        withinBudget.unshift(entry);
+    }
+    snapshots.splice(0, snapshots.length, ...withinBudget);
+    return { ok: true, count: snapshots.length, at: snapshot.at, snapshot, snapshots };
+}
+
+function rxSnapshotReceipt(result) {
+    if (!result || typeof result !== 'object') return null;
+    if (!result.ok) return { ok: false, reason: result.reason || 'unavailable' };
+    return {
+        ok: true,
+        count: Math.max(0, Number(result.count) || 0),
+        at: result.at,
+    };
+}
 
 function rxQueueSettingsWrite(data, {
     replace = false,
     preserveOmittedSecrets = false,
     snapshotReason = null,
+    captureSnapshotActivity = false,
+    returnSnapshot = false,
     extraValues = null,
+    expectedGeneration = null,
+    requireGeneration = false,
 } = {}) {
+    rxSettingsMutationGeneration += 1;
     const commit = async () => {
-        const needsCurrent = !replace || preserveOmittedSecrets || snapshotReason;
-        const stored = needsCurrent
-            ? await chrome.storage.local.get(snapshotReason
-                ? ['rx_settings', 'rx_settings_snapshots']
-                : 'rx_settings')
-            : {};
+        let stored = await chrome.storage.local.get(snapshotReason
+            ? null
+            : ['rx_settings', RX_SETTINGS_GENERATION_KEY]);
+        if (snapshotReason && captureSnapshotActivity) stored = await rxRecoverActivityMigration(stored);
+        const currentGeneration = Math.max(0, Number(stored[RX_SETTINGS_GENERATION_KEY]) || 0);
+        const hasExpectedGeneration = Number.isInteger(expectedGeneration) && expectedGeneration >= 0;
+        if (requireGeneration
+            && ((!hasExpectedGeneration && currentGeneration !== 0)
+                || (hasExpectedGeneration && expectedGeneration !== currentGeneration))) {
+            const error = new Error('Settings update was superseded by a replacement');
+            error.code = 'superseded';
+            error.generation = currentGeneration;
+            throw error;
+        }
         const current = stored.rx_settings || {};
         const candidate = replace ? { ...data } : { ...current, ...data };
         if (replace && preserveOmittedSecrets) {
@@ -650,51 +1173,1013 @@ function rxQueueSettingsWrite(data, {
         }
         const next = rxNormalizeSettings(candidate);
         const values = { ...(extraValues || {}), rx_settings: next };
+        if (replace) values[RX_SETTINGS_GENERATION_KEY] = rxNextSettingsGeneration(stored);
+        let snapshot = null;
         if (snapshotReason) {
-            const snapshots = Array.isArray(stored.rx_settings_snapshots)
-                ? stored.rx_settings_snapshots.slice()
-                : [];
-            snapshots.push({
-                at: new Date().toISOString(),
-                reason: String(snapshotReason).slice(0, 80),
-                settings: rxNormalizeSettings(current),
+            snapshot = rxAppendSettingsSnapshot(stored, snapshotReason, {
+                captureActivity: captureSnapshotActivity,
             });
-            while (snapshots.length > 50) snapshots.shift();
-            values.rx_settings_snapshots = snapshots;
+            if (snapshot.ok) values.rx_settings_snapshots = snapshot.snapshots;
         }
         await chrome.storage.local.set(values);
-        return next;
+        return returnSnapshot ? { settings: next, snapshot: rxSnapshotReceipt(snapshot) } : next;
     };
     rxSettingsWriteChain = rxSettingsWriteChain.then(commit, commit);
     return rxSettingsWriteChain;
 }
 
-function rxQueueSettingsReset(snapshotAt) {
-    const commit = async () => {
-        if (snapshotAt !== undefined) {
-            const stored = await chrome.storage.local.get(['rx_settings', 'rx_settings_snapshots']);
-            const snapshots = Array.isArray(stored.rx_settings_snapshots)
-                ? stored.rx_settings_snapshots.slice()
-                : [];
-            const index = snapshots.findIndex((snapshot) => snapshot?.at === snapshotAt);
-            if (index < 0) throw new Error('Pre-reset settings snapshot is missing');
-            snapshots[index] = {
-                ...snapshots[index],
-                settings: rxNormalizeSettings(stored.rx_settings || {}),
-            };
-            await chrome.storage.local.set({ rx_settings_snapshots: snapshots });
+function rxQueueSettingsBundleImport(data, {
+    localData = null,
+    mirrorProvided = false,
+    mirror = null,
+} = {}) {
+    rxSettingsMutationGeneration += 1;
+    return rxQueueStorageMutation(async () => {
+        let stored = await chrome.storage.local.get(null);
+        stored = await rxRecoverActivityMigration(stored);
+        const current = stored.rx_settings || {};
+        const candidate = { ...data };
+        for (const key of RXSettingsSchema.SECRET_SETTING_KEYS) {
+            if (!Object.hasOwn(data, key) && Object.hasOwn(current, key)) candidate[key] = current[key];
         }
-        await chrome.storage.local.remove('rx_settings');
+        const settings = rxNormalizeSettings(candidate);
+        const snapshot = rxAppendSettingsSnapshot(stored, 'pre-import-settings', {
+            captureActivity: true,
+        });
+        const activityPayload = RXActivityStore.sanitizeLocalActivity(localData);
+        const hasActivityBundle = Object.keys(activityPayload).length > 0 || mirrorProvided;
+        const prepared = hasActivityBundle
+            ? rxPrepareImportedActivity(stored, activityPayload, mirrorProvided, mirror)
+            : null;
+        const values = {
+            rx_settings: settings,
+            [RX_SETTINGS_GENERATION_KEY]: rxNextSettingsGeneration(stored),
+            ...(snapshot.ok ? { rx_settings_snapshots: snapshot.snapshots } : {}),
+            ...(prepared ? prepared.values : {}),
+            ...(prepared ? {
+                [RXActivityStore.GENERATION_KEY]: prepared.generation,
+                [PENDING_LOCAL_DATA_OP_KEY]: prepared.pending,
+            } : {}),
+        };
+        await chrome.storage.local.set(values);
+        if (prepared && !prepared.pending) {
+            try { await chrome.storage.local.remove(PENDING_LOCAL_DATA_OP_KEY); } catch {}
+        }
+        const broadcast = prepared
+            ? await rxBroadcastPendingLocalDataOperation(prepared.pending, {
+                action: 'setLocalData',
+                data: prepared.payload,
+                clear: prepared.pending?.clear === true,
+                generation: prepared.generation,
+                resetRantCache: prepared.mirrorProvided,
+            })
+            : { tabs: 0, pending: false, pendingId: null, pendingKeys: 0, pendingOrigins: 0 };
+        return {
+            settings,
+            snapshot: rxSnapshotReceipt(snapshot),
+            activity: {
+                written: prepared ? Object.keys(prepared.payload).length : 0,
+                mirrorWritten: prepared?.mirrorProvided === true,
+                generation: prepared?.generation ?? null,
+                tabs: broadcast.tabs,
+                pending: broadcast.pending,
+                pendingId: broadcast.pendingId,
+                pendingKeys: broadcast.pendingKeys,
+                pendingOrigins: broadcast.pendingOrigins,
+            },
+        };
+    });
+}
+
+function rxQueueSettingsSnapshot(reason, options = {}) {
+    const commit = async () => {
+        let stored = await chrome.storage.local.get(null);
+        if (options.captureActivity) stored = await rxRecoverActivityMigration(stored);
+        const result = rxAppendSettingsSnapshot(stored, reason, options);
+        if (result.ok) await chrome.storage.local.set({ rx_settings_snapshots: result.snapshots });
+        return rxSnapshotReceipt(result);
+    };
+    rxSettingsWriteChain = rxSettingsWriteChain.then(commit, commit);
+    return rxSettingsWriteChain;
+}
+
+function rxNormalizeArchiveQueueForSnapshot(value) {
+    if (!value || typeof value !== 'object' || !Array.isArray(value.jobs)) return value;
+    const root = structuredClone(value);
+    for (const job of root.jobs) {
+        if (job?.status !== 'discovering'
+            && !(job?.status === 'downloading' && !Number.isInteger(job.downloadId))) continue;
+        job.status = 'pending';
+        job.startedAt = null;
+        job.downloadId = null;
+        job.error = null;
+        job.completedAt = null;
+        job.recoveredFromStatus = null;
+        job.recoveryReason = 'reset-interrupted';
+    }
+    return root;
+}
+
+async function rxReconcileRestoredArchiveState() {
+    const stored = await chrome.storage.local.get(['rx_archive_queue', 'rx_download_recovery']);
+    const queue = stored.rx_archive_queue && typeof stored.rx_archive_queue === 'object'
+        && Array.isArray(stored.rx_archive_queue.jobs)
+        ? structuredClone(stored.rx_archive_queue)
+        : null;
+    if (!queue) return;
+    const recovery = stored.rx_download_recovery && typeof stored.rx_download_recovery === 'object'
+        && Array.isArray(stored.rx_download_recovery.jobs)
+        ? structuredClone(stored.rx_download_recovery)
+        : null;
+    const terminalIds = new Set();
+    for (const job of queue.jobs) {
+        if (job?.status !== 'downloading' || !Number.isInteger(job.downloadId)) continue;
+        const item = await rxGetDownloadItem(job.downloadId);
+        if (item?.state === 'complete') {
+            const size = Number(item.fileSize || item.totalBytes || item.bytesReceived);
+            terminalIds.add(job.downloadId);
+            job.status = 'completed';
+            job.completedAt = Date.now();
+            job.downloadedBytes = Number.isFinite(size) && size > 0 ? size : null;
+            job.downloadId = null;
+            job.error = null;
+            job.networkState = null;
+            job.networkResumePending = false;
+        } else if (!item || (item.state === 'interrupted' && !item.canResume)) {
+            terminalIds.add(job.downloadId);
+            job.status = 'pending';
+            job.startedAt = null;
+            job.downloadId = null;
+            job.error = null;
+            job.completedAt = null;
+            job.networkState = null;
+            job.networkResumePending = false;
+            job.recoveryReason = 'restore-reconciled';
+        }
+    }
+    if (recovery && terminalIds.size) {
+        recovery.jobs = recovery.jobs.filter((job) => !terminalIds.has(job.downloadId));
+    }
+    await chrome.storage.local.set({
+        rx_archive_queue: queue,
+        ...(recovery ? { rx_download_recovery: recovery } : {}),
+    });
+}
+
+function rxQueueSettingsReset() {
+    rxSettingsMutationGeneration += 1;
+    const commit = async () => {
+        let stored = await chrome.storage.local.get(null);
+        stored = await rxRecoverActivityMigration(stored);
+        const archiveFolderHandle = globalThis.RxArchiveFsAccess?.getHandle
+            ? await globalThis.RxArchiveFsAccess.getHandle()
+            : null;
+        const snapshotInput = {
+            ...stored,
+            rx_archive_queue: rxNormalizeArchiveQueueForSnapshot(stored.rx_archive_queue),
+        };
+        const snapshot = rxAppendSettingsSnapshot(snapshotInput, 'pre-reset-all-data', {
+            captureActivity: true,
+            captureProfiles: true,
+            captureResetData: true,
+        });
+        // Snapshot construction and persistence happen before active work is
+        // invalidated. If either fails, the reset changes nothing operational.
+        if (snapshot.ok) await chrome.storage.local.set({ rx_settings_snapshots: snapshot.snapshots });
+
+        rxArchiveNetworkGeneration++;
+        rxDownloadRecoveryGeneration++;
+        const pauseResult = await rxCallOpenOffscreen('pauseArchiveWrites').catch(() => ({ ok: false }));
+        const activityKeys = Object.keys(stored)
+            .filter((key) => key.startsWith(RXActivityStore.PREFIX));
+        const activityGeneration = rxNextActivityGeneration(stored);
+        const settingsGeneration = rxNextSettingsGeneration(stored);
+        const pendingClear = {
+            id: String(Date.now()) + '-' + Math.random().toString(16).slice(2),
+            source: 'reset',
+            createdAt: Date.now(),
+            clear: true,
+            data: null,
+            keyCount: 0,
+            targetOrigins: [...RX_CANONICAL_RUMBLE_ORIGINS],
+            remainingOrigins: [...RX_CANONICAL_RUMBLE_ORIGINS],
+            allTrustedOrigins: true,
+            completedOrigins: [],
+            extensionApplied: false,
+            archiveHandleApplied: !archiveFolderHandle,
+            activityGeneration,
+            settingsGeneration,
+        };
+        const previousActivityMeta = stored[RXActivityStore.META_KEY];
+        const cleanActivityMeta = {
+            version: RXActivityStore.VERSION,
+            migratedAt: Number.isFinite(previousActivityMeta?.migratedAt)
+                ? previousActivityMeta.migratedAt
+                : Date.now(),
+            updatedAt: Date.now(),
+            resetAt: Date.now(),
+            keys: 0,
+            origins: Array.isArray(previousActivityMeta?.origins)
+                ? previousActivityMeta.origins.map(rxTrustedRumbleOrigin).filter(Boolean)
+                : [],
+            pageFingerprints: {},
+            pageBaselines: {},
+        };
+        const removedKeys = [...new Set([...RX_RESET_REMOVE_KEYS, ...activityKeys])]
+            .filter((key) => key !== PENDING_LOCAL_DATA_OP_KEY);
+        try {
+            // Commit the durable barriers before deleting data. Every queued
+            // tab write behind this reset is rejected even if deletion fails.
+            await chrome.storage.local.set({
+                [RXActivityStore.GENERATION_KEY]: activityGeneration,
+                [RX_SETTINGS_GENERATION_KEY]: settingsGeneration,
+                [RXActivityStore.META_KEY]: cleanActivityMeta,
+                [PENDING_LOCAL_DATA_OP_KEY]: pendingClear,
+            });
+            await chrome.storage.local.remove(removedKeys);
+            // Mark extension storage committed before deleting the IndexedDB
+            // folder handle. If this write fails, rollback can still restore
+            // everything. The handle flag stays false until a best-effort
+            // marker update, so a worker crash after deletion only causes an
+            // idempotent retry instead of an unreported partial rollback.
+            const committedPendingClear = {
+                ...pendingClear,
+                extensionApplied: true,
+            };
+            await chrome.storage.local.set({ [PENDING_LOCAL_DATA_OP_KEY]: committedPendingClear });
+            if (archiveFolderHandle && globalThis.RxArchiveFsAccess?.deleteHandle) {
+                await globalThis.RxArchiveFsAccess.deleteHandle();
+            }
+            const broadcastPendingClear = {
+                ...pendingClear,
+                extensionApplied: true,
+                archiveHandleApplied: true,
+            };
+            const broadcast = await rxBroadcastPendingLocalDataOperation(broadcastPendingClear, {
+                action: 'clearLocalData',
+                generation: activityGeneration,
+            });
+            return {
+                snapshot: rxSnapshotReceipt(snapshot),
+                activityCleared: activityKeys.length,
+                activityGeneration,
+                settingsGeneration,
+                archiveFolderCleared: !!archiveFolderHandle,
+                pendingClearId: pendingClear.id,
+                tabs: broadcast.tabs,
+                cleared: broadcast.cleared,
+                pendingClear: broadcast.pendingClear,
+                pendingOrigins: broadcast.pendingOrigins,
+            };
+        } catch (error) {
+            const rollbackKeys = [...new Set([
+                ...removedKeys,
+                RXActivityStore.META_KEY,
+                RXActivityStore.GENERATION_KEY,
+                RX_SETTINGS_GENERATION_KEY,
+                'rx_settings_snapshots',
+                PENDING_LOCAL_DATA_OP_KEY,
+            ])];
+            const restore = {};
+            const remove = [];
+            for (const key of rollbackKeys) {
+                if (Object.hasOwn(stored, key)) restore[key] = stored[key];
+                else remove.push(key);
+            }
+            if (stored.rx_archive_queue !== undefined) {
+                restore.rx_archive_queue = rxNormalizeArchiveQueueForSnapshot(stored.rx_archive_queue);
+            }
+            let rollbackFailed = false;
+            try {
+                if (Object.keys(restore).length) await chrome.storage.local.set(restore);
+                if (remove.length) await chrome.storage.local.remove(remove);
+                if (stored.rx_archive_queue !== undefined) {
+                    await rxReconcileRestoredArchiveState();
+                }
+            } catch (rollbackError) {
+                rollbackFailed = true;
+                console.error('[RumbleX] reset rollback failed:', rollbackError);
+            }
+            if (rollbackFailed) {
+                error.partial = true;
+                error.message = 'Reset failed and automatic recovery was incomplete: ' + (error?.message || error);
+            }
+            throw error;
+        } finally {
+            if (pauseResult?.wasPaused !== true) {
+                await rxCallOpenOffscreen('resumeArchiveWrites').catch(() => ({ ok: false }));
+            }
+        }
+    };
+    return rxQueueStorageMutation(commit);
+}
+
+function rxQueueActivityWrite(data) {
+    const commit = async () => {
+        const setInput = data?.set;
+        const removeInput = data?.remove;
+        const requestedGeneration = Number.isInteger(data?.generation) && data.generation >= 0
+            ? data.generation
+            : null;
+        let generationStored = await chrome.storage.local.get(null);
+        generationStored = await rxRecoverActivityMigration(generationStored);
+        const currentGeneration = Math.max(0, Number(generationStored[RXActivityStore.GENERATION_KEY]) || 0);
+        if ((requestedGeneration === null && currentGeneration !== 0)
+            || (requestedGeneration !== null && requestedGeneration !== currentGeneration)) {
+            return { ok: false, reason: 'superseded', generation: currentGeneration };
+        }
+        const set = {};
+        const remove = [];
+        if (setInput !== undefined) {
+            if (!setInput || typeof setInput !== 'object' || Array.isArray(setInput)) {
+                throw new Error('Invalid activity write');
+            }
+            for (const [key, value] of Object.entries(setInput)) {
+                if (!key.startsWith(RXActivityStore.PREFIX) || key.length > 300 || typeof value !== 'string') {
+                    throw new Error('Invalid activity write');
+                }
+                set[key] = value;
+            }
+        }
+        if (removeInput !== undefined) {
+            if (!Array.isArray(removeInput) || removeInput.length > 10_000) {
+                throw new Error('Invalid activity removal');
+            }
+            for (const key of removeInput) {
+                if (typeof key !== 'string' || !key.startsWith(RXActivityStore.PREFIX) || key.length > 300) {
+                    throw new Error('Invalid activity removal');
+                }
+                remove.push(key);
+            }
+        }
+        const setKeys = Object.keys(set);
+        const removeKeys = [...new Set(remove.filter((key) => !Object.hasOwn(set, key)))];
+        if (setKeys.length) await chrome.storage.local.set(set);
+        if (removeKeys.length) await chrome.storage.local.remove(removeKeys);
+        return { ok: true, written: setKeys.length, removed: removeKeys.length, generation: currentGeneration };
+    };
+    rxSettingsWriteChain = rxSettingsWriteChain.then(commit, commit);
+    return rxSettingsWriteChain;
+}
+
+function rxQueueActivityRollback() {
+    const commit = async () => {
+        const stored = await chrome.storage.local.get(null);
+        const activityKeys = Object.keys(stored)
+            .filter((key) => key.startsWith(RXActivityStore.PREFIX));
+        await chrome.storage.local.set({
+            [RXActivityStore.META_KEY]: {
+                version: 0,
+                hold: true,
+                rolledBackAt: Date.now(),
+            },
+        });
+        if (activityKeys.length) await chrome.storage.local.remove(activityKeys);
+        const generation = rxNextActivityGeneration(stored);
+        await chrome.storage.local.set({ [RXActivityStore.GENERATION_KEY]: generation });
+        return { ok: true, removed: activityKeys.length, generation };
+    };
+    return rxQueueStorageMutation(commit);
+}
+
+function rxQueueRantMirrorUpdate(videoId, entry, maxVideos, expectedGeneration = null) {
+    const commit = async () => {
+        const stored = await chrome.storage.local.get([
+            'rx_rant_stats_mirror',
+            RXActivityStore.GENERATION_KEY,
+        ]);
+        const currentGeneration = Math.max(0, Number(stored[RXActivityStore.GENERATION_KEY]) || 0);
+        const hasExpectedGeneration = Number.isInteger(expectedGeneration) && expectedGeneration >= 0;
+        if ((!hasExpectedGeneration && currentGeneration !== 0)
+            || (hasExpectedGeneration && expectedGeneration !== currentGeneration)) {
+            return { ok: false, reason: 'superseded', generation: currentGeneration };
+        }
+        const current = stored.rx_rant_stats_mirror;
+        const root = current && typeof current === 'object' && !Array.isArray(current)
+            ? structuredClone(current)
+            : { videos: {} };
+        if (!root.videos || typeof root.videos !== 'object' || Array.isArray(root.videos)) root.videos = {};
+        const previous = root.videos[videoId] && typeof root.videos[videoId] === 'object'
+            ? root.videos[videoId]
+            : {};
+        root.videos[videoId] = {
+            title: String(entry.title || previous.title || videoId).slice(0, 500),
+            url: String(entry.url || previous.url || '').slice(0, 2048),
+            lastTs: Number.isFinite(Number(entry.lastTs)) ? Number(entry.lastTs) : Date.now(),
+            read: previous.read === true,
+            rants: Array.isArray(entry.rants) ? entry.rants.slice(-200) : [],
+        };
+        const ids = Object.keys(root.videos);
+        if (ids.length > maxVideos) {
+            ids.map((id) => ({ id, ts: Number(root.videos[id]?.lastTs) || 0 }))
+                .sort((a, b) => a.ts - b.ts)
+                .slice(0, ids.length - maxVideos)
+                .forEach(({ id }) => { delete root.videos[id]; });
+        }
+        await chrome.storage.local.set({ rx_rant_stats_mirror: root });
+        return { ok: true, generation: currentGeneration };
+    };
+    rxSettingsWriteChain = rxSettingsWriteChain.then(commit, commit);
+    return rxSettingsWriteChain;
+}
+
+function rxNormalizeRantMirror(value) {
+    const source = value?.videos && typeof value.videos === 'object' && !Array.isArray(value.videos)
+        ? value.videos
+        : {};
+    const videos = Object.entries(source)
+        .filter(([id, entry]) => typeof id === 'string' && id.length <= 160
+            && entry && typeof entry === 'object' && !Array.isArray(entry))
+        .map(([id, entry]) => {
+            const normalized = {
+                title: String(entry.title || id).slice(0, 500),
+                lastTs: Number.isFinite(Number(entry.lastTs)) ? Number(entry.lastTs) : 0,
+            };
+            if (Object.hasOwn(entry, 'url')) normalized.url = String(entry.url || '').slice(0, 2048);
+            if (Object.hasOwn(entry, 'read')) normalized.read = entry.read === true;
+            if (Array.isArray(entry.rants)) {
+                normalized.rants = entry.rants
+                    .filter((rant) => rant && typeof rant === 'object' && !Array.isArray(rant))
+                    .slice(-200)
+                    .map((rant) => ({
+                    user: String(rant.user || '').slice(0, 200),
+                    price: String(rant.price || '').slice(0, 80),
+                    level: String(rant.level || '').slice(0, 40),
+                    text: String(rant.text || '').slice(0, 4_000),
+                    ts: Number.isFinite(Number(rant.ts)) ? Number(rant.ts) : 0,
+                    ...(rant.kind === 'gift' ? {
+                        kind: 'gift',
+                        gifts: Math.max(1, Math.min(100_000, Number(rant.gifts) || 1)),
+                    } : {}),
+                    }));
+            }
+            return [id, normalized];
+        })
+        .sort(([, left], [, right]) => right.lastTs - left.lastTs)
+        .slice(0, 30);
+    return { videos: Object.fromEntries(videos) };
+}
+
+function rxQueueRantMirrorMutation(operation, videoId, read) {
+    const commit = async () => {
+        let stored = await chrome.storage.local.get(null);
+        stored = await rxRecoverActivityMigration(stored);
+        const current = stored.rx_rant_stats_mirror;
+        const root = current && typeof current === 'object' && !Array.isArray(current)
+            ? structuredClone(current)
+            : { videos: {} };
+        if (!root.videos || typeof root.videos !== 'object' || Array.isArray(root.videos)) root.videos = {};
+        if (operation === 'clear') root.videos = {};
+        else if (operation === 'remove') delete root.videos[videoId];
+        else if (operation === 'read' && root.videos[videoId]) root.videos[videoId].read = read === true;
+        else if (!['clear', 'remove', 'read'].includes(operation)) throw new Error('Invalid rant history operation');
+        const bumpsGeneration = operation === 'clear' || operation === 'remove';
+        const generation = Math.max(0, Number(stored[RXActivityStore.GENERATION_KEY]) || 0)
+            + (bumpsGeneration ? 1 : 0);
+        const clearedActivityKeys = operation === 'clear'
+            ? Object.keys(stored).filter((key) => key.startsWith(RXActivityStore.PREFIX + 'rx_rants_'))
+            : operation === 'remove' && videoId
+                ? [RXActivityStore.PREFIX + 'rx_rants_' + videoId]
+                : [];
+        const cleanupKeys = operation === 'remove' && videoId ? ['rx_rants_' + videoId] : [];
+        const pending = bumpsGeneration
+            ? rxPreparePageCleanupOperation(stored, {
+                source: 'rant-' + operation,
+                clear: operation === 'clear',
+                cleanupKeys,
+                activityGeneration: generation,
+            })
+            : null;
+        await chrome.storage.local.set({
+            rx_rant_stats_mirror: root,
+            ...Object.fromEntries(clearedActivityKeys.map((key) => [key, '[]'])),
+            ...(bumpsGeneration ? { [RXActivityStore.GENERATION_KEY]: generation } : {}),
+            ...(pending ? { [PENDING_LOCAL_DATA_OP_KEY]: pending } : {}),
+        });
+        if (bumpsGeneration) {
+            await rxBroadcastPendingLocalDataOperation(pending, {
+                action: 'setLocalData',
+                data: Object.fromEntries(cleanupKeys.map((key) => [key, ''])),
+                clear: operation === 'clear',
+                generation,
+                resetRantCache: true,
+            });
+        }
+        if (clearedActivityKeys.length) {
+            try { await chrome.storage.local.remove(clearedActivityKeys); } catch {}
+        }
+        return {
+            ok: true,
+            generation,
+            activityCleared: clearedActivityKeys.length,
+            pendingId: pending?.id || null,
+        };
+    };
+    rxSettingsWriteChain = rxSettingsWriteChain.then(commit, commit);
+    return rxSettingsWriteChain;
+}
+
+function rxQueueSettingsRestore(indexOrAt) {
+    rxSettingsMutationGeneration += 1;
+    const commit = async () => {
+        let stored = await chrome.storage.local.get(null);
+        stored = await rxRecoverActivityMigration(stored);
+        const snapshots = Array.isArray(stored.rx_settings_snapshots)
+            ? stored.rx_settings_snapshots.slice()
+            : [];
+        const byIndex = Number.isInteger(indexOrAt) && indexOrAt >= 0 && indexOrAt < snapshots.length;
+        const target = byIndex
+            ? snapshots[indexOrAt]
+            : snapshots.find((item) => item?.at === indexOrAt);
+        if (!target) return { ok: false, reason: 'not-found' };
+
+        const restoresActivity = target.activity && typeof target.activity === 'object';
+        const restoresActivityExactly = restoresActivity && target.activityComplete === true;
+        const restoresResetData = target.resetData && typeof target.resetData === 'object';
+        const preRestore = rxAppendSettingsSnapshot(stored, 'pre-restore', {
+            captureActivity: restoresActivity,
+            captureProfiles: Array.isArray(target.profiles),
+            captureResetData: restoresResetData,
+        });
+        const values = {
+            rx_settings: rxNormalizeSettings(target.settings || {}),
+            [RX_SETTINGS_GENERATION_KEY]: rxNextSettingsGeneration(stored),
+        };
+        if (preRestore.ok) values.rx_settings_snapshots = preRestore.snapshots;
+        if (Array.isArray(target.profiles)) {
+            values.rx_settings_profiles = target.profiles.slice(0, 25)
+                .filter((profile) => profile && typeof profile === 'object')
+                .map((profile) => ({
+                    id: String(profile.id || '').slice(0, 160),
+                    name: String(profile.name || '').slice(0, 60),
+                    createdAt: Number(profile.createdAt) || Date.now(),
+                    settings: rxNormalizeSettings(profile.settings || {}),
+                }))
+                .filter((profile) => profile.id && profile.name);
+        }
+
+        let removeActivity = [];
+        if (restoresActivity) {
+            const currentActivity = RXActivityStore.collectStoredActivity(stored);
+            const restoredActivity = RXActivityStore.collectStoredActivity(target.activity);
+            Object.assign(values, restoredActivity);
+            if (restoresActivityExactly) {
+                removeActivity = Object.keys(currentActivity)
+                    .filter((key) => !Object.hasOwn(restoredActivity, key));
+            }
+        }
+
+        let removeResetData = [];
+        if (restoresResetData) {
+            const restoredResetData = Object.fromEntries(RX_RESET_SNAPSHOT_KEYS
+                .filter((key) => target.resetData[key] !== undefined)
+                .map((key) => [key, target.resetData[key]]));
+            Object.assign(values, restoredResetData);
+            removeResetData = RX_RESET_SNAPSHOT_KEYS
+                .filter((key) => stored[key] !== undefined && !Object.hasOwn(restoredResetData, key));
+        }
+
+        const activityGeneration = restoresActivity ? rxNextActivityGeneration(stored) : null;
+        let pendingActivityCleanup = null;
+        if (activityGeneration !== null) {
+            values[RXActivityStore.GENERATION_KEY] = activityGeneration;
+            const restoredPending = values[PENDING_LOCAL_DATA_OP_KEY];
+            pendingActivityCleanup = rxPreparePageCleanupOperation(stored, {
+                source: 'snapshot-restore',
+                clear: true,
+                activityGeneration,
+                existingOverride: restoredPending && typeof restoredPending === 'object'
+                    ? restoredPending
+                    : null,
+                preserveExistingIdentity: !!restoredPending?.id,
+            });
+            values[PENDING_LOCAL_DATA_OP_KEY] = pendingActivityCleanup;
+        }
+        const remove = [...new Set([...removeActivity, ...removeResetData])]
+            .filter((key) => !Object.hasOwn(values, key));
+        const touched = [...new Set([...Object.keys(values), ...remove])];
+        let pauseResult = null;
+        if (restoresResetData) {
+            rxArchiveNetworkGeneration++;
+            rxDownloadRecoveryGeneration++;
+            pauseResult = await rxCallOpenOffscreen('pauseArchiveWrites').catch(() => ({ ok: false }));
+        }
+        try {
+            await chrome.storage.local.set(values);
+            if (remove.length) await chrome.storage.local.remove(remove);
+            if (restoresResetData && values.rx_archive_queue) {
+                await rxReconcileRestoredArchiveState();
+            }
+            let broadcast = null;
+            if (pendingActivityCleanup) {
+                broadcast = await rxBroadcastPendingLocalDataOperation(pendingActivityCleanup, {
+                    action: 'setLocalData',
+                    data: {},
+                    clear: true,
+                    generation: activityGeneration,
+                    resetRantCache: true,
+                });
+            }
+            return {
+                ok: true,
+                restored: { at: target.at, reason: target.reason },
+                snapshot: rxSnapshotReceipt(preRestore),
+                activityGeneration,
+                pendingOrigins: broadcast?.pendingOrigins || 0,
+            };
+        } catch (error) {
+            const rollback = {};
+            const rollbackRemove = [];
+            for (const key of touched) {
+                if (Object.hasOwn(stored, key)) rollback[key] = stored[key];
+                else rollbackRemove.push(key);
+            }
+            if (stored.rx_archive_queue !== undefined) {
+                rollback.rx_archive_queue = rxNormalizeArchiveQueueForSnapshot(stored.rx_archive_queue);
+            }
+            let rollbackFailed = false;
+            try {
+                if (Object.keys(rollback).length) await chrome.storage.local.set(rollback);
+                if (rollbackRemove.length) await chrome.storage.local.remove(rollbackRemove);
+                if (stored.rx_archive_queue !== undefined) {
+                    await rxReconcileRestoredArchiveState();
+                }
+            } catch (rollbackError) {
+                rollbackFailed = true;
+                console.error('[RumbleX] snapshot restore rollback failed:', rollbackError);
+            }
+            if (rollbackFailed) {
+                error.partial = true;
+                error.message = 'Snapshot restore failed and automatic recovery was incomplete: ' + (error?.message || error);
+            }
+            throw error;
+        } finally {
+            if (pauseResult && pauseResult.wasPaused !== true) {
+                await rxCallOpenOffscreen('resumeArchiveWrites').catch(() => ({ ok: false }));
+            }
+        }
+    };
+    rxSettingsWriteChain = rxSettingsWriteChain.then(commit, commit);
+    return rxSettingsWriteChain;
+}
+
+function rxListProfiles() {
+    return rxSettingsWriteChain.catch(() => {}).then(async () => {
+        const data = await chrome.storage.local.get(['rx_settings_profiles', 'rx_settings']);
+        const profiles = Array.isArray(data.rx_settings_profiles) ? data.rx_settings_profiles : [];
+        return {
+            ok: true,
+            profiles: profiles.map((profile) => ({
+                id: profile.id,
+                name: profile.name,
+                createdAt: profile.createdAt,
+            })),
+            activeId: (data.rx_settings || {}).activeProfileId || 'default',
+        };
+    });
+}
+
+function rxQueueProfileSave(name) {
+    return rxQueueStorageMutation(async () => {
+        const data = await chrome.storage.local.get(['rx_settings_profiles', 'rx_settings']);
+        const profiles = Array.isArray(data.rx_settings_profiles) ? data.rx_settings_profiles.slice() : [];
+        if (profiles.some((profile) => profile.name === name)) return { ok: false, reason: 'duplicate-name' };
+        if (profiles.length >= 25) return { ok: false, reason: 'cap-reached' };
+        const id = 'p_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 8);
+        profiles.push({
+            id,
+            name,
+            createdAt: Date.now(),
+            settings: rxNormalizeSettings(data.rx_settings || {}),
+        });
+        await chrome.storage.local.set({ rx_settings_profiles: profiles });
+        return { ok: true, id, count: profiles.length };
+    });
+}
+
+function rxQueueProfileSwitch(id) {
+    rxSettingsMutationGeneration += 1;
+    return rxQueueStorageMutation(async () => {
+        const stored = await chrome.storage.local.get(null);
+        const profiles = Array.isArray(stored.rx_settings_profiles) ? stored.rx_settings_profiles : [];
+        const target = profiles.find((profile) => profile.id === id);
+        if (!target) return { ok: false, reason: 'not-found' };
+        const next = rxNormalizeSettings({ ...target.settings, activeProfileId: target.id });
+        const snapshot = rxAppendSettingsSnapshot(stored, 'pre-profile-switch');
+        const values = {
+            rx_settings: next,
+            [RX_SETTINGS_GENERATION_KEY]: rxNextSettingsGeneration(stored),
+        };
+        if (snapshot.ok) values.rx_settings_snapshots = snapshot.snapshots;
+        await chrome.storage.local.set(values);
+        return { ok: true, name: target.name };
+    });
+}
+
+function rxQueueProfileDelete(id) {
+    return rxQueueStorageMutation(async () => {
+        const stored = await chrome.storage.local.get(null);
+        const all = Array.isArray(stored.rx_settings_profiles) ? stored.rx_settings_profiles : [];
+        const removed = all.find((profile) => profile.id === id);
+        if (!removed) return { ok: false, reason: 'not-found' };
+        let snapshot;
+        try {
+            snapshot = rxAppendSettingsSnapshot(stored,
+                'pre-profile-delete: ' + String(removed.name || id),
+                { captureProfiles: true });
+        } catch (error) {
+            if (!String(error?.message || error).includes('64 MiB history budget')) throw error;
+            snapshot = { ok: false, reason: 'too-large' };
+        }
+        const profiles = all.filter((profile) => profile.id !== id);
+        const values = { rx_settings_profiles: profiles };
+        if (snapshot.ok) values.rx_settings_snapshots = snapshot.snapshots;
+        await chrome.storage.local.set(values);
+        return {
+            ok: true,
+            count: profiles.length,
+            name: removed.name || '',
+            undo: {
+                id: removed.id,
+                name: removed.name,
+                createdAt: removed.createdAt,
+                settings: removed.settings,
+            },
+            snapshotted: snapshot.ok,
+        };
+    });
+}
+
+function rxQueueProfileRestore(profile) {
+    return rxQueueStorageMutation(async () => {
+        const data = await chrome.storage.local.get('rx_settings_profiles');
+        const profiles = Array.isArray(data.rx_settings_profiles) ? data.rx_settings_profiles.slice() : [];
+        if (profiles.some((item) => item.id === profile.id)) return { ok: false, reason: 'already-exists' };
+        if (profiles.length >= 25) return { ok: false, reason: 'cap-reached' };
+        profiles.push({
+            id: String(profile.id).slice(0, 160),
+            name: String(profile.name || 'Restored profile').slice(0, 60),
+            createdAt: Number(profile.createdAt) || Date.now(),
+            settings: rxNormalizeSettings(profile.settings || {}),
+        });
+        await chrome.storage.local.set({ rx_settings_profiles: profiles });
+        return { ok: true, count: profiles.length };
+    });
+}
+
+function rxActivityValueFingerprint(value) {
+    const text = String(value);
+    let first = 0x811c9dc5;
+    let second = 0x9e3779b9;
+    for (let index = 0; index < text.length; index += 1) {
+        const code = text.charCodeAt(index);
+        first = Math.imul(first ^ code, 0x01000193) >>> 0;
+        second = Math.imul(second ^ (code + index), 0x85ebca6b) >>> 0;
+    }
+    return `${text.length}:${first.toString(16)}:${second.toString(16)}`;
+}
+
+async function rxRecoverActivityMigration(stored) {
+    const journal = stored?.[RXActivityStore.MIGRATION_JOURNAL_KEY];
+    if (!journal || typeof journal !== 'object' || !journal.id) return stored;
+    const meta = stored[RXActivityStore.META_KEY];
+    if (meta?.lastTransactionId === journal.id) {
+        await chrome.storage.local.remove(RXActivityStore.MIGRATION_JOURNAL_KEY);
+        return chrome.storage.local.get(null);
+    }
+    const before = journal.beforeActivity && typeof journal.beforeActivity === 'object'
+        ? journal.beforeActivity
+        : {};
+    const currentKeys = Object.keys(stored)
+        .filter((key) => key.startsWith(RXActivityStore.PREFIX));
+    const restore = Object.fromEntries(Object.entries(before)
+        .filter(([, value]) => typeof value === 'string')
+        .map(([key, value]) => [RXActivityStore.PREFIX + key, value]));
+    const remove = currentKeys.filter((storageKey) => (
+        !Object.hasOwn(before, storageKey.slice(RXActivityStore.PREFIX.length))
+    ));
+    if (Object.keys(restore).length) await chrome.storage.local.set(restore);
+    if (remove.length) await chrome.storage.local.remove(remove);
+    if (journal.hadMeta) await chrome.storage.local.set({ [RXActivityStore.META_KEY]: journal.beforeMeta });
+    else await chrome.storage.local.remove(RXActivityStore.META_KEY);
+    await chrome.storage.local.remove(RXActivityStore.MIGRATION_JOURNAL_KEY);
+    return chrome.storage.local.get(null);
+}
+
+function rxQueueActivityMigration(data, origin, expectedGeneration = null, removed = [], expectedBarrierId = '') {
+    const commit = async () => {
+        const pageData = Object.fromEntries(Object.entries(data || {}).filter(([key, value]) => (
+            typeof key === 'string'
+            && key.length <= 240
+            && key.startsWith('rx_')
+            && typeof value === 'string'
+        )));
+        const removedKeys = [...new Set((Array.isArray(removed) ? removed : [])
+            .filter((key) => RXActivityStore.isLocalActivityKey(key) && !Object.hasOwn(pageData, key)))];
+        let stored = await chrome.storage.local.get(null);
+        stored = await rxRecoverActivityMigration(stored);
+        const currentGeneration = Math.max(0, Number(stored[RXActivityStore.GENERATION_KEY]) || 0);
+        const currentBarrierId = typeof stored[PENDING_LOCAL_DATA_OP_KEY]?.id === 'string'
+            ? stored[PENDING_LOCAL_DATA_OP_KEY].id
+            : '';
+        const hasExpectedGeneration = Number.isInteger(expectedGeneration) && expectedGeneration >= 0;
+        if (String(expectedBarrierId || '') !== currentBarrierId
+            || (!hasExpectedGeneration && currentGeneration !== 0)
+            || (hasExpectedGeneration && expectedGeneration !== currentGeneration)) {
+            return { ok: false, reason: 'superseded', generation: currentGeneration };
+        }
+        const meta = stored[RXActivityStore.META_KEY];
+        if (meta?.hold) return { ok: false, reason: 'held' };
+
+        const current = Object.fromEntries(Object.entries(stored)
+            .filter(([key, value]) => key.startsWith(RXActivityStore.PREFIX) && typeof value === 'string')
+            .map(([key, value]) => [key.slice(RXActivityStore.PREFIX.length), value]));
+        const committed = meta?.version === RXActivityStore.VERSION;
+        const knownOrigins = committed && Array.isArray(meta.origins) ? meta.origins : [];
+        const originAlreadyMigrated = knownOrigins.includes(origin);
+        const merged = committed ? { ...current } : {};
+        const previousSnapshot = stored[RXActivityStore.PREMIGRATION_KEY];
+        const hasPerOriginSnapshot = previousSnapshot?.dataByOrigin
+            && typeof previousSnapshot.dataByOrigin === 'object';
+        const originSnapshot = previousSnapshot?.dataByOrigin?.[origin]
+            || (!hasPerOriginSnapshot && knownOrigins.length <= 1 ? previousSnapshot?.data : null)
+            || {};
+        const storedFingerprints = meta?.pageFingerprints && typeof meta.pageFingerprints === 'object'
+            ? meta.pageFingerprints
+            : {};
+        const storedBaselines = meta?.pageBaselines && typeof meta.pageBaselines === 'object'
+            ? meta.pageBaselines
+            : {};
+        const originFingerprints = storedFingerprints[origin]
+            && typeof storedFingerprints[origin] === 'object'
+            ? storedFingerprints[origin]
+            : {};
+        const originBaseline = storedBaselines[origin]
+            && typeof storedBaselines[origin] === 'object'
+            ? storedBaselines[origin]
+            : originSnapshot;
+        const nextOriginFingerprints = { ...originFingerprints };
+        const nextOriginBaseline = { ...originBaseline };
+
+        for (const [key, value] of Object.entries(pageData)) {
+            const fingerprint = rxActivityValueFingerprint(value);
+            const baseline = originFingerprints[key]
+                || (typeof originBaseline[key] === 'string'
+                    ? rxActivityValueFingerprint(originBaseline[key])
+                    : null);
+            const hasBaselineRecord = Object.hasOwn(originFingerprints, key)
+                || Object.hasOwn(originBaseline, key);
+            const unchangedPageCopy = originAlreadyMigrated
+                && Object.hasOwn(current, key)
+                // Old metadata may not have a baseline at all. Preserve its
+                // duplicate-avoidance behavior, but an explicit null means
+                // this origin deleted the key and has now recreated it.
+                && (!hasBaselineRecord || (baseline !== null && baseline === fingerprint));
+            const reconciled = !committed
+                ? value
+                : unchangedPageCopy
+                    ? current[key]
+                    : RXActivityStore.reconcileValue(
+                        current[key],
+                        value,
+                        typeof originBaseline[key] === 'string' ? originBaseline[key] : undefined,
+                    );
+            if (reconciled === undefined) delete merged[key];
+            else merged[key] = reconciled;
+            nextOriginFingerprints[key] = fingerprint;
+            nextOriginBaseline[key] = value;
+        }
+        for (const key of removedKeys) {
+            if (!committed || !originAlreadyMigrated || typeof originBaseline[key] !== 'string') continue;
+            const reconciled = RXActivityStore.reconcileValue(current[key], undefined, originBaseline[key]);
+            if (reconciled === undefined) delete merged[key];
+            else merged[key] = reconciled;
+            delete nextOriginFingerprints[key];
+            nextOriginBaseline[key] = null;
+        }
+
+        const dataByOrigin = previousSnapshot?.dataByOrigin && typeof previousSnapshot.dataByOrigin === 'object'
+            ? { ...previousSnapshot.dataByOrigin }
+            : {};
+        const shouldCaptureOrigin = Object.keys(pageData).length > 0
+            && (!originAlreadyMigrated || !Object.hasOwn(dataByOrigin, origin));
+        if (shouldCaptureOrigin) dataByOrigin[origin] = pageData;
+        const legacyData = previousSnapshot?.data && typeof previousSnapshot.data === 'object'
+            ? (shouldCaptureOrigin ? { ...previousSnapshot.data, ...pageData } : previousSnapshot.data)
+            : { ...pageData };
+        const origins = [...new Set([...knownOrigins, origin])];
+        const transactionId = String(Date.now()) + '-' + Math.random().toString(16).slice(2);
+        const nextMeta = {
+            version: RXActivityStore.VERSION,
+            migratedAt: committed && Number.isFinite(meta.migratedAt) ? meta.migratedAt : Date.now(),
+            updatedAt: Date.now(),
+            keys: Object.keys(merged).length,
+            origins,
+            lastTransactionId: transactionId,
+            pageFingerprints: {
+                ...storedFingerprints,
+                [origin]: nextOriginFingerprints,
+            },
+            pageBaselines: {
+                ...storedBaselines,
+                [origin]: nextOriginBaseline,
+            },
+        };
+        if (shouldCaptureOrigin || (!previousSnapshot && Object.keys(pageData).length > 0)) {
+            await chrome.storage.local.set({
+                [RXActivityStore.PREMIGRATION_KEY]: {
+                    at: Number.isFinite(previousSnapshot?.at) ? previousSnapshot.at : Date.now(),
+                    updatedAt: Date.now(),
+                    version: RXActivityStore.VERSION,
+                    data: legacyData,
+                    dataByOrigin,
+                },
+            });
+        }
+
+        const copies = Object.fromEntries(Object.entries(merged)
+            .map(([key, value]) => [RXActivityStore.PREFIX + key, value]));
+        const stale = Object.keys(current)
+            .filter((key) => !Object.hasOwn(merged, key))
+            .map((key) => RXActivityStore.PREFIX + key);
+        await chrome.storage.local.set({
+            [RXActivityStore.MIGRATION_JOURNAL_KEY]: {
+                id: transactionId,
+                at: Date.now(),
+                origin,
+                beforeActivity: current,
+                hadMeta: meta !== undefined,
+                beforeMeta: meta === undefined ? null : meta,
+            },
+        });
+        if (Object.keys(copies).length) await chrome.storage.local.set(copies);
+        if (stale.length) await chrome.storage.local.remove(stale);
+
+        const verifyKeys = Object.keys(merged).map((key) => RXActivityStore.PREFIX + key);
+        const verified = await chrome.storage.local.get([...verifyKeys, ...stale]);
+        const mismatched = Object.entries(merged).filter(([key, value]) => (
+            verified[RXActivityStore.PREFIX + key] !== value
+        ));
+        const staleRemaining = stale.filter((key) => verified[key] !== undefined);
+        const rollbackCopies = async () => {
+            const restore = Object.fromEntries(Object.entries(current)
+                .map(([key, value]) => [RXActivityStore.PREFIX + key, value]));
+            const remove = Object.keys(merged)
+                .filter((key) => !Object.hasOwn(current, key))
+                .map((key) => RXActivityStore.PREFIX + key);
+            if (Object.keys(restore).length) await chrome.storage.local.set(restore);
+            if (remove.length) await chrome.storage.local.remove(remove);
+            if (meta === undefined) await chrome.storage.local.remove(RXActivityStore.META_KEY);
+            else await chrome.storage.local.set({ [RXActivityStore.META_KEY]: meta });
+            await chrome.storage.local.remove(RXActivityStore.MIGRATION_JOURNAL_KEY);
+        };
+        if (mismatched.length || staleRemaining.length) {
+            await rollbackCopies();
+            if (!committed) {
+                await chrome.storage.local.set({
+                    [RXActivityStore.META_KEY]: {
+                        version: 0,
+                        failedAt: Date.now(),
+                        reason: 'verify',
+                        mismatched: mismatched.length + staleRemaining.length,
+                    },
+                });
+            }
+            return {
+                ok: false,
+                reason: 'verify',
+                mismatched: [
+                    ...mismatched.map(([key]) => key),
+                    ...staleRemaining.map((key) => key.slice(RXActivityStore.PREFIX.length)),
+                ],
+            };
+        }
+
+        await chrome.storage.local.set({ [RXActivityStore.META_KEY]: nextMeta });
+        const verifiedMeta = (await chrome.storage.local.get(RXActivityStore.META_KEY))[RXActivityStore.META_KEY];
+        if (verifiedMeta?.version !== RXActivityStore.VERSION
+            || !Array.isArray(verifiedMeta.origins)
+            || !verifiedMeta.origins.includes(origin)
+            || verifiedMeta.lastTransactionId !== transactionId) {
+            await rollbackCopies();
+            return { ok: false, reason: 'verify-meta', mismatched: [] };
+        }
+
+        await chrome.storage.local.remove(RXActivityStore.MIGRATION_JOURNAL_KEY);
+
+        return {
+            ok: true,
+            already: committed && originAlreadyMigrated,
+            keys: Object.keys(merged).length,
+            meta: nextMeta,
+        };
     };
     rxSettingsWriteChain = rxSettingsWriteChain.then(commit, commit);
     return rxSettingsWriteChain;
 }
 
 async function rxSetSettings(patch) {
-    try {
-        return await rxQueueSettingsWrite(patch);
-    } catch (e) { console.warn('[RumbleX] rxSetSettings failed:', e); }
-    return null;
+    return rxQueueSettingsWrite(patch);
 }
 
 async function rxSyncChannelNotifier() {
@@ -1048,8 +2533,108 @@ if (chrome.notifications?.onClicked) {
 
 let rxNotifierPassPromise = null;
 
+function rxQueueNotifierChannelUpdates(updates, expectedGeneration) {
+    if (rxSettingsMutationGeneration !== expectedGeneration) return Promise.resolve(false);
+    rxSettingsMutationGeneration += 1;
+    return rxQueueStorageMutation(async () => {
+        const stored = await chrome.storage.local.get('rx_settings');
+        const current = rxNormalizeSettings(stored.rx_settings || {});
+        const byUrl = new Map((Array.isArray(updates) ? updates : [])
+            .map((entry) => [rxSafeRumbleUrl(entry?.url), entry])
+            .filter(([url]) => !!url));
+        const watchedChannels = (Array.isArray(current.watchedChannels) ? current.watchedChannels : [])
+            .map((channel) => {
+                const update = byUrl.get(rxSafeRumbleUrl(channel?.url));
+                if (!update) return channel;
+                return {
+                    ...channel,
+                    lastSeenVideoId: update.lastSeenVideoId,
+                    isLive: update.isLive === true,
+                    lastChecked: update.lastChecked,
+                    lastError: update.lastError || null,
+                };
+            });
+        const next = rxNormalizeSettings({ ...current, watchedChannels });
+        await chrome.storage.local.set({ rx_settings: next });
+        return true;
+    });
+}
+
+function rxQueueWatchedChannelAdd(url, name) {
+    rxSettingsMutationGeneration += 1;
+    return rxQueueStorageMutation(async () => {
+        const stored = await chrome.storage.local.get('rx_settings');
+        const current = rxNormalizeSettings(stored.rx_settings || {});
+        const list = Array.isArray(current.watchedChannels) ? current.watchedChannels.slice() : [];
+        if (list.some((channel) => rxSafeRumbleUrl(channel?.url) === url)) {
+            return { ok: false, reason: 'duplicate' };
+        }
+        list.push({
+            url,
+            name: String(name || '').slice(0, 300) || url,
+            lastSeenVideoId: null,
+            isLive: false,
+            lastChecked: null,
+        });
+        const next = rxNormalizeSettings({ ...current, watchedChannels: list });
+        await chrome.storage.local.set({ rx_settings: next });
+        return { ok: true, count: list.length };
+    });
+}
+
+function rxQueueWatchedChannelRemove(url) {
+    rxSettingsMutationGeneration += 1;
+    return rxQueueStorageMutation(async () => {
+        const stored = await chrome.storage.local.get('rx_settings');
+        const current = rxNormalizeSettings(stored.rx_settings || {});
+        const list = (Array.isArray(current.watchedChannels) ? current.watchedChannels : [])
+            .filter((channel) => rxSafeRumbleUrl(channel?.url) !== url);
+        const next = rxNormalizeSettings({ ...current, watchedChannels: list });
+        await chrome.storage.local.set({ rx_settings: next });
+        return { ok: true, count: list.length };
+    });
+}
+
+function rxQueueWatchedChannelBulkAdd(rows, expectedGeneration) {
+    if (rxSettingsMutationGeneration !== expectedGeneration) {
+        return Promise.resolve({ ok: false, reason: 'superseded' });
+    }
+    rxSettingsMutationGeneration += 1;
+    return rxQueueStorageMutation(async () => {
+        const stored = await chrome.storage.local.get('rx_settings');
+        const current = rxNormalizeSettings(stored.rx_settings || {});
+        const watchedChannels = Array.isArray(current.watchedChannels)
+            ? current.watchedChannels.slice()
+            : [];
+        const known = new Set(watchedChannels.map((channel) => rxSafeRumbleUrl(channel?.url)).filter(Boolean));
+        let added = 0;
+        let duplicates = 0;
+        for (const row of rows) {
+            const url = rxSafeRumbleUrl(row?.url);
+            if (!url) continue;
+            if (known.has(url)) { duplicates++; continue; }
+            watchedChannels.push({
+                url,
+                name: String(row?.name || '').slice(0, 300) || url,
+                lastSeenVideoId: null,
+                isLive: false,
+                lastChecked: null,
+            });
+            known.add(url);
+            added++;
+        }
+        const next = rxNormalizeSettings({ ...current, watchedChannels });
+        await chrome.storage.local.set({ rx_settings: next });
+        return { ok: true, added, duplicates, total: watchedChannels.length };
+    });
+}
+
 async function rxRunNotifierPassOnce() {
+    await rxEnsurePendingResetStartupRecovery();
+    await rxSettingsWriteChain.catch(() => {});
+    const passGeneration = rxSettingsMutationGeneration;
     const s = await rxGetSettings();
+    if (rxSettingsMutationGeneration !== passGeneration) return;
     if (!s.channelNotifierEnabled) return;
     const channels = Array.isArray(s.watchedChannels) ? s.watchedChannels : [];
     if (channels.length === 0) return;
@@ -1077,6 +2662,7 @@ async function rxRunNotifierPassOnce() {
                 continue;
             }
             const text = await resp.text();
+            if (rxSettingsMutationGeneration !== passGeneration) return;
             const { latestVideoId, isLive, latest, live } = rxParseChannelHtml(text, channelUrl);
             const newVideo = latestVideoId && safeChannel.lastSeenVideoId && latestVideoId !== safeChannel.lastSeenVideoId;
             const liveStarted = isLive && !safeChannel.isLive;
@@ -1121,11 +2707,12 @@ async function rxRunNotifierPassOnce() {
             });
             dirty = true;
         } catch (e) {
+            if (rxSettingsMutationGeneration !== passGeneration) return;
             updated.push({ ...safeChannel, lastChecked: Date.now(), lastError: String(e?.message || e).slice(0, 500) });
             dirty = true;
         }
     }
-    if (dirty) await rxSetSettings({ watchedChannels: updated });
+    if (dirty) await rxQueueNotifierChannelUpdates(updated, passGeneration);
 }
 
 function rxRunNotifierPass() {
@@ -1166,7 +2753,6 @@ const RX_ARCHIVE_MAX_JOBS = 500;
 const RX_ARCHIVE_COMPLETED_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const RX_ARCHIVE_EXPORT_SCHEMA = 1;
 const RX_ARCHIVE_WORKER_EPOCH = Date.now();
-let rxArchiveMutationQueue = Promise.resolve();
 
 async function rxSyncArchiveAlarm() {
     try {
@@ -1192,15 +2778,22 @@ async function rxSaveArchiveQueue(root) {
     await chrome.storage.local.set({ [RX_ARCHIVE_KEY]: root });
 }
 
-function rxMutateArchiveQueue(mutator) {
-    const mutation = rxArchiveMutationQueue.then(async () => {
+function rxMutateArchiveQueue(mutator, expectedGeneration = null) {
+    return rxQueueStorageMutation(async () => {
+        if (expectedGeneration !== null && expectedGeneration !== rxArchiveNetworkGeneration) {
+            return { superseded: true };
+        }
         const root = await rxLoadArchiveQueue();
+        if (expectedGeneration !== null && expectedGeneration !== rxArchiveNetworkGeneration) {
+            return { superseded: true };
+        }
         const result = await mutator(root);
+        if (expectedGeneration !== null && expectedGeneration !== rxArchiveNetworkGeneration) {
+            return { superseded: true };
+        }
         await rxSaveArchiveQueue(root);
         return result;
     });
-    rxArchiveMutationQueue = mutation.catch(() => {});
-    return mutation;
 }
 
 function rxArchiveSanitizeFilename(s) {
@@ -1305,13 +2898,17 @@ async function rxGetArchiveFolderState() {
 }
 
 async function rxPreflightArchiveQueue() {
+    const archiveGeneration = rxArchiveNetworkGeneration;
     const cap = await rxGetArchiveMaxHeight();
     const ids = await rxMutateArchiveQueue((root) => {
         root.paused = true;
         return root.jobs
             .filter((job) => job.status === 'pending' || job.status === 'failed')
             .map((job) => job.id);
-    });
+    }, archiveGeneration);
+    if (ids?.superseded) {
+        return { superseded: true, checked: 0, knownSize: 0, estimatedBytes: 0, failed: 0 };
+    }
     let checked = 0;
     let knownSize = 0;
     let estimatedBytes = 0;
@@ -1319,36 +2916,44 @@ async function rxPreflightArchiveQueue() {
     const queue = ids.slice();
     const worker = async () => {
         while (queue.length) {
+            if (archiveGeneration !== rxArchiveNetworkGeneration) return;
             const id = queue.shift();
             const snapshot = await rxLoadArchiveQueue();
+            if (archiveGeneration !== rxArchiveNetworkGeneration) return;
             const job = snapshot.jobs.find((entry) => entry.id === id);
             if (!job) continue;
             try {
                 const discovered = await rxDiscoverVideoQuality(job.videoId, cap);
-                await rxUpdateArchiveJob(id, {
+                const update = await rxUpdateArchiveJob(id, {
                     qualityFound: discovered.quality,
                     estimatedBytes: discovered.estimatedBytes,
                     videoTitle: job.videoTitle || discovered.title || job.videoId,
                     preflightAt: Date.now(),
                     preflightError: null,
-                });
+                }, archiveGeneration);
+                if (update?.superseded) return;
                 if (discovered.estimatedBytes) {
                     knownSize++;
                     estimatedBytes += discovered.estimatedBytes;
                 }
             } catch (error) {
+                if (archiveGeneration !== rxArchiveNetworkGeneration) return;
                 failed++;
-                await rxUpdateArchiveJob(id, {
+                const update = await rxUpdateArchiveJob(id, {
                     qualityFound: null,
                     estimatedBytes: null,
                     preflightAt: Date.now(),
                     preflightError: String(error?.message || error).slice(0, 200),
-                });
+                }, archiveGeneration);
+                if (update?.superseded) return;
             }
             checked++;
         }
     };
     await Promise.all(Array.from({ length: Math.min(3, Math.max(1, ids.length)) }, () => worker()));
+    if (archiveGeneration !== rxArchiveNetworkGeneration) {
+        return { superseded: true, checked, knownSize, estimatedBytes, failed };
+    }
     return { checked, knownSize, estimatedBytes, failed, paused: true };
 }
 
@@ -1443,6 +3048,7 @@ async function rxImportArchiveQueue(payload) {
 }
 
 async function rxRunArchiveTick() {
+    await rxEnsurePendingResetStartupRecovery();
     const snapshot = await rxLoadArchiveQueue();
     if (snapshot.paused) return;
 
@@ -1492,13 +3098,13 @@ async function rxRunArchiveTick() {
     })));
 }
 
-async function rxUpdateArchiveJob(id, patch) {
+async function rxUpdateArchiveJob(id, patch, expectedGeneration = null) {
     return rxMutateArchiveQueue((root) => {
         const idx = root.jobs.findIndex((job) => job.id === id);
         if (idx < 0) return null;
         root.jobs[idx] = { ...root.jobs[idx], ...patch };
         return root.jobs[idx];
-    });
+    }, expectedGeneration);
 }
 
 function rxResetArchiveJobForRetry(job) {
@@ -1543,9 +3149,9 @@ function rxRecoverAbandonedArchiveJobs(root) {
 // folder. `downloadManagerEnabled` is the master gate.
 const RX_DOWNLOAD_RECOVERY_KEY = 'rx_download_recovery';
 const RX_DOWNLOAD_RECOVERY_MAX = 200;
-let rxDownloadRecoveryMutationQueue = Promise.resolve();
 let rxNetworkTransitionQueue = Promise.resolve();
 let rxArchiveNetworkGeneration = 0;
+let rxDownloadRecoveryGeneration = 0;
 
 const rxDownloadsApi = {
     download(options) {
@@ -1638,15 +3244,22 @@ async function rxSaveDownloadRecovery(root) {
     await chrome.storage.local.set({ [RX_DOWNLOAD_RECOVERY_KEY]: rxNormalizeDownloadRecovery(root) });
 }
 
-function rxMutateDownloadRecovery(mutator) {
-    const mutation = rxDownloadRecoveryMutationQueue.then(async () => {
+function rxMutateDownloadRecovery(mutator, expectedGeneration = null) {
+    return rxQueueStorageMutation(async () => {
+        if (expectedGeneration !== null && expectedGeneration !== rxDownloadRecoveryGeneration) {
+            return { superseded: true };
+        }
         const root = await rxLoadDownloadRecovery();
+        if (expectedGeneration !== null && expectedGeneration !== rxDownloadRecoveryGeneration) {
+            return { superseded: true };
+        }
         const result = await mutator(root);
+        if (expectedGeneration !== null && expectedGeneration !== rxDownloadRecoveryGeneration) {
+            return { superseded: true };
+        }
         await rxSaveDownloadRecovery(root);
         return result;
-    });
-    rxDownloadRecoveryMutationQueue = mutation.catch(() => {});
-    return mutation;
+    }, expectedGeneration);
 }
 
 function rxQueueNetworkTransition(task) {
@@ -1672,7 +3285,7 @@ async function rxShouldPauseArchiveQueueOffline() {
         && await rxIsArchiveOfflinePauseEnabled();
 }
 
-async function rxTrackManagedDownload(downloadId, metadata = {}) {
+async function rxTrackManagedDownload(downloadId, metadata = {}, expectedGeneration = null) {
     if (!Number.isInteger(downloadId) || !(await rxIsDownloadManagerEnabled())) return false;
     return rxMutateDownloadRecovery((root) => {
         root.jobs = root.jobs.filter((job) => job.downloadId !== downloadId);
@@ -1691,24 +3304,24 @@ async function rxTrackManagedDownload(downloadId, metadata = {}) {
         });
         root.jobs = root.jobs.slice(-RX_DOWNLOAD_RECOVERY_MAX);
         return true;
-    });
+    }, expectedGeneration);
 }
 
-async function rxUpdateManagedDownload(downloadId, patch) {
+async function rxUpdateManagedDownload(downloadId, patch, expectedGeneration = null) {
     return rxMutateDownloadRecovery((root) => {
         const job = root.jobs.find((entry) => entry.downloadId === downloadId);
         if (!job) return null;
         Object.assign(job, patch, { updatedAt: Date.now() });
         return { ...job };
-    });
+    }, expectedGeneration);
 }
 
-async function rxUntrackManagedDownload(downloadId) {
+async function rxUntrackManagedDownload(downloadId, expectedGeneration = null) {
     return rxMutateDownloadRecovery((root) => {
         const before = root.jobs.length;
         root.jobs = root.jobs.filter((job) => job.downloadId !== downloadId);
         return before !== root.jobs.length;
-    });
+    }, expectedGeneration);
 }
 
 async function rxGetManagedDownload(downloadId) {
@@ -1831,10 +3444,10 @@ async function rxPollLiveApi() {
     return rxLiveApiInFlight;
 }
 
-async function rxStartManagedDownload(options, metadata = {}) {
+async function rxStartManagedDownload(options, metadata = {}, expectedGeneration = null) {
     const downloadId = await rxDownloadsApi.download(options);
     try {
-        await rxTrackManagedDownload(downloadId, metadata);
+        await rxTrackManagedDownload(downloadId, metadata, expectedGeneration);
     } catch (error) {
         // The browser transfer already exists. Recovery metadata is secondary,
         // so never report the started download as rejected and invite a duplicate.
@@ -1862,7 +3475,7 @@ async function rxCallOpenOffscreen(action) {
     });
 }
 
-async function rxMarkArchiveJobsOffline(pausedDownloadIds) {
+async function rxMarkArchiveJobsOffline(pausedDownloadIds, expectedGeneration = null) {
     const paused = new Set(pausedDownloadIds);
     return rxMutateArchiveQueue((root) => {
         let queued = 0;
@@ -1884,10 +3497,10 @@ async function rxMarkArchiveJobsOffline(pausedDownloadIds) {
             queued++;
         }
         return queued;
-    });
+    }, expectedGeneration);
 }
 
-async function rxReleaseArchiveNetworkWait(resumedDownloadIds) {
+async function rxReleaseArchiveNetworkWait(resumedDownloadIds, expectedGeneration = null) {
     const resumed = new Set(resumedDownloadIds);
     return rxMutateArchiveQueue((root) => {
         let released = 0;
@@ -1900,29 +3513,36 @@ async function rxReleaseArchiveNetworkWait(resumedDownloadIds) {
             released++;
         }
         return released;
-    });
+    }, expectedGeneration);
 }
 
 async function rxHandleNetworkOfflineNow() {
+    const recoveryGeneration = rxDownloadRecoveryGeneration;
+    const superseded = () => recoveryGeneration !== rxDownloadRecoveryGeneration;
     if (!(await rxIsDownloadManagerEnabled())) return { enabled: false, paused: 0, queued: 0 };
+    if (superseded()) return { superseded: true };
     // Invalidates archive discovery/write work that began before this
     // transition. A rapid offline -> online flip must not let the stale pass
     // race the newly released queue and dispatch the same job twice.
     rxArchiveNetworkGeneration++;
+    const archiveGeneration = rxArchiveNetworkGeneration;
     await rxMutateDownloadRecovery((root) => {
         if (root.networkStatus !== 'offline') {
             root.networkStatus = 'offline';
             root.lastTransitionAt = Date.now();
         }
-    });
+    }, recoveryGeneration);
+    if (superseded()) return { superseded: true };
 
     const snapshot = await rxLoadDownloadRecovery();
+    if (superseded()) return { superseded: true };
     const pausedIds = [];
     let queued = 0;
     for (const job of snapshot.jobs) {
         const item = await rxGetDownloadItem(job.downloadId);
+        if (superseded()) return { superseded: true };
         if (!item || item.state === 'complete') {
-            await rxUntrackManagedDownload(job.downloadId);
+            await rxUntrackManagedDownload(job.downloadId, recoveryGeneration);
             continue;
         }
         if (item.state === 'interrupted' && item.canResume) {
@@ -1931,13 +3551,15 @@ async function rxHandleNetworkOfflineNow() {
                 status: 'interrupted-offline',
                 bytesReceived: item.bytesReceived,
                 lastError: item.error || 'network-interrupted',
-            });
+            }, recoveryGeneration);
+            if (superseded()) return { superseded: true };
             pausedIds.push(job.downloadId);
             queued++;
             continue;
         }
         if (item.state === 'interrupted' && !item.canResume) {
-            await rxUntrackManagedDownload(job.downloadId);
+            await rxUntrackManagedDownload(job.downloadId, recoveryGeneration);
+            if (superseded()) return { superseded: true };
             if (job.archiveJobId) {
                 await rxUpdateArchiveJob(job.archiveJobId, {
                     status: 'pending',
@@ -1948,7 +3570,7 @@ async function rxHandleNetworkOfflineNow() {
                     networkState: 'waiting-online',
                     networkResumePending: true,
                     networkPausedAt: Date.now(),
-                });
+                }, archiveGeneration);
                 queued++;
             }
             continue;
@@ -1963,13 +3585,20 @@ async function rxHandleNetworkOfflineNow() {
                 status: 'paused-offline',
                 bytesReceived: item.bytesReceived,
                 lastError: null,
-            });
+            }, recoveryGeneration);
+            if (superseded()) return { superseded: true };
             try {
                 await rxDownloadsApi.pause(job.downloadId);
+                if (superseded()) {
+                    try { await rxDownloadsApi.resume(job.downloadId); } catch {}
+                    return { superseded: true };
+                }
             } catch (error) {
+                if (superseded()) return { superseded: true };
                 const refreshed = await rxGetDownloadItem(job.downloadId);
+                if (superseded()) return { superseded: true };
                 if (!refreshed || refreshed.state === 'complete') {
-                    await rxUntrackManagedDownload(job.downloadId);
+                    await rxUntrackManagedDownload(job.downloadId, recoveryGeneration);
                     continue;
                 }
                 if (!(refreshed.paused || (refreshed.state === 'interrupted' && refreshed.canResume))) {
@@ -1977,7 +3606,7 @@ async function rxHandleNetworkOfflineNow() {
                         resumePending: false,
                         status: 'active',
                         lastError: String(error?.message || error).slice(0, 200),
-                    });
+                    }, recoveryGeneration);
                     continue;
                 }
             }
@@ -1988,23 +3617,32 @@ async function rxHandleNetworkOfflineNow() {
 
     let archiveQueued = 0;
     if (await rxIsArchiveOfflinePauseEnabled()) {
+        if (superseded() || archiveGeneration !== rxArchiveNetworkGeneration) return { superseded: true };
         await rxCallOpenOffscreen('pauseArchiveWrites');
-        archiveQueued = await rxMarkArchiveJobsOffline(pausedIds);
+        if (superseded() || archiveGeneration !== rxArchiveNetworkGeneration) return { superseded: true };
+        archiveQueued = await rxMarkArchiveJobsOffline(pausedIds, archiveGeneration);
     }
     return { enabled: true, paused: pausedIds.length, queued, archiveQueued };
 }
 
 async function rxHandleNetworkOnlineNow({ runArchive = true } = {}) {
+    const recoveryGeneration = rxDownloadRecoveryGeneration;
+    const archiveGeneration = rxArchiveNetworkGeneration;
+    const superseded = () => recoveryGeneration !== rxDownloadRecoveryGeneration
+        || archiveGeneration !== rxArchiveNetworkGeneration;
     const snapshot = await rxLoadDownloadRecovery();
+    if (superseded()) return { superseded: true };
     const resumedIds = [];
     for (const job of snapshot.jobs.filter((entry) => entry.resumePending)) {
         const item = await rxGetDownloadItem(job.downloadId);
+        if (superseded()) return { superseded: true };
         if (!item || item.state === 'complete') {
-            await rxUntrackManagedDownload(job.downloadId);
+            await rxUntrackManagedDownload(job.downloadId, recoveryGeneration);
             continue;
         }
         if (item.state === 'interrupted' && !item.canResume) {
-            await rxUntrackManagedDownload(job.downloadId);
+            await rxUntrackManagedDownload(job.downloadId, recoveryGeneration);
+            if (superseded()) return { superseded: true };
             if (job.archiveJobId) {
                 await rxUpdateArchiveJob(job.archiveJobId, {
                     status: 'pending',
@@ -2014,7 +3652,7 @@ async function rxHandleNetworkOnlineNow({ runArchive = true } = {}) {
                     completedAt: null,
                     networkState: 'waiting-online',
                     networkResumePending: true,
-                });
+                }, archiveGeneration);
             } else {
                 try {
                     await rxRecordDownloadDiagnostic({
@@ -2026,7 +3664,7 @@ async function rxHandleNetworkOnlineNow({ runArchive = true } = {}) {
                             code: item.error || 'download-not-resumable',
                         },
                         browserDownloadId: job.downloadId,
-                    });
+                    }, recoveryGeneration);
                 } catch {}
             }
             continue;
@@ -2036,25 +3674,26 @@ async function rxHandleNetworkOnlineNow({ runArchive = true } = {}) {
                 resumePending: false,
                 status: 'active',
                 lastError: null,
-            });
+            }, recoveryGeneration);
             resumedIds.push(job.downloadId);
             continue;
         }
         if (!(item.paused || item.canResume)) continue;
         try {
             await rxDownloadsApi.resume(job.downloadId);
+            if (superseded()) return { superseded: true };
             await rxUpdateManagedDownload(job.downloadId, {
                 resumePending: false,
                 status: 'active',
                 resumeAttempts: (job.resumeAttempts || 0) + 1,
                 lastError: null,
-            });
+            }, recoveryGeneration);
             resumedIds.push(job.downloadId);
         } catch (error) {
             await rxUpdateManagedDownload(job.downloadId, {
                 resumeAttempts: (job.resumeAttempts || 0) + 1,
                 lastError: String(error?.message || error).slice(0, 200),
-            });
+            }, recoveryGeneration);
         }
     }
 
@@ -2063,9 +3702,11 @@ async function rxHandleNetworkOnlineNow({ runArchive = true } = {}) {
             root.networkStatus = 'online';
             root.lastTransitionAt = Date.now();
         }
-    });
+    }, recoveryGeneration);
+    if (superseded()) return { superseded: true };
     await rxCallOpenOffscreen('resumeArchiveWrites');
-    const archiveReleased = await rxReleaseArchiveNetworkWait(resumedIds);
+    if (superseded()) return { superseded: true };
+    const archiveReleased = await rxReleaseArchiveNetworkWait(resumedIds, archiveGeneration);
     if (runArchive) rxRunArchiveTick().catch((error) => console.warn('[RumbleX] online archive resume failed:', error));
     return { resumed: resumedIds.length, archiveReleased };
 }
@@ -2078,7 +3719,8 @@ function rxHandleNetworkOnline(options) {
     return rxQueueNetworkTransition(() => rxHandleNetworkOnlineNow(options));
 }
 
-function rxHandleCurrentNetworkState(options) {
+async function rxHandleCurrentNetworkState(options) {
+    await rxEnsurePendingResetStartupRecovery();
     return typeof navigator !== 'undefined' && navigator.onLine === false
         ? rxHandleNetworkOffline()
         : rxHandleNetworkOnline(options);
@@ -2112,11 +3754,15 @@ Promise.resolve()
     .catch((error) => console.warn('[RumbleX] initial download recovery failed:', error));
 
 async function rxProcessArchiveJob(id) {
+    const networkGeneration = rxArchiveNetworkGeneration;
+    const recoveryGeneration = rxDownloadRecoveryGeneration;
+    const wasSuperseded = () => networkGeneration !== rxArchiveNetworkGeneration
+        || recoveryGeneration !== rxDownloadRecoveryGeneration;
     const root = await rxLoadArchiveQueue();
+    if (wasSuperseded()) return;
     const job = root.jobs.find((j) => j.id === id);
     if (!job) return;
-    const networkGeneration = rxArchiveNetworkGeneration;
-    const wasSuperseded = () => networkGeneration !== rxArchiveNetworkGeneration;
+    const updateJob = (patch) => rxUpdateArchiveJob(id, patch, networkGeneration);
     let cap = 0;
     let discovered = null;
     try {
@@ -2126,7 +3772,7 @@ async function rxProcessArchiveJob(id) {
         if (wasSuperseded()) return;
         const title = job.videoTitle || discovered.title || job.videoId;
         if (await rxShouldPauseArchiveQueueOffline()) {
-            await rxUpdateArchiveJob(id, {
+            await updateJob({
                 status: 'pending',
                 startedAt: null,
                 error: null,
@@ -2146,7 +3792,7 @@ async function rxProcessArchiveJob(id) {
         } catch {}
         const filename = subfolder + '/' + rxArchiveSanitizeFilename(title) + '_' + discovered.quality + '.mp4';
         if (!isAllowedDownloadUrl(discovered.url)) {
-            await rxUpdateArchiveJob(id, { status: 'failed', error: 'url-not-allowlisted', completedAt: Date.now() });
+            await updateJob({ status: 'failed', error: 'url-not-allowlisted', completedAt: Date.now() });
             await rxRecordDownloadDiagnostic({
                 source: 'background',
                 operation: 'archive-download',
@@ -2155,7 +3801,7 @@ async function rxProcessArchiveJob(id) {
                 error: { message: 'Discovered download URL is not allowlisted', code: 'url-not-allowlisted' },
                 quality: { label: discovered.quality, height: discovered.height, requestedMaxHeight: cap || 'best' },
                 urls: [{ role: 'download', url: discovered.url }],
-            });
+            }, recoveryGeneration);
             return;
         }
 
@@ -2166,7 +3812,7 @@ async function rxProcessArchiveJob(id) {
         const folderState = await rxGetArchiveFolderState();
         if (wasSuperseded()) return;
         if (folderState.selected && folderState.permission === 'granted' && chrome.offscreen) {
-            await rxUpdateArchiveJob(id, {
+            await updateJob({
                 status: 'downloading',
                 qualityFound: discovered.quality,
                 estimatedBytes: discovered.estimatedBytes,
@@ -2177,8 +3823,9 @@ async function rxProcessArchiveJob(id) {
                 downloadId: null,
             });
             const folderResult = await callOffscreen('writeArchiveFile', { url: discovered.url, filename, operationId: id });
+            if (wasSuperseded()) return;
             if (folderResult?.ok) {
-                await rxUpdateArchiveJob(id, {
+                await updateJob({
                     status: 'completed',
                     completedAt: Date.now(),
                     filename: folderResult.filename || filename,
@@ -2190,7 +3837,7 @@ async function rxProcessArchiveJob(id) {
             }
             if (wasSuperseded()) return;
             if (folderResult?.reason === 'offline-paused' || await rxShouldPauseArchiveQueueOffline()) {
-                await rxUpdateArchiveJob(id, {
+                await updateJob({
                     status: 'pending',
                     startedAt: null,
                     downloadId: null,
@@ -2210,7 +3857,7 @@ async function rxProcessArchiveJob(id) {
         }
 
         if (await rxShouldPauseArchiveQueueOffline()) {
-            await rxUpdateArchiveJob(id, {
+            await updateJob({
                 status: 'pending',
                 startedAt: null,
                 error: null,
@@ -2225,16 +3872,17 @@ async function rxProcessArchiveJob(id) {
         const downloadId = await rxStartManagedDownload(
             { url: discovered.url, filename, saveAs: false, conflictAction: 'uniquify' },
             { operation: 'archive-download', archiveJobId: id },
+            recoveryGeneration,
         );
         if (wasSuperseded()) {
             // The transfer crossed an offline boundary before the queue could
             // adopt its ID. Remove only this stale RumbleX-owned dispatch so
             // the current queue generation remains the single source of truth.
-            await rxUntrackManagedDownload(downloadId);
+            await rxUntrackManagedDownload(downloadId, recoveryGeneration);
             try { await rxDownloadsApi.cancel(downloadId); } catch {}
             return;
         }
-        await rxUpdateArchiveJob(id, {
+        await updateJob({
             status: 'downloading',
             qualityFound: discovered.quality,
             videoTitle: title,
@@ -2253,7 +3901,7 @@ async function rxProcessArchiveJob(id) {
     } catch (e) {
         if (wasSuperseded()) return;
         if (await rxShouldPauseArchiveQueueOffline()) {
-            await rxUpdateArchiveJob(id, {
+            await updateJob({
                 status: 'pending',
                 startedAt: null,
                 downloadId: null,
@@ -2265,7 +3913,7 @@ async function rxProcessArchiveJob(id) {
             });
             return;
         }
-        await rxUpdateArchiveJob(id, {
+        await updateJob({
             status: 'failed',
             error: String(e?.message || e).slice(0, 200),
             completedAt: Date.now(),
@@ -2289,26 +3937,34 @@ async function rxProcessArchiveJob(id) {
                     { role: 'embed-api', url: 'https://rumble.com/embedJS/u3/?request=video&ver=2&v=' + encodeURIComponent(String(job.videoId || '')) },
                     ...(discovered?.url ? [{ role: 'download', url: discovered.url }] : []),
                 ],
-            });
+            }, recoveryGeneration);
         } catch {}
     }
 }
 
 async function rxHandleManagedDownloadChanged(delta) {
+    await rxEnsurePendingResetStartupRecovery();
     if (!delta?.state) return { handled: false };
     const newState = delta.state.current;
     if (newState !== 'complete' && newState !== 'interrupted') return { handled: false };
+    const archiveGeneration = rxArchiveNetworkGeneration;
+    const recoveryGeneration = rxDownloadRecoveryGeneration;
+    const superseded = () => archiveGeneration !== rxArchiveNetworkGeneration
+        || recoveryGeneration !== rxDownloadRecoveryGeneration;
 
     const [root, managed] = await Promise.all([
         rxLoadArchiveQueue(),
         rxGetManagedDownload(delta.id),
     ]);
+    if (superseded()) return { handled: false, superseded: true };
     const archiveJob = root.jobs.find((job) => job.downloadId === delta.id) || null;
     if (!archiveJob && !managed) return { handled: false };
 
     const item = await rxGetDownloadItem(delta.id);
+    if (superseded()) return { handled: false, superseded: true };
     if (newState === 'complete') {
-        await rxUntrackManagedDownload(delta.id);
+        await rxUntrackManagedDownload(delta.id, recoveryGeneration);
+        if (superseded()) return { handled: false, superseded: true };
         if (archiveJob) {
             const size = Number(item?.fileSize || item?.totalBytes || item?.bytesReceived);
             await rxUpdateArchiveJob(archiveJob.id, {
@@ -2317,7 +3973,7 @@ async function rxHandleManagedDownloadChanged(delta) {
                 downloadedBytes: Number.isFinite(size) && size > 0 ? size : null,
                 networkState: null,
                 networkResumePending: false,
-            });
+            }, archiveGeneration);
         }
         return { handled: true, completed: true };
     }
@@ -2326,19 +3982,22 @@ async function rxHandleManagedDownloadChanged(delta) {
     const networkIssue = (typeof navigator !== 'undefined' && navigator.onLine === false)
         || /^NETWORK_/i.test(reason);
     const recoveryEnabled = await rxIsDownloadManagerEnabled();
+    if (superseded()) return { handled: false, superseded: true };
     if (networkIssue && recoveryEnabled && item?.canResume) {
         if (!managed) {
             await rxTrackManagedDownload(delta.id, {
                 operation: 'archive-download',
                 archiveJobId: archiveJob?.id || null,
-            });
+            }, recoveryGeneration);
+            if (superseded()) return { handled: false, superseded: true };
         }
         await rxUpdateManagedDownload(delta.id, {
             resumePending: true,
             status: 'interrupted-offline',
             bytesReceived: item.bytesReceived,
             lastError: reason,
-        });
+        }, recoveryGeneration);
+        if (superseded()) return { handled: false, superseded: true };
         if (archiveJob) {
             await rxUpdateArchiveJob(archiveJob.id, {
                 status: 'downloading',
@@ -2347,7 +4006,7 @@ async function rxHandleManagedDownloadChanged(delta) {
                 networkState: 'waiting-online',
                 networkResumePending: true,
                 networkPausedAt: Date.now(),
-            });
+            }, archiveGeneration);
         }
         return { handled: true, queued: true, resumable: true };
     }
@@ -2357,7 +4016,8 @@ async function rxHandleManagedDownloadChanged(delta) {
     // intentionally do not persist their signed raw URLs, so only archive jobs
     // receive this full-restart fallback.
     if (networkIssue && recoveryEnabled && archiveJob) {
-        await rxUntrackManagedDownload(delta.id);
+        await rxUntrackManagedDownload(delta.id, recoveryGeneration);
+        if (superseded()) return { handled: false, superseded: true };
         await rxUpdateArchiveJob(archiveJob.id, {
             status: 'pending',
             startedAt: null,
@@ -2367,11 +4027,12 @@ async function rxHandleManagedDownloadChanged(delta) {
             networkState: 'waiting-online',
             networkResumePending: true,
             networkPausedAt: Date.now(),
-        });
+        }, archiveGeneration);
         return { handled: true, queued: true, resumable: false };
     }
 
-    await rxUntrackManagedDownload(delta.id);
+    await rxUntrackManagedDownload(delta.id, recoveryGeneration);
+    if (superseded()) return { handled: false, superseded: true };
     if (archiveJob) {
         await rxUpdateArchiveJob(archiveJob.id, {
             status: 'failed',
@@ -2379,8 +4040,9 @@ async function rxHandleManagedDownloadChanged(delta) {
             completedAt: Date.now(),
             networkState: null,
             networkResumePending: false,
-        });
+        }, archiveGeneration);
     }
+    if (superseded()) return { handled: false, superseded: true };
     try {
         await rxRecordDownloadDiagnostic({
             source: 'background',
@@ -2390,7 +4052,7 @@ async function rxHandleManagedDownloadChanged(delta) {
             error: { message: 'Browser download was interrupted', code: reason },
             quality: { label: archiveJob?.qualityFound || null },
             browserDownloadId: delta.id,
-        });
+        }, recoveryGeneration);
     } catch {}
     // The panel said "Download started!" long before this. Tell the tab that
     // asked, so it can say what went wrong instead of leaving that standing.
@@ -2465,6 +4127,7 @@ async function rxCopyToActiveTab(tabId, text) {
 
 if (chrome.contextMenus) {
     chrome.contextMenus.onClicked.addListener(async (info, tab) => {
+        await rxEnsurePendingResetStartupRecovery();
         if (!tab || typeof tab.id !== 'number') return;
         const tabId = tab.id;
         switch (info.menuItemId) {
@@ -2577,20 +4240,53 @@ const RX_EXTENSION_OR_CONTENT = Object.freeze([
 const RX_MESSAGE_ACTIONS = Object.freeze({
     getSettings: rxMessageRule(RX_EXTENSION_OR_CONTENT),
     patchSettings: rxMessageRule(RX_EXTENSION_OR_CONTENT, {
-        data: rxMessageField('json-object', { required: true, maxBytes: 2 * 1024 * 1024 }),
+        data: rxMessageField('json-object', { required: true, maxBytes: 5 * 1024 * 1024 }),
+        generation: rxMessageField('integer', { min: 0, max: Number.MAX_SAFE_INTEGER }),
     }),
     applyWelcomeSettings: rxMessageRule(RX_EXTENSION_ONLY, {
-        data: rxMessageField('json-object', { required: true, maxBytes: 2 * 1024 * 1024 }),
-    }),
-    saveSettings: rxMessageRule(RX_EXTENSION_ONLY, {
-        data: rxMessageField('json-object', { required: true, maxBytes: 2 * 1024 * 1024 }),
-    }),
-    importSettings: rxMessageRule(RX_EXTENSION_ONLY, {
         data: rxMessageField('json-object', { required: true, maxBytes: 5 * 1024 * 1024 }),
     }),
-    resetSettings: rxMessageRule(RX_EXTENSION_ONLY, {
-        snapshotAt: rxMessageField('integer', { min: 0 }),
+    saveSettings: rxMessageRule(RX_EXTENSION_ONLY, {
+        data: rxMessageField('json-object', { required: true, maxBytes: 5 * 1024 * 1024 }),
     }),
+    importSettings: rxMessageRule(RX_EXTENSION_OR_CONTENT, {
+        data: rxMessageField('json-object', { required: true, maxBytes: 5 * 1024 * 1024 }),
+        localData: rxMessageField('json-object', { maxBytes: 5 * 1024 * 1024 }),
+        mirror: rxMessageField('json-object', { maxBytes: 10 * 1024 * 1024 }),
+    }),
+    resetSettings: rxMessageRule(RX_EXTENSION_ONLY),
+    createSettingsSnapshot: rxMessageRule(RX_EXTENSION_OR_CONTENT, {
+        reason: rxMessageField('string', { maxLength: 80 }),
+        captureActivity: rxMessageField('boolean'),
+    }),
+    listSettingsSnapshots: rxMessageRule(RX_EXTENSION_OR_CONTENT),
+    restoreSettingsSnapshot: rxMessageRule(RX_EXTENSION_OR_CONTENT, {
+        indexOrAt: rxMessageField('snapshot-ref', { required: true }),
+    }),
+    migrateActivity: rxMessageRule(RX_CONTENT_ONLY, {
+        data: rxMessageField('json-object', { required: true, maxBytes: 10 * 1024 * 1024 }),
+        removed: rxMessageField('string-array', { maxItems: 10_000, maxLength: 240 }),
+        generation: rxMessageField('integer', { min: 0, max: Number.MAX_SAFE_INTEGER }),
+        barrierId: rxMessageField('string', { maxLength: 200 }),
+    }),
+    writeActivity: rxMessageRule(RX_CONTENT_ONLY, {
+        data: rxMessageField('json-object', { required: true, maxBytes: 10 * 1024 * 1024 }),
+    }),
+    rollbackActivity: rxMessageRule(RX_CONTENT_ONLY),
+    updateRantMirror: rxMessageRule(RX_CONTENT_ONLY, {
+        videoId: rxMessageField('id', { required: true }),
+        entry: rxMessageField('json-object', { required: true, maxBytes: 2 * 1024 * 1024 }),
+        maxVideos: rxMessageField('integer', { required: true, min: 1, max: 500 }),
+        generation: rxMessageField('integer', { min: 0, max: Number.MAX_SAFE_INTEGER }),
+    }),
+    setRantRead: rxMessageRule(RX_EXTENSION_ONLY, {
+        videoId: rxMessageField('id', { required: true }),
+        read: rxMessageField('boolean', { required: true }),
+    }),
+    removeRantVideo: rxMessageRule(RX_EXTENSION_ONLY, {
+        videoId: rxMessageField('id', { required: true }),
+    }),
+    clearRantMirror: rxMessageRule(RX_EXTENSION_ONLY),
     probeMedia: rxMessageRule(RX_EXTENSION_OR_CONTENT, {
         url: rxMessageField('download-url', { required: true }),
         scanId: rxMessageField('id', { required: true }),
@@ -2606,12 +4302,15 @@ const RX_MESSAGE_ACTIONS = Object.freeze({
     clearDownloadDiagnostics: rxMessageRule(RX_EXTENSION_ONLY),
     checkUpdate: rxMessageRule(RX_EXTENSION_ONLY),
     openSettings: rxMessageRule(RX_EXTENSION_ONLY),
-    clearLocalData: rxMessageRule(RX_EXTENSION_ONLY),
     getLocalData: rxMessageRule(RX_EXTENSION_ONLY),
     setLocalData: rxMessageRule(RX_EXTENSION_ONLY, {
         data: rxMessageField('json-object', { required: true, maxBytes: 5 * 1024 * 1024 }),
+        mirror: rxMessageField('json-object', { maxBytes: 10 * 1024 * 1024 }),
     }),
     getPendingLocalDataOperation: rxMessageRule(RX_CONTENT_ONLY),
+    applyPendingLocalDataOperation: rxMessageRule(RX_CONTENT_ONLY, {
+        id: rxMessageField('id', { required: true }),
+    }),
     pollLiveStreamApi: rxMessageRule(RX_CONTENT_ONLY),
     completePendingLocalDataOperation: rxMessageRule(RX_CONTENT_ONLY, {
         id: rxMessageField('id', { required: true }),
@@ -2733,7 +4432,7 @@ function rxValidateProfilePayload(value) {
     if (!rxValidateMessageField(value.id, rxMessageField('id', { required: true }))) return false;
     if (value.name !== undefined && (typeof value.name !== 'string' || value.name.length > 60)) return false;
     if (value.createdAt !== undefined && (!Number.isFinite(Number(value.createdAt)) || Number(value.createdAt) <= 0)) return false;
-    return rxIsPlainMessageObject(value.settings) && rxMessageJsonWithin(value.settings, 2 * 1024 * 1024);
+    return rxIsPlainMessageObject(value.settings) && rxMessageJsonWithin(value.settings, 5 * 1024 * 1024);
 }
 
 function rxValidateArchiveImportPayload(value) {
@@ -2771,6 +4470,16 @@ function rxValidateMessageField(value, field) {
             return Number.isInteger(value)
                 && value >= (field.min ?? Number.MIN_SAFE_INTEGER)
                 && value <= (field.max ?? Number.MAX_SAFE_INTEGER);
+        case 'string-array':
+            return Array.isArray(value)
+                && value.length <= (field.maxItems || 10_000)
+                && value.every((item) => typeof item === 'string'
+                    && item.length <= (field.maxLength || 4096));
+        case 'snapshot-ref':
+            return (Number.isInteger(value) && value >= 0)
+                || (typeof value === 'string'
+                    && value.length <= 64
+                    && Number.isFinite(Date.parse(value)));
         case 'json-object':
             return rxIsPlainMessageObject(value)
                 && rxMessageJsonWithin(value, field.maxBytes || 1024 * 1024);
@@ -2828,15 +4537,7 @@ function rxAuthorizeRuntimeMessage(message, sender) {
     return { handled: true, ok: true, senderClass };
 }
 
-chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-    if (message?.target === 'offscreen') return false;
-    const authorization = rxAuthorizeRuntimeMessage(message, sender);
-    if (!authorization.handled) return false;
-    if (!authorization.ok) {
-        sendResponse({ ok: false, reason: authorization.reason, field: authorization.field || null });
-        return false;
-    }
-
+function rxHandleAuthorizedRuntimeMessage(message, sender, sendResponse, authorization) {
     // Pass-through reads — kept for parity with earlier versions in case any
     // consumer (popup, options, userscript) still asks the worker for state.
     if (message.action === 'getSettings') {
@@ -2857,24 +4558,140 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         return true;
     }
 
+    if (message.action === 'createSettingsSnapshot') {
+        rxQueueSettingsSnapshot(message.reason || 'manual', {
+            captureActivity: message.captureActivity === true,
+        })
+            .then((snapshot) => sendResponse(snapshot))
+            .catch((error) => sendResponse({ ok: false, reason: 'storage', error: error?.message || String(error) }));
+        return true;
+    }
+
+    if (message.action === 'listSettingsSnapshots') {
+        rxSettingsWriteChain.catch(() => {})
+            .then(() => chrome.storage.local.get('rx_settings_snapshots'))
+            .then((stored) => {
+                const snapshots = Array.isArray(stored.rx_settings_snapshots)
+                    ? stored.rx_settings_snapshots
+                    : [];
+                sendResponse({
+                    ok: true,
+                    snapshots: snapshots.map((snapshot, index) => ({
+                        index,
+                        at: snapshot?.at,
+                        reason: snapshot?.reason,
+                    })),
+                });
+            })
+            .catch((error) => sendResponse({ ok: false, reason: 'storage', error: error?.message || String(error) }));
+        return true;
+    }
+
+    if (message.action === 'restoreSettingsSnapshot') {
+        rxQueueSettingsRestore(message.indexOrAt)
+            .then(sendResponse)
+            .catch((error) => sendResponse({
+                ok: false,
+                reason: error?.partial ? 'partial-restore' : 'storage',
+                partial: error?.partial === true,
+                error: error?.message || String(error),
+            }));
+        return true;
+    }
+
+    if (message.action === 'migrateActivity') {
+        let origin = null;
+        try {
+            const sourceUrl = sender?.url || sender?.tab?.url || '';
+            const parsed = new URL(sourceUrl);
+            if (parsed.protocol === 'https:'
+                && (parsed.hostname === 'rumble.com' || parsed.hostname.endsWith('.rumble.com'))) {
+                origin = parsed.origin;
+            }
+        } catch {}
+        if (!origin) {
+            sendResponse({ ok: false, reason: 'invalid-origin' });
+            return false;
+        }
+        rxQueueActivityMigration(message.data, origin, message.generation, message.removed, message.barrierId)
+            .then(sendResponse)
+            .catch((error) => sendResponse({ ok: false, reason: 'storage', error: error?.message || String(error) }));
+        return true;
+    }
+
+    if (message.action === 'writeActivity') {
+        rxQueueActivityWrite(message.data)
+            .then(sendResponse)
+            .catch((error) => sendResponse({ ok: false, reason: 'storage', error: error?.message || String(error) }));
+        return true;
+    }
+
+    if (message.action === 'rollbackActivity') {
+        rxQueueActivityRollback()
+            .then(sendResponse)
+            .catch((error) => sendResponse({ ok: false, reason: 'storage', error: error?.message || String(error) }));
+        return true;
+    }
+
+    if (message.action === 'updateRantMirror') {
+        rxQueueRantMirrorUpdate(message.videoId, message.entry, message.maxVideos, message.generation)
+            .then(sendResponse)
+            .catch((error) => sendResponse({ ok: false, reason: 'storage', error: error?.message || String(error) }));
+        return true;
+    }
+
+    if (message.action === 'setRantRead' || message.action === 'removeRantVideo'
+        || message.action === 'clearRantMirror') {
+        const operation = message.action === 'setRantRead'
+            ? 'read'
+            : message.action === 'removeRantVideo'
+                ? 'remove'
+                : 'clear';
+        rxQueueRantMirrorMutation(operation, message.videoId, message.read)
+            .then(sendResponse)
+            .catch((error) => sendResponse({ ok: false, reason: 'storage', error: error?.message || String(error) }));
+        return true;
+    }
+
     if (message.action === 'importSettings') {
-        rxQueueSettingsWrite(message.data, { replace: true, preserveOmittedSecrets: true })
-            .then(() => sendResponse({ success: true }))
+        rxQueueSettingsBundleImport(message.data, {
+            localData: message.localData,
+            mirrorProvided: message.mirror !== undefined,
+            mirror: message.mirror,
+        })
+            .then((result) => sendResponse({
+                success: true,
+                settings: result.settings,
+                snapshot: result.snapshot,
+                activity: result.activity,
+            }))
             .catch((error) => sendResponse({ success: false, error: error?.message || String(error) }));
         return true;
     }
 
     if (message.action === 'resetSettings') {
-        rxQueueSettingsReset(message.snapshotAt)
-            .then(() => sendResponse({ success: true }))
-            .catch((error) => sendResponse({ success: false, error: error?.message || String(error) }));
+        rxQueueSettingsReset()
+            .then((result) => sendResponse({ success: true, ...result }))
+            .catch((error) => sendResponse({
+                success: false,
+                partial: error?.partial === true,
+                error: error?.message || String(error),
+            }));
         return true;
     }
 
     if (message.action === 'patchSettings') {
-        rxQueueSettingsWrite(message.data)
+        rxQueueSettingsWrite(message.data, {
+            expectedGeneration: message.generation,
+            requireGeneration: authorization.senderClass === RX_MESSAGE_SENDER.CONTENT_SCRIPT,
+        })
             .then((settings) => sendResponse({ success: true, settings }))
-            .catch((error) => sendResponse({ success: false, error: error?.message || String(error) }));
+            .catch((error) => sendResponse({
+                success: false,
+                reason: error?.code || 'storage',
+                generation: error?.generation,
+                error: error?.message || String(error),
+            }));
         return true;
     }
 
@@ -2898,8 +4715,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     }
 
     if (message.action === 'recordDownloadDiagnostic') {
-        rxRecordDownloadDiagnostic(message.diagnostic)
-            .then((entry) => sendResponse({ ok: true, id: entry.id }))
+        const recoveryGeneration = rxDownloadRecoveryGeneration;
+        rxRecordDownloadDiagnostic(message.diagnostic, recoveryGeneration)
+            .then((entry) => sendResponse(entry?.superseded
+                ? { ok: false, reason: 'superseded' }
+                : { ok: true, id: entry.id }))
             .catch((e) => sendResponse({ ok: false, reason: rxSanitizeDiagnosticString(e?.message || e) }));
         return true;
     }
@@ -2980,47 +4800,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         return true;
     }
 
-    if (message.action === 'clearLocalData') {
-        // Broadcast to every open Rumble tab so each self-clears its own
-        // localStorage. The extension origin cannot touch rumble.com's
-        // localStorage directly, so this is the only way to actually reset
-        // per-site data (watch history, bookmarks, rant archive, etc).
-        chrome.tabs.query({ url: ['*://rumble.com/*', '*://*.rumble.com/*'] }, (tabs) => {
-            if (!tabs || !tabs.length) {
-                rxStagePendingLocalDataOperation({ source: 'reset', clear: true })
-                    .then((op) => sendResponse({ ok: true, tabs: 0, cleared: 0, pendingClear: true, pendingId: op.id }))
-                    .catch((e) => sendResponse({ ok: false, reason: String(e?.message || e) }));
-                return;
-            }
-            let totalCleared = 0;
-            let answered = 0;
-            let okReplies = 0;
-            for (const tab of tabs) {
-                if (typeof tab.id !== 'number') { answered++; continue; }
-                chrome.tabs.sendMessage(tab.id, { action: 'clearLocalData' }, (resp) => {
-                    // Swallow lastError (some tabs may not have the CS loaded yet).
-                    void chrome.runtime.lastError;
-                    if (resp?.ok) {
-                        okReplies++;
-                        if (typeof resp.cleared === 'number') totalCleared += resp.cleared;
-                    }
-                    answered++;
-                    if (answered === tabs.length) {
-                        const base = { ok: true, tabs: tabs.length, cleared: totalCleared };
-                        if (okReplies === 0) {
-                            rxStagePendingLocalDataOperation({ source: 'reset', clear: true })
-                                .then((op) => sendResponse({ ...base, pendingClear: true, pendingId: op.id }))
-                                .catch((e) => sendResponse({ ok: false, reason: String(e?.message || e) }));
-                        } else {
-                            sendResponse(base);
-                        }
-                    }
-                });
-            }
-        });
-        return true;
-    }
-
     if (message.action === 'getLocalData') {
         // Ask the first available Rumble tab for its localStorage payload.
         // We query a single tab (not all) because localStorage is identical
@@ -3032,13 +4811,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             if (!tab) {
                 rxGetPendingLocalDataOperation()
                     .then((op) => {
-                        const data = op?.data && typeof op.data === 'object' ? op.data : {};
                         sendResponse({
                             ok: true,
-                            data,
+                            data: {},
                             tabs: 0,
-                            pending: Object.keys(data).length > 0,
-                            keys: Object.keys(data).length,
+                            pending: !!op,
+                            keys: 0,
                         });
                     })
                     .catch(() => sendResponse({ ok: true, data: {}, tabs: 0 }));
@@ -3058,50 +4836,14 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     }
 
     if (message.action === 'setLocalData') {
-        // Push an imported localStorage payload to every open Rumble tab.
-        // They're on the same origin so any one write would be observable in
-        // all tabs on refresh, but writing to each avoids needing a reload.
-        const payload = message.data || {};
-        const keyCount = payload && typeof payload === 'object' ? Object.keys(payload).length : 0;
-        chrome.tabs.query({ url: ['*://rumble.com/*', '*://*.rumble.com/*'] }, (tabs) => {
-            if (!tabs || !tabs.length) {
-                rxStagePendingLocalDataOperation({ source: 'import', data: payload })
-                    .then((op) => sendResponse({ ok: true, tabs: 0, written: 0, pending: true, pendingId: op.id, pendingKeys: op.keyCount }))
-                    .catch((e) => sendResponse({ ok: false, reason: String(e?.message || e) }));
-                return;
-            }
-            let totalWritten = 0;
-            let answered = 0;
-            let okReplies = 0;
-            for (const tab of tabs) {
-                if (typeof tab.id !== 'number') { answered++; continue; }
-                chrome.tabs.sendMessage(tab.id, { action: 'setLocalData', data: payload }, (resp) => {
-                    void chrome.runtime.lastError;
-                    if (resp?.ok) {
-                        okReplies++;
-                        if (typeof resp.written === 'number') totalWritten = Math.max(totalWritten, resp.written);
-                    }
-                    answered++;
-                    if (answered === tabs.length) {
-                        const complete = keyCount === 0 || totalWritten >= keyCount;
-                        const base = { ok: complete, tabs: tabs.length, written: totalWritten };
-                        if (keyCount > 0 && !complete) {
-                            rxStagePendingLocalDataOperation({ source: 'import', data: payload })
-                                .then((op) => sendResponse({
-                                    ...base,
-                                    partial: okReplies > 0,
-                                    pending: true,
-                                    pendingId: op.id,
-                                    pendingKeys: op.keyCount,
-                                }))
-                                .catch((e) => sendResponse({ ok: false, reason: String(e?.message || e) }));
-                        } else {
-                            sendResponse(base);
-                        }
-                    }
-                });
-            }
-        });
+        // Commit imported activity once in extension storage, advance the
+        // generation barrier, then make each open origin clear old page copies
+        // and reload that exact generation. Delayed pre-import writes are
+        // rejected instead of winning after the restore reports success.
+        const payload = RXActivityStore.sanitizeLocalActivity(message.data);
+        rxQueueImportedActivity(payload, message.mirror !== undefined, message.mirror)
+            .then(sendResponse)
+            .catch((e) => sendResponse({ ok: false, reason: String(e?.message || e) }));
         return true;
     }
 
@@ -3113,8 +4855,15 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     }
 
     if (message.action === 'getPendingLocalDataOperation') {
-        rxGetPendingLocalDataOperation()
-            .then((op) => sendResponse({ ok: true, operation: op }))
+        Promise.all([
+            rxGetPendingLocalDataOperation(rxSenderRumbleOrigin(sender)),
+            rxReadPendingLocalDataOperation(),
+        ])
+            .then(([op, current]) => sendResponse({
+                ok: true,
+                operation: op,
+                barrierId: typeof current?.id === 'string' ? current.id : '',
+            }))
             .catch((e) => sendResponse({ ok: false, reason: String(e?.message || e) }));
         return true;
     }
@@ -3123,6 +4872,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         rxCompletePendingLocalDataOperation(String(message.id || ''), {
             cleared: message.cleared,
             written: message.written,
+            origin: rxSenderRumbleOrigin(sender),
         })
             .then((resp) => sendResponse(resp))
             .catch((e) => sendResponse({ ok: false, reason: String(e?.message || e) }));
@@ -3146,24 +4896,20 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             const name = String(message.name || '').trim();
             const safeUrl = rxSafeRumbleUrl(url);
             if (!safeUrl) { sendResponse({ ok: false, reason: 'bad-rumble-url' }); return; }
-            const s = await rxGetSettings();
-            const list = Array.isArray(s.watchedChannels) ? s.watchedChannels.slice() : [];
-            if (list.some((c) => rxSafeRumbleUrl(c?.url) === safeUrl)) { sendResponse({ ok: false, reason: 'duplicate' }); return; }
-            list.push({ url: safeUrl, name: name.slice(0, 300) || safeUrl, lastSeenVideoId: null, isLive: false, lastChecked: null });
-            await rxSetSettings({ watchedChannels: list });
+            const result = await rxQueueWatchedChannelAdd(safeUrl, name);
+            if (!result.ok) { sendResponse(result); return; }
             await rxSyncChannelNotifier();
-            sendResponse({ ok: true, count: list.length });
+            sendResponse(result);
         })();
         return true;
     }
     if (message.action === 'removeWatchedChannel') {
         (async () => {
-            const url = String(message.url || '');
-            const s = await rxGetSettings();
-            const list = (Array.isArray(s.watchedChannels) ? s.watchedChannels : []).filter((c) => c.url !== url);
-            await rxSetSettings({ watchedChannels: list });
+            const url = rxSafeRumbleUrl(String(message.url || ''));
+            if (!url) { sendResponse({ ok: false, reason: 'bad-rumble-url' }); return; }
+            const result = await rxQueueWatchedChannelRemove(url);
             await rxSyncChannelNotifier();
-            sendResponse({ ok: true, count: list.length });
+            sendResponse(result);
         })();
         return true;
     }
@@ -3207,118 +4953,54 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     // for the profile's frozen copy (snapshotting current state first so
     // the previous profile's drift isn't lost).
     if (message.action === 'listProfiles') {
-        (async () => {
-            try {
-                const data = await chrome.storage.local.get(['rx_settings_profiles', 'rx_settings']);
-                const profiles = Array.isArray(data.rx_settings_profiles) ? data.rx_settings_profiles : [];
-                const activeId = (data.rx_settings || {}).activeProfileId || 'default';
-                sendResponse({ ok: true, profiles: profiles.map((p) => ({ id: p.id, name: p.name, createdAt: p.createdAt })), activeId });
-            } catch (e) { sendResponse({ ok: false, reason: String(e?.message || e) }); }
-        })();
+        rxListProfiles()
+            .then(sendResponse)
+            .catch((error) => sendResponse({ ok: false, reason: String(error?.message || error) }));
+        return true;
+    }
+
+    if (message.action === 'applyPendingLocalDataOperation') {
+        rxApplyPendingLocalDataOperation(
+            String(message.id || ''),
+            rxSenderRumbleOrigin(sender),
+        )
+            .then(sendResponse)
+            .catch((e) => sendResponse({ ok: false, reason: String(e?.message || e) }));
         return true;
     }
     if (message.action === 'saveProfile') {
-        (async () => {
-            const name = String(message.name || '').trim();
-            if (!name) { sendResponse({ ok: false, reason: 'empty-name' }); return; }
-            try {
-                const data = await chrome.storage.local.get(['rx_settings_profiles', 'rx_settings']);
-                const profiles = Array.isArray(data.rx_settings_profiles) ? data.rx_settings_profiles.slice() : [];
-                if (profiles.some((p) => p.name === name)) { sendResponse({ ok: false, reason: 'duplicate-name' }); return; }
-                // Hard cap to keep storage bounded — 25 named profiles is plenty.
-                if (profiles.length >= 25) { sendResponse({ ok: false, reason: 'cap-reached' }); return; }
-                const id = 'p_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 8);
-                profiles.push({
-                    id, name,
-                    createdAt: Date.now(),
-                    settings: rxNormalizeSettings(data.rx_settings || {}),
-                });
-                await chrome.storage.local.set({ rx_settings_profiles: profiles });
-                sendResponse({ ok: true, id, count: profiles.length });
-            } catch (e) { sendResponse({ ok: false, reason: String(e?.message || e) }); }
-        })();
+        const name = String(message.name || '').trim();
+        if (!name) {
+            sendResponse({ ok: false, reason: 'empty-name' });
+            return false;
+        }
+        rxQueueProfileSave(name)
+            .then(sendResponse)
+            .catch((error) => sendResponse({ ok: false, reason: String(error?.message || error) }));
         return true;
     }
     if (message.action === 'switchProfile') {
-        (async () => {
-            const id = String(message.id || '');
-            try {
-                const data = await chrome.storage.local.get(['rx_settings_profiles', 'rx_settings']);
-                const profiles = Array.isArray(data.rx_settings_profiles) ? data.rx_settings_profiles : [];
-                const target = profiles.find((p) => p.id === id);
-                if (!target) { sendResponse({ ok: false, reason: 'not-found' }); return; }
-                // Snapshot current state first so we never lose drift between
-                // saves. Reuses the v3.0 backup system rather than introducing
-                // a parallel snapshot store.
-                await rxWriteSettingsSnapshot('pre-profile-switch');
-                const next = rxNormalizeSettings({ ...target.settings, activeProfileId: target.id });
-                await rxQueueSettingsWrite(next, { replace: true });
-                sendResponse({ ok: true, name: target.name });
-            } catch (e) { sendResponse({ ok: false, reason: String(e?.message || e) }); }
-        })();
+        rxQueueProfileSwitch(String(message.id || ''))
+            .then(sendResponse)
+            .catch((error) => sendResponse({ ok: false, reason: String(error?.message || error) }));
         return true;
     }
     if (message.action === 'deleteProfile') {
-        (async () => {
-            const id = String(message.id || '');
-            try {
-                const data = await chrome.storage.local.get('rx_settings_profiles');
-                const all = Array.isArray(data.rx_settings_profiles) ? data.rx_settings_profiles : [];
-                const removed = all.find((p) => p.id === id);
-                if (!removed) { sendResponse({ ok: false, reason: 'not-found' }); return; }
-                const profiles = all.filter((p) => p.id !== id);
-                await chrome.storage.local.set({ rx_settings_profiles: profiles });
-                // Every other destructive action snapshots first; this one used
-                // to drop a saved profile permanently with no snapshot and no
-                // undo. The project bans confirmation dialogs on the premise
-                // that snapshot-plus-undo replaces them, so without this the
-                // action had neither.
-                const snapshot = await rxWriteSettingsSnapshot(
-                    'pre-profile-delete: ' + String(removed.name || id),
-                    removed.settings || {},
-                );
-                sendResponse({
-                    ok: true,
-                    count: profiles.length,
-                    name: removed.name || '',
-                    // The caller offers undo from this blob, so deletion stays
-                    // reversible even when backup history is turned off.
-                    undo: { id: removed.id, name: removed.name, createdAt: removed.createdAt, settings: removed.settings },
-                    snapshotted: !!snapshot?.ok,
-                });
-            } catch (e) { sendResponse({ ok: false, reason: String(e?.message || e) }); }
-        })();
+        rxQueueProfileDelete(String(message.id || ''))
+            .then(sendResponse)
+            .catch((error) => sendResponse({ ok: false, reason: String(error?.message || error) }));
         return true;
     }
     // Restore a profile blob returned by deleteProfile's `undo` payload.
     if (message.action === 'restoreProfile') {
-        (async () => {
-            try {
-                const profile = message.profile;
-                if (!profile || typeof profile !== 'object' || !profile.id) {
-                    sendResponse({ ok: false, reason: 'invalid-profile' });
-                    return;
-                }
-                const data = await chrome.storage.local.get('rx_settings_profiles');
-                const profiles = Array.isArray(data.rx_settings_profiles) ? data.rx_settings_profiles.slice() : [];
-                if (profiles.some((p) => p.id === profile.id)) {
-                    sendResponse({ ok: false, reason: 'already-exists' });
-                    return;
-                }
-                if (profiles.length >= 25) { sendResponse({ ok: false, reason: 'cap-reached' }); return; }
-                profiles.push({
-                    id: String(profile.id),
-                    name: String(profile.name || 'Restored profile').slice(0, 60),
-                    createdAt: Number(profile.createdAt) || Date.now(),
-                    // The blob round-trips through the same trust boundary as
-                    // any other settings write, so an undo cannot smuggle in
-                    // values a normal save would have rejected.
-                    settings: rxNormalizeSettings(profile.settings || {}),
-                });
-                await chrome.storage.local.set({ rx_settings_profiles: profiles });
-                sendResponse({ ok: true, count: profiles.length });
-            } catch (e) { sendResponse({ ok: false, reason: String(e?.message || e) }); }
-        })();
+        const profile = message.profile;
+        if (!profile || typeof profile !== 'object' || !profile.id) {
+            sendResponse({ ok: false, reason: 'invalid-profile' });
+            return false;
+        }
+        rxQueueProfileRestore(profile)
+            .then(sendResponse)
+            .catch((error) => sendResponse({ ok: false, reason: String(error?.message || error) }));
         return true;
     }
 
@@ -3421,9 +5103,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message.action === 'gistSyncPush' || message.action === 'gistSyncPull') {
         (async () => {
             try {
+                const operationGeneration = rxSettingsMutationGeneration;
+                const superseded = () => operationGeneration !== rxSettingsMutationGeneration;
                 const stored = await new Promise((resolve) => {
                     chrome.storage.local.get(['rx_settings'], resolve);
                 });
+                if (superseded()) { sendResponse({ ok: false, reason: 'superseded' }); return; }
                 const settings = rxNormalizeSettings(
                     stored && stored.rx_settings && typeof stored.rx_settings === 'object'
                         ? stored.rx_settings
@@ -3450,8 +5135,16 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                 const baseKey = await crypto.subtle.importKey(
                     'raw', enc.encode(passphrase), { name: 'PBKDF2' }, false, ['deriveKey']
                 );
+                if (superseded()) { sendResponse({ ok: false, reason: 'superseded' }); return; }
 
-                const b64 = (buf) => btoa(String.fromCharCode(...new Uint8Array(buf)));
+                const b64 = (buf) => {
+                    const bytes = buf instanceof Uint8Array ? buf : new Uint8Array(buf);
+                    const chunks = [];
+                    for (let offset = 0; offset < bytes.length; offset += 32 * 1024) {
+                        chunks.push(String.fromCharCode(...bytes.subarray(offset, offset + 32 * 1024)));
+                    }
+                    return btoa(chunks.join(''));
+                };
                 const fromB64 = (s) => Uint8Array.from(atob(s), (c) => c.charCodeAt(0));
 
                 if (message.action === 'gistSyncPush') {
@@ -3467,6 +5160,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                     const transportSettings = RXSettingsSchema.sanitizeSettingsForTransport(settings);
                     const plaintext = enc.encode(JSON.stringify(transportSettings));
                     const cipherBuf = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, aesKey, plaintext);
+                    if (superseded()) { sendResponse({ ok: false, reason: 'superseded' }); return; }
                     const payload = {
                         rumblex: {
                             schemaVersion: 3,
@@ -3500,6 +5194,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                     const newId = data && data.id ? data.id : gistId;
                     // Persist the gist id if this was a CREATE.
                     if (!gistId && newId) {
+                        if (superseded()) {
+                            sendResponse({ ok: false, reason: 'superseded', gistId: newId });
+                            return;
+                        }
                         await rxQueueSettingsWrite({ encryptedGistSyncId: newId });
                     }
                     sendResponse({ ok: true, gistId: newId, bytes: JSON.stringify(payload).length });
@@ -3549,6 +5247,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                 // not the snapshot read before the network request started.
                 // The same commit snapshots the complete current profile first.
                 const portable = RXSettingsSchema.sanitizeSettingsForTransport(pulled);
+                if (superseded()) { sendResponse({ ok: false, reason: 'superseded' }); return; }
                 const next = await rxQueueSettingsWrite(portable, {
                     replace: true,
                     preserveOmittedSecrets: true,
@@ -3565,6 +5264,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message.action === 'importFollowedChannels') {
         (async () => {
             try {
+                const operationGeneration = rxSettingsMutationGeneration;
                 const resp = await fetch('https://rumble.com/account/following', {
                     method: 'GET',
                     credentials: 'include',
@@ -3577,6 +5277,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                 // wrapping section.
                 if (!html.includes('followed-channels__section')) {
                     sendResponse({ ok: false, reason: 'not-logged-in' });
+                    return;
+                }
+                if (operationGeneration !== rxSettingsMutationGeneration) {
+                    sendResponse({ ok: false, reason: 'superseded' });
                     return;
                 }
                 // Parse each <li class="followed-channel"> block. We scan the
@@ -3598,28 +5302,16 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                     rows.push({ url, name });
                 }
                 if (rows.length === 0) { sendResponse({ ok: true, scanned: 0, added: 0, duplicates: 0 }); return; }
-                // Merge into watchedChannels, skipping anything we already track.
-                const s = await rxGetSettings();
-                const existing = Array.isArray(s.watchedChannels) ? s.watchedChannels : [];
-                const known = new Set(existing.map((c) => c.url));
-                let added = 0;
-                let duplicates = 0;
-                const next = existing.slice();
-                for (const r of rows) {
-                    if (known.has(r.url)) { duplicates++; continue; }
-                    next.push({
-                        url: r.url,
-                        name: r.name,
-                        lastSeenVideoId: null,
-                        isLive: false,
-                        lastChecked: null,
-                    });
-                    known.add(r.url);
-                    added++;
-                }
-                await rxSetSettings({ watchedChannels: next });
+                const merged = await rxQueueWatchedChannelBulkAdd(rows, operationGeneration);
+                if (!merged.ok) { sendResponse(merged); return; }
                 await rxSyncChannelNotifier();
-                sendResponse({ ok: true, scanned: rows.length, added, duplicates, total: next.length });
+                sendResponse({
+                    ok: true,
+                    scanned: rows.length,
+                    added: merged.added,
+                    duplicates: merged.duplicates,
+                    total: merged.total,
+                });
             } catch (e) {
                 sendResponse({ ok: false, reason: String(e?.message || e) });
             }
@@ -3677,6 +5369,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     }
 
     if (message.action === 'download') {
+        const recoveryGeneration = rxDownloadRecoveryGeneration;
         const url = message?.data?.url;
         const filename = message?.data?.filename;
         const baseDiagnostic = {
@@ -3693,15 +5386,25 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                 ...baseDiagnostic,
                 stage: 'url-validation',
                 error: { message: 'Download URL is not allowed', code: 'url-not-allowlisted' },
-            })
-                .then((entry) => sendResponse({ error: 'Download URL is not allowed', stage: 'url-validation', diagnosticId: entry.id }))
+            }, recoveryGeneration)
+                .then((entry) => sendResponse({
+                    error: 'Download URL is not allowed',
+                    stage: 'url-validation',
+                    ...(entry?.superseded ? { reason: 'superseded' } : { diagnosticId: entry.id }),
+                }))
                 .catch(() => sendResponse({ error: 'Download URL is not allowed', stage: 'url-validation' }));
             return true;
         }
         rxStartManagedDownload(
             { url, filename, saveAs: true },
             { operation: baseDiagnostic.operation, tabId: sender?.tab?.id },
+            recoveryGeneration,
         ).then(async (downloadId) => {
+            if (recoveryGeneration !== rxDownloadRecoveryGeneration) {
+                try { await rxDownloadsApi.cancel(downloadId); } catch {}
+                sendResponse({ error: 'Download cancelled because user data was reset', reason: 'superseded' });
+                return;
+            }
             if (typeof navigator !== 'undefined' && navigator.onLine === false) {
                 rxHandleNetworkOffline().catch(() => {});
             }
@@ -3711,8 +5414,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                 ...baseDiagnostic,
                 stage: 'browser-download',
                 error: { name: 'DownloadApiError', message: error?.message || error, code: 'chrome-downloads-error' },
-            })
-                .then((entry) => sendResponse({ error: error?.message || String(error), diagnosticId: entry.id }))
+            }, recoveryGeneration)
+                .then((entry) => sendResponse({
+                    error: error?.message || String(error),
+                    ...(entry?.superseded ? { reason: 'superseded' } : { diagnosticId: entry.id }),
+                }))
                 .catch(() => sendResponse({ error: error?.message || String(error) }));
         });
         return true;
@@ -3750,6 +5456,7 @@ function rxArchiveHrefPath(href) {
     if (message.action === 'archiveEnqueueChannel') {
         (async () => {
             try {
+                const archiveGeneration = rxArchiveNetworkGeneration;
                 const channelUrl = (message.channelUrl || '').trim();
                 // /c/ and /user/ are channels; /playlists/<id> is a playlist,
                 // which renders the same video-card markup and so parses the
@@ -3815,7 +5522,7 @@ function rxArchiveHrefPath(href) {
                 let channelName = null;
                 const ogt = html.match(/<meta[^>]+property="og:title"[^>]+content="([^"]+)"/i);
                 if (ogt) channelName = ogt[1].trim();
-                const { enqueued, skipped } = await rxMutateArchiveQueue((root) => {
+                const mutation = await rxMutateArchiveQueue((root) => {
                     let enqueuedCount = 0;
                     let skippedCount = 0;
                     for (const v of found) {
@@ -3836,7 +5543,12 @@ function rxArchiveHrefPath(href) {
                         enqueuedCount++;
                     }
                     return { enqueued: enqueuedCount, skipped: skippedCount };
-                });
+                }, archiveGeneration);
+                if (mutation?.superseded) {
+                    sendResponse({ ok: false, reason: 'superseded' });
+                    return;
+                }
+                const { enqueued, skipped } = mutation;
                 // Kick a tick now so the user sees progress immediately.
                 rxRunArchiveTick().catch(() => {});
                 sendResponse({ ok: true, enqueued, skipped, channelName });
@@ -3960,4 +5672,22 @@ function rxArchiveHrefPath(href) {
             .catch((e) => sendResponse({ ok: false, reason: String(e?.message || e) }));
         return true;
     }
+}
+
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    if (message?.target === 'offscreen') return false;
+    const authorization = rxAuthorizeRuntimeMessage(message, sender);
+    if (!authorization.handled) return false;
+    if (!authorization.ok) {
+        sendResponse({ ok: false, reason: authorization.reason, field: authorization.field || null });
+        return false;
+    }
+    rxEnsurePendingResetStartupRecovery()
+        .then(() => rxHandleAuthorizedRuntimeMessage(message, sender, sendResponse, authorization))
+        .catch((error) => sendResponse({
+            ok: false,
+            reason: 'reset-recovery',
+            error: error?.message || String(error),
+        }));
+    return true;
 });

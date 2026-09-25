@@ -10,13 +10,19 @@ const path = require('path');
 const ROOT = path.join(__dirname, '..', '..');
 const EXT = path.join(ROOT, 'extension');
 const CORE_FILES = [
+    'activity-store.js',
     'core-routing.js',
     'core-selectors.js',
     'core-video-cards.js',
     'core-media.js',
     'content.js',
 ];
-const EXPECTED_CHROME_ORDER = ['settings-schema.js', 'platform.js', ...CORE_FILES];
+const EXPECTED_CHROME_ORDER = [
+    'settings-schema.js',
+    'activity-store.js',
+    'platform.js',
+    ...CORE_FILES.slice(1),
+];
 
 function read(relative) {
     return fs.readFileSync(path.join(ROOT, relative), 'utf8').replace(/\r\n?/g, '\n');
