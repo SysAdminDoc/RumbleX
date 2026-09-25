@@ -4,6 +4,8 @@ All notable changes to RumbleX will be documented in this file.
 
 ## Unreleased
 
+## [3.61.0] - 2026-09-25
+
 ### Changed
 
 - Injected surfaces now use the active palette for their translucent colors instead of baking Catppuccin RGB values into individual panels. The build guard also catches palette colors written as `rgb()` or `rgba()`.
@@ -16,6 +18,7 @@ All notable changes to RumbleX will be documented in this file.
 - Mediabunny is updated from 1.59.1 to 1.60.0. The npm tarball, bundled module, license, byte count, and package hash are pinned together.
 - Local releases now require a clean Git tree before verification starts. Runtime packages and the AMO source archive copy tracked files only, preventing local scratch files inside `extension/` from entering a release.
 - URL cleanup uses one immutable tracking-parameter list in the shared schema. Context-menu copies, address-bar cleanup, link clicks, timestamp sharing, and userscripts can no longer drift apart.
+- Live visual capture now checks a bounded set of watch pages for a visible public player, skips premium or verification-gated pages without trying to bypass them, and records that evidence limit instead of failing on the first unsuitable feed item.
 
 ### Fixed
 
@@ -37,6 +40,7 @@ All notable changes to RumbleX will be documented in this file.
 - Auto Max Quality now owns its delayed menu-selection work, so disabling the feature or changing routes cancels every pending player click.
 - Chat User Block and Spam Dedup now remove their injected controls, hidden state, and processing markers during teardown.
 - Chrome's internal offscreen document is no longer web accessible to Rumble pages. The service worker can still create it through the extension-only API.
+- The store Privacy screenshot now opens the real Privacy report before capture instead of relying on a stale panel state.
 
 ## [3.60.1] - 2026-09-25
 

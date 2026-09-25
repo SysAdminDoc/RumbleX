@@ -1,12 +1,19 @@
 # RumbleX
 
-![Version](https://img.shields.io/badge/version-v3.60.1-blue) ![License](https://img.shields.io/badge/license-MIT-green) ![Platform](https://img.shields.io/badge/platform-Extension%20%2B%20Userscript-lightgrey) ![Firefox](https://img.shields.io/badge/firefox-109%2B-orange)
+![Version](https://img.shields.io/badge/version-v3.61.0-blue) ![License](https://img.shields.io/badge/license-MIT-green) ![Platform](https://img.shields.io/badge/platform-Extension%20%2B%20Userscript-lightgrey) ![Firefox](https://img.shields.io/badge/firefox-109%2B-orange)
 
 **A large Rumble enhancement suite.** Its 141 feature modules cover ad blocking, theater mode, downloads, playback, chat, local history, feed controls, and granular page cleanup. It runs as a browser extension or userscript.
 
-### What's new in v3.60.1
+### What's new in v3.61.0
 
-This patch corrects the live verification harness. The boot check now recognizes the root marker and injected style IDs used by the current runtime, so all live Rumble smoke and request-level ad checks complete successfully. Live preview evidence also stays inside its isolated test result. Extension behavior is unchanged from v3.60.0.
+This release is a full reliability and interface pass across the extension, userscripts, Options, popup, Theater, chat, downloads, backups, and release tooling.
+
+- **Stored activity survives interrupted work.** Cross-origin migrations merge before cleanup, failed writes retry, and partial restores stay recoverable instead of reporting success.
+- **Settings changes no longer overwrite each other.** Tabs, the popup, Options, profiles, and background jobs share one serialized patch writer.
+- **Secondary screens are easier to use.** Settings search covers every group, dialogs manage focus correctly, narrow Theater controls stay within their real limits, and chat cards expose complete keyboard semantics.
+- **Themes now reach every owned surface.** Injected panels use the active palette rather than hidden Catppuccin color literals. Aurora and Solar Ember remain first-class choices beside the five established palettes.
+- **Long-running pages do less work.** Route-bound features remount cleanly, staged chat rows are processed once, and concurrent media probes share their first storage read.
+- **Release packages are harder to contaminate.** The release gate requires a clean tree, copies tracked files only, verifies Firefox source contents, and ships Mediabunny 1.60.0 with pinned provenance.
 
 ### What's new in v3.60
 
@@ -400,7 +407,7 @@ ssh-keygen -Y verify -f allowed_signers -I release@rumblex -n file \
 
 A `Good "file" signature` result means the checksums came from the key published in this repository. If either check fails, do not install the files. The only official sources are this repository's Releases page and the raw userscript URLs above; copies elsewhere are not ours.
 
-v3.60.1 is unsigned because the project does not yet have a published release signing identity. Use `SHA256SUMS.txt` to verify download integrity, and treat the lack of a signature as an explicit limit on provenance.
+v3.61.0 is unsigned because the project does not yet have a published release signing identity. Use `SHA256SUMS.txt` to verify download integrity, and treat the lack of a signature as an explicit limit on provenance.
 
 ### Request-shield support matrix
 

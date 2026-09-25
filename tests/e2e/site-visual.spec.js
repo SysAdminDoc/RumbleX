@@ -30,11 +30,11 @@ async function openLivePage(page, url) {
                 '#challenge-running',
                 '#challenge-stage',
             ].join(',')) || /performing security verification|verify you are human/i.test(text),
-            accessRestricted: /this video is (?:restricted|private)|sign in to access it/i.test(text),
+            accessRestricted: /this video is (?:restricted|private)|sign in to access it|premium only content|rumble premium subscribers/i.test(text),
         };
     });
     test.skip(state.securityVerification, 'Rumble served an interactive Cloudflare verification page; automation must not bypass it');
-    test.skip(state.accessRestricted, 'The isolated visual-capture profile cannot access this private/restricted video');
+    return state;
 }
 
 async function captureViewport(page, filePath) {
@@ -56,10 +56,8 @@ async function setSettings(context, extensionId, patch) {
     const settingsPage = await context.newPage();
     await settingsPage.goto(`chrome-extension://${extensionId}/pages/options.html`);
     await settingsPage.evaluate(async (next) => {
-        const stored = await chrome.storage.local.get('rx_settings');
-        await chrome.storage.local.set({
-            rx_settings: { ...(stored.rx_settings || {}), ...next },
-        });
+        const response = await chrome.runtime.sendMessage({ action: 'patchSettings', data: next });
+        if (!response?.success) throw new Error(response?.error || 'Settings update failed');
     }, patch);
     await settingsPage.close();
 }
@@ -153,19 +151,34 @@ test.describe('live site visual capture', () => {
         }
         await captureViewport(page, path.join(outputDir, 'site-home-1440x900.png'));
 
-        const discoveredWatchUrl = await page.evaluate(() => {
+        const discoveredWatchUrls = await page.evaluate(() => {
             const candidates = [
                 ...document.querySelectorAll('rum-video-thumbnail[url], a[href]'),
             ].map((node) => node.getAttribute('url') || node.getAttribute('href') || '');
-            const raw = candidates.find((value) => /^\/v[a-z0-9]+-[^/]+\.html(?:[?#].*)?$/i.test(value));
-            if (!raw) return null;
-            try { return new URL(raw, location.origin).href; } catch { return null; }
+            return [...new Set(candidates
+                .filter((value) => /^\/v[a-z0-9]+-[^/]+\.html(?:[?#].*)?$/i.test(value))
+                .map((value) => {
+                    try { return new URL(value, location.origin).href; } catch { return null; }
+                })
+                .filter(Boolean))].slice(0, 12);
         });
-        const watchUrl = process.env.RUMBLEX_SITE_VISUAL_URL || discoveredWatchUrl || DEFAULT_WATCH_URL;
-        expect(watchUrl).toMatch(/^https:\/\/rumble\.com\/v[a-z0-9]+-[^/]+\.html/i);
-
-        await openLivePage(page, watchUrl);
-        await page.locator('#videoPlayer, .videoPlayer-Rumble-cls').first().waitFor({ state: 'visible', timeout: 30_000 });
+        const candidates = [
+            process.env.RUMBLEX_SITE_VISUAL_URL,
+            ...discoveredWatchUrls,
+            DEFAULT_WATCH_URL,
+        ].filter(Boolean);
+        let watchUrl = null;
+        for (const candidate of [...new Set(candidates)]) {
+            expect(candidate).toMatch(/^https:\/\/rumble\.com\/v[a-z0-9]+-[^/]+\.html/i);
+            const state = await openLivePage(page, candidate);
+            if (state.accessRestricted) continue;
+            const player = page.locator('#videoPlayer, .videoPlayer-Rumble-cls').first();
+            if (await player.isVisible({ timeout: 8_000 }).catch(() => false)) {
+                watchUrl = candidate;
+                break;
+            }
+        }
+        test.skip(!watchUrl, 'The isolated profile found no public watch page suitable for visual capture');
         await page.waitForTimeout(2_000);
         const chatSurface = page.locator('.media-page-chat-aside-chat-wrapper-fixed > .chat:visible').first();
         if (await chatSurface.count()) {
