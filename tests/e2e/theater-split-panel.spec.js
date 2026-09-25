@@ -30,6 +30,7 @@ async function mountLiveTheater(page, { width = 1440, height = 900 } = {}) {
                                     </ul>
                                 </div>
                                 <form class="chat-form-overflow-wrapper"><textarea aria-label="Chat message"></textarea></form>
+                                <div class="chat--signin-container"><button type="button">Sign in to chat</button></div>
                             </div>
                         </div>
                     </div>
@@ -100,6 +101,23 @@ test('live Theater Split gives chat the full side-panel height with no utility b
         expect(layout.nativeHeaderHeight).toBe(0);
         expect(layout.removedSurfaceCount).toBe(0);
         expect(layout.horizontalOverflow).toBe(false);
+        await expect(page.locator('.rx-panel-header h3')).toHaveAttribute('title', 'Feature Fixture Video');
+        const signInGeometry = await page.locator('.chat--signin-container button').evaluate((button) => ({
+            radius: getComputedStyle(button).borderRadius,
+            height: button.getBoundingClientRect().height,
+        }));
+        expect(signInGeometry.radius).toBe('8px');
+        expect(signInGeometry.height).toBeGreaterThanOrEqual(36);
+
+        await page.evaluate(() => {
+            const loading = document.createElement('div');
+            loading.id = 'video-comments-loading';
+            loading.append('Loading 36 comments...');
+            const spinner = document.createElement('div');
+            spinner.className = 'loading-spinner';
+            loading.appendChild(spinner);
+            document.querySelector('#video-comments').prepend(loading);
+        });
 
         const chatTab = page.locator('#rx-tab-button-chat');
         await chatTab.focus();
@@ -109,6 +127,19 @@ test('live Theater Split gives chat the full side-panel height with no utility b
         await expect(page.locator('#rx-tab-chat')).toBeHidden();
         await expect(page.locator('#rx-tab-comments')).toHaveJSProperty('hidden', false);
         await expect(page.locator('#video-comments')).toBeVisible();
+        const loadingState = await page.locator('#video-comments-loading').evaluate((loading) => {
+            const spinner = loading.querySelector('.loading-spinner');
+            const spinnerStyle = getComputedStyle(spinner);
+            return {
+                minHeight: Number.parseFloat(getComputedStyle(loading).minHeight),
+                spinnerWidth: spinner.getBoundingClientRect().width,
+                spinnerAccent: spinnerStyle.borderTopColor,
+                spinnerTrack: spinnerStyle.borderRightColor,
+            };
+        });
+        expect(loadingState.minHeight).toBe(220);
+        expect(loadingState.spinnerWidth).toBe(38);
+        expect(loadingState.spinnerAccent).not.toBe(loadingState.spinnerTrack);
 
         const commentsFill = await page.evaluate(() => {
             const right = document.querySelector('#rx-split-right').getBoundingClientRect();

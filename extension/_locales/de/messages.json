@@ -584,7 +584,7 @@
     "description": "In-page UI string (shared core)."
   },
   "toastThemeChanged": {
-    "message": "Design geändert — Seite neu laden, um zu übernehmen",
+    "message": "Design geändert. Seite neu laden, um zu übernehmen",
     "description": "In-page UI string (shared core)."
   },
   "modalPlaybackSpeed": {

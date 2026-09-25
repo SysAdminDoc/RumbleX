@@ -584,7 +584,7 @@
     "description": "In-page UI string (shared core)."
   },
   "toastThemeChanged": {
-    "message": "Theme changed — reload page to apply",
+    "message": "Theme changed. Reload page to apply",
     "description": "In-page UI string (shared core)."
   },
   "modalPlaybackSpeed": {

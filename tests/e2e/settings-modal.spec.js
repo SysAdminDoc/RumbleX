@@ -304,7 +304,7 @@ test('a first-run storage read failure keeps a usable welcome visible', async ({
             if (Array.isArray(keys) && keys.includes('rx_welcome_seen')) {
                 throw new Error('fixture storage read failure');
             }
-            return originalGet(keys, callback);
+            return typeof callback === 'function' ? originalGet(keys, callback) : originalGet(keys);
         };
     });
     const page = await context.newPage();
@@ -458,4 +458,66 @@ test('dedicated settings editor keeps one-row navigation and an opaque canvas wh
     expect(layout.listHeight).toBeGreaterThan(180);
     expect(layout.backdropColor).toBe('rgba(3, 5, 8, 0.92)');
     expect(layout.backdropImage).not.toBe('none');
+});
+
+test('in-page settings follows every active site palette', async ({ context, extensionId }) => {
+    test.setTimeout(90_000);
+    const fs = require('node:fs');
+    const path = require('node:path');
+    const fixture = fs.readFileSync(
+        path.join(__dirname, '..', 'fixtures', 'platform', 'modern-watch.html'),
+        'utf8',
+    );
+    const palettes = {
+        catppuccin: { base: '#1e1e2e', mantle: '#181825', crust: '#11111b', surface0: '#313244', text: '#cdd6f4' },
+        youtube: { base: '#0f0f0f', mantle: '#0f0f0f', crust: '#0f0f0f', surface0: '#272727', text: '#f1f1f1' },
+        midnight: { base: '#000000', mantle: '#000000', crust: '#000000', surface0: '#111111', text: '#e4e4e7' },
+        rumbleGreen: { base: '#141c0f', mantle: '#0f1509', crust: '#0a0f06', surface0: '#1e2a14', text: '#d6e8c4' },
+        oledGreen: { base: '#000000', mantle: '#000000', crust: '#000000', surface0: '#0a0f06', text: '#e7f1dc' },
+    };
+    const rgb = (hex) => {
+        const value = Number.parseInt(hex.slice(1), 16);
+        return `rgb(${(value >> 16) & 255}, ${(value >> 8) & 255}, ${value & 255})`;
+    };
+
+    const settingsPage = await context.newPage();
+    await settingsPage.goto(`chrome-extension://${extensionId}/pages/options.html`);
+    const page = await context.newPage();
+    await page.route('https://rumble.com/vtheme-settings.html*', (route) => route.fulfill({
+        status: 200,
+        contentType: 'text/html',
+        body: fixture,
+    }));
+
+    for (const [theme, palette] of Object.entries(palettes)) {
+        await settingsPage.evaluate(async (nextTheme) => {
+            await chrome.storage.local.set({ rx_settings: { darkEnhance: true, theme: nextTheme } });
+        }, theme);
+        await page.goto(`https://rumble.com/vtheme-settings.html?theme=${theme}`, { waitUntil: 'domcontentloaded' });
+        await page.locator('#rx-settings-btn').waitFor({ state: 'attached', timeout: 20_000 });
+        await page.evaluate(() => document.querySelector('#rx-settings-btn')?.click());
+        await page.waitForFunction(() => document.body.classList.contains('rx-panel-open'));
+
+        const colors = await page.evaluate(() => {
+            const value = (selector, property) => getComputedStyle(document.querySelector(selector))[property];
+            return {
+                modal: value('#rx-modal', 'backgroundColor'),
+                header: value('.rx-m-header', 'backgroundColor'),
+                content: value('.rx-m-content', 'backgroundColor'),
+                card: value('.rx-m-card:not(.rx-m-enabled)', 'backgroundColor'),
+                text: value('#rx-modal', 'color'),
+                saveNote: document.querySelector('.rx-m-save-note')?.textContent,
+            };
+        });
+        expect(colors).toEqual({
+            modal: rgb(palette.crust),
+            header: rgb(palette.mantle),
+            content: rgb(palette.crust),
+            card: rgb(palette.surface0),
+            text: rgb(palette.text),
+            saveNote: 'Local changes autosave',
+        });
+    }
+
+    await Promise.all([page.close(), settingsPage.close()]);
 });

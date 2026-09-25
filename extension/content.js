@@ -2129,7 +2129,7 @@ const TheaterSplit = {
             overflow: hidden;
             opacity: 0;
             background: var(--rx-theater-panel, #111116);
-            border-left: 1px solid var(--rx-theater-border, rgba(255,255,255,0.1));
+            border-left: 1px solid var(--rx-theater-border-strong, rgba(255,255,255,0.14));
             transition: opacity 0.22s ease;
             display: flex;
             flex-direction: column;
@@ -2223,8 +2223,8 @@ const TheaterSplit = {
 
 
         #rx-split-right .rx-panel-header {
-            min-height: 54px;
-            padding: 7px 8px 7px 12px;
+            min-height: 58px;
+            padding: 8px 8px 8px 12px;
             border-bottom: 1px solid var(--rx-theater-border, rgba(255,255,255,0.1));
             background: var(--rx-theater-shell, #0b0b0f);
             flex-shrink: 0;
@@ -2235,8 +2235,8 @@ const TheaterSplit = {
         #rx-split-right .rx-panel-header .rx-header-info { flex: 1; min-width: 0; }
         #rx-split-right .rx-panel-header h3 {
             margin: 0 0 2px;
-            font-size: 13px;
-            font-weight: 750;
+            font-size: 13.5px;
+            font-weight: 760;
             color: var(--rx-theater-text, #f5f7fb);
             line-height: 1.25;
             white-space: nowrap;
@@ -2259,7 +2259,7 @@ const TheaterSplit = {
             align-items: center;
         }
         #rx-split-right .rx-panel-header .rx-hdr-btn {
-            width: 34px; height: 34px;
+            width: 36px; height: 36px;
             border-radius: 6px;
             background: transparent;
             border: 1px solid var(--rx-theater-border, rgba(255,255,255,0.1));
@@ -2293,11 +2293,11 @@ const TheaterSplit = {
         }
         .rx-tab {
             flex: 1;
-            min-height: 40px;
+            min-height: 44px;
             padding: 7px 6px;
             text-align: center;
             font-size: 12px;
-            font-weight: 600;
+            font-weight: 650;
             color: var(--rx-theater-subtext, #a6adc8);
             cursor: pointer;
             border: none;
@@ -2313,6 +2313,7 @@ const TheaterSplit = {
         .rx-tab.rx-tab-active {
             color: var(--rx-theater-accent, #89b4fa);
             border-bottom-color: var(--rx-theater-accent, #89b4fa);
+            background: color-mix(in srgb, var(--rx-theater-accent, #89b4fa) 10%, transparent);
         }
         .rx-tab:focus-visible,
         #rx-split-right .rx-hdr-btn:focus-visible {
@@ -2405,6 +2406,12 @@ const TheaterSplit = {
             color: var(--rx-theater-text, #f5f7fb) !important;
             border-top-color: var(--rx-theater-border, rgba(255,255,255,0.1)) !important;
         }
+        #rx-tab-chat .chat--signin-container button,
+        #rx-tab-chat .chat--signin-container a {
+            min-height: 36px;
+            padding: 7px 14px !important;
+            border-radius: 8px !important;
+        }
         #rx-tab-chat input,
         #rx-tab-chat textarea {
             background: var(--rx-theater-raised, rgba(255,255,255,0.06)) !important;
@@ -2430,6 +2437,27 @@ const TheaterSplit = {
         #rx-tab-comments::-webkit-scrollbar-thumb {
             background: var(--rx-theater-border-strong, rgba(255,255,255,0.14));
             border-radius: 3px;
+        }
+        #rx-split-right #video-comments-loading {
+            display: grid !important;
+            place-items: center;
+            align-content: center;
+            gap: 14px;
+            min-height: 220px;
+            padding: 28px 20px !important;
+            color: var(--rx-theater-subtext, #a6adc8) !important;
+            font-size: 13px;
+            line-height: 1.4;
+            text-align: center;
+        }
+        #rx-split-right #video-comments-loading .loading-spinner {
+            width: 38px !important;
+            height: 38px !important;
+            margin: 0 !important;
+            border-width: 4px !important;
+            border-color: var(--rx-theater-border-strong, rgba(255,255,255,0.18)) !important;
+            border-top-color: var(--rx-theater-accent, #89b4fa) !important;
+            box-shadow: none !important;
         }
 
         .rx-tab-content { display: none; min-height: 0; }
@@ -2460,6 +2488,8 @@ const TheaterSplit = {
             #rx-split-right {
                 width: 100% !important;
                 min-width: 0 !important;
+                border-left: 0;
+                border-top: 1px solid var(--rx-theater-border-strong, rgba(255,255,255,0.14));
             }
             #rx-split-right.rx-expanded {
                 min-height: 0;
@@ -2805,6 +2835,7 @@ const TheaterSplit = {
         info.className = 'rx-header-info';
         const title = document.createElement('h3');
         title.textContent = titleEl ? titleEl.textContent.trim() : 'Video';
+        title.title = title.textContent;
         const channel = document.createElement('span');
         channel.className = 'rx-channel';
         channel.textContent = channelEl ? channelEl.textContent.trim() : '';
@@ -12843,7 +12874,7 @@ const SettingsPanel = {
         .rx-m-btn:focus-visible,
         .rx-m-chip:focus-visible,
         .rx-m-switch input:focus-visible + .rx-m-switch-track {
-            outline: 2px solid #85d551; outline-offset: 2px;
+            outline: 2px solid var(--rx-accent, #89b4fa); outline-offset: 2px;
         }
         #rx-home-btn svg { width: 20px; height: 20px; }
         #rx-home-btn:hover { border-color: var(--rx-accent, rgba(133,213,81,0.6)) !important; }
@@ -12858,23 +12889,36 @@ const SettingsPanel = {
 
         /* ── Overlay ── */
         #rx-overlay {
-            position: fixed; inset: 0; background: rgba(0,0,0,0.65); z-index: 80000;
+            position: fixed; inset: 0; background: rgba(0,0,0,0.78); z-index: 80000;
             opacity: 0; pointer-events: none; transition: opacity 300ms ease;
         }
         body.rx-panel-open #rx-overlay { opacity: 1; pointer-events: auto; }
 
         /* ── Modal ── */
         #rx-modal {
+            --rx-modal-canvas: var(--rx-crust, #0a0a0b);
+            --rx-modal-panel: var(--rx-base, #111113);
+            --rx-modal-shell: var(--rx-mantle, #111113);
+            --rx-modal-raised: var(--rx-surface0, #17171a);
+            --rx-modal-hover: var(--rx-surface1, #1e1e22);
+            --rx-modal-border: var(--rx-surface1, #2a2a2e);
+            --rx-modal-border-strong: var(--rx-surface2, #45475a);
+            --rx-modal-text: var(--rx-text, #f0f0f0);
+            --rx-modal-muted: var(--rx-subtext, #aeb8ca);
+            --rx-modal-faint: var(--rx-subtext0, #71717a);
+            --rx-modal-accent: var(--rx-accent, #89b4fa);
+            --rx-modal-success: var(--rx-green, #85d551);
+            --rx-modal-danger: var(--rx-red, #ef4444);
             position: fixed; top: 50%; left: 50%;
             transform: translate(-50%,-50%) scale(0.96);
             width: 95%; max-width: 1120px; height: 86vh; max-height: 780px;
-            background: #0a0a0b; border: 1px solid #2a2a2e; border-radius: 12px;
+            background: var(--rx-modal-canvas); border: 1px solid var(--rx-modal-border); border-radius: 12px;
             box-shadow: 0 24px 64px rgba(0,0,0,0.55), 0 0 0 1px rgba(255,255,255,0.04) inset;
             z-index: 80001; display: flex; flex-direction: column; overflow: hidden;
             opacity: 0; pointer-events: none;
             transition: all 300ms cubic-bezier(0.32,0.72,0,1);
             font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
-            color: #f0f0f0;
+            color: var(--rx-modal-text);
         }
         body.rx-panel-open #rx-modal {
             opacity: 1; pointer-events: auto; transform: translate(-50%,-50%) scale(1);
@@ -12883,31 +12927,28 @@ const SettingsPanel = {
         /* ── Header ── */
         .rx-m-header {
             display: flex; align-items: center; justify-content: space-between;
-            padding: 12px 24px; background: #111113;
-            border-bottom: 1px solid #2a2a2e; flex-shrink: 0;
+            min-height: 56px; padding: 10px 20px; background: var(--rx-modal-shell);
+            border-bottom: 1px solid var(--rx-modal-border); flex-shrink: 0;
         }
         .rx-m-brand { display: flex; align-items: center; gap: 10px; }
         .rx-m-title {
             font-size: 20px; font-weight: 700; letter-spacing: 0;
         }
         .rx-m-title-rx {
-            background: linear-gradient(135deg, #85d551 0%, #4aba0e 50%, #85d551 100%);
-            background-size: 200% auto; -webkit-background-clip: text; -webkit-text-fill-color: transparent;
-            animation: rx-shimmer 3s linear infinite;
+            color: var(--rx-modal-success);
         }
-        @keyframes rx-shimmer { 0% { background-position: 0% center; } 100% { background-position: 200% center; } }
         .rx-m-badge {
             padding: 3px 10px; font-size: 9px; font-weight: 700; text-transform: uppercase;
-            color: #fff; background: linear-gradient(135deg, #85d551, #4aba0e);
-            border-radius: 6px; box-shadow: 0 2px 8px rgba(133,213,81,0.35);
+            color: var(--rx-modal-canvas); background: var(--rx-modal-success);
+            border-radius: 6px; box-shadow: 0 2px 8px color-mix(in srgb, var(--rx-modal-success) 30%, transparent);
         }
         .rx-m-close {
             display: flex; align-items: center; justify-content: center;
-            width: 32px; height: 32px; background: #17171a; border: 1px solid #2a2a2e;
-            border-radius: 8px; cursor: pointer; color: #c7d0e0;
+            width: 34px; height: 34px; background: var(--rx-modal-raised); border: 1px solid var(--rx-modal-border);
+            border-radius: 8px; cursor: pointer; color: var(--rx-modal-muted);
             transition: all 180ms cubic-bezier(0.4,0,0.2,1);
         }
-        .rx-m-close:hover { background: #ef4444; border-color: #ef4444; color: #fff; }
+        .rx-m-close:hover { background: var(--rx-modal-danger); border-color: var(--rx-modal-danger); color: var(--rx-modal-canvas); }
         .rx-m-close svg { width: 14px; height: 14px; }
 
         /* ── Body ── */
@@ -12916,7 +12957,7 @@ const SettingsPanel = {
         /* ── Sidebar ── */
         .rx-m-sidebar {
             display: flex; flex-direction: column; width: 240px;
-            padding: 8px 6px; background: #111113; border-right: 1px solid #2a2a2e;
+            padding: 8px 6px; background: var(--rx-modal-shell); border-right: 1px solid var(--rx-modal-border);
             overflow-y: auto; flex-shrink: 0; gap: 2px;
         }
         .rx-m-tablist { display: flex; flex-direction: column; gap: 2px; }
@@ -12924,98 +12965,105 @@ const SettingsPanel = {
             position: relative; padding: 4px 6px 8px;
         }
         .rx-m-search {
-            width: 100%; padding: 8px 12px 8px 32px; background: #17171a;
-            border: 1px solid #2a2a2e; border-radius: 8px; color: #f0f0f0;
+            width: 100%; min-height: 38px; padding: 8px 12px 8px 32px; background: var(--rx-modal-raised);
+            border: 1px solid var(--rx-modal-border); border-radius: 8px; color: var(--rx-modal-text);
             font-size: 13px; transition: all 180ms; outline: none;
         }
-        .rx-m-search:focus { border-color: #85d551; box-shadow: 0 0 0 3px rgba(133,213,81,0.12); }
+        .rx-m-search::placeholder { color: var(--rx-modal-faint); }
+        .rx-m-search:hover { border-color: var(--rx-modal-border-strong); }
+        .rx-m-search:focus { border-color: var(--rx-modal-accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--rx-modal-accent) 16%, transparent); }
         .rx-m-search-icon {
             position: absolute; left: 16px; top: 50%; transform: translateY(-50%);
-            color: #71717a; pointer-events: none;
+            color: var(--rx-modal-faint); pointer-events: none;
         }
         .rx-m-search-icon svg { width: 14px; height: 14px; }
         .rx-m-nav-btn {
             display: flex; align-items: center; gap: 10px; width: 100%;
-            padding: 7px 10px; background: transparent; border: none;
+            min-height: 42px; padding: 6px 10px; background: transparent; border: 1px solid transparent;
             border-radius: 8px; cursor: pointer; text-align: left;
-            transition: all 180ms; color: #c7d0e0; font-size: 13px; font-weight: 600;
+            transition: all 180ms; color: var(--rx-modal-muted); font-size: 13px; font-weight: 650;
         }
-        .rx-m-nav-btn:hover { background: #1e1e22; }
-        .rx-m-nav-btn.active { background: #27272a; color: #f0f0f0; font-weight: 600; }
+        .rx-m-nav-btn:hover { background: var(--rx-modal-raised); color: var(--rx-modal-text); border-color: var(--rx-modal-border); }
+        .rx-m-nav-btn.active {
+            background: color-mix(in srgb, var(--rx-cat-color) 12%, var(--rx-modal-raised));
+            color: var(--rx-modal-text); border-color: color-mix(in srgb, var(--rx-cat-color) 44%, var(--rx-modal-border));
+            box-shadow: inset 3px 0 0 var(--rx-cat-color); font-weight: 700;
+        }
         .rx-m-nav-icon {
             display: flex; align-items: center; justify-content: center;
-            width: 30px; height: 30px; background: #17171a; border-radius: 6px;
+            width: 30px; height: 30px; background: var(--rx-modal-raised); border-radius: 6px;
             flex-shrink: 0; transition: all 180ms;
         }
         .rx-m-nav-icon svg { width: 16px; height: 16px; fill: currentColor; }
         .rx-m-nav-btn.active .rx-m-nav-icon {
-            background: var(--rx-cat-color); color: #fff;
+            background: var(--rx-cat-color); color: var(--rx-modal-canvas);
             box-shadow: 0 2px 10px color-mix(in srgb, var(--rx-cat-color) 40%, transparent);
         }
         .rx-m-nav-count {
-            margin-left: auto; font-size: 10px; font-weight: 700; color: #d3dbea;
-            background: #202632; padding: 2px 7px; border-radius: 6px;
+            margin-left: auto; font-size: 10px; font-weight: 700; color: var(--rx-modal-muted);
+            background: var(--rx-modal-raised); padding: 2px 7px; border-radius: 6px;
         }
-        .rx-m-nav-btn.active .rx-m-nav-count { background: rgba(255,255,255,0.18); color: #fff; }
+        .rx-m-nav-btn.active .rx-m-nav-count { background: color-mix(in srgb, var(--rx-cat-color) 20%, var(--rx-modal-raised)); color: var(--rx-modal-text); }
 
         /* ── Content ── */
-        .rx-m-content { flex: 1; padding: 20px 24px; overflow-y: auto; background: #0a0a0b; }
+        .rx-m-content { flex: 1; padding: 20px 24px; overflow-y: auto; background: var(--rx-modal-canvas); }
         .rx-m-pane { display: none; animation: rx-pane-in 250ms ease; }
         .rx-m-pane.active { display: block; }
         @keyframes rx-pane-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
         .rx-m-pane-header {
             display: flex; align-items: center; justify-content: space-between;
-            margin: 0 0 16px; padding: 0 0 14px; border-bottom: 1px solid #2a2a2e;
+            margin: 0 0 16px; padding: 0 0 14px; border-bottom: 1px solid var(--rx-modal-border);
         }
         .rx-m-pane-title { font-size: 18px; font-weight: 700; letter-spacing: 0; }
         .rx-m-toggle-all {
             display: flex; align-items: center; gap: 8px;
-            font-size: 11px; color: #c7d0e0; cursor: pointer; user-select: none;
+            font-size: 11px; color: var(--rx-modal-muted); cursor: pointer; user-select: none;
         }
         .rx-m-features-grid { display: flex; flex-direction: column; gap: 6px; }
         .rx-m-shield-status {
             display: flex; align-items: center; gap: 10px; min-height: 40px;
             margin: -4px 0 14px; padding: 9px 12px; border-radius: 8px;
-            border: 1px solid rgba(133,213,81,0.26); background: rgba(133,213,81,0.055);
-            color: #a8b3c5; font-size: 11px; line-height: 1.4;
+            border: 1px solid color-mix(in srgb, var(--rx-modal-success) 30%, transparent);
+            background: color-mix(in srgb, var(--rx-modal-success) 7%, var(--rx-modal-canvas));
+            color: var(--rx-modal-muted); font-size: 11px; line-height: 1.4;
         }
         .rx-m-shield-status::before {
             content: ''; width: 8px; height: 8px; border-radius: 50%; flex: 0 0 auto;
-            background: #85d551; box-shadow: 0 0 0 4px rgba(133,213,81,0.10);
+            background: var(--rx-modal-success); box-shadow: 0 0 0 4px color-mix(in srgb, var(--rx-modal-success) 12%, transparent);
         }
         .rx-m-shield-status.is-limited { border-color: rgba(249,226,175,0.24); background: rgba(249,226,175,0.05); }
         .rx-m-shield-status.is-limited::before { background: var(--rx-yellow, #f9e2af); box-shadow: 0 0 0 4px rgba(249,226,175,0.09); }
-        .rx-m-shield-title { color: #85d551; font-weight: 800; white-space: nowrap; }
+        .rx-m-shield-title { color: var(--rx-modal-success); font-weight: 800; white-space: nowrap; }
         .rx-m-shield-status.is-limited .rx-m-shield-title { color: var(--rx-yellow, #f9e2af); }
         .rx-m-shield-note { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
         /* ── Feature Card ── */
         .rx-m-card {
             display: flex; align-items: center; justify-content: space-between;
-            padding: 10px 14px; background: #17171a;
-            border: 1px solid rgba(255,255,255,0.04); border-left: 3px solid transparent;
+            min-height: 58px; padding: 10px 14px; background: var(--rx-modal-raised);
+            border: 1px solid color-mix(in srgb, var(--rx-modal-border) 68%, transparent); border-left: 3px solid transparent;
             border-radius: 8px; transition: all 180ms;
         }
-        .rx-m-card:hover { background: #1e1e22; transform: translateX(2px); }
+        .rx-m-card:hover { background: var(--rx-modal-hover); border-color: var(--rx-modal-border-strong); transform: translateY(-1px); }
         .rx-m-card.rx-m-enabled {
             border-left-color: var(--rx-cat-color);
-            background: color-mix(in srgb, var(--rx-cat-color) 4%, #17171a);
+            background: color-mix(in srgb, var(--rx-cat-color) 6%, var(--rx-modal-raised));
         }
         .rx-m-card.rx-m-sub { margin-left: 18px; border-left-width: 2px; }
         .rx-m-card-info { flex: 1; min-width: 0; padding-right: 16px; }
-        .rx-m-card-name { font-size: 13px; font-weight: 600; color: #f0f0f0; margin: 0 0 2px; }
-        .rx-m-card-desc { font-size: 11px; color: #aeb8ca; margin: 0; line-height: 1.4; }
+        .rx-m-card-name { font-size: 13px; font-weight: 650; color: var(--rx-modal-text); margin: 0 0 3px; }
+        .rx-m-card-desc { font-size: 11px; color: var(--rx-modal-muted); margin: 0; line-height: 1.45; }
 
         /* ── Switch ── */
         /* v3.1.0 — WCAG 2.2 SC 2.5.8 Target Size: bumped 40x22 → 40x24. */
         .rx-m-switch { position: relative; width: 40px; height: 24px; flex-shrink: 0; }
         .rx-m-switch input { position: absolute; opacity: 0; width: 100%; height: 100%; cursor: pointer; z-index: 1; margin: 0; }
         .rx-m-switch-track {
-            position: absolute; inset: 0; background: #27272a; border: 1px solid #2a2a2e;
+            position: absolute; inset: 0; background: var(--rx-modal-hover); border: 1px solid var(--rx-modal-border);
             border-radius: 12px; transition: all 180ms;
         }
         .rx-m-switch.active .rx-m-switch-track {
-            background: var(--rx-switch-color, #85d551); border-color: transparent;
+            background: var(--rx-switch-color, var(--rx-modal-success)); border-color: transparent;
             box-shadow: 0 0 8px color-mix(in srgb, var(--rx-switch-color, #85d551) 24%, transparent);
         }
         .rx-m-switch-thumb {
@@ -13028,60 +13076,61 @@ const SettingsPanel = {
 
         /* ── Special Sections ── */
         .rx-m-section-title {
-            font-size: 11px; font-weight: 700; color: #c7d0e0; text-transform: uppercase;
+            font-size: 11px; font-weight: 700; color: var(--rx-modal-muted); text-transform: uppercase;
             letter-spacing: 0.5px; margin: 20px 0 10px; padding: 0 0 8px;
-            border-bottom: 1px solid rgba(255,255,255,0.04);
+            border-bottom: 1px solid color-mix(in srgb, var(--rx-modal-border) 68%, transparent);
         }
         .rx-m-chip-grid { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
         .rx-m-chip {
             appearance: none; font-family: inherit; text-align: left;
             font-size: 11px; padding: 5px 12px; border-radius: 10px;
-            border: 1px solid rgba(255,255,255,0.08); background: #17171a;
-            color: #f0f0f0; cursor: pointer; user-select: none;
+            border: 1px solid var(--rx-modal-border); background: var(--rx-modal-raised);
+            color: var(--rx-modal-text); cursor: pointer; user-select: none;
             transition: all 180ms; display: flex; align-items: center; gap: 6px;
         }
-        .rx-m-chip:hover { background: #1e1e22; border-color: rgba(255,255,255,0.15); }
+        .rx-m-chip:hover { background: var(--rx-modal-hover); border-color: var(--rx-modal-border-strong); }
         .rx-m-chip.rx-m-chip-active {
             border-color: var(--rx-cat-color, #85d551);
-            background: color-mix(in srgb, var(--rx-cat-color, #85d551) 10%, #17171a);
+            background: color-mix(in srgb, var(--rx-cat-color, var(--rx-modal-success)) 10%, var(--rx-modal-raised));
             box-shadow: 0 0 8px color-mix(in srgb, var(--rx-cat-color, #85d551) 20%, transparent);
         }
         .rx-m-chip.rx-m-chip-hidden {
-            opacity: 0.4; text-decoration: line-through; background: #0a0a0b;
-            border-color: rgba(255,255,255,0.03);
+            opacity: 0.52; text-decoration: line-through; background: var(--rx-modal-canvas);
+            border-color: var(--rx-modal-border);
         }
         .rx-m-theme-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
         .rx-m-unblock-chip svg { width: 10px; height: 10px; margin-left: 4px; flex-shrink: 0; }
         .rx-m-slider-row {
             display: flex; align-items: center; gap: 12px; padding: 4px 0 8px;
         }
-        .rx-m-slider-row input[type=range] { flex: 1; accent-color: #85d551; height: 4px; }
-        .rx-m-slider-label { font-size: 13px; font-weight: 600; color: #85d551; min-width: 36px; }
-        .rx-m-empty { font-size: 11px; color: #aeb8ca; padding: 2px 0; }
+        .rx-m-slider-row input[type=range] { flex: 1; accent-color: var(--rx-modal-accent); height: 4px; }
+        .rx-m-slider-label { font-size: 13px; font-weight: 600; color: var(--rx-modal-accent); min-width: 36px; }
+        .rx-m-empty { font-size: 11px; color: var(--rx-modal-muted); padding: 2px 0; }
 
         /* ── Footer ── */
         .rx-m-footer {
             display: flex; align-items: center; justify-content: space-between;
-            padding: 10px 24px; background: #111113;
-            border-top: 1px solid #2a2a2e; flex-shrink: 0;
+            min-height: 54px; padding: 9px 20px; background: var(--rx-modal-shell);
+            border-top: 1px solid var(--rx-modal-border); flex-shrink: 0;
         }
         .rx-m-footer-left { display: flex; align-items: center; gap: 12px; }
         .rx-m-footer-right { display: flex; align-items: center; gap: 8px; }
-        .rx-m-version { font-size: 11px; color: #aeb8ca; }
+        .rx-m-version { font-size: 11px; color: var(--rx-modal-muted); }
+        .rx-m-save-note { font-size: 10px; color: var(--rx-modal-muted); }
         .rx-m-btn {
             display: inline-flex; align-items: center; gap: 6px; padding: 7px 16px;
             font-size: 12px; font-weight: 600; border: none; border-radius: 8px;
             cursor: pointer; transition: all 180ms; font-family: inherit;
         }
         .rx-m-btn-primary {
-            color: #fff; background: linear-gradient(135deg, #85d551, #4aba0e);
-            box-shadow: 0 2px 8px rgba(133,213,81,0.3);
+            color: var(--rx-modal-canvas); background: var(--rx-modal-success);
+            box-shadow: 0 2px 8px color-mix(in srgb, var(--rx-modal-success) 30%, transparent);
         }
-        .rx-m-btn-primary:hover { transform: translateY(-1px); box-shadow: 0 4px 16px rgba(133,213,81,0.4); }
+        .rx-m-btn-primary:hover { transform: translateY(-1px); box-shadow: 0 4px 16px color-mix(in srgb, var(--rx-modal-success) 40%, transparent); }
         .rx-m-btn-secondary {
-            color: #c7d0e0; background: #17171a; border: 1px solid #2a2a2e;
+            color: var(--rx-modal-muted); background: var(--rx-modal-raised); border: 1px solid var(--rx-modal-border);
         }
-        .rx-m-btn-secondary:hover { background: #1e1e22; color: #f0f0f0; }
+        .rx-m-btn-secondary:hover { background: var(--rx-modal-hover); color: var(--rx-modal-text); border-color: var(--rx-modal-border-strong); }
         .rx-m-reload-note { font-size: 10px; color: rgba(166,173,200,0.5); text-align: center; padding: 12px 0 4px; }
 
         /* ── Narrow / short viewports ──
@@ -13098,7 +13147,7 @@ const SettingsPanel = {
                 box-sizing: border-box;
                 width: 100%; max-height: none; flex-direction: row; align-items: center;
                 overflow-x: auto; overflow-y: hidden; padding: 6px;
-                border-right: 0; border-bottom: 1px solid #2a2a2e;
+                border-right: 0; border-bottom: 1px solid var(--rx-modal-border);
             }
             .rx-m-search-wrap { flex: 0 0 min(240px, 55vw); margin: 0 4px 0 0; }
             .rx-m-tablist { flex: 0 0 auto; flex-direction: row; gap: 2px; }
@@ -13384,7 +13433,7 @@ const SettingsPanel = {
                 for (const c of grid.querySelectorAll('.rx-m-chip')) c.setAttribute('aria-pressed', 'false');
                 chip.classList.add('rx-m-chip-active');
                 chip.setAttribute('aria-pressed', 'true');
-                RxToast.show(rxT('toastThemeChanged', 'Theme changed — reload page to apply'));
+                RxToast.show(rxT('toastThemeChanged', 'Theme changed. Reload page to apply'));
             });
             grid.appendChild(chip);
         }
@@ -13630,6 +13679,10 @@ const SettingsPanel = {
                 <span class="rx-m-version">v${VERSION}</span>
             </div>
             <div class="rx-m-footer-right"></div>`;
+        const saveNote = document.createElement('span');
+        saveNote.className = 'rx-m-save-note';
+        saveNote.textContent = rxT('popupLocalAutosave', 'Local changes autosave');
+        footer.querySelector('.rx-m-footer-left').appendChild(saveNote);
         const exportBtn = document.createElement('button');
         exportBtn.className = 'rx-m-btn rx-m-btn-primary';
         exportBtn.textContent = rxT('modalExport', 'Export');
