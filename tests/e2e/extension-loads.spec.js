@@ -106,7 +106,7 @@ test('options and popup consume localized UI messages', async ({ context, extens
     await popup.goto(`chrome-extension://${extensionId}/pages/popup.html`);
     await expect(popup.locator('#open-options')).toContainText('Localized Settings Editor');
     await expect(popup.locator('.feat-group-header').first()).toContainText('Localized Ad Controls');
-    await expect(popup.locator('.theme-label')).toHaveText('Localized Theme');
+    await expect(popup.locator('#rx-popup-theme-label')).toHaveText('Localized Theme');
 });
 
 test('update check compares versions numerically and reports rate limiting distinctly', async ({ context, extensionId, serviceWorker }) => {

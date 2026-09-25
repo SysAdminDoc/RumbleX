@@ -1,4 +1,4 @@
-// RumbleX v3.59.0 - Popup Script
+// RumbleX v3.60.0 - Popup Script
 'use strict';
 
 const RXSettingsSchema = globalThis.RumbleXSettingsSchema;
@@ -483,11 +483,14 @@ async function init() {
     themeSection.className = 'theme-section';
     const themeLabel = document.createElement('div');
     themeLabel.className = 'theme-label';
+    themeLabel.id = 'rx-popup-theme-label';
     themeLabel.textContent = i18n('themeLabel', 'Theme');
     themeSection.appendChild(themeLabel);
 
     const themeGrid = document.createElement('div');
     themeGrid.className = 'theme-grid';
+    themeGrid.setAttribute('role', 'group');
+    themeGrid.setAttribute('aria-labelledby', themeLabel.id);
     const themes = Object.entries(RXSettingsSchema.THEMES).map(([id, palette]) => ({ id, ...palette }));
     for (const t of themes) {
         const chip = document.createElement('button');
@@ -519,11 +522,14 @@ async function init() {
 
     const densityLabel = document.createElement('div');
     densityLabel.className = 'theme-label';
+    densityLabel.id = 'rx-popup-density-label';
     densityLabel.textContent = i18n('pageDensityLabel', 'Page density');
     themeSection.appendChild(densityLabel);
 
     const densityGrid = document.createElement('div');
     densityGrid.className = 'theme-grid density-grid';
+    densityGrid.setAttribute('role', 'group');
+    densityGrid.setAttribute('aria-labelledby', densityLabel.id);
     const densityChoices = [
         { id: 'dense', label: i18n('pageDensityCompact', 'Compact') },
         { id: 'normal', label: i18n('pageDensityBalanced', 'Balanced') },

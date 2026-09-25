@@ -1,11 +1,11 @@
 {
   "extName": {
     "message": "RumbleX",
-    "description": "Nombre de la extensión. No traducir — nombre propio."
+    "description": "Nombre de la extensión. No traducir, nombre propio."
   },
   "extDescription": {
-    "message": "Suite de mejoras para Rumble — bloqueo de anuncios, vista de cine, descargas de vídeo, tema oscuro pulido y más de 130 funciones configurables.",
-    "description": "Descripción corta mostrada en la tienda de extensiones del navegador. Traducción inicial — revisar antes de publicar."
+    "message": "Mejoras para Rumble: bloqueo de anuncios, modo cine, descargas de vídeo, siete temas y más de 140 controles.",
+    "description": "Descripción corta mostrada en la tienda de extensiones del navegador. Traducción inicial, revisar antes de publicar."
   },
   "actionTitle": {
     "message": "RumbleX",
@@ -44,7 +44,7 @@
     "description": "Encabezado de la sección de informe de privacidad (v3.1.0)."
   },
   "telemetryNone": {
-    "message": "Telemetría: ninguna — sin analíticas, sin registro remoto, sin balizas de uso",
+    "message": "Telemetría: ninguna, sin analíticas, sin registro remoto, sin balizas de uso",
     "description": "Aviso del informe. Debe coincidir con la cadena `telemetry` en rxBuildPrivacyReport."
   },
   "settingsTotal": {
@@ -468,7 +468,7 @@
     "description": "In-page UI string (shared core)."
   },
   "dlScanningCdn": {
-    "message": "Aún no hay calidades de la API de inserción — analizando la CDN…",
+    "message": "Aún no hay calidades de la API de inserción, analizando la CDN…",
     "description": "In-page UI string (shared core)."
   },
   "dlDeepScan": {
@@ -480,7 +480,7 @@
     "description": "In-page UI string (shared core)."
   },
   "dlDeepScanFailed": {
-    "message": "La búsqueda profunda falló — se usan solo los resultados de la API de inserción",
+    "message": "La búsqueda profunda falló, se usan solo los resultados de la API de inserción",
     "description": "In-page UI string (shared core)."
   },
   "dlStartingBrowser": {
@@ -564,7 +564,7 @@
     "description": "In-page UI string (shared core)."
   },
   "toastEnableFailed": {
-    "message": "No se pudo activar {feature} — recarga la página e inténtalo de nuevo",
+    "message": "No se pudo activar {feature}, recarga la página e inténtalo de nuevo",
     "description": "In-page UI string (shared core)."
   },
   "toastEnabled": {
@@ -636,7 +636,7 @@
     "description": "In-page UI string (shared core)."
   },
   "toastNoComments": {
-    "message": "Todavía no se han cargado comentarios — desplázate para cargarlos primero",
+    "message": "Todavía no se han cargado comentarios, desplázate para cargarlos primero",
     "description": "In-page UI string (shared core)."
   },
   "toastExportedCsvOne": {
@@ -656,11 +656,11 @@
     "description": "In-page UI string (shared core)."
   },
   "toastWasReset": {
-    "message": "RumbleX se restableció — recarga para ver los valores predeterminados",
+    "message": "RumbleX se restableció, recarga para ver los valores predeterminados",
     "description": "In-page UI string (shared core)."
   },
   "toastChangedElsewhere": {
-    "message": "Los ajustes cambiaron en otro sitio — recarga para aplicarlos",
+    "message": "Los ajustes cambiaron en otro sitio, recarga para aplicarlos",
     "description": "In-page UI string (shared core)."
   },
   "cat_ad_blocking_label": {
@@ -1716,7 +1716,7 @@
     "description": "In-page UI string (shared core)."
   },
   "toastQualityStepDown": {
-    "message": "La reproducción se detenía — calidad reducida a {height}p",
+    "message": "La reproducción se detenía, calidad reducida a {height}p",
     "description": "In-page UI string (shared core)."
   },
   "feat_stallRecovery_label": {

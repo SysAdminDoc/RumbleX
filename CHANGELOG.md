@@ -4,6 +4,28 @@ All notable changes to RumbleX will be documented in this file.
 
 ## Unreleased
 
+## [3.60.0] - 2026-09-24
+
+### Added
+
+- Aurora and Solar Ember expand the site theme collection to seven palettes. One canonical registry now feeds the page runtime, Options, popup, in-page editor, userscripts, and visual checks.
+- Page Density now has working Compact, Balanced, and Showcase presets for feeds, cards, comments, and watch pages. The saved setting had previously appeared as unavailable because no runtime module consumed it.
+- Ambient Player is an opt-in watch-page treatment that uses the active palette around the standard player. It disables itself in Theater and has explicit reduced-motion and forced-colors behavior.
+- The screenshot suite now captures theme previews, density controls, and an Aurora Ambient Player watch page alongside the established desktop and narrow states.
+
+### Changed
+
+- Theme choices in the popup and in-page editor use three-tone previews, making similar dark palettes distinguishable before selection.
+- The floating page toolbar now uses an opaque theme surface instead of background blur. Feed scroll buttons and channel-block controls use compact rectangular geometry.
+- Theater gives Rumble's sticky paid-chat rail a bounded row with horizontal scrolling and dedicated controls, so it cannot cover the first visible message.
+- Browser and store descriptions now report the current 140-plus control set in all six locales. The popup theme and density pickers expose named accessibility groups.
+
+### Fixed
+
+- A batch-selection checkmark no longer pins YouTubify black outside the active theme token system.
+- Palette tests and the hardcoded-color guard now derive their inputs from the shared registry, so adding a theme cannot leave an older picker or test matrix behind.
+- The localization test now targets the theme heading by its stable accessible identity instead of assuming it is the popup's only section label.
+
 ## [3.59.0] - 2026-09-24
 
 ### Changed

@@ -1,11 +1,11 @@
 {
   "extName": {
     "message": "RumbleX",
-    "description": "Name der Erweiterung. Nicht uebersetzen — Eigenname."
+    "description": "Name der Erweiterung. Nicht uebersetzen, Eigenname."
   },
   "extDescription": {
-    "message": "Erweiterungspaket fuer Rumble — Werbeblocker, Theatermodus, Videodownloads, dunkles Design und ueber 130 konfigurierbare Funktionen.",
-    "description": "Kurzbeschreibung im Erweiterungs-Store. Erstbersetzung — vor Veroeffentlichung pruefen."
+    "message": "Rumble-Erweiterung: Werbeblocker, Theatermodus, Video-Downloads, sieben Themes und über 140 konfigurierbare Funktionen.",
+    "description": "Kurzbeschreibung im Erweiterungs-Store. Erstbersetzung, vor Veroeffentlichung pruefen."
   },
   "actionTitle": {
     "message": "RumbleX",
@@ -44,7 +44,7 @@
     "description": "Abschnittueberschrift fuer den lokalen Datenschutzbericht (v3.1.0)."
   },
   "telemetryNone": {
-    "message": "Telemetrie: keine — keine Analysen, keine Fernprotokollierung, keine Nutzungssignale",
+    "message": "Telemetrie: keine, keine Analysen, keine Fernprotokollierung, keine Nutzungssignale",
     "description": "Hinweis im Bericht. Muss mit der Zeichenkette `telemetry` in rxBuildPrivacyReport uebereinstimmen."
   },
   "settingsTotal": {
@@ -188,7 +188,7 @@
     "description": "Shown when the user declines optional GitHub API access."
   },
   "checkRateLimited": {
-    "message": "GitHub-Ratenlimit erreicht – später erneut versuchen",
+    "message": "GitHub-Ratenlimit erreicht, später erneut versuchen",
     "description": "Tooltip on the popup update button when GitHub's unauthenticated API quota is exhausted."
   },
   "upToDate": {
@@ -468,7 +468,7 @@
     "description": "In-page UI string (shared core)."
   },
   "dlScanningCdn": {
-    "message": "Noch keine Qualitäten von der Embed-API — das CDN wird durchsucht…",
+    "message": "Noch keine Qualitäten von der Embed-API, das CDN wird durchsucht…",
     "description": "In-page UI string (shared core)."
   },
   "dlDeepScan": {
@@ -480,7 +480,7 @@
     "description": "In-page UI string (shared core)."
   },
   "dlDeepScanFailed": {
-    "message": "Tiefensuche fehlgeschlagen — es werden nur die Ergebnisse der Embed-API verwendet",
+    "message": "Tiefensuche fehlgeschlagen, es werden nur die Ergebnisse der Embed-API verwendet",
     "description": "In-page UI string (shared core)."
   },
   "dlStartingBrowser": {
@@ -564,7 +564,7 @@
     "description": "In-page UI string (shared core)."
   },
   "toastEnableFailed": {
-    "message": "{feature} konnte nicht aktiviert werden — lade die Seite neu und versuche es erneut",
+    "message": "{feature} konnte nicht aktiviert werden, lade die Seite neu und versuche es erneut",
     "description": "In-page UI string (shared core)."
   },
   "toastEnabled": {
@@ -636,7 +636,7 @@
     "description": "In-page UI string (shared core)."
   },
   "toastNoComments": {
-    "message": "Noch keine Kommentare geladen — scrolle zuerst, um Kommentare zu laden",
+    "message": "Noch keine Kommentare geladen, scrolle zuerst, um Kommentare zu laden",
     "description": "In-page UI string (shared core)."
   },
   "toastExportedCsvOne": {
@@ -656,11 +656,11 @@
     "description": "In-page UI string (shared core)."
   },
   "toastWasReset": {
-    "message": "RumbleX wurde zurückgesetzt — neu laden, um die Standardwerte zu sehen",
+    "message": "RumbleX wurde zurückgesetzt, neu laden, um die Standardwerte zu sehen",
     "description": "In-page UI string (shared core)."
   },
   "toastChangedElsewhere": {
-    "message": "Einstellungen anderswo geändert — zum Übernehmen neu laden",
+    "message": "Einstellungen anderswo geändert, zum Übernehmen neu laden",
     "description": "In-page UI string (shared core)."
   },
   "cat_ad_blocking_label": {
@@ -836,7 +836,7 @@
     "description": "In-page UI string (shared core)."
   },
   "feat_legacyKeyboardNav_desc": {
-    "message": "Tastenkürzel im YouTube-Stil (J/K/L, F, M, 0-9) — in v2 standardmäßig aus",
+    "message": "Tastenkürzel im YouTube-Stil (J/K/L, F, M, 0-9), in v2 standardmäßig aus",
     "description": "In-page UI string (shared core)."
   },
   "feat_videoStats_label": {
@@ -1716,7 +1716,7 @@
     "description": "In-page UI string (shared core)."
   },
   "toastQualityStepDown": {
-    "message": "Wiedergabe stockte wiederholt — Qualität auf {height}p gesenkt",
+    "message": "Wiedergabe stockte wiederholt, Qualität auf {height}p gesenkt",
     "description": "In-page UI string (shared core)."
   },
   "feat_stallRecovery_label": {

@@ -1,10 +1,10 @@
 {
   "extName": {
     "message": "RumbleX",
-    "description": "Extension name shown in the browser. Avoid translating — proper noun."
+    "description": "Extension name shown in the browser. Avoid translating, proper noun."
   },
   "extDescription": {
-    "message": "Suite d'améliorations pour Rumble — suppression des pubs et du superflu, mode cinéma divisé, téléchargement de vidéos, thème sombre soigné et plus de 130 options.",
+    "message": "Améliorations pour Rumble : blocage des pubs, mode cinéma, téléchargements, sept thèmes et plus de 140 réglages.",
     "description": "Short marketing description shown in browser extension store listings."
   },
   "actionTitle": {
@@ -44,7 +44,7 @@
     "description": "Section heading for the local-only privacy disclosure panel (added v3.1.0)."
   },
   "telemetryNone": {
-    "message": "Télémétrie : aucune — pas d'analyse, pas de journalisation distante, pas de balise d'usage",
+    "message": "Télémétrie : aucune, pas d'analyse, pas de journalisation distante, pas de balise d'usage",
     "description": "Disclosure shown in the privacy report. Match the rxBuildPrivacyReport.telemetry string exactly."
   },
   "settingsTotal": {
@@ -188,7 +188,7 @@
     "description": "Shown when the user declines optional GitHub API access."
   },
   "checkRateLimited": {
-    "message": "Limite de requêtes GitHub atteinte — réessayez plus tard",
+    "message": "Limite de requêtes GitHub atteinte, réessayez plus tard",
     "description": "Tooltip on the popup update button when GitHub's unauthenticated API quota is exhausted."
   },
   "upToDate": {
@@ -256,7 +256,7 @@
     "description": "UI string used by popup/options i18n pass."
   },
   "privacyReportCopy": {
-    "message": "Toutes les ressources réseau externes que RumbleX peut atteindre, l'état de la télémétrie et l'empreinte de stockage actuelle. Lecture seule — aucun appel réseau n'est déclenché à l'ouverture.",
+    "message": "Toutes les ressources réseau externes que RumbleX peut atteindre, l'état de la télémétrie et l'empreinte de stockage actuelle. Lecture seule, aucun appel réseau n'est déclenché à l'ouverture.",
     "description": "UI string used by popup/options i18n pass."
   },
   "refresh": {
@@ -468,7 +468,7 @@
     "description": "In-page UI string (shared core)."
   },
   "dlScanningCdn": {
-    "message": "Aucune qualité renvoyée par l'API d'intégration — analyse du CDN…",
+    "message": "Aucune qualité renvoyée par l'API d'intégration, analyse du CDN…",
     "description": "In-page UI string (shared core)."
   },
   "dlDeepScan": {
@@ -480,7 +480,7 @@
     "description": "In-page UI string (shared core)."
   },
   "dlDeepScanFailed": {
-    "message": "Échec de la recherche approfondie — seuls les résultats de l'API d'intégration sont utilisés",
+    "message": "Échec de la recherche approfondie, seuls les résultats de l'API d'intégration sont utilisés",
     "description": "In-page UI string (shared core)."
   },
   "dlStartingBrowser": {
@@ -564,7 +564,7 @@
     "description": "In-page UI string (shared core)."
   },
   "toastEnableFailed": {
-    "message": "Impossible d'activer {feature} — rechargez la page pour réessayer",
+    "message": "Impossible d'activer {feature}, rechargez la page pour réessayer",
     "description": "In-page UI string (shared core)."
   },
   "toastEnabled": {
@@ -636,7 +636,7 @@
     "description": "In-page UI string (shared core)."
   },
   "toastNoComments": {
-    "message": "Aucun commentaire chargé — faites défiler pour les charger",
+    "message": "Aucun commentaire chargé, faites défiler pour les charger",
     "description": "In-page UI string (shared core)."
   },
   "toastExportedCsvOne": {
@@ -656,11 +656,11 @@
     "description": "In-page UI string (shared core)."
   },
   "toastWasReset": {
-    "message": "RumbleX a été réinitialisé — rechargez pour voir les valeurs par défaut",
+    "message": "RumbleX a été réinitialisé, rechargez pour voir les valeurs par défaut",
     "description": "In-page UI string (shared core)."
   },
   "toastChangedElsewhere": {
-    "message": "Paramètres modifiés ailleurs — rechargez pour appliquer",
+    "message": "Paramètres modifiés ailleurs, rechargez pour appliquer",
     "description": "In-page UI string (shared core)."
   },
   "cat_ad_blocking_label": {
@@ -836,7 +836,7 @@
     "description": "In-page UI string (shared core)."
   },
   "feat_legacyKeyboardNav_desc": {
-    "message": "Raccourcis façon YouTube (J/K/L, F, M, 0-9) — désactivés par défaut en v2",
+    "message": "Raccourcis façon YouTube (J/K/L, F, M, 0-9), désactivés par défaut en v2",
     "description": "In-page UI string (shared core)."
   },
   "feat_videoStats_label": {
@@ -1716,7 +1716,7 @@
     "description": "In-page UI string (shared core)."
   },
   "toastQualityStepDown": {
-    "message": "La lecture saccadait — qualité réduite à {height}p",
+    "message": "La lecture saccadait, qualité réduite à {height}p",
     "description": "In-page UI string (shared core)."
   },
   "feat_stallRecovery_label": {

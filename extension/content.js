@@ -1,4 +1,4 @@
-// RumbleX v3.59.0 - Shared Content Core
+// RumbleX v3.60.0 - Shared Content Core
 // Rumble enhancement suite - Chrome/Firefox extension
 'use strict';
 
@@ -8,7 +8,7 @@
 // DOM feature ship from one canonical source.
 const RXPlatform = globalThis.RumbleXPlatform;
 if (!RXPlatform) throw new Error('RumbleX platform adapter is missing');
-const VERSION = RXPlatform.version || '3.59.0';
+const VERSION = RXPlatform.version || '3.60.0';
 /**
  * In-page translation lookup.
  *
@@ -5329,7 +5329,7 @@ const VideoDownloader = {
             if (rowByKey.size === 0) {
                 emptyEl = document.createElement('div');
                 emptyEl.className = 'rx-dl-status';
-                emptyEl.textContent = rxT('dlScanningCdn', 'No qualities from the embed API yet — scanning the CDN…');
+                emptyEl.textContent = rxT('dlScanningCdn', 'No qualities from the embed API yet. Scanning the CDN…');
                 body.appendChild(emptyEl);
             }
             const dismissEmpty = () => {
@@ -5430,7 +5430,7 @@ const VideoDownloader = {
                 }
             }).catch((e) => {
                 if (seq !== this._scanSeq) return;
-                scanLabel.textContent = rxT('dlDeepScanFailed', 'Deep scan failed — using embed-API results only');
+                scanLabel.textContent = rxT('dlDeepScanFailed', 'Deep scan failed. Using embed API results only');
                 console.warn('[RumbleX] deep scan failed:', e);
             });
         } catch (e) {
@@ -6911,7 +6911,7 @@ const AutoMaxQuality = {
             this._steppedDown += 1;
             RxToast.show(rxT(
                 'toastQualityStepDown',
-                'Playback kept stalling — quality lowered to {height}p',
+                'Playback kept stalling. Quality lowered to {height}p',
                 { height: next.height },
             ));
         } catch { /* player swapped out mid-step */ }
@@ -12628,7 +12628,7 @@ const RX_CATEGORIES = [
             { id: 'autoplayBlock', label: 'Autoplay Block', desc: 'Prevent auto-play of next video' },
             { id: 'loopControl', label: 'Loop Control', desc: 'Legacy loop engine; no watch-page launcher' },
             { id: 'miniPlayer', label: 'Mini Player', desc: 'Floating draggable video when scrolling away' },
-            { id: 'legacyKeyboardNav', label: 'Keyboard Nav (legacy)', desc: 'YouTube-style hotkeys (J/K/L, F, M, 0-9) — off by default in v2' },
+            { id: 'legacyKeyboardNav', label: 'Keyboard Nav (legacy)', desc: 'YouTube-style hotkeys (J/K/L, F, M, 0-9) are off by default in v2' },
             { id: 'videoStats', label: 'Video Stats', desc: 'Legacy stats engine; no watch-page launcher' },
             { id: 'timeRemaining', label: 'Time Remaining', desc: 'Show time left at the current speed and the clock time it ends' },
             { id: 'chapters', label: 'Chapters', desc: 'Parse description timestamps + seekbar markers' },
@@ -13196,7 +13196,7 @@ const SettingsPanel = {
                         wrap.classList.remove('active');
                         if (card && !card.classList.contains('rx-m-sub')) card.classList.remove('rx-m-enabled');
                         this._updateNavCounts();
-                        RxToast.show(rxT('toastEnableFailed', 'Could not enable {feature} — reload the page to try again', { feature: labelText }));
+                        RxToast.show(rxT('toastEnableFailed', 'Could not enable {feature}. Reload the page to try again', { feature: labelText }));
                         return;
                     }
                 }
@@ -15366,7 +15366,7 @@ const CommentExport = {
     _handleClick(e) {
         const rows = this._extractAll();
         if (rows.length === 0) {
-            RxToast.show(rxT('toastNoComments', 'No comments loaded yet — scroll to load comments first'));
+            RxToast.show(rxT('toastNoComments', 'No comments loaded yet. Scroll to load comments first'));
             return;
         }
         const stub = this._filenameStub();
@@ -20588,8 +20588,8 @@ async function boot() {
         Settings.onExternalChange((isReset) => {
             try {
                 RxToast.show(isReset
-                    ? rxT('toastWasReset', 'RumbleX was reset — reload to see defaults')
-                    : rxT('toastChangedElsewhere', 'Settings changed elsewhere — reload to apply'));
+                    ? rxT('toastWasReset', 'RumbleX was reset. Reload to see defaults')
+                    : rxT('toastChangedElsewhere', 'Settings changed elsewhere. Reload to apply'));
             } catch {}
         });
 

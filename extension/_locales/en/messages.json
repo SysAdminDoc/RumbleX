@@ -1,10 +1,10 @@
 {
   "extName": {
     "message": "RumbleX",
-    "description": "Extension name shown in the browser. Avoid translating — proper noun."
+    "description": "Extension name shown in the browser. Avoid translating, proper noun."
   },
   "extDescription": {
-    "message": "Rumble enhancement suite — ad/bloat removal, theater split view, video downloads, dark theme polish, and 130+ feature toggles.",
+    "message": "Rumble enhancement suite: ad blocking, Theater split view, video downloads, seven themes, and 140+ controls.",
     "description": "Short marketing description shown in browser extension store listings."
   },
   "actionTitle": {
@@ -44,7 +44,7 @@
     "description": "Section heading for the local-only privacy disclosure panel (added v3.1.0)."
   },
   "telemetryNone": {
-    "message": "Telemetry: none — no analytics, no remote logging, no usage beacons",
+    "message": "Telemetry: none, no analytics, no remote logging, no usage beacons",
     "description": "Disclosure shown in the privacy report. Match the rxBuildPrivacyReport.telemetry string exactly."
   },
   "settingsTotal": {
@@ -188,7 +188,7 @@
     "description": "Shown when the user declines optional GitHub API access."
   },
   "checkRateLimited": {
-    "message": "GitHub rate limit reached — try again later",
+    "message": "GitHub rate limit reached, try again later",
     "description": "Tooltip on the popup update button when GitHub's unauthenticated API quota is exhausted."
   },
   "upToDate": {
@@ -468,7 +468,7 @@
     "description": "In-page UI string (shared core)."
   },
   "dlScanningCdn": {
-    "message": "No qualities from the embed API yet — scanning the CDN…",
+    "message": "No qualities from the embed API yet. Scanning the CDN…",
     "description": "In-page UI string (shared core)."
   },
   "dlDeepScan": {
@@ -480,7 +480,7 @@
     "description": "In-page UI string (shared core)."
   },
   "dlDeepScanFailed": {
-    "message": "Deep scan failed — using embed-API results only",
+    "message": "Deep scan failed. Using embed API results only",
     "description": "In-page UI string (shared core)."
   },
   "dlStartingBrowser": {
@@ -564,7 +564,7 @@
     "description": "In-page UI string (shared core)."
   },
   "toastEnableFailed": {
-    "message": "Could not enable {feature} — reload the page to try again",
+    "message": "Could not enable {feature}. Reload the page to try again",
     "description": "In-page UI string (shared core)."
   },
   "toastEnabled": {
@@ -636,7 +636,7 @@
     "description": "In-page UI string (shared core)."
   },
   "toastNoComments": {
-    "message": "No comments loaded yet — scroll to load comments first",
+    "message": "No comments loaded yet. Scroll to load comments first",
     "description": "In-page UI string (shared core)."
   },
   "toastExportedCsvOne": {
@@ -656,11 +656,11 @@
     "description": "In-page UI string (shared core)."
   },
   "toastWasReset": {
-    "message": "RumbleX was reset — reload to see defaults",
+    "message": "RumbleX was reset. Reload to see defaults",
     "description": "In-page UI string (shared core)."
   },
   "toastChangedElsewhere": {
-    "message": "Settings changed elsewhere — reload to apply",
+    "message": "Settings changed elsewhere. Reload to apply",
     "description": "In-page UI string (shared core)."
   },
   "cat_ad_blocking_label": {
@@ -836,7 +836,7 @@
     "description": "In-page UI string (shared core)."
   },
   "feat_legacyKeyboardNav_desc": {
-    "message": "YouTube-style hotkeys (J/K/L, F, M, 0-9) — off by default in v2",
+    "message": "YouTube-style hotkeys (J/K/L, F, M, 0-9) are off by default in v2",
     "description": "In-page UI string (shared core)."
   },
   "feat_videoStats_label": {
@@ -1716,7 +1716,7 @@
     "description": "In-page UI string (shared core)."
   },
   "toastQualityStepDown": {
-    "message": "Playback kept stalling — quality lowered to {height}p",
+    "message": "Playback kept stalling. Quality lowered to {height}p",
     "description": "In-page UI string (shared core)."
   },
   "feat_stallRecovery_label": {

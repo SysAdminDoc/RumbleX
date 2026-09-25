@@ -1,8 +1,19 @@
 # RumbleX
 
-![Version](https://img.shields.io/badge/version-v3.59.0-blue) ![License](https://img.shields.io/badge/license-MIT-green) ![Platform](https://img.shields.io/badge/platform-Extension%20%2B%20Userscript-lightgrey) ![Firefox](https://img.shields.io/badge/firefox-109%2B-orange)
+![Version](https://img.shields.io/badge/version-v3.60.0-blue) ![License](https://img.shields.io/badge/license-MIT-green) ![Platform](https://img.shields.io/badge/platform-Extension%20%2B%20Userscript-lightgrey) ![Firefox](https://img.shields.io/badge/firefox-109%2B-orange)
 
-**A large Rumble enhancement suite.** More than 130 feature modules cover ad blocking, theater mode, downloads, playback, chat, local history, feed controls, and granular page cleanup. It runs as a browser extension or userscript.
+**A large Rumble enhancement suite.** Its 141 feature modules cover ad blocking, theater mode, downloads, playback, chat, local history, feed controls, and granular page cleanup. It runs as a browser extension or userscript.
+
+### What's new in v3.60
+
+This release expands the visual system while keeping the watch page focused.
+
+- **Seven site palettes share one source of truth.** Aurora adds a deep navy and cyan direction. Solar Ember brings warm espresso surfaces and amber highlights. The popup and in-page editor now preview three tones from every palette instead of showing one accent dot.
+- **Page Density now changes the site.** Pick Compact, Balanced, or Showcase spacing for feeds, cards, comments, and watch pages. The control works from Options, the popup, and the in-page editor.
+- **Ambient Player is an optional watch treatment.** It frames the standard player with a restrained glow from the active palette, respects forced colors and reduced motion, and switches itself off in Theater.
+- **Paid chat cards stay above the message list.** Theater gives the sticky rant rail its own bounded row, with scroll controls that no longer cover the first message.
+- **Floating controls are quieter.** The page toolbar uses an opaque tokenized surface with no blur, while feed scroll and channel-block controls use compact rectangular shapes.
+- **The visual audit shows the new states.** Fresh captures cover the palette picker, density controls, Aurora Ambient Player, settings workflows, live chat, comments, and narrow Theater.
 
 ### What's new in v3.59
 
@@ -201,12 +212,16 @@ Live chat got the things every other chat platform already has, and rants became
 - **Autoplay Queue**. FAB-pinned queue of Rumble URLs, auto-advances when current video ends
 
 ### Theme & Layout
-- **Dark Theme**. Multi-theme engine with 5 built-in themes and player bar coloring
+- **Site Theme**. Multi-theme engine with 7 built-in themes and player bar coloring
   - Catppuccin Mocha (default). Purple/blue accents
   - YouTubify. YouTube dark-mode look with red accent and progress bar
   - Midnight AMOLED. Pure black with indigo accents
   - Rumble Green. Dark with Rumble's native green identity
   - OLED Green. Near-black OLED surfaces with Rumble-green accents
+  - Aurora. Deep navy surfaces with cyan and teal accents
+  - Solar Ember. Warm espresso surfaces with amber highlights
+- **Custom Page Density**. Apply Compact, Balanced, or Showcase spacing across feeds and watch pages
+- **Ambient Player**. Optional palette glow around the standard watch player. Theater stays clean.
 - **Site Theme Sync**. Mirror Rumble's native system / dark / light setting
 - **Wide Layout**. Full-width responsive grid on home and subscriptions
 - **Auto-Hide Header**. Fade the header out, reveal on top-edge cursor
@@ -381,7 +396,7 @@ ssh-keygen -Y verify -f allowed_signers -I release@rumblex -n file \
 
 A `Good "file" signature` result means the checksums came from the key published in this repository. If either check fails, do not install the files. The only official sources are this repository's Releases page and the raw userscript URLs above; copies elsewhere are not ours.
 
-v3.59.0 is unsigned because the project does not yet have a published release signing identity. Its release page states that directly; use `SHA256SUMS.txt` to verify download integrity.
+v3.60.0 is unsigned because the project does not yet have a published release signing identity. Its release page states that directly; use `SHA256SUMS.txt` to verify download integrity.
 
 ### Request-shield support matrix
 
