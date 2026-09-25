@@ -20,7 +20,7 @@ test.describe('desktop settings visual capture', () => {
     test.skip(!ENABLED, 'opt-in: set RUMBLEX_VISUAL_CAPTURE=reference|implementation');
 
     test('capture all distinct settings surfaces', async ({ context, extensionId }) => {
-        test.setTimeout(90_000);
+        test.setTimeout(120_000);
         const outputDir = path.join(
             __dirname,
             '..',
@@ -38,11 +38,34 @@ test.describe('desktop settings visual capture', () => {
         await expect(options.locator('body')).not.toHaveCSS('overflow-x', 'scroll');
         await options.screenshot({ path: path.join(outputDir, `options-home-${DESKTOP_SUFFIX}.png`), fullPage: false });
 
+        await options.locator('#welcome-dismiss-btn').click();
+        await expect(options.locator('#welcome-panel')).toBeHidden();
+        await options.screenshot({ path: path.join(outputDir, `options-dashboard-${DESKTOP_SUFFIX}.png`), fullPage: false });
+
         await options.locator('#open-settings-modal-btn').click();
         await expect(options.locator('#settings-modal-shell')).toBeVisible();
         await options.locator('#settings-groups button[data-group="ad-blocking"]').click();
         await options.waitForTimeout(350);
         await options.screenshot({ path: path.join(outputDir, `options-editor-ad-blocking-${DESKTOP_SUFFIX}.png`), fullPage: false });
+
+        const firstToggle = options.locator('#settings-list input[type="checkbox"]:enabled').first();
+        await firstToggle.click();
+        await expect(options.locator('#settings-dirty-count')).not.toHaveText('0');
+        await options.screenshot({ path: path.join(outputDir, `options-editor-dirty-${DESKTOP_SUFFIX}.png`), fullPage: false });
+        await options.locator('#settings-discard-btn').click();
+
+        await options.locator('#settings-search').fill('no setting matches this visual audit');
+        await expect(options.locator('#settings-empty')).toBeVisible();
+        await options.screenshot({ path: path.join(outputDir, `options-editor-empty-${DESKTOP_SUFFIX}.png`), fullPage: false });
+        await options.locator('#settings-clear-search-btn').click();
+
+        if (!WIDE) {
+            await options.setViewportSize({ width: 760, height: 560 });
+            await options.waitForTimeout(200);
+            await expect(options.locator('#settings-list')).toBeVisible();
+            await options.screenshot({ path: path.join(outputDir, 'options-editor-narrow-760x560.png'), fullPage: false });
+            await options.setViewportSize(DESKTOP_VIEWPORT);
+        }
 
         const popup = await context.newPage();
         await popup.setViewportSize({ width: 440, height: 600 });
@@ -79,6 +102,13 @@ test.describe('desktop settings visual capture', () => {
         await injected.waitForFunction(() => document.body.classList.contains('rx-panel-open'));
         await injected.waitForTimeout(250);
         await injected.screenshot({ path: path.join(outputDir, `in-page-settings-${DESKTOP_SUFFIX}.png`), fullPage: false });
+
+        if (!WIDE) {
+            await injected.setViewportSize({ width: 640, height: 400 });
+            await injected.waitForTimeout(200);
+            await expect(injected.locator('.rx-m-content')).toBeVisible();
+            await injected.screenshot({ path: path.join(outputDir, 'in-page-settings-narrow-640x400.png'), fullPage: false });
+        }
 
         await Promise.all([options.close(), popup.close(), injected.close()]);
     });

@@ -64,6 +64,66 @@ async function setSettings(context, extensionId, patch) {
     await settingsPage.close();
 }
 
+async function sanitizeDynamicCaptureText(page) {
+    return page.evaluate(() => {
+        const setAll = (selectors, values) => {
+            const nodes = [...document.querySelectorAll(selectors)];
+            nodes.forEach((node, index) => {
+                node.textContent = values[index % values.length];
+            });
+            return nodes.length;
+        };
+        const titleCount = setAll(
+            '.video-header-container__title, .rx-panel-header h3',
+            ['Live interface review'],
+        );
+        setAll('.media-heading-name, .rx-panel-header .rx-channel', ['Fixture Channel']);
+        const userCount = setAll([
+            '#chat-history-list .chat-history--username',
+            '#chat-history-list .chat-history--rant-username',
+            '#chat-history-list [data-username]',
+        ].join(','), ['Viewer One', 'Viewer Two', 'Viewer Three', 'Viewer Four']);
+        const messageCount = setAll([
+            '#chat-history-list .chat-history--message',
+            '#chat-history-list .chat-history--rant-message',
+            '#chat-history-list [data-js="chat-message"]',
+        ].join(','), [
+            'The stream looks clear on my screen.',
+            'Thanks for the context.',
+            'The side panel is easy to follow.',
+            'Checking the narrow layout now.',
+        ]);
+        const chatRoot = document.querySelector('#chat-history-list');
+        const chatTextNodes = [];
+        if (chatRoot) {
+            const walker = document.createTreeWalker(chatRoot, NodeFilter.SHOW_TEXT);
+            let node;
+            while ((node = walker.nextNode())) {
+                if (node.nodeValue?.trim()) chatTextNodes.push(node);
+            }
+            const neutralChatText = [
+                'Viewer One',
+                'The stream looks clear on my screen.',
+                'Viewer Two',
+                'Thanks for the context.',
+                'Viewer Three',
+                'The side panel is easy to follow.',
+                'Viewer Four',
+                'Checking the narrow layout now.',
+            ];
+            chatTextNodes.forEach((node, index) => {
+                node.nodeValue = neutralChatText[index % neutralChatText.length];
+            });
+        }
+        const commentsLoading = document.querySelector('#video-comments-loading');
+        const loadingText = commentsLoading
+            ? [...commentsLoading.childNodes].find((node) => node.nodeType === Node.TEXT_NODE)
+            : null;
+        if (loadingText) loadingText.nodeValue = 'Loading comments... ';
+        return { titleCount, userCount, messageCount, chatTextCount: chatTextNodes.length };
+    });
+}
+
 test.describe('live site visual capture', () => {
     test.skip(!ENABLED, 'opt-in: set RUMBLEX_SITE_VISUAL_CAPTURE=1');
 
@@ -137,6 +197,8 @@ test.describe('live site visual capture', () => {
             });
             expect(relatedColors.background).toBe(relatedColors.panelToken);
         }
+        const watchSanitized = await sanitizeDynamicCaptureText(page);
+        expect(watchSanitized.titleCount).toBeGreaterThan(0);
         await captureViewport(page, path.join(outputDir, 'site-watch-1440x900.png'));
 
         await setSettings(context, extensionId, { theaterSplit: true });
@@ -144,6 +206,10 @@ test.describe('live site visual capture', () => {
         await expect(page.locator('#rx-split-wrapper')).toBeVisible({ timeout: 30_000 });
         await expect(page.locator('#rx-split-right')).toHaveClass(/rx-expanded/);
         await page.waitForTimeout(1_000);
+        const theaterSanitized = await sanitizeDynamicCaptureText(page);
+        if (await page.locator('#rx-tab-chat #chat-history-list').count()) {
+            expect(theaterSanitized.chatTextCount).toBeGreaterThan(0);
+        }
         await captureViewport(page, path.join(outputDir, 'theater-split-1440x900.png'));
 
         const commentsTab = page.locator('#rx-tab-button-comments');
@@ -156,6 +222,7 @@ test.describe('live site visual capture', () => {
         if (await chatTab.isVisible().catch(() => false)) await chatTab.click();
         await page.setViewportSize({ width: 820, height: 900 });
         await page.waitForTimeout(300);
+        await sanitizeDynamicCaptureText(page);
         const narrowLayout = await page.evaluate(() => {
             const left = document.querySelector('#rx-split-left').getBoundingClientRect();
             const right = document.querySelector('#rx-split-right').getBoundingClientRect();

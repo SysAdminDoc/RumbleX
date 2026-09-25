@@ -442,6 +442,9 @@ test('dedicated settings editor keeps one-row navigation and an opaque canvas wh
         const modal = document.querySelector('.settings-modal').getBoundingClientRect();
         const groups = document.querySelector('#settings-groups').getBoundingClientRect();
         const list = document.querySelector('#settings-list').getBoundingClientRect();
+        const itemRects = [...document.querySelectorAll('#settings-list .settings-item')]
+            .slice(0, 24)
+            .map((item) => item.getBoundingClientRect());
         const backdrop = getComputedStyle(document.querySelector('.settings-modal-backdrop'));
         return {
             modalHeight: modal.height,
@@ -450,12 +453,18 @@ test('dedicated settings editor keeps one-row navigation and an opaque canvas wh
             listHeight: list.height,
             backdropColor: backdrop.backgroundColor,
             backdropImage: backdrop.backgroundImage,
+            itemCount: itemRects.length,
+            itemsDoNotOverlap: itemRects.every((rect, index) => (
+                index === 0 || rect.top >= itemRects[index - 1].bottom - 1
+            )),
         };
     });
     expect(layout.modalHeight).toBeLessThanOrEqual(544);
     expect(layout.groupsHeight).toBeLessThan(64);
     expect(layout.groupsOverflow).toBe(true);
     expect(layout.listHeight).toBeGreaterThan(180);
+    expect(layout.itemCount).toBeGreaterThan(10);
+    expect(layout.itemsDoNotOverlap).toBe(true);
     expect(layout.backdropColor).toBe('rgba(3, 5, 8, 0.92)');
     expect(layout.backdropImage).not.toBe('none');
 });
