@@ -201,7 +201,27 @@ test.describe('live site visual capture', () => {
         expect(watchSanitized.titleCount).toBeGreaterThan(0);
         await captureViewport(page, path.join(outputDir, 'site-watch-1440x900.png'));
 
-        await setSettings(context, extensionId, { theaterSplit: true });
+        await setSettings(context, extensionId, {
+            ambientPlayer: true,
+            darkEnhance: true,
+            theme: 'aurora',
+            denseMode: true,
+            pageDensity: 'showcase',
+        });
+        await page.reload({ waitUntil: 'domcontentloaded', timeout: 60_000 });
+        await page.locator('#videoPlayer, .videoPlayer-Rumble-cls').first().waitFor({ state: 'visible', timeout: 30_000 });
+        await page.waitForTimeout(1_000);
+        await sanitizeDynamicCaptureText(page);
+        await expect(page.locator('body')).toHaveClass(/rx-ambient-player/);
+        await expect(page.locator('body')).toHaveAttribute('data-rx-density', 'showcase');
+        await captureViewport(page, path.join(outputDir, 'site-watch-ambient-aurora-1440x900.png'));
+
+        await setSettings(context, extensionId, {
+            ambientPlayer: false,
+            theme: 'catppuccin',
+            pageDensity: 'dense',
+            theaterSplit: true,
+        });
         await page.reload({ waitUntil: 'domcontentloaded', timeout: 60_000 });
         await expect(page.locator('#rx-split-wrapper')).toBeVisible({ timeout: 30_000 });
         await expect(page.locator('#rx-split-right')).toHaveClass(/rx-expanded/);

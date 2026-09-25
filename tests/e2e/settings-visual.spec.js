@@ -59,6 +59,11 @@ test.describe('desktop settings visual capture', () => {
         await options.screenshot({ path: path.join(outputDir, `options-editor-empty-${DESKTOP_SUFFIX}.png`), fullPage: false });
         await options.locator('#settings-clear-search-btn').click();
 
+        await options.locator('#settings-groups button[data-group="theme-layout"]').click();
+        await options.locator('#settings-list article[data-key="theme"]').scrollIntoViewIfNeeded();
+        await options.waitForTimeout(250);
+        await options.screenshot({ path: path.join(outputDir, `options-editor-theme-layout-${DESKTOP_SUFFIX}.png`), fullPage: false });
+
         if (!WIDE) {
             await options.setViewportSize({ width: 760, height: 560 });
             await options.waitForTimeout(200);
@@ -88,6 +93,9 @@ test.describe('desktop settings visual capture', () => {
         expect(popupLayout.footerTop).toBeGreaterThan(0);
         expect(popupLayout.footerBottom).toBeLessThanOrEqual(popupLayout.viewportHeight);
         await popup.screenshot({ path: path.join(outputDir, 'popup-440x600.png'), fullPage: false });
+        await popup.locator('.theme-section').scrollIntoViewIfNeeded();
+        await popup.waitForTimeout(150);
+        await popup.screenshot({ path: path.join(outputDir, 'popup-themes-440x600.png'), fullPage: false });
 
         const injected = await context.newPage();
         await injected.setViewportSize(DESKTOP_VIEWPORT);
@@ -102,6 +110,10 @@ test.describe('desktop settings visual capture', () => {
         await injected.waitForFunction(() => document.body.classList.contains('rx-panel-open'));
         await injected.waitForTimeout(250);
         await injected.screenshot({ path: path.join(outputDir, `in-page-settings-${DESKTOP_SUFFIX}.png`), fullPage: false });
+        await injected.locator('#rx-nav-theme-layout').click();
+        await injected.locator('.rx-m-pane.active .rx-m-section-title').last().scrollIntoViewIfNeeded();
+        await injected.waitForTimeout(200);
+        await injected.screenshot({ path: path.join(outputDir, `in-page-settings-theme-layout-${DESKTOP_SUFFIX}.png`), fullPage: false });
 
         if (!WIDE) {
             await injected.setViewportSize({ width: 640, height: 400 });

@@ -2,6 +2,31 @@
 // Settings modal dirty-draft workflow tests.
 const { test, expect } = require('./_fixtures');
 
+test('popup palette previews and density presets persist the selected design', async ({ context, extensionId }) => {
+    const page = await context.newPage();
+    await page.goto(`chrome-extension://${extensionId}/pages/popup.html`);
+
+    const paletteButtons = page.locator('.theme-section .theme-grid').first().locator('.theme-chip');
+    await expect(paletteButtons).toHaveCount(7);
+    await expect(page.locator('.theme-swatch')).toHaveCount(7);
+    await expect(page.locator('.theme-swatch').first().locator('span')).toHaveCount(3);
+
+    const aurora = paletteButtons.filter({ hasText: 'Aurora' });
+    await aurora.click();
+    await expect(aurora).toHaveAttribute('aria-pressed', 'true');
+
+    const showcase = page.locator('.density-chip').filter({ hasText: 'Showcase' });
+    await showcase.click();
+    await expect(showcase).toHaveAttribute('aria-pressed', 'true');
+
+    await expect.poll(() => page.evaluate(() => new Promise((resolve) => {
+        chrome.storage.local.get('rx_settings', (value) => resolve({
+            theme: value.rx_settings?.theme,
+            pageDensity: value.rx_settings?.pageDensity,
+        }));
+    }))).toEqual({ theme: 'aurora', pageDensity: 'showcase' });
+});
+
 test('settings modal opens, search filters, save persists', async ({ context, extensionId }) => {
     const page = await context.newPage();
     await page.goto(`chrome-extension://${extensionId}/pages/options.html`);
