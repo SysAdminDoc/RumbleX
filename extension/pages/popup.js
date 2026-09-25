@@ -1,4 +1,4 @@
-// RumbleX v3.60.0 - Popup Script
+// RumbleX v3.60.1 - Popup Script
 'use strict';
 
 const RXSettingsSchema = globalThis.RumbleXSettingsSchema;

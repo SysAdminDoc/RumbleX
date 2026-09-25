@@ -12,8 +12,6 @@
 // behavior. This spec exists for the case where rumble.com itself changes
 // something we haven't captured.
 const { test, expect } = require('./_fixtures');
-const fs = require('fs');
-const path = require('path');
 
 const LIVE = process.env.RUMBLEX_LIVE_SMOKE === '1';
 const LIVE_URL = process.env.RUMBLEX_LIVE_URL || 'https://rumble.com/';
@@ -72,17 +70,15 @@ test.describe('live rumble.com smoke', () => {
         const page = await context.newPage();
         await openLivePage(page);
 
-        // The content script applies a body class once the theme engine boots.
-        // Match any rx-* class on documentElement OR an rx- style sheet.
+        // The content script marks the root and injects rx-* styles at boot.
         const booted = await page.waitForFunction(() => {
             const html = document.documentElement;
             const body = document.body;
             if (!html || !body) return false;
-            if (/\brx-/.test(html.className) || /\brx-/.test(body.className)) return true;
+            if (html.classList.contains('rumblex-active') || body.classList.contains('rumblex-active')) return true;
             // Settings panel injects <style id="rx-settings-panel-css">.
             if (document.getElementById('rx-settings-panel-css')) return true;
-            // Any <style data-rx="..."> we inject through injectStyle().
-            if (document.querySelector('style[data-rx]')) return true;
+            if (document.querySelector('style[id^="rx-"], style[data-rx]')) return true;
             return false;
         }, null, { timeout: 30_000 });
         expect(booted).toBeTruthy();
@@ -154,7 +150,7 @@ test.describe('live rumble.com smoke', () => {
         expect(result.requestShield?.enforcement).toBe('chromium-dnr');
     });
 
-    test('real frame previews capture from the live CDN and stay off after an external disable plus reload', async ({ context, serviceWorker }) => {
+    test('real frame previews capture from the live CDN and stay off after an external disable plus reload', async ({ context, serviceWorker }, testInfo) => {
         test.setTimeout(150_000);
         await serviceWorker.evaluate(async () => {
             const stored = await chrome.storage.local.get('rx_settings');
@@ -243,9 +239,9 @@ test.describe('live rumble.com smoke', () => {
 
         await page.mouse.move(0, 0);
         await page.waitForTimeout(200);
-        const screenshotDir = path.join(__dirname, '..', '..', 'design', 'mockups', 'site-implementation');
-        fs.mkdirSync(screenshotDir, { recursive: true });
-        await card.screenshot({ path: path.join(screenshotDir, 'real-frame-previews.png') });
+        const previewCapture = testInfo.outputPath('real-frame-previews.png');
+        await card.screenshot({ path: previewCapture });
+        await testInfo.attach('real-frame-preview', { path: previewCapture, contentType: 'image/png' });
 
         await serviceWorker.evaluate(async () => {
             const stored = await chrome.storage.local.get('rx_settings');

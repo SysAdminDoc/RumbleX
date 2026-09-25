@@ -4,6 +4,13 @@ All notable changes to RumbleX will be documented in this file.
 
 ## Unreleased
 
+## [3.60.1] - 2026-09-24
+
+### Fixed
+
+- The opt-in live boot check now recognizes the current `rumblex-active` root marker and injected `rx-` style IDs. All four live Rumble smoke checks and the request-level ad audit pass against the clean release tree.
+- Live frame-preview evidence is attached to the isolated test result instead of leaving a volatile public-feed screenshot in the repository.
+
 ## [3.60.0] - 2026-09-24
 
 ### Added
