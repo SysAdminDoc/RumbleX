@@ -17,6 +17,7 @@ const SOURCE_STEPS = Object.freeze([
     nodeStep('userscript-parity', 'Userscript runtime parity', 'scripts/check-userscript-parity.js'),
     nodeStep('userscript-platform', 'Userscript platform contract', 'scripts/test-userscript-platform.js'),
     nodeStep('extension-platform', 'Extension platform contract', 'scripts/test-extension-platform.js'),
+    nodeStep('offscreen-compat', 'Chromium offscreen compatibility', 'scripts/test-offscreen-compat.js'),
     nodeStep('github-permission', 'GitHub optional permission contract', 'scripts/test-github-permission.js'),
     nodeStep('message-boundary', 'Runtime message boundary', 'scripts/check-message-boundary.js'),
     nodeStep('settings-schema', 'Settings schema contract', 'scripts/test-settings-schema.js'),

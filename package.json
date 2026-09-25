@@ -21,6 +21,7 @@
     "test:parity": "node scripts/check-userscript-parity.js",
     "test:userscript-platform": "node scripts/test-userscript-platform.js",
     "test:extension-platform": "node scripts/test-extension-platform.js",
+    "test:offscreen-compat": "node scripts/test-offscreen-compat.js",
     "test:github-permission": "node scripts/test-github-permission.js",
     "test:release-gate": "node scripts/test-release-gate.js",
     "test:message-boundary": "node scripts/check-message-boundary.js",

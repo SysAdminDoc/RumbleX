@@ -120,15 +120,34 @@ async function rxCompletePendingLocalDataOperation(id, { cleared = 0, written = 
 // in many shapes, no WebRTC). We spin a single offscreen document with
 // reasons DOM_PARSER + BLOBS + WORKERS and reuse it across requests. Chrome
 // API enforces one offscreen doc per extension per profile so we don't fight
-// the runtime — `hasDocument()` is the contract.
+// the runtime. Detection spans Chrome 111 through the current API contract.
 const OFFSCREEN_URL = chrome.runtime.getURL('offscreen.html');
 let rxOffscreenEnsurePromise = null;
+
+async function rxHasOffscreenDocument() {
+    if (!chrome.offscreen) return false;
+    if (typeof chrome.offscreen.hasDocument === 'function') {
+        return chrome.offscreen.hasDocument();
+    }
+    if (typeof chrome.runtime.getContexts === 'function') {
+        const contexts = await chrome.runtime.getContexts({
+            contextTypes: ['OFFSCREEN_DOCUMENT'],
+            documentUrls: [OFFSCREEN_URL],
+        });
+        return contexts.length > 0;
+    }
+    if (typeof globalThis.clients?.matchAll === 'function') {
+        const matchedClients = await globalThis.clients.matchAll();
+        return matchedClients.some((client) => client.url === OFFSCREEN_URL);
+    }
+    return false;
+}
 
 async function ensureOffscreenDocument() {
     if (!chrome.offscreen) return false; // older Chrome / Firefox MV2 — caller falls back
     if (!rxOffscreenEnsurePromise) {
         rxOffscreenEnsurePromise = (async () => {
-            const has = await chrome.offscreen.hasDocument();
+            const has = await rxHasOffscreenDocument();
             if (has) return true;
             await chrome.offscreen.createDocument({
                 url: 'offscreen.html',
@@ -184,8 +203,8 @@ async function rxGetDownloadDiagnosticCapabilities(probeOffscreen = false) {
         offscreenDocument: false,
         offscreenRuntime: null,
     };
-    if (chrome.offscreen?.hasDocument) {
-        try { capabilities.offscreenDocument = await chrome.offscreen.hasDocument(); } catch {}
+    if (chrome.offscreen) {
+        try { capabilities.offscreenDocument = await rxHasOffscreenDocument(); } catch {}
     }
     if (probeOffscreen && chrome.offscreen) {
         const response = await callOffscreen('getCapabilities', {});
@@ -610,12 +629,17 @@ let rxSettingsWriteChain = Promise.resolve();
 function rxQueueSettingsWrite(data, {
     replace = false,
     preserveOmittedSecrets = false,
+    snapshotReason = null,
     extraValues = null,
 } = {}) {
     const commit = async () => {
-        const current = (!replace || preserveOmittedSecrets)
-            ? (await chrome.storage.local.get('rx_settings')).rx_settings || {}
+        const needsCurrent = !replace || preserveOmittedSecrets || snapshotReason;
+        const stored = needsCurrent
+            ? await chrome.storage.local.get(snapshotReason
+                ? ['rx_settings', 'rx_settings_snapshots']
+                : 'rx_settings')
             : {};
+        const current = stored.rx_settings || {};
         const candidate = replace ? { ...data } : { ...current, ...data };
         if (replace && preserveOmittedSecrets) {
             for (const key of RXSettingsSchema.SECRET_SETTING_KEYS) {
@@ -625,8 +649,42 @@ function rxQueueSettingsWrite(data, {
             }
         }
         const next = rxNormalizeSettings(candidate);
-        await chrome.storage.local.set({ ...(extraValues || {}), rx_settings: next });
+        const values = { ...(extraValues || {}), rx_settings: next };
+        if (snapshotReason) {
+            const snapshots = Array.isArray(stored.rx_settings_snapshots)
+                ? stored.rx_settings_snapshots.slice()
+                : [];
+            snapshots.push({
+                at: new Date().toISOString(),
+                reason: String(snapshotReason).slice(0, 80),
+                settings: rxNormalizeSettings(current),
+            });
+            while (snapshots.length > 50) snapshots.shift();
+            values.rx_settings_snapshots = snapshots;
+        }
+        await chrome.storage.local.set(values);
         return next;
+    };
+    rxSettingsWriteChain = rxSettingsWriteChain.then(commit, commit);
+    return rxSettingsWriteChain;
+}
+
+function rxQueueSettingsReset(snapshotAt) {
+    const commit = async () => {
+        if (snapshotAt !== undefined) {
+            const stored = await chrome.storage.local.get(['rx_settings', 'rx_settings_snapshots']);
+            const snapshots = Array.isArray(stored.rx_settings_snapshots)
+                ? stored.rx_settings_snapshots.slice()
+                : [];
+            const index = snapshots.findIndex((snapshot) => snapshot?.at === snapshotAt);
+            if (index < 0) throw new Error('Pre-reset settings snapshot is missing');
+            snapshots[index] = {
+                ...snapshots[index],
+                settings: rxNormalizeSettings(stored.rx_settings || {}),
+            };
+            await chrome.storage.local.set({ rx_settings_snapshots: snapshots });
+        }
+        await chrome.storage.local.remove('rx_settings');
     };
     rxSettingsWriteChain = rxSettingsWriteChain.then(commit, commit);
     return rxSettingsWriteChain;
@@ -1790,9 +1848,9 @@ async function rxGetDownloadItem(downloadId) {
 }
 
 async function rxCallOpenOffscreen(action) {
-    if (!chrome.offscreen?.hasDocument) return { ok: false, reason: 'no-offscreen' };
+    if (!chrome.offscreen) return { ok: false, reason: 'no-offscreen' };
     try {
-        if (!(await chrome.offscreen.hasDocument())) return { ok: false, reason: 'no-offscreen-document' };
+        if (!(await rxHasOffscreenDocument())) return { ok: false, reason: 'no-offscreen-document' };
     } catch {
         return { ok: false, reason: 'offscreen-state-unavailable' };
     }
@@ -2528,7 +2586,10 @@ const RX_MESSAGE_ACTIONS = Object.freeze({
         data: rxMessageField('json-object', { required: true, maxBytes: 2 * 1024 * 1024 }),
     }),
     importSettings: rxMessageRule(RX_EXTENSION_ONLY, {
-        data: rxMessageField('json-object', { required: true, maxBytes: 2 * 1024 * 1024 }),
+        data: rxMessageField('json-object', { required: true, maxBytes: 5 * 1024 * 1024 }),
+    }),
+    resetSettings: rxMessageRule(RX_EXTENSION_ONLY, {
+        snapshotAt: rxMessageField('integer', { min: 0 }),
     }),
     probeMedia: rxMessageRule(RX_EXTENSION_OR_CONTENT, {
         url: rxMessageField('download-url', { required: true }),
@@ -2798,7 +2859,14 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
     if (message.action === 'importSettings') {
         rxQueueSettingsWrite(message.data, { replace: true, preserveOmittedSecrets: true })
-            .then((settings) => sendResponse({ success: true, settings }))
+            .then(() => sendResponse({ success: true }))
+            .catch((error) => sendResponse({ success: false, error: error?.message || String(error) }));
+        return true;
+    }
+
+    if (message.action === 'resetSettings') {
+        rxQueueSettingsReset(message.snapshotAt)
+            .then(() => sendResponse({ success: true }))
             .catch((error) => sendResponse({ success: false, error: error?.message || String(error) }));
         return true;
     }
@@ -3476,22 +3544,15 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                     sendResponse({ ok: false, reason: 'invalid-settings' });
                     return;
                 }
-                // Take a backup snapshot before overwriting — same pattern as
-                // the v3.0 backup system uses for any settings overwrite.
-                try {
-                    const snapList = await new Promise((resolve) => chrome.storage.local.get(['rx_settings_snapshots'], resolve));
-                    const arr = Array.isArray(snapList?.rx_settings_snapshots) ? snapList.rx_settings_snapshots : [];
-                    arr.push({ at: new Date().toISOString(), reason: 'pre-gist-pull', settings });
-                    while (arr.length > 50) arr.shift();
-                    await new Promise((resolve) => chrome.storage.local.set({ rx_settings_snapshots: arr }, resolve));
-                } catch {}
                 // Remote payloads never own local credentials. Preserve the
                 // values that are current when this queued replacement commits,
                 // not the snapshot read before the network request started.
+                // The same commit snapshots the complete current profile first.
                 const portable = RXSettingsSchema.sanitizeSettingsForTransport(pulled);
                 const next = await rxQueueSettingsWrite(portable, {
                     replace: true,
                     preserveOmittedSecrets: true,
+                    snapshotReason: 'pre-gist-pull',
                 });
                 sendResponse({ ok: true, encryptedAt: env.encryptedAt || null, keyCount: Object.keys(next).length });
             } catch (e) {

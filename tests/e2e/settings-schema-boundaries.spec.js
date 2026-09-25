@@ -68,6 +68,37 @@ test('background save and profile restore use the canonical settings schema', as
     expect(stored.activeProfileId).toBe('p_untrusted');
 });
 
+test('portable settings import accepts a valid payload above the old 2 MiB boundary', async ({ context, extensionId }) => {
+    test.setTimeout(60_000);
+    const page = await context.newPage();
+    await page.goto(`chrome-extension://${extensionId}/pages/options.html`);
+
+    const result = await page.evaluate(async () => {
+        const sponsorSegments = {};
+        for (let video = 0; video < 750; video++) {
+            sponsorSegments[`v${video}`] = Array.from({ length: 80 }, (_, segment) => ({
+                start: segment * 10,
+                end: segment * 10 + 5,
+                category: 'selfpromo',
+            }));
+        }
+        const data = { sponsorSegments };
+        const bytes = new TextEncoder().encode(JSON.stringify(data)).byteLength;
+        const response = await chrome.runtime.sendMessage({ action: 'importSettings', data });
+        const stored = await chrome.storage.local.get('rx_settings');
+        return {
+            bytes,
+            response,
+            videos: Object.keys(stored.rx_settings?.sponsorSegments || {}).length,
+        };
+    });
+
+    expect(result.bytes).toBeGreaterThan(2 * 1024 * 1024);
+    expect(result.bytes).toBeLessThan(4.5 * 1024 * 1024);
+    expect(result.response.success).toBe(true);
+    expect(result.videos).toBe(750);
+});
+
 test('encrypted Gist pull preserves local credentials but rejects unsafe settings', async ({ context, serviceWorker, extensionId }) => {
     const page = await context.newPage();
     await page.goto(`chrome-extension://${extensionId}/pages/options.html`);

@@ -23,6 +23,12 @@
     const replaceStoredSettings = (settings) => writeSettings('saveSettings', settings);
     const importStoredSettings = (settings) => writeSettings('importSettings', settings);
     const applyWelcomeSettings = (patch) => writeSettings('applyWelcomeSettings', patch);
+    async function resetStoredSettings(snapshotAt) {
+        const message = { action: 'resetSettings' };
+        if (snapshotAt !== undefined) message.snapshotAt = snapshotAt;
+        const response = await chrome.runtime.sendMessage(message);
+        if (!response?.success) throw new Error(response?.error || 'Settings reset failed');
+    }
     // Mirrors RX_EXTENSION_STORAGE_RESET_KEYS in content.js. The two lists are
     // held in sync by `npm run test:local-storage-keys`, which fails if either
     // side drifts — this page cannot import from the content runtime.
@@ -1137,7 +1143,7 @@
             // per-feature extension-storage caches listed in content.js as
             // RX_EXTENSION_STORAGE_RESET_KEYS). The snapshot history is
             // deliberately kept: it is this reset's undo.
-            await chrome.storage.local.remove(STORAGE_KEY);
+            await resetStoredSettings(snapshot?.ok ? snapshot.at : undefined);
             try { await chrome.storage.local.remove('rx_popup_ui'); } catch {}
             try { await chrome.storage.local.remove(EXTENSION_STORAGE_RESET_KEYS); } catch {}
             // Activity that moved into extension storage is cleared here
