@@ -257,6 +257,21 @@ function applyI18n(root = document) {
     });
 }
 
+let _feedbackTimer = null;
+function showPopupFeedback(message, state = 'idle', duration = 0) {
+    const feedback = document.getElementById('popup-feedback');
+    if (!feedback) return;
+    clearTimeout(_feedbackTimer);
+    feedback.textContent = message;
+    feedback.dataset.state = state;
+    if (duration > 0) {
+        _feedbackTimer = setTimeout(() => {
+            feedback.textContent = i18n('reloadAfterChanges', 'Reload after changes');
+            feedback.dataset.state = 'idle';
+        }, duration);
+    }
+}
+
 function groupLabel(group) {
     return i18n(GROUP_MESSAGE_KEYS[group.id], group.label);
 }
@@ -305,7 +320,13 @@ function persistSettings(settings) {
     try {
         chrome.storage.local.set({ rx_settings: settings }, () => {
             const err = chrome.runtime.lastError;
-            if (err) reportSaveFailure(err.message);
+            if (err) {
+                reportSaveFailure(err.message);
+                return;
+            }
+            const banner = document.getElementById('save-error');
+            if (banner) banner.hidden = true;
+            showPopupFeedback(i18n('settingsSaved', 'Saved'), 'success', 1400);
         });
     } catch (e) {
         reportSaveFailure(e?.message || String(e));
@@ -318,6 +339,7 @@ function reportSaveFailure(message) {
     if (!banner) return;
     banner.textContent = 'Settings could not be saved — your last change was not applied.';
     banner.hidden = false;
+    showPopupFeedback(banner.textContent, 'error');
 }
 
 function saveSettings(settings) {
@@ -381,6 +403,8 @@ async function init() {
         header.type = 'button';
         header.className = 'feat-group-header';
         header.setAttribute('aria-expanded', expanded.has(group.id) ? 'true' : 'false');
+        header.id = `popup-group-${group.id}-label`;
+        header.setAttribute('aria-controls', `popup-group-${group.id}-body`);
 
         const label = document.createElement('span');
         label.textContent = groupLabel(group);
@@ -391,6 +415,8 @@ async function init() {
         const count = document.createElement('span');
         count.className = 'feat-group-count';
         count.textContent = `${enabled}/${group.features.length}`;
+        count.classList.toggle('is-active', enabled > 0);
+        count.title = `${enabled} of ${group.features.length} enabled`;
 
         const caret = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
         caret.setAttribute('class', 'feat-group-caret');
@@ -407,6 +433,9 @@ async function init() {
 
         const body = document.createElement('div');
         body.className = 'feat-group-body';
+        body.id = `popup-group-${group.id}-body`;
+        body.hidden = !expanded.has(group.id);
+        groupEl.setAttribute('aria-labelledby', header.id);
 
         for (const feat of group.features) {
             const row = document.createElement('div');
@@ -425,6 +454,8 @@ async function init() {
                 if (countEl) {
                     const now = group.features.filter((f) => settings[f.id] === true).length;
                     countEl.textContent = `${now}/${group.features.length}`;
+                    countEl.classList.toggle('is-active', now > 0);
+                    countEl.title = `${now} of ${group.features.length} enabled`;
                 }
             });
 
@@ -435,6 +466,7 @@ async function init() {
         header.addEventListener('click', () => {
             const isCollapsed = groupEl.classList.toggle('collapsed');
             header.setAttribute('aria-expanded', isCollapsed ? 'false' : 'true');
+            body.hidden = isCollapsed;
             if (isCollapsed) expanded.delete(group.id);
             else expanded.add(group.id);
             saveUiState(expanded);
@@ -466,6 +498,7 @@ async function init() {
         const chip = document.createElement('button');
         chip.type = 'button';
         chip.className = 'theme-chip' + (settings.theme === t.id ? ' active' : '');
+        chip.setAttribute('aria-pressed', settings.theme === t.id ? 'true' : 'false');
         const dot = document.createElement('span');
         dot.className = 'theme-dot';
         dot.style.background = t.color;
@@ -473,8 +506,12 @@ async function init() {
         chip.addEventListener('click', () => {
             settings.theme = t.id;
             saveSettings(settings);
-            for (const c of themeGrid.querySelectorAll('.theme-chip')) c.classList.remove('active');
+            for (const c of themeGrid.querySelectorAll('.theme-chip')) {
+                c.classList.remove('active');
+                c.setAttribute('aria-pressed', 'false');
+            }
             chip.classList.add('active');
+            chip.setAttribute('aria-pressed', 'true');
         });
         themeGrid.appendChild(chip);
     }
@@ -499,7 +536,12 @@ async function init() {
     const groupBtn = document.getElementById('btn-group-tabs');
     if (groupBtn) {
         groupBtn.addEventListener('click', () => {
+            groupBtn.disabled = true;
+            groupBtn.setAttribute('aria-busy', 'true');
+            showPopupFeedback(i18n('groupRumbleTabs', 'Group all Rumble tabs') + '...', 'progress');
             chrome.runtime.sendMessage({ action: 'groupRumbleTabs' }, (res) => {
+                groupBtn.disabled = false;
+                groupBtn.removeAttribute('aria-busy');
                 if (!res?.ok) {
                     groupBtn.classList.add('error');
                     const orig = groupBtn.dataset.tooltip;
@@ -510,6 +552,7 @@ async function init() {
                     } else {
                         groupBtn.dataset.tooltip = i18n('groupFailed', 'Group failed');
                     }
+                    showPopupFeedback(groupBtn.dataset.tooltip, 'error', 3000);
                     setTimeout(() => {
                         groupBtn.classList.remove('error');
                         if (orig) groupBtn.dataset.tooltip = orig;
@@ -519,6 +562,7 @@ async function init() {
                 // Success — flash a brief confirmation.
                 const orig = groupBtn.dataset.tooltip;
                 groupBtn.dataset.tooltip = `Grouped ${res.count} ${res.count === 1 ? 'tab' : 'tabs'}`;
+                showPopupFeedback(groupBtn.dataset.tooltip, 'success', 2200);
                 setTimeout(() => { if (orig) groupBtn.dataset.tooltip = orig; }, 2000);
             });
         });
@@ -546,15 +590,21 @@ async function init() {
             return;
         }
         updateBtn.classList.add('checking');
+        updateBtn.disabled = true;
+        updateBtn.setAttribute('aria-busy', 'true');
         updateBtn.dataset.tooltip = i18n('checkingUpdates', 'Checking...');
+        showPopupFeedback(updateBtn.dataset.tooltip, 'progress');
         const permission = await RXGithubPermission.requestGithubApi();
         if (!permission.granted) {
             updateBtn.classList.remove('checking');
+            updateBtn.disabled = false;
+            updateBtn.removeAttribute('aria-busy');
             updateBtn.classList.add('error');
             updateBtn.dataset.tooltip = i18n(
                 'githubApiPermissionDenied',
                 'GitHub access was not granted. No request was sent.',
             );
+            showPopupFeedback(updateBtn.dataset.tooltip, 'error', 3500);
             setTimeout(() => {
                 updateBtn.classList.remove('error');
                 updateBtn.dataset.tooltip = i18n('checkForUpdates', 'Check for updates');
@@ -569,11 +619,14 @@ async function init() {
             res = { error: String(error?.message || error) };
         }
         updateBtn.classList.remove('checking');
+        updateBtn.disabled = false;
+        updateBtn.removeAttribute('aria-busy');
         if (res && res.error) {
             updateBtn.classList.add('error');
             updateBtn.dataset.tooltip = res.rateLimited
                 ? i18n('checkRateLimited', 'GitHub rate limit reached. Try again later.')
                 : i18n('checkFailed', 'Check failed');
+            showPopupFeedback(updateBtn.dataset.tooltip, 'error', 3000);
             setTimeout(() => {
                 updateBtn.classList.remove('error');
                 updateBtn.dataset.tooltip = i18n('checkForUpdates', 'Check for updates');
@@ -584,8 +637,10 @@ async function init() {
             updateBtn.classList.add('has-update');
             updateBtn.dataset.tooltip = `Update available: v${res.latest}`;
             updateBtn.dataset.releaseUrl = res.url;
+            showPopupFeedback(updateBtn.dataset.tooltip, 'success');
         } else {
             updateBtn.dataset.tooltip = i18n('upToDate', 'Up to date!');
+            showPopupFeedback(updateBtn.dataset.tooltip, 'success', 3000);
             setTimeout(() => { updateBtn.dataset.tooltip = i18n('checkForUpdates', 'Check for updates'); }, 3000);
         }
     });

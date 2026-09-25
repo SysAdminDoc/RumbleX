@@ -230,17 +230,29 @@
         }
         .welcome-title { margin: 6px 0 8px; font-size: 20px; }
         .welcome-copy p { margin: 0; color: var(--text-muted); font-size: 13px; line-height: 1.6; }
-        .welcome-presets { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+        .welcome-presets {
+            list-style: none; margin: 0; padding: 0;
+            display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px;
+        }
         .welcome-presets li {
             display: flex; align-items: flex-start; gap: 10px;
-            padding: 10px 12px; border-radius: var(--radius-sm);
+            min-height: 68px; padding: 11px 12px; border-radius: var(--radius-sm);
             background: rgba(17,17,27,0.35); border: 1px solid rgba(205,214,244,0.1);
+            transition: background-color 160ms var(--ease-out), border-color 160ms var(--ease-out), box-shadow 160ms var(--ease-out), transform 140ms var(--ease-out);
         }
+        .welcome-presets li:hover { background: rgba(255,255,255,0.04); border-color: var(--border-hover); transform: translateY(-1px); }
+        .welcome-presets li:has(input:checked) {
+            background: rgba(133,213,81,0.085); border-color: rgba(133,213,81,0.46);
+            box-shadow: inset 3px 0 0 var(--rumble-green);
+        }
+        .welcome-presets li:focus-within { border-color: var(--accent-border); box-shadow: var(--focus-ring); }
         .welcome-presets input { width: 24px; height: 24px; margin: 0; flex: none; accent-color: var(--rumble-green); cursor: pointer; }
         .welcome-presets label { display: grid; gap: 2px; cursor: pointer; }
         .welcome-presets strong { font-size: 13px; }
         .welcome-presets span { color: var(--text-muted); font-size: 11px; line-height: 1.5; }
-        .welcome-actions { display: flex; gap: 10px; flex-wrap: wrap; }
+        .welcome-actions { display: flex; align-items: stretch; gap: 10px; flex-wrap: wrap; }
+        .welcome-actions .cta-button { width: auto; flex: 1 1 320px; }
+        .welcome-actions .settings-tertiary-button { flex: 0 0 auto; min-width: 92px; }
         .welcome-footnote { margin: 0; color: var(--text-muted); font-size: 11px; }
 
         .status {
@@ -369,14 +381,17 @@
         .settings-modal-shell[hidden] { display: none; }
         .settings-modal-shell { position: fixed; inset: 0; z-index: 9999; }
         .settings-modal-backdrop {
-            position: absolute; inset: 0; background: rgba(4, 6, 10, 0.78);
+            position: absolute; inset: 0;
+            background:
+                radial-gradient(circle at 50% 0%, rgba(137,180,250,0.055), transparent 42%),
+                rgba(3, 5, 8, 0.92);
             animation: backdrop-in 200ms var(--ease-out) both;
         }
         @keyframes backdrop-in { from { opacity: 0; } to { opacity: 1; } }
 
         .settings-modal {
-            position: relative; width: min(1120px, calc(100vw - 24px));
-            max-height: calc(100vh - 24px); margin: 12px auto;
+            position: relative; width: min(1160px, calc(100vw - 24px));
+            height: min(820px, calc(100vh - 24px)); max-height: calc(100vh - 24px); margin: 12px auto;
             overflow: hidden; border-radius: 12px; border: 1px solid var(--border);
             background: rgba(10, 12, 17, 0.99); box-shadow: 0 30px 72px rgba(0, 0, 0, 0.56);
             display: grid; grid-template-rows: auto auto 1fr;
@@ -390,8 +405,8 @@
         /* ── Modal Header ── */
         .settings-modal-header {
             display: flex; align-items: center; gap: 10px;
-            padding: 12px 16px; border-bottom: 1px solid rgba(255, 255, 255, 0.065);
-            background: rgba(255, 255, 255, 0.018);
+            min-height: 52px; padding: 10px 16px; border-bottom: 1px solid rgba(255, 255, 255, 0.085);
+            background: rgba(255, 255, 255, 0.026);
         }
         .settings-modal-title {
             margin: 0; font-size: 15px; font-weight: 800; letter-spacing: 0; flex-shrink: 0;
@@ -421,8 +436,8 @@
         /* ── Modal Toolbar ── */
         .settings-modal-toolbar {
             display: flex; align-items: center; gap: 8px;
-            padding: 9px 14px; border-bottom: 1px solid rgba(255, 255, 255, 0.05);
-            background: rgba(255, 255, 255, 0.016);
+            min-height: 52px; padding: 8px 14px; border-bottom: 1px solid rgba(255, 255, 255, 0.065);
+            background: rgba(255, 255, 255, 0.018);
         }
         .settings-search-shell { flex: 1; min-width: 0; position: relative; }
         .settings-search-input {
@@ -445,7 +460,7 @@
         .settings-toolbar-actions { justify-content: flex-end; }
 
         /* ── Modal Body ── */
-        .settings-modal-body { display: grid; grid-template-columns: 196px minmax(0, 1fr); min-height: 0; }
+        .settings-modal-body { display: grid; grid-template-columns: 220px minmax(0, 1fr); min-height: 0; }
 
         /* ── Sidebar / Group Nav ── */
         .settings-groups {
@@ -457,15 +472,15 @@
         }
         .settings-group-button {
             display: flex; align-items: center; justify-content: space-between; gap: 8px;
-            width: 100%; min-height: 32px; padding: 0 10px;
+            width: 100%; min-height: 36px; padding: 0 10px;
             border-radius: 8px; border: 1px solid transparent;
             background: transparent; text-align: left;
-            color: var(--text-muted); font-size: 11.5px; font-weight: 700; letter-spacing: 0;
+            color: var(--text-muted); font-size: 12px; font-weight: 700; letter-spacing: 0;
             transition: background-color 160ms var(--ease-out), color 160ms var(--ease-out), border-color 160ms var(--ease-out);
         }
         .settings-group-button:hover { color: var(--text-primary); background: rgba(255, 255, 255, 0.04); }
         .settings-group-button.active {
-            color: var(--text-primary); background: rgba(133, 213, 81, 0.10); border-color: rgba(133, 213, 81, 0.46);
+            color: var(--text-primary); background: rgba(133, 213, 81, 0.13); border-color: rgba(133, 213, 81, 0.52);
             box-shadow: inset 3px 0 0 var(--rumble-green);
         }
         .settings-group-count {
@@ -519,8 +534,8 @@
 
         /* ── Settings List ── */
         .settings-list {
-            padding: 10px 10px 12px; overflow-y: auto;
-            display: flex; flex-direction: column; gap: 3px;
+            padding: 10px 12px 14px; overflow-y: auto;
+            display: flex; flex-direction: column; gap: 5px;
             overscroll-behavior: contain;
             scrollbar-width: thin; scrollbar-color: rgba(255, 255, 255, 0.1) transparent; scrollbar-gutter: stable;
         }
@@ -546,6 +561,7 @@
         .settings-item {
             border-radius: var(--radius-sm); border: 1px solid rgba(255, 255, 255, 0.065);
             background: rgba(255, 255, 255, 0.026);
+            min-height: 44px;
             transition: border-color 180ms var(--ease-out), background-color 180ms var(--ease-out), transform 180ms var(--ease-out);
         }
         .settings-item:hover { border-color: rgba(255, 255, 255, 0.12); background: rgba(255, 255, 255, 0.038); }
@@ -555,7 +571,7 @@
 
         .settings-item.is-toggle {
             display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap;
-            gap: 10px; padding: 9px 12px; min-height: 38px;
+            gap: 10px; padding: 10px 12px; min-height: 44px;
         }
         .settings-item.is-toggle .settings-item-title-row {
             display: flex; align-items: center; gap: 6px; min-width: 0; flex: 1;
@@ -580,7 +596,7 @@
         }
         .settings-item-group {
             font-size: 9.5px; font-weight: 700; color: var(--text-muted);
-            letter-spacing: 0.05em; text-transform: uppercase; opacity: 0.55; white-space: nowrap;
+            letter-spacing: 0.05em; text-transform: uppercase; opacity: 0.72; white-space: nowrap;
         }
         .settings-item-badge {
             display: inline-flex; align-items: center; padding: 3px 6px;
@@ -693,10 +709,11 @@
             .settings-modal-body { grid-template-columns: 1fr; }
             .settings-groups {
                 border-right: none; border-bottom: 1px solid rgba(255, 255, 255, 0.055);
-                flex-direction: row; flex-wrap: wrap; max-height: none; padding: 8px; gap: 4px;
+                flex-direction: row; flex-wrap: nowrap; max-height: none; padding: 8px; gap: 4px;
+                overflow-x: auto; overflow-y: hidden; scrollbar-gutter: auto;
             }
-            .settings-group-button { width: auto; }
-            .settings-modal { width: min(100vw - 16px, 1120px); max-height: calc(100vh - 16px); margin: 8px auto; }
+            .settings-group-button { width: auto; min-height: 40px; flex: 0 0 auto; }
+            .settings-modal { width: min(100vw - 16px, 1160px); height: calc(100vh - 16px); max-height: calc(100vh - 16px); margin: 8px auto; }
             .settings-modal-toolbar { flex-direction: column; align-items: stretch; }
             .settings-toolbar-actions { justify-content: flex-start; }
             .settings-workspace-banner { flex-direction: column; align-items: stretch; }
@@ -715,6 +732,9 @@
             .button-row { width: 100%; }
             .button-row button, .actions-end button { flex: 1; }
             .archive-preflight { grid-template-columns: 1fr; }
+            .welcome-presets { grid-template-columns: 1fr; }
+            .welcome-actions { flex-direction: column; }
+            .welcome-actions .cta-button, .welcome-actions .settings-tertiary-button { width: 100%; flex-basis: auto; }
             .settings-modal { border-radius: 12px; }
             .settings-modal-header { flex-wrap: wrap; }
             .settings-item-title { white-space: normal; }
@@ -727,6 +747,7 @@
         }
         @media (forced-colors: active) {
             .settings-item, .workspace-command, .stat-card, .storage-note, .actions-row, .credential-export-option, .data-section,
+            .welcome-panel, .welcome-presets li,
             button, input, select, textarea {
                 border-color: CanvasText; forced-color-adjust: none;
                 background: Canvas; color: CanvasText;

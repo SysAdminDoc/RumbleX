@@ -148,8 +148,8 @@ body {
     background: transparent;
     border: 0;
     color: #a8a8b2;
-    font: 800 10px/1 inherit;
-    letter-spacing: 0.08em;
+    font: 800 11px/1 inherit;
+    letter-spacing: 0.055em;
     text-transform: uppercase;
     cursor: pointer;
     user-select: none;
@@ -170,6 +170,11 @@ body {
     padding: 2px 5px;
     background: rgba(255,255,255,0.06);
     border-radius: 6px;
+}
+.feat-group-count.is-active {
+    color: #d7ffe8;
+    background: rgba(133,213,81,0.11);
+    border: 1px solid rgba(133,213,81,0.18);
 }
 .feat-group-body { display: block; padding-bottom: 2px; }
 .feat-group.collapsed .feat-group-body { display: none; }
@@ -275,7 +280,8 @@ body {
     flex: 0 0 auto;
 }
 .footer-left {
-    display: flex; align-items: center; gap: 6px;
+    display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 6px;
+    min-width: 0; flex: 1;
 }
 .footer-right {
     display: flex; align-items: center; gap: 4px;
@@ -298,9 +304,16 @@ body {
 .footer-btn.update:hover { color: var(--accent); border-color: rgba(137,180,250,0.35); }
 .footer-btn.update.has-update { color: var(--rumble-green); border-color: var(--rumble-green); animation: rx-pulse 2s infinite; }
 .footer-btn.update.checking { opacity: 0.5; pointer-events: none; }
+.footer-btn:disabled { opacity: 0.48; cursor: progress; }
 .footer-btn.update.error { color: var(--error); border-color: rgba(243,139,168,0.35); }
 .footer-version { font-size: 10px; color: var(--text-muted); font-weight: 700; }
-.footer-reload { font-size: 9px; color: #646f82; }
+.popup-feedback {
+    min-width: 0; font-size: 9px; line-height: 1.25; color: #7f8ba0;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.popup-feedback[data-state="success"] { color: var(--rumble-green); }
+.popup-feedback[data-state="error"] { color: var(--error); }
+.popup-feedback[data-state="progress"] { color: var(--accent); }
 
 /* Update badge */
 .update-dot {
@@ -392,7 +405,7 @@ body {
 <div class="footer">
     <div class="footer-left">
         <span class="footer-version" id="footer-version"></span>
-        <span class="footer-reload" data-i18n="reloadAfterChanges">Reload after changes</span>
+        <span class="popup-feedback" id="popup-feedback" role="status" aria-live="polite" data-state="idle" data-i18n="reloadAfterChanges">Reload after changes</span>
     </div>
     <div class="footer-right">
         <!-- v3.6.0 — Group all open Rumble tabs into one tab group (Chrome only). -->

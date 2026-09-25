@@ -32,9 +32,26 @@ test('popup renders feature groups with toggles', async ({ context, extensionId 
     await expect(firstToggle).toHaveAttribute('aria-label', /.+/);
     await expect(firstToggle).not.toHaveAttribute('aria-pressed');
     await expect(page.locator('.popup-shield')).toHaveText('Network shield active');
+    const firstHeader = page.locator('.feat-group-header').first();
+    const firstBody = page.locator('.feat-group-body').first();
+    await expect(firstHeader).toHaveAttribute('aria-controls', await firstBody.getAttribute('id'));
+    await expect(firstHeader).toHaveAttribute('aria-expanded', 'true');
+    await expect(firstBody).toBeVisible();
+    await firstHeader.click();
+    await expect(firstHeader).toHaveAttribute('aria-expanded', 'false');
+    await expect(firstBody).toBeHidden();
+    await firstHeader.click();
+
+    const themeChips = page.locator('.theme-chip');
+    await expect(themeChips.filter({ hasText: 'Catppuccin Mocha' })).toHaveAttribute('aria-pressed', 'true');
+    await expect(themeChips.filter({ hasText: 'Midnight AMOLED' })).toHaveAttribute('aria-pressed', 'false');
     const realFrameRow = page.locator('.feat-row').filter({ hasText: 'Real Frame Previews' });
     await expect(realFrameRow).toHaveCount(1);
     await expect(realFrameRow.locator('input[type="checkbox"]')).not.toBeChecked();
+
+    await firstToggle.click();
+    await expect(page.locator('#popup-feedback')).toHaveText('Saved');
+    await expect(page.locator('#popup-feedback')).toHaveAttribute('data-state', 'success');
 });
 
 test('popup fits Chromium bounds and keeps the footer and last setting reachable', async ({ context, extensionId }) => {

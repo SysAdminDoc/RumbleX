@@ -401,3 +401,61 @@ test('the in-page settings modal stays usable in a small window', async ({ conte
 
     await page.close();
 });
+
+test('first-run choices scan in two columns and keep both actions together', async ({ context, extensionId }) => {
+    const page = await context.newPage();
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto(`chrome-extension://${extensionId}/pages/options.html#welcome`);
+    await expect(page.locator('#welcome-panel')).toBeVisible();
+
+    const layout = await page.evaluate(() => {
+        const list = document.querySelector('#welcome-presets');
+        const items = [...list.children].map((item) => item.getBoundingClientRect());
+        const apply = document.querySelector('#welcome-apply-btn').getBoundingClientRect();
+        const dismiss = document.querySelector('#welcome-dismiss-btn').getBoundingClientRect();
+        return {
+            columns: getComputedStyle(list).gridTemplateColumns.split(' ').length,
+            firstRowAligned: Math.abs(items[0].top - items[1].top),
+            secondRowBelow: items[2].top > items[0].bottom,
+            actionsAligned: Math.abs(apply.top - dismiss.top),
+        };
+    });
+    expect(layout.columns).toBe(2);
+    expect(layout.firstRowAligned).toBeLessThanOrEqual(1);
+    expect(layout.secondRowBelow).toBe(true);
+    expect(layout.actionsAligned).toBeLessThanOrEqual(1);
+
+    const firstChoice = page.locator('#welcome-presets li').first();
+    await firstChoice.locator('input').check();
+    await expect(page.locator('#welcome-apply-btn')).toHaveText('Turn on 1 selected');
+    await expect(firstChoice).toHaveCSS('border-top-color', 'rgba(133, 213, 81, 0.46)');
+});
+
+test('dedicated settings editor keeps one-row navigation and an opaque canvas when narrow', async ({ context, extensionId }) => {
+    const page = await context.newPage();
+    await page.setViewportSize({ width: 760, height: 560 });
+    await page.goto(`chrome-extension://${extensionId}/pages/options.html`);
+    await page.locator('#open-settings-modal-btn').click();
+    await expect(page.locator('#settings-modal-shell')).toBeVisible();
+
+    const layout = await page.evaluate(() => {
+        const modal = document.querySelector('.settings-modal').getBoundingClientRect();
+        const groups = document.querySelector('#settings-groups').getBoundingClientRect();
+        const list = document.querySelector('#settings-list').getBoundingClientRect();
+        const backdrop = getComputedStyle(document.querySelector('.settings-modal-backdrop'));
+        return {
+            modalHeight: modal.height,
+            groupsHeight: groups.height,
+            groupsOverflow: document.querySelector('#settings-groups').scrollWidth > document.querySelector('#settings-groups').clientWidth,
+            listHeight: list.height,
+            backdropColor: backdrop.backgroundColor,
+            backdropImage: backdrop.backgroundImage,
+        };
+    });
+    expect(layout.modalHeight).toBeLessThanOrEqual(544);
+    expect(layout.groupsHeight).toBeLessThan(64);
+    expect(layout.groupsOverflow).toBe(true);
+    expect(layout.listHeight).toBeGreaterThan(180);
+    expect(layout.backdropColor).toBe('rgba(3, 5, 8, 0.92)');
+    expect(layout.backdropImage).not.toBe('none');
+});

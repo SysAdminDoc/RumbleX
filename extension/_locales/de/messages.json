@@ -139,6 +139,10 @@
     "message": "Nach Aenderungen neu laden",
     "description": "UI string used by popup/options i18n pass."
   },
+  "settingsSaved": {
+    "message": "Gespeichert",
+    "description": "Brief popup status after local settings are stored."
+  },
   "groupRumbleTabs": {
     "message": "Alle Rumble-Tabs gruppieren",
     "description": "UI string used by popup/options i18n pass."

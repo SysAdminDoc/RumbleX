@@ -139,6 +139,10 @@
     "message": "Ricarica dopo le modifiche",
     "description": "UI string used by popup/options i18n pass."
   },
+  "settingsSaved": {
+    "message": "Salvato",
+    "description": "Brief popup status after local settings are stored."
+  },
   "groupRumbleTabs": {
     "message": "Raggruppa tutte le schede Rumble",
     "description": "UI string used by popup/options i18n pass."
