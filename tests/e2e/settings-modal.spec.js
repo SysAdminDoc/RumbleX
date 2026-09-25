@@ -7,6 +7,8 @@ test('settings modal opens, search filters, save persists', async ({ context, ex
     await page.goto(`chrome-extension://${extensionId}/pages/options.html`);
     await page.locator('#open-settings-modal-btn').click();
     await expect(page.locator('#settings-modal-shell')).toBeVisible();
+    await expect(page.locator('#settings-save-btn')).toBeDisabled();
+    await expect(page.locator('#settings-save-btn')).not.toHaveCSS('background-color', 'rgb(133, 213, 81)');
     // Search field should be focused or focusable
     const search = page.locator('#settings-search');
     await search.fill('shorts');
@@ -36,6 +38,37 @@ test('settings modal opens, search filters, save persists', async ({ context, ex
     }))).toBe(false);
     await page.locator('#close-settings-modal-btn').click();
     await expect(page.locator('#settings-modal-shell')).toBeHidden();
+});
+
+test('disabled primary actions use the Windows forced-colors palette', async ({ context, extensionId }) => {
+    const page = await context.newPage();
+    await page.emulateMedia({ forcedColors: 'active' });
+    await page.goto(`chrome-extension://${extensionId}/pages/options.html`);
+    await page.locator('#open-settings-modal-btn').click();
+    await expect(page.locator('#settings-save-btn')).toBeDisabled();
+
+    const colors = await page.locator('#settings-save-btn').evaluate((button) => {
+        const probe = document.createElement('span');
+        probe.style.cssText = 'position:fixed;color:GrayText;background:Canvas;border:1px solid GrayText';
+        document.body.appendChild(probe);
+        const buttonStyle = getComputedStyle(button);
+        const probeStyle = getComputedStyle(probe);
+        const result = {
+            button: {
+                color: buttonStyle.color,
+                background: buttonStyle.backgroundColor,
+                border: buttonStyle.borderTopColor,
+            },
+            system: {
+                color: probeStyle.color,
+                background: probeStyle.backgroundColor,
+                border: probeStyle.borderTopColor,
+            },
+        };
+        probe.remove();
+        return result;
+    });
+    expect(colors.button).toEqual(colors.system);
 });
 
 test('ad blocking group distinguishes request shield from DOM cleanup', async ({ context, extensionId }) => {
@@ -243,6 +276,66 @@ test('dismissing the first-run welcome changes nothing and it stays gone', async
 
     await page.reload();
     await expect(page.locator('#welcome-panel')).toBeHidden();
+});
+
+test('a first-run storage failure stays visible and reports the error', async ({ context, extensionId }) => {
+    const page = await context.newPage();
+    await page.goto(`chrome-extension://${extensionId}/pages/options.html`);
+    const panel = page.locator('#welcome-panel');
+    await expect(panel).toBeVisible();
+
+    await page.evaluate(() => {
+        const originalSet = chrome.storage.local.set.bind(chrome.storage.local);
+        chrome.storage.local.set = (value, callback) => {
+            if (Object.hasOwn(value, 'rx_welcome_seen')) throw new Error('fixture storage failure');
+            return originalSet(value, callback);
+        };
+    });
+
+    await page.locator('#welcome-dismiss-btn').click();
+    await expect(panel).toBeVisible();
+    await expect(page.locator('#status')).toContainText('Could not dismiss the welcome: fixture storage failure');
+});
+
+test('a first-run storage read failure keeps a usable welcome visible', async ({ context, extensionId }) => {
+    await context.addInitScript(() => {
+        const originalGet = chrome.storage.local.get.bind(chrome.storage.local);
+        chrome.storage.local.get = (keys, callback) => {
+            if (Array.isArray(keys) && keys.includes('rx_welcome_seen')) {
+                throw new Error('fixture storage read failure');
+            }
+            return originalGet(keys, callback);
+        };
+    });
+    const page = await context.newPage();
+    await page.goto(`chrome-extension://${extensionId}/pages/options.html`);
+
+    await expect(page.locator('#welcome-panel')).toBeVisible();
+    await expect(page.locator('#welcome-presets input')).toHaveCount(8);
+    await expect(page.locator('#status')).toContainText('Could not load the welcome state: fixture storage read failure');
+});
+
+test('starter settings and the seen marker commit in one storage write', async ({ context, extensionId }) => {
+    const page = await context.newPage();
+    await page.goto(`chrome-extension://${extensionId}/pages/options.html`);
+    const panel = page.locator('#welcome-panel');
+    await expect(panel).toBeVisible();
+    await page.locator('#welcome-preset-autoTheater').check();
+
+    await page.evaluate(() => {
+        const originalSet = chrome.storage.local.set.bind(chrome.storage.local);
+        chrome.storage.local.set = (value, callback) => {
+            if (Object.hasOwn(value, 'rx_welcome_seen')) throw new Error('fixture atomic write failure');
+            return originalSet(value, callback);
+        };
+    });
+    await page.locator('#welcome-apply-btn').click();
+
+    await expect(panel).toBeVisible();
+    await expect(page.locator('#status')).toContainText('Could not apply the starter presets: fixture atomic write failure');
+    const stored = await page.evaluate(async () => chrome.storage.local.get(['rx_settings', 'rx_welcome_seen']));
+    expect(stored.rx_settings).toBeUndefined();
+    expect(stored.rx_welcome_seen).toBeUndefined();
 });
 
 test('the in-page settings modal stays usable in a small window', async ({ context }) => {

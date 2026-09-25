@@ -98,7 +98,7 @@
   </div>
   <p class="tag">Ad and clutter removal, a theater layout, downloads, five dark themes, live chat tooling, watch progress, chapters, transcripts, and about a hundred other toggles. Everything runs on your machine.</p>
   <div class="pills">
-    <span class="pill" data-rumblex-version="3.57.0"><strong>v3.57.0</strong> current build</span>
+    <span class="pill" data-rumblex-version="3.58.0"><strong>v3.58.0</strong> current build</span>
     <span class="pill" data-rumblex-feature-count="140"><strong>140</strong> feature modules</span>
     <span class="pill"><strong>6</strong> languages</span>
     <span class="pill"><strong>0</strong> trackers</span>
@@ -121,7 +121,7 @@
     <li>Open <code>chrome://extensions</code> and turn on <strong>Developer mode</strong>.</li>
     <li>Click <strong>Load unpacked</strong> and choose the folder you extracted.</li>
   </ol>
-  <p style="color:var(--muted);font-size:14.5px;margin-bottom:0">Chrome shows a reminder about developer-mode extensions, and it won't update this install for you. Check back here or watch the repository for new releases. Chrome hasn't allowed self-hosted CRX installs on Windows or macOS for years, so unpacked is the honest route.</p>
+  <p style="color:var(--muted);font-size:14.5px;margin-bottom:0">Chrome shows a reminder about developer-mode extensions, and it won't update this install for you. Check back here or watch the repository for new releases. A signed <code>RumbleX-chrome.crx</code> is included for managed or policy-enabled browsers, but standard Chromium installs can reject direct CRX installation. The ZIP is the dependable route.</p>
 </div>
 
 <div class="card">
@@ -157,7 +157,7 @@
 </div>
 
 <h2>Check what you downloaded</h2>
-<p class="lead">Every release ships <code>SHA256SUMS.txt</code>. This confirms the file arrived in one piece.</p>
+<p class="lead">Every release ships <code>SHA256SUMS.txt</code> for the Chrome ZIP and CRX3, Firefox submission, source archive, and userscripts. This confirms the file arrived in one piece.</p>
 <pre><code>sha256sum -c SHA256SUMS.txt --ignore-missing</code></pre>
 <p>That proves the download wasn't corrupted or swapped in transit. It doesn't prove who built it, which is the part that matters if someone puts up a copy of this project somewhere else. When a release also carries <code>SHA256SUMS.txt.sig</code>, you can check the origin:</p>
 <pre><code>ssh-keygen -Y verify -f allowed_signers -I release@rumblex -n file \

@@ -19,6 +19,7 @@ const ENABLED = process.env.RUMBLEX_STORE_CAPTURE === '1';
 const ROOT = path.join(__dirname, '..', '..');
 const OUT = path.join(ROOT, 'design', 'store');
 const PROMO = path.join(OUT, 'promo.html');
+const VERSION = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8')).version;
 const MODERN_WATCH_FIXTURE = fs.readFileSync(
     path.join(ROOT, 'tests', 'fixtures', 'platform', 'modern-watch.html'),
     'utf8',
@@ -59,6 +60,7 @@ test.describe('store listing assets', () => {
             await options.setViewportSize(size);
             await options.goto(`chrome-extension://${extensionId}/pages/options.html`);
             await options.waitForTimeout(700);
+            await expect(options.locator('#version')).toHaveText(`v${VERSION}`);
             const optionsHome = path.join(OUT, `screenshot-1-options-${suffix}.png`);
             await options.screenshot({ path: optionsHome, fullPage: false });
             written.push([optionsHome, size]);
@@ -110,6 +112,7 @@ test.describe('store listing assets', () => {
             await popupShell.setViewportSize(size);
             await popupShell.goto(`chrome-extension://${extensionId}/pages/popup.html`);
             await popupShell.waitForTimeout(400);
+            await expect(popupShell.locator('#version')).toHaveText(`v${VERSION}`);
             const popupShot = path.join(OUT, `screenshot-5-popup-${suffix}.png`);
             await popupShell.screenshot({ path: popupShot, fullPage: false });
             written.push([popupShot, size]);

@@ -10,6 +10,8 @@ const PLAYWRIGHT_CLI = path.join(ROOT, 'node_modules', '@playwright', 'test', 'c
 
 const RELEASE_ARTIFACTS = Object.freeze([
     'RumbleX-chrome.zip',
+    'RumbleX-chrome.crx',
+    'RumbleX-v1.9.3.crx',
     'RumbleX-firefox-amo-unsigned.zip',
     'RumbleX-source.zip',
     'RumbleX-firefox.zip',

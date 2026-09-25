@@ -1,4 +1,4 @@
-// RumbleX v3.57.0 - Options Page
+// RumbleX v3.58.0 - Options Page
 // Standalone settings management via chrome.storage.local (rx_settings key).
 // Mirrors Astra Deck's settings page pattern: dirty-draft workflow with
 // search, group nav, stats overview, and export/import/reset.
@@ -3256,17 +3256,30 @@
         { key: 'defaultMaxVolume', label: 'Start videos at full volume', desc: 'Always starts the player at 100%. Leave this off if you use headphones.' },
     ];
 
+    function welcomeStorageGet(keys) {
+        return new Promise((resolve, reject) => {
+            chrome.storage.local.get(keys, (stored) => {
+                const error = chrome.runtime.lastError;
+                if (error) reject(new Error(error.message || 'Extension storage read failed'));
+                else resolve(stored || {});
+            });
+        });
+    }
+
+    function welcomeStorageSet(value) {
+        return new Promise((resolve, reject) => {
+            chrome.storage.local.set(value, () => {
+                const error = chrome.runtime.lastError;
+                if (error) reject(new Error(error.message || 'Extension storage write failed'));
+                else resolve();
+            });
+        });
+    }
+
     async function setupWelcome() {
         const panel = document.getElementById('welcome-panel');
         const list = document.getElementById('welcome-presets');
         if (!panel || !list) return;
-
-        const seen = await new Promise((resolve) => {
-            chrome.storage.local.get(['rx_welcome_seen'], (stored) => resolve(!!stored?.rx_welcome_seen));
-        });
-        // Honor an explicit #welcome link even after dismissal so the view is
-        // reachable again on purpose, but never re-open it on its own.
-        if (seen && window.location.hash !== '#welcome') return;
 
         // Only offer presets that actually exist and are wired to real behavior.
         const offered = WELCOME_PRESETS.filter((preset) => Object.hasOwn(DEFAULTS, preset.key) && !UNIMPLEMENTED[preset.key]);
@@ -3289,6 +3302,18 @@
             item.append(input, label);
             list.appendChild(item);
         }
+
+        let seen = false;
+        try {
+            seen = !!(await welcomeStorageGet(['rx_welcome_seen'])).rx_welcome_seen;
+        } catch (err) {
+            // Keep the usable welcome surface visible. A transient read failure
+            // must not turn a first run into a blank page with only a status.
+            showStatus('Could not load the welcome state: ' + (err?.message || err), 'error');
+        }
+        // Honor an explicit #welcome link even after dismissal so the view is
+        // reachable again on purpose, but never re-open it on its own.
+        if (seen && window.location.hash !== '#welcome') return;
         panel.hidden = false;
 
         const applyButton = document.getElementById('welcome-apply-btn');
@@ -3303,12 +3328,14 @@
         syncApplyButton();
 
         const dismiss = async () => {
+            await welcomeStorageSet({ rx_welcome_seen: true });
             panel.hidden = true;
-            await new Promise((resolve) => chrome.storage.local.set({ rx_welcome_seen: true }, resolve));
         };
 
         document.getElementById('welcome-dismiss-btn')?.addEventListener('click', () => {
-            void dismiss().then(() => showStatus('Welcome dismissed. Everything stays at its defaults.', 'info'));
+            void dismiss()
+                .then(() => showStatus('Welcome dismissed. Everything stays at its defaults.', 'info'))
+                .catch((err) => showStatus('Could not dismiss the welcome: ' + (err?.message || err), 'error'));
         });
 
         applyButton?.addEventListener('click', async () => {
@@ -3316,15 +3343,15 @@
                 .filter((input) => input.checked)
                 .map((input) => input.dataset.key);
             try {
-                const stored = await new Promise((resolve) => {
-                    chrome.storage.local.get([STORAGE_KEY], (data) => resolve(data?.[STORAGE_KEY] || {}));
-                });
+                const stored = (await welcomeStorageGet([STORAGE_KEY]))[STORAGE_KEY] || {};
                 const next = { ...stored };
                 for (const key of chosen) next[key] = true;
                 // Same trust boundary as every other settings write.
                 const normalized = RXSettingsSchema.normalizeStored(next, DEFAULTS);
-                await new Promise((resolve) => chrome.storage.local.set({ [STORAGE_KEY]: normalized }, resolve));
-                await dismiss();
+                // Settings and the seen marker are one storage operation so a
+                // failed apply cannot persist half of the user's decision.
+                await welcomeStorageSet({ [STORAGE_KEY]: normalized, rx_welcome_seen: true });
+                panel.hidden = true;
                 showStatus(
                     chosen.length
                         ? `Turned on ${chosen.length} ${pluralize(chosen.length, 'feature')}. Reload any open Rumble tab to apply.`
@@ -3338,7 +3365,10 @@
         });
     }
 
-    void setupWelcome().catch((err) => console.warn('[RumbleX options] welcome setup failed:', err));
+    void setupWelcome().catch((err) => {
+        console.warn('[RumbleX options] welcome setup failed:', err);
+        showStatus('Could not load the welcome screen: ' + (err?.message || err), 'error');
+    });
 
     void renderStorageInfo().catch((err) => {
         console.warn('[RumbleX options] initial render failed:', err);

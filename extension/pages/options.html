@@ -208,6 +208,10 @@
             background: #98e663; border-color: #98e663;
             box-shadow: 0 10px 22px rgba(133, 213, 81, 0.18);
         }
+        button.primary:disabled {
+            opacity: 1; background: rgba(255, 255, 255, 0.045); border-color: var(--border);
+            color: var(--text-muted); box-shadow: none;
+        }
         button.danger {
             color: #ffe0e7; background: rgba(243, 139, 168, 0.09); border-color: rgba(243, 139, 168, 0.28);
         }
@@ -726,6 +730,10 @@
             button, input, select, textarea {
                 border-color: CanvasText; forced-color-adjust: none;
                 background: Canvas; color: CanvasText;
+            }
+            button.primary:disabled {
+                opacity: 1; background: Canvas; color: GrayText;
+                border-color: GrayText; box-shadow: none;
             }
             .settings-item-toggle-track { border: 1px solid CanvasText; background: Canvas; }
             .settings-item-toggle input:checked + .settings-item-toggle-track { background: Highlight; }

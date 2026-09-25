@@ -124,7 +124,9 @@ test.describe('live site visual capture', () => {
         }
         const relatedSurface = page.locator('.media-page-related-media-desktop-floating:visible').first();
         if (await relatedSurface.count()) {
-            await expect(relatedSurface.locator('.rx-related-filter')).toBeAttached({ timeout: 10_000 });
+            // Rumble's floating grid is the list itself, so the filter is its
+            // adjacent sibling rather than a child of this surface.
+            await expect(page.locator('.rx-related-filter:visible').first()).toBeAttached({ timeout: 10_000 });
             const relatedColors = await relatedSurface.evaluate((node) => {
                 const probe = document.createElement('span');
                 probe.style.backgroundColor = 'var(--rx-site-panel)';

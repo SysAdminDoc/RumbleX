@@ -15,7 +15,8 @@
 const assert = require('assert/strict');
 const fs = require('fs');
 const path = require('path');
-const { readArchive } = require('./zip-utils');
+const { readArchive, readArchiveBuffer } = require('./zip-utils');
+const { verifyCrx3 } = require('./crx3-utils');
 
 const ROOT = path.resolve(__dirname, '..');
 const EXT = path.join(ROOT, 'extension');
@@ -23,6 +24,7 @@ const PACKAGES = [
     { label: 'Chrome', file: path.join(ROOT, 'RumbleX-chrome.zip'), manifest: 'manifest.json' },
     { label: 'Firefox', file: path.join(ROOT, 'RumbleX-firefox-amo-unsigned.zip'), manifest: 'manifest-firefox.json' },
 ];
+const CHROME_CRX = path.join(ROOT, 'RumbleX-chrome.crx');
 
 const missingPackages = PACKAGES.filter((pkg) => !fs.existsSync(pkg.file));
 if (missingPackages.length) {
@@ -134,6 +136,23 @@ for (const pkg of PACKAGES) {
     }
 }
 
+assert.ok(fs.existsSync(CHROME_CRX), 'RumbleX-chrome.crx is missing beside the Chrome ZIP');
+const crxBytes = fs.readFileSync(CHROME_CRX);
+const verifiedCrx = verifyCrx3(crxBytes);
+const corruptedCrx = Buffer.from(crxBytes);
+corruptedCrx[corruptedCrx.length - 1] ^= 1;
+assert.throws(() => verifyCrx3(corruptedCrx), /signature is invalid/,
+    'Chrome CRX3 verifier accepted a corrupted signed payload');
+const crxArchive = readArchiveBuffer(verifiedCrx.archive, path.basename(CHROME_CRX));
+const chromeArchive = archives.get('Chrome');
+const chromeFiles = [...chromeArchive.keys()].filter((entry) => !entry.endsWith('/')).sort();
+const crxFiles = [...crxArchive.keys()].filter((entry) => !entry.endsWith('/')).sort();
+assert.deepEqual(crxFiles, chromeFiles, 'Chrome CRX3 file list differs from RumbleX-chrome.zip');
+for (const name of chromeFiles) {
+    assert.equal(Buffer.compare(crxArchive.get(name), chromeArchive.get(name)), 0,
+        `Chrome CRX3 contains stale bytes for ${name}`);
+}
+
 // The two packages must differ only in manifest content, never in file set.
 // Directory records are optional ZIP metadata. Compare shipped files so a
 // deterministic writer does not have to imitate an archiver's directory-list
@@ -151,4 +170,4 @@ const workingManifest = JSON.parse(fs.readFileSync(path.join(EXT, 'manifest.json
 assert.equal(workingManifest.manifest_version, 3,
     'extension/manifest.json is not MV3 — an interrupted build may have left the Firefox manifest in place');
 
-console.log(`Package contents guard OK: ${runtimeSources.size} runtime files match source bytes, with verified MV3 and MV2 manifests.`);
+console.log(`Package contents guard OK: ${runtimeSources.size} runtime files match source bytes, with verified MV3, RSA-signed CRX3 and MV2 packages.`);

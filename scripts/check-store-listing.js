@@ -100,6 +100,7 @@ function main() {
     ]) {
         addVersionError(errors, canonicalVersion, label, actual);
     }
+    addVersionError(errors, canonicalVersion, 'store screenshot capture', listing.assets.captured_version);
 
     const landingFeatureCount = Number(
         landing.match(/data-rumblex-feature-count=["'](\d+)["']/i)?.[1] || NaN,
@@ -137,23 +138,45 @@ function main() {
         if (!inLanding) errors.push(`docs/index.html no longer documents ${label} (missing: ${snippet})`);
     }
 
-    // 2. Every requested permission is justified, and nothing is justified
-    //    that is no longer requested (a stale entry reads as a live claim).
-    const requestedHosts = [
+    // 2. Every requested permission is justified per browser, and nothing is
+    //    justified that is no longer requested. Firefox MV2 uses blocking
+    //    webRequest and therefore has a deliberately different permission set.
+    const chromiumHosts = [
         ...(manifest.host_permissions || []),
         ...(manifest.optional_host_permissions || []),
     ];
-    const pairs = [
-        ['API permission', manifest.permissions || [], Object.keys(listing.permission_justifications.api)],
-        ['host permission', requestedHosts, Object.keys(listing.permission_justifications.host)],
+    const firefoxPermissions = [
+        ...(firefoxManifest.permissions || []),
+        ...(firefoxManifest.optional_permissions || []),
     ];
-    for (const [label, requested, justified] of pairs) {
-        for (const p of requested) {
-            if (!justified.includes(p)) errors.push(`${label} "${p}" is requested but has no justification`);
+    const firefoxHosts = firefoxPermissions.filter((permission) => permission.includes('://'));
+    const firefoxApi = firefoxPermissions.filter((permission) => !permission.includes('://'));
+    const targets = [
+        ['Chromium', manifest.permissions || [], chromiumHosts,
+            listing.permission_justifications.api, listing.permission_justifications.host],
+        ['Firefox', firefoxApi, firefoxHosts,
+            listing.permission_justifications.firefox_api, listing.permission_justifications.firefox_host],
+    ];
+    for (const [target, requestedApi, requestedHosts, apiCopy, hostCopy] of targets) {
+        if (!apiCopy || !hostCopy) {
+            errors.push(`${target} permission justifications are missing`);
+            continue;
         }
-        for (const p of justified) {
-            if (p.startsWith('_')) continue;
-            if (!requested.includes(p)) errors.push(`${label} "${p}" is justified but no longer requested`);
+        for (const [kind, requested, justified] of [
+            ['API permission', requestedApi, Object.keys(apiCopy)],
+            ['host permission', requestedHosts, Object.keys(hostCopy)],
+        ]) {
+            for (const permission of requested) {
+                if (!justified.includes(permission)) {
+                    errors.push(`${target} ${kind} "${permission}" is requested but has no justification`);
+                }
+            }
+            for (const permission of justified) {
+                if (permission.startsWith('_')) continue;
+                if (!requested.includes(permission)) {
+                    errors.push(`${target} ${kind} "${permission}" is justified but no longer requested`);
+                }
+            }
         }
     }
 
@@ -199,10 +222,10 @@ function main() {
         process.exit(1);
     }
 
-    const perms = (manifest.permissions || []).length + requestedHosts.length;
+    const chromiumPerms = (manifest.permissions || []).length + chromiumHosts.length;
     console.log(
         `check-store-listing OK: v${canonicalVersion}, ${featureCount} public feature modules, `
-        + `${perms} permissions justified, `
+        + `${chromiumPerms} Chromium and ${firefoxPermissions.length} Firefox permissions justified, `
         + `${REQUIRED_LOCALES.length} locales of copy within the ${SHORT_DESCRIPTION_MAX}-character cap, `
         + `${declared.length} assets at their exact required sizes.`,
     );

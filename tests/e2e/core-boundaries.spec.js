@@ -149,18 +149,18 @@ test('loaded extension shares routing, selectors, cards, and media helpers acros
                     Router._fire('core-boundary-test');
                     unsubscribe();
 
-                    const card = VideoCards.related()[0];
+                    const cards = VideoCards.related().map((card) => ({
+                        title: VideoCards.title(card),
+                        channel: VideoCards.channel(card),
+                        id: VideoCards.videoId(card),
+                    }));
                     return {
                         ready: true,
                         route: Page.classify(),
                         routeEvent: routeEvents.at(-1),
                         healthBeforeRoute,
                         selectorHealth: Selectors.healthCheck(),
-                        card: {
-                            title: VideoCards.title(card),
-                            channel: VideoCards.channel(card),
-                            id: VideoCards.videoId(card),
-                        },
+                        cards,
                         media: {
                             master: directMaster,
                             masterParity: JSON.stringify(directMaster) === JSON.stringify(delegatedMaster),
@@ -192,7 +192,10 @@ test('loaded extension shares routing, selectors, cards, and media helpers acros
         page: 'search',
         missing: ['search.input'],
     }));
-    expect(result.card).toEqual({ title: 'Alpha Report', channel: 'Creator Alpha', id: 'valpha123' });
+    expect(result.cards).toEqual(expect.arrayContaining([
+        { title: 'Alpha Report', channel: 'Creator Alpha', id: 'valpha123' },
+        { title: 'Floating Update', channel: 'Creator Float', id: 'vfloating789' },
+    ]));
     expect(result.media.master).toEqual([expect.objectContaining({ width: 640, height: 360, bandwidth: 900000 })]);
     expect(result.media.masterParity).toBe(true);
     expect(result.media.segments).toEqual([

@@ -112,8 +112,7 @@ function writeFileAtomically(file, data) {
     }
 }
 
-function readArchive(file) {
-    const buf = fs.readFileSync(file);
+function readArchiveBuffer(buf, label = 'archive') {
     const EOCD_SIG = 0x06054b50;
     let eocd = -1;
     for (let index = buf.length - 22; index >= 0 && index >= buf.length - 22 - 0xffff; index -= 1) {
@@ -122,14 +121,14 @@ function readArchive(file) {
             break;
         }
     }
-    assert.ok(eocd >= 0, `${path.basename(file)} is not a valid ZIP (no end-of-central-directory record)`);
+    assert.ok(eocd >= 0, `${label} is not a valid ZIP (no end-of-central-directory record)`);
 
     const entryCount = buf.readUInt16LE(eocd + 10);
     let offset = buf.readUInt32LE(eocd + 16);
     const entries = new Map();
     for (let index = 0; index < entryCount; index += 1) {
         assert.equal(buf.readUInt32LE(offset), 0x02014b50,
-            `${path.basename(file)} central directory is malformed at entry ${index}`);
+            `${label} central directory is malformed at entry ${index}`);
         const compression = buf.readUInt16LE(offset + 10);
         const compressedSize = buf.readUInt32LE(offset + 20);
         const uncompressedSize = buf.readUInt32LE(offset + 24);
@@ -138,9 +137,9 @@ function readArchive(file) {
         const commentLength = buf.readUInt16LE(offset + 32);
         const localOffset = buf.readUInt32LE(offset + 42);
         const name = buf.toString('utf8', offset + 46, offset + 46 + nameLength).replace(/^\.\//, '');
-        assert.ok(!entries.has(name), `${path.basename(file)} contains duplicate entry ${name}`);
+        assert.ok(!entries.has(name), `${label} contains duplicate entry ${name}`);
         assert.equal(buf.readUInt32LE(localOffset), 0x04034b50,
-            `${path.basename(file)} local header is malformed for ${name}`);
+            `${label} local header is malformed for ${name}`);
 
         const localNameLength = buf.readUInt16LE(localOffset + 26);
         const localExtraLength = buf.readUInt16LE(localOffset + 28);
@@ -149,17 +148,22 @@ function readArchive(file) {
         let data;
         if (compression === 0) data = Buffer.from(compressed);
         else if (compression === 8) data = zlib.inflateRawSync(compressed);
-        else assert.fail(`${path.basename(file)} uses unsupported ZIP compression ${compression} for ${name}`);
+        else assert.fail(`${label} uses unsupported ZIP compression ${compression} for ${name}`);
         assert.equal(data.length, uncompressedSize,
-            `${path.basename(file)} has the wrong uncompressed size for ${name}`);
+            `${label} has the wrong uncompressed size for ${name}`);
         entries.set(name, data);
         offset += 46 + nameLength + extraLength + commentLength;
     }
     return entries;
 }
 
+function readArchive(file) {
+    return readArchiveBuffer(fs.readFileSync(file), path.basename(file));
+}
+
 module.exports = {
     createDeterministicZip,
     readArchive,
+    readArchiveBuffer,
     writeFileAtomically,
 };

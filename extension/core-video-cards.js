@@ -80,4 +80,24 @@ const VideoCards = {
     thumbnail(card) {
         return card.querySelector('.rum-video-thumbnail__image, .videostream__image, .thumbnail__image, .videostream__thumbnail, .video-item--img-wrapper, [class*="thumbnail"]');
     },
+    overlayHost(card) {
+        const thumbnail = this.thumbnail(card);
+        if (!thumbnail) return null;
+        if (!thumbnail.matches?.('img, picture, source')) return thumbnail;
+
+        // Current signed-in cards put the thumbnail class directly on <img>.
+        // Replaced elements cannot render injected children, and a button must
+        // not be nested inside the surrounding link, so climb to the visual
+        // poster wrapper before adding progress or quick-save controls.
+        return thumbnail.closest([
+            'rum-video-poster',
+            '.thumbnail__thumb',
+            '.videostream__thumbnail',
+            '.videostream__image',
+            '.thumbnail__image-container',
+            '.video-item--img-wrapper',
+        ].join(', '))
+            || (thumbnail.parentElement?.matches('a') ? thumbnail.parentElement.parentElement : thumbnail.parentElement)
+            || card;
+    },
 };

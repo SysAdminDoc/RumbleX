@@ -1,6 +1,6 @@
 # RumbleX
 
-![Version](https://img.shields.io/badge/version-v3.57.0-blue) ![License](https://img.shields.io/badge/license-MIT-green) ![Platform](https://img.shields.io/badge/platform-Extension%20%2B%20Userscript-lightgrey) ![Firefox](https://img.shields.io/badge/firefox-109%2B-orange)
+![Version](https://img.shields.io/badge/version-v3.58.0-blue) ![License](https://img.shields.io/badge/license-MIT-green) ![Platform](https://img.shields.io/badge/platform-Extension%20%2B%20Userscript-lightgrey) ![Firefox](https://img.shields.io/badge/firefox-109%2B-orange)
 
 <p align="center">
   <a href="https://ko-fi.com/X8K126YVER">
@@ -166,7 +166,7 @@ Live chat got the things every other chat platform already has, and rants became
 - **Proven Firefox MV2 runtime**. a repeatable Firefox temporary-addon smoke covers content injection, storage, deletion, response messaging, and bundled media assets. Shield UI now distinguishes Chromium DNR, Firefox `webRequest`, and manager-dependent userscripts.
 
 - **One shared feature core**. Chrome MV3, Firefox MV2, Tampermonkey, and Violentmonkey now execute the same canonical page-feature code. A build-time guard rejects stale userscripts, version drift, missing settings/modules, direct `chrome.*` use, and remote code loading.
-- **Current Rumble support**. public `<rum-video-thumbnail>` cards, signed-in `<rum-card-video>` feeds, SPA watch-route changes, the floating related grid, visible action anchors, and every current embed HLS response shape are covered by committed fixtures and loaded-extension tests.
+- **Current Rumble support**. Public `<rum-video-thumbnail>` cards, signed-in `<rum-card-video>` feeds, SPA watch-route changes, the floating related grid, visible action anchors, and every current embed HLS response shape are covered by committed fixtures and loaded-extension tests.
 - **Safer downloads and imports**. downloads are cancellable and bounded before large media can exhaust tab memory; imported settings, snapshots, queue URLs, and compressed backups are size- and schema-validated.
 - **Complete local media bundle**. the userscript embeds the pinned mux.js and Mediabunny workers/libraries. It never fetches or evaluates executable code from a CDN.
 - **Request-level ad shield**. Chrome/Edge/Brave use a Rumble-scoped MV3 ruleset and Firefox uses a scoped MV2 blocking listener for the verified ad-delivery/measurement surface; Ad Nuker remains the DOM cleanup layer for sponsored cards, overlays, and reserved space.
@@ -327,6 +327,8 @@ Install instructions for every browser, plus the checksum and signature commands
 3. Visit `chrome://extensions` and enable **Developer mode**
 4. Click **Load unpacked** and select the extracted folder
 
+Each release also includes `RumbleX-chrome.crx`, signed with the project's local self-host key. It is a secondary package for managed or policy-enabled browsers. Standard Chrome, Edge and Brave installs outside their stores can reject direct CRX installation, so the ZIP and **Load unpacked** remain the dependable path.
+
 No minimum Chrome version is declared beyond what MV3 itself requires. Chrome 148 added a `browser` namespace alongside `chrome`, which would let the Firefox compatibility shim go away, but only by refusing to run on anything older. RumbleX detects whichever namespace the browser offers instead, so it works on Chrome 148, on Chrome well below it, and on Firefox, and the page-feature core touches neither namespace directly.
 
 ### Firefox (109+)
@@ -372,7 +374,7 @@ The extension builds are not affected by any of this. They have no userscript ma
 
 ### Verifying a download
 
-Every release ships `SHA256SUMS.txt` covering the Chrome package, the unsigned Firefox AMO submission, its source archive, and both userscripts. Check what you downloaded against it:
+Every release ships `SHA256SUMS.txt` covering the Chrome ZIP and signed CRX3, the unsigned Firefox AMO submission, its source archive, and both userscripts. Check what you downloaded against it:
 
 ```bash
 sha256sum -c SHA256SUMS.txt --ignore-missing
@@ -387,7 +389,7 @@ ssh-keygen -Y verify -f allowed_signers -I release@rumblex -n file \
 
 A `Good "file" signature` result means the checksums came from the key published in this repository. If either check fails, do not install the files. The only official sources are this repository's Releases page and the raw userscript URLs above; copies elsewhere are not ours.
 
-v3.57.0 is unsigned because the project does not yet have a published release signing identity. Its release page states that directly; use `SHA256SUMS.txt` to verify download integrity.
+v3.58.0 is unsigned because the project does not yet have a published release signing identity. Its release page states that directly; use `SHA256SUMS.txt` to verify download integrity.
 
 ### Request-shield support matrix
 
@@ -500,7 +502,7 @@ npm run release:local
 
 The release command removes known old package outputs, runs `npm run verify`, rebuilds the final files from a clean package state, and checks the archive bytes again. A failed guard stops before packaging. Requires `zip`; on Windows without `zip`, the build uses the Windows-bundled bsdtar so ZIP entries keep browser-safe forward-slash paths.
 
-The selector harness uses checked-in, synthetic desktop captures. Private MHTML captures in `Sample Pages/` are optional local evidence and never enter release packages: `test_selectors.py` reports their absence and carries on. Live-site checks remain opt-in because network and account state are not deterministic release inputs.
+The selector tests use checked-in, synthetic desktop captures. Private MHTML captures in `Sample Pages/` are optional local evidence and never enter release packages: `test_selectors.py` reports their absence and carries on. Live-site checks remain opt-in because network and account state are not deterministic release inputs.
 
 Five specs need a page rich enough for every injected surface to mount, so they use `tests/fixtures/platform/offline-watch.html`, a reduced capture that is committed. `npm run verify` therefore runs on a clean clone with nothing but `npm ci` and `npm run test:e2e:install`.
 
@@ -521,6 +523,8 @@ RUMBLEX_SIGNING_KEY=~/.ssh/rumblex_release npm run release:local
 A signature that does not verify against the published key fails the build rather than shipping. Builds without the variable set are unsigned and say so. Unsigned public releases must state that on the release page.
 
 Each build produces `RumbleX-firefox-amo-unsigned.zip` as the unsigned AMO submission and `RumbleX-source.zip` as the source bundle AMO review asks for, since the package ships two minified libraries. It never renames the unsigned ZIP to `.xpi`. Run `npm run build-for-amo` from the repository root to reproduce the Firefox submission bytes, then run `npm run test:firefox-artifacts` to verify the artifact boundary. If `RumbleX-firefox.xpi` exists, that check requires a complete Mozilla JAR or COSE signature entry set.
+
+The Chromium build also creates `RumbleX-chrome.crx` from the exact files in `RumbleX-chrome.zip`. It reuses the gitignored `RumbleX-selfhost.pem` key, creating it on the first local build. The package guard verifies the embedded ID and RSA-SHA256 proof, rejects a changed signed payload, then compares every CRX3 file with the ZIP before release.
 
 Provenance for the vendored libraries is recorded in `extension/lib/VENDOR.json`: package, version, npm tarball URL, SHA-256, and the command that reproduces the exact bytes. `npm run test:vendor-manifest` checks that record against the files on disk and against the hashes pinned in `build.sh`, so the three cannot drift apart.
 

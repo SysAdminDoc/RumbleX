@@ -45,10 +45,26 @@ test.describe('desktop settings visual capture', () => {
         await options.screenshot({ path: path.join(outputDir, `options-editor-ad-blocking-${DESKTOP_SUFFIX}.png`), fullPage: false });
 
         const popup = await context.newPage();
-        await popup.setViewportSize({ width: 440, height: 820 });
+        await popup.setViewportSize({ width: 440, height: 600 });
         await popup.goto(`chrome-extension://${extensionId}/pages/popup.html`);
         await popup.waitForTimeout(350);
-        await popup.screenshot({ path: path.join(outputDir, 'popup-440x820.png'), fullPage: false });
+        await expect(popup.locator('.footer')).toBeVisible();
+        const popupLayout = await popup.evaluate(() => {
+            const featureList = document.querySelector('.features').getBoundingClientRect();
+            const footer = document.querySelector('.footer').getBoundingClientRect();
+            return {
+                viewportHeight: innerHeight,
+                featureListHeight: featureList.height,
+                featureListScrolls: document.querySelector('.features').scrollHeight > document.querySelector('.features').clientHeight,
+                footerTop: footer.top,
+                footerBottom: footer.bottom,
+            };
+        });
+        expect(popupLayout.featureListHeight).toBeGreaterThan(100);
+        expect(popupLayout.featureListScrolls).toBe(true);
+        expect(popupLayout.footerTop).toBeGreaterThan(0);
+        expect(popupLayout.footerBottom).toBeLessThanOrEqual(popupLayout.viewportHeight);
+        await popup.screenshot({ path: path.join(outputDir, 'popup-440x600.png'), fullPage: false });
 
         const injected = await context.newPage();
         await injected.setViewportSize(DESKTOP_VIEWPORT);

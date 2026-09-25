@@ -36,6 +36,7 @@ MEDIABUNNY_VERSION="1.55.7"
 MEDIABUNNY_JS_SHA256="0f4b0b9485dfafa0c1c534df896eaa12d1bb523a42d18d9e3bc83004a684d34c"
 MEDIABUNNY_LICENSE_SHA256="3f3d9e0024b1921b067d6f7f88deb4a60cbe7a78e76c64e3f1d7fc3b779b9d04"
 CHROME_ZIP="../RumbleX-chrome.zip"
+CHROME_CRX="../RumbleX-chrome.crx"
 FIREFOX_UNSIGNED_ZIP="../RumbleX-firefox-amo-unsigned.zip"
 LEGACY_FIREFOX_ZIP="../RumbleX-firefox.zip"
 USERSCRIPT="../RumbleX.user.js"
@@ -172,7 +173,7 @@ pack_extension() {
 write_release_checksums() {
     local pkg
     rm -f "$CHECKSUMS_FILE"
-    for pkg in "$CHROME_ZIP" "$FIREFOX_UNSIGNED_ZIP" "$SOURCE_BUNDLE" "$USERSCRIPT" "$USERSCRIPT_LITE"; do
+    for pkg in "$CHROME_ZIP" "$CHROME_CRX" "$FIREFOX_UNSIGNED_ZIP" "$SOURCE_BUNDLE" "$USERSCRIPT" "$USERSCRIPT_LITE"; do
         if [ ! -f "$pkg" ]; then
             echo "[!] Missing package for checksum: $pkg"
             return 1
@@ -320,6 +321,10 @@ rm -f "$CHROME_ZIP"
 pack_extension "$CHROME_ZIP" "manifest.json"
 echo "    Created RumbleX-chrome.zip"
 
+echo "[*] Building signed Chrome CRX3 package..."
+rm -f "$CHROME_CRX"
+node ../scripts/build-chrome-crx.js
+
 # Build the byte-reproducible AMO submission. An .xpi is deliberately not
 # created here: Mozilla adds its signature and returns the installable XPI.
 echo "[*] Building unsigned Firefox AMO submission..."
@@ -338,6 +343,7 @@ node ../scripts/build-update-manifest.js --check
 echo ""
 echo "=== Build Complete ==="
 echo "Chrome: RumbleX-chrome.zip (load unpacked from extension/ or install zip)"
+echo "Chrome CRX3: RumbleX-chrome.crx (secondary package; direct install depends on browser policy)"
 echo "Firefox: RumbleX-firefox-amo-unsigned.zip (AMO submission or temporary testing only)"
 echo "Firefox installable XPI: not emitted until Mozilla signs the submission"
 echo "Userscript: RumbleX.user.js (Tampermonkey / Violentmonkey)"

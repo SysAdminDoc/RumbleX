@@ -192,15 +192,45 @@ test('signed-in feed card uses the shared card adapter', async ({ context, servi
                 target: { tabId: id },
                 world: 'ISOLATED',
                 func: () => {
-                    if (typeof VideoCards === 'undefined') return { ready: false };
+                    if (typeof VideoCards === 'undefined' || typeof Settings === 'undefined'
+                        || !Settings._ready || typeof RxActivity === 'undefined') {
+                        return { ready: false };
+                    }
                     const card = VideoCards.all()[0];
+                    if (!card) return { ready: false };
+                    const overlayHost = VideoCards.overlayHost(card);
+                    RxActivity.setItem('rx_watch_progress', JSON.stringify({
+                        vfixture601: { t: 30, d: 100, ts: Date.now() },
+                    }));
+                    WatchProgress._addProgressBars();
+                    PlaylistQuickSave._addButtons();
+
+                    Settings._cache.fullTitles = true;
+                    FullTitles.destroy();
+                    FullTitles.init();
+                    Settings._cache.titleFont = true;
+                    TitleFont.destroy();
+                    TitleFont.init();
+                    Settings._cache.hideThumbnailsFeeds = true;
+                    ThumbnailHider.destroy();
+                    ThumbnailHider.init();
+
+                    const heading = card.querySelector('rum-text[role="heading"]');
+                    const image = card.querySelector('img');
                     return {
-                        ready: !!card,
+                        ready: true,
                         count: VideoCards.all().length,
                         tag: card?.tagName || null,
                         title: card ? VideoCards.title(card) : '',
                         channel: card ? VideoCards.channel(card) : '',
                         id: card ? VideoCards.videoId(card) : null,
+                        overlayTag: overlayHost?.tagName || null,
+                        progressParent: card.querySelector('.rx-progress-bar')?.parentElement?.tagName || null,
+                        quickSaveParent: card.querySelector('.rx-quick-save')?.parentElement?.tagName || null,
+                        titleDisplay: getComputedStyle(heading).display,
+                        titleFontWeight: getComputedStyle(heading).fontWeight,
+                        thumbnailVisibility: getComputedStyle(image).visibility,
+                        normalizerSupportsCard: TitleNormalizer._TITLE_SELECTOR.includes('rum-card-video'),
                     };
                 },
             });
@@ -216,6 +246,13 @@ test('signed-in feed card uses the shared card adapter', async ({ context, servi
         title: 'Fixture Feed Video',
         channel: 'Fixture Feed Creator',
         id: 'vfixture601',
+        overlayTag: 'RUM-VIDEO-POSTER',
+        progressParent: 'RUM-VIDEO-POSTER',
+        quickSaveParent: 'RUM-VIDEO-POSTER',
+        titleDisplay: 'block',
+        titleFontWeight: '500',
+        thumbnailVisibility: 'hidden',
+        normalizerSupportsCard: true,
     });
 });
 

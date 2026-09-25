@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         RumbleX Lite
 // @namespace    https://github.com/SysAdminDoc/RumbleX
-// @version      3.57.0
+// @version      3.58.0
 // @description  Rumble enhancement suite (Lite). The same shared feature core, without bundled transmuxers. Downloads save the raw stream; MP4 remux needs the full build or the extension.
 // @author       SysAdminDoc
 // @match        https://rumble.com/*
@@ -23,7 +23,7 @@
 // @updateURL    https://github.com/SysAdminDoc/RumbleX/raw/main/RumbleX.lite.user.js
 // ==/UserScript==
 
-// Generated from the shared extension core files. Shared runtime SHA-256: a34f53b90f36e894ac7a0a32c009267eb4b24b1d04e1f44ab4d5d1c0482688f0
+// Generated from the shared extension core files. Shared runtime SHA-256: 5e3084e7c73e3cc91ae3aa2a45702265f4d97ba739830c4fa6d4b89bc309670c
 // RumbleX shared settings schema. This file is the canonical source for
 // defaults and trust-boundary normalization across content, options, popup,
 // background profile/Gist restores, and the generated userscript.
@@ -870,7 +870,7 @@
 'use strict';
 
 (() => {
-    const VERSION = "3.57.0";
+    const VERSION = "3.58.0";
     const ASSETS = Object.freeze({});
     const MESSAGES = Object.freeze({
   "extName": "RumbleX",
@@ -2028,16 +2028,16 @@ const Selectors = {
         'search.form':        { stable: 'form[data-js="search_form"]', fallback: '.header-search' },
         'search.input':       { stable: '[data-js="search_input"]', fallback: '.header-search-field' },
         'search.autocomplete':{ stable: '[data-js="autocomplete_results_container"]', fallback: '[hx-post="/search/htmx/get-autocomplete-results"]' },
-        'feed.card':          { stable: 'rum-video-thumbnail[role="listitem"], [role="listitem"][data-video-id], article.video-item', fallback: '.videostream.thumbnail__grid--item' },
+        'feed.card':          { stable: 'rum-video-thumbnail[role="listitem"], rum-card-video[role="listitem"], [role="listitem"][data-video-id], article.video-item', fallback: '.videostream.thumbnail__grid--item' },
         'feed.cardTitle':     { stable: '[video-title], rum-text[role="heading"], .thumbnail__title, .video-item--title', fallback: '.thumbnail__title.line-clamp-2' },
-        'feed.author':        { stable: 'rum-video-thumbnail[name], a[rel="author"].channel__link, article.video-item a[rel="author"]', fallback: '.channel__link' },
+        'feed.author':        { stable: 'rum-video-thumbnail[name], rum-card-video a[href*="/c/"], rum-card-video a[href*="/user/"], a[rel="author"].channel__link, article.video-item a[rel="author"]', fallback: '.channel__link' },
         'watch.media':        { stable: '[data-js="media_container"]', fallback: '.media-page' },
         'watch.player':       { stable: '#videoPlayer, video', fallback: '.videoPlayer-Rumble-cls' },
         'watch.title':        { stable: '.video-header-container__title', fallback: '[class*="video-header"] [class*="title"]' },
         'watch.share':        { stable: '[data-js="media_engage_share"]', fallback: '[data-js="video_action_sub_menu_button"], .round-button.media-by-actions-button' },
         'watch.description':  { stable: '[data-js="media_description_section"], .media-description-section', fallback: '.container.content.media-description' },
-        'watch.related':      { stable: '.media-page-related-media-desktop-sidebar', fallback: '.mediaList-list' },
-        'watch.relatedCard':  { stable: '.media-page-related-media-desktop-sidebar rum-video-thumbnail[role="listitem"]', fallback: '.media-page-related-media-desktop-sidebar .mediaList-item' },
+        'watch.related':      { stable: '.media-page-related-media-desktop-sidebar, .media-page-related-media-desktop-floating', fallback: '.mediaList-list' },
+        'watch.relatedCard':  { stable: '.media-page-related-media-desktop-sidebar rum-video-thumbnail[role="listitem"], .media-page-related-media-desktop-sidebar rum-card-video[role="listitem"], .media-page-related-media-desktop-floating rum-video-thumbnail[role="listitem"], .media-page-related-media-desktop-floating rum-card-video[role="listitem"]', fallback: '.media-page-related-media-desktop-sidebar .mediaList-item, .media-page-related-media-desktop-floating .mediaList-item' },
         'comments.root':      { stable: '[data-js="media_page_comments_container"], #video-comments', fallback: '.media-page-comments-container' },
         'comments.item':      { stable: 'li.comment-item[data-comment-id]', fallback: '.comment-item' },
         'comments.text':      { stable: '.comment-text', fallback: '[class*="comment"] [class*="text"]' },
@@ -2223,7 +2223,12 @@ const Selectors = {
             // Related cards are required only when the sidebar already shows
             // video-link evidence; an empty/disabled related rail is valid.
             try {
-                if (scope.querySelector('.media-page-related-media-desktop-sidebar a[href^="/v"], .media-page-related-media-desktop-sidebar a[href*="rumble.com/v"]')) {
+                if (scope.querySelector([
+                    '.media-page-related-media-desktop-sidebar a[href^="/v"]',
+                    '.media-page-related-media-desktop-sidebar a[href*="rumble.com/v"]',
+                    '.media-page-related-media-desktop-floating a[href^="/v"]',
+                    '.media-page-related-media-desktop-floating a[href*="rumble.com/v"]',
+                ].join(', '))) {
                     add('watch.relatedCard');
                 }
             } catch {}
@@ -2322,18 +2327,18 @@ const Selectors = {
 };
 
 
-
-
 // RumbleX shared video-card adapter.
 'use strict';
 
 // ── Video Card + Active Media Adapters (v3.36.0) ──
 // Rumble currently mixes legacy `.videostream` nodes with the newer
-// `<rum-video-thumbnail>` custom element. Consumers use this adapter so a
-// future card migration is repaired in one place instead of per feature.
+// `<rum-video-thumbnail>` and `<rum-card-video>` custom elements. Consumers
+// use this adapter so a future card migration is repaired in one place instead
+// of per feature.
 const VideoCards = {
     selector: [
         'rum-video-thumbnail[role="listitem"]',
+        'rum-card-video[role="listitem"]',
         '[role="listitem"][data-video-id]',
         '.videostream',
         'article.video-item',
@@ -2344,7 +2349,11 @@ const VideoCards = {
     related(root = document) {
         return qsa(
             '.media-page-related-media-desktop-sidebar rum-video-thumbnail[role="listitem"], ' +
-            '.media-page-related-media-desktop-sidebar .mediaList-item',
+            '.media-page-related-media-desktop-sidebar rum-card-video[role="listitem"], ' +
+            '.media-page-related-media-desktop-sidebar .mediaList-item, ' +
+            '.media-page-related-media-desktop-floating rum-video-thumbnail[role="listitem"], ' +
+            '.media-page-related-media-desktop-floating rum-card-video[role="listitem"], ' +
+            '.media-page-related-media-desktop-floating .mediaList-item',
             root
         );
     },
@@ -2400,9 +2409,27 @@ const VideoCards = {
     thumbnail(card) {
         return card.querySelector('.rum-video-thumbnail__image, .videostream__image, .thumbnail__image, .videostream__thumbnail, .video-item--img-wrapper, [class*="thumbnail"]');
     },
+    overlayHost(card) {
+        const thumbnail = this.thumbnail(card);
+        if (!thumbnail) return null;
+        if (!thumbnail.matches?.('img, picture, source')) return thumbnail;
+
+        // Current signed-in cards put the thumbnail class directly on <img>.
+        // Replaced elements cannot render injected children, and a button must
+        // not be nested inside the surrounding link, so climb to the visual
+        // poster wrapper before adding progress or quick-save controls.
+        return thumbnail.closest([
+            'rum-video-poster',
+            '.thumbnail__thumb',
+            '.videostream__thumbnail',
+            '.videostream__image',
+            '.thumbnail__image-container',
+            '.video-item--img-wrapper',
+        ].join(', '))
+            || (thumbnail.parentElement?.matches('a') ? thumbnail.parentElement.parentElement : thumbnail.parentElement)
+            || card;
+    },
 };
-
-
 
 
 // RumbleX shared media metadata, HLS parsing, active-media, and probe helpers.
@@ -2781,7 +2808,7 @@ const MediaProbeCache = {
 
 
 
-// RumbleX v3.57.0 - Shared Content Core
+// RumbleX v3.58.0 - Shared Content Core
 // Rumble enhancement suite - Chrome/Firefox extension
 'use strict';
 
@@ -2791,7 +2818,7 @@ const MediaProbeCache = {
 // DOM feature ship from one canonical source.
 const RXPlatform = globalThis.RumbleXPlatform;
 if (!RXPlatform) throw new Error('RumbleX platform adapter is missing');
-const VERSION = RXPlatform.version || '3.57.0';
+const VERSION = RXPlatform.version || '3.58.0';
 /**
  * In-page translation lookup.
  *
@@ -3803,7 +3830,8 @@ const FeedCleanup = {
             width: 100% !important;
             gap: 12px !important;
         }
-        .homepage-content--inner rum-video-thumbnail[role="listitem"] {
+        .homepage-content--inner rum-video-thumbnail[role="listitem"],
+        .homepage-content--inner rum-card-video[role="listitem"] {
             min-width: min(320px, 28vw);
         }
         .thumbnail__grid { gap: 12px !important; }
@@ -3822,7 +3850,8 @@ const FeedCleanup = {
         @media (max-width: 600px) {
             @supports (display:grid) { .thumbnail__grid { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; } }
             .constrained { padding-left: .75rem !important; padding-right: .75rem !important; }
-            .homepage-content--inner rum-video-thumbnail[role="listitem"] { min-width: min(78vw, 300px); }
+            .homepage-content--inner rum-video-thumbnail[role="listitem"],
+            .homepage-content--inner rum-card-video[role="listitem"] { min-width: min(78vw, 300px); }
         }
         .videostream__footer { padding: 6px 4px 8px !important; }
         .homepage-section .constrained { max-width: 100% !important; }
@@ -4244,6 +4273,10 @@ const DarkEnhance = {
         html.rumblex-active .user-notifications {
             background: var(--rx-base) !important;
             border-color: var(--rx-surface0) !important;
+            color: var(--rx-text) !important;
+        }
+        html.rumblex-active .user-notifications * {
+            color: var(--rx-text) !important;
         }
         html.rumblex-active .user-notifications--header {
             border-color: var(--rx-surface0) !important;
@@ -4458,6 +4491,7 @@ const DarkEnhance = {
 
         /* Video cards */
         html.rumblex-active rum-video-thumbnail[role="listitem"],
+        html.rumblex-active rum-card-video[role="listitem"],
         html.rumblex-active .videostream {
             display: block !important;
             box-sizing: border-box !important;
@@ -4468,6 +4502,7 @@ const DarkEnhance = {
             transition: transform 180ms ease, background-color 180ms ease, box-shadow 180ms ease !important;
         }
         html.rumblex-active rum-video-thumbnail[role="listitem"]:hover,
+        html.rumblex-active rum-card-video[role="listitem"]:hover,
         html.rumblex-active .videostream:hover {
             background: var(--rx-site-raised) !important;
             box-shadow: var(--rx-site-shadow-soft) !important;
@@ -4476,6 +4511,9 @@ const DarkEnhance = {
         html.rumblex-active rum-video-thumbnail[role="listitem"] img.rum-video-thumbnail__image,
         html.rumblex-active rum-video-thumbnail[role="listitem"] .rum-video-thumbnail__image,
         html.rumblex-active rum-video-thumbnail[role="listitem"] .rum-video-thumbnail__image img,
+        html.rumblex-active rum-card-video[role="listitem"] img.rum-video-thumbnail__image,
+        html.rumblex-active rum-card-video[role="listitem"] .rum-video-thumbnail__image,
+        html.rumblex-active rum-card-video[role="listitem"] .rum-video-thumbnail__image img,
         html.rumblex-active .videostream img,
         html.rumblex-active .thumbnail__image {
             border-radius: var(--rx-site-radius-lg) !important;
@@ -4483,6 +4521,9 @@ const DarkEnhance = {
         html.rumblex-active rum-video-thumbnail[role="listitem"] h3,
         html.rumblex-active rum-video-thumbnail[role="listitem"] rum-text[role="heading"],
         html.rumblex-active rum-video-thumbnail[role="listitem"] [role="heading"],
+        html.rumblex-active rum-card-video[role="listitem"] h3,
+        html.rumblex-active rum-card-video[role="listitem"] rum-text[role="heading"],
+        html.rumblex-active rum-card-video[role="listitem"] [role="heading"],
         html.rumblex-active .thumbnail__title,
         html.rumblex-active .videostream__link {
             color: var(--rx-text) !important;
@@ -4492,7 +4533,10 @@ const DarkEnhance = {
         }
         html.rumblex-active rum-video-thumbnail[role="listitem"] a:not(.btn),
         html.rumblex-active rum-video-thumbnail[role="listitem"] .channel__link,
-        html.rumblex-active rum-video-thumbnail[role="listitem"] [class*="channel"] {
+        html.rumblex-active rum-video-thumbnail[role="listitem"] [class*="channel"],
+        html.rumblex-active rum-card-video[role="listitem"] a:not(.btn),
+        html.rumblex-active rum-card-video[role="listitem"] .channel__link,
+        html.rumblex-active rum-card-video[role="listitem"] [class*="channel"] {
             color: var(--rx-subtext) !important;
         }
         html.rumblex-active rum-video-thumbnail-footer {
@@ -4511,7 +4555,13 @@ const DarkEnhance = {
             color: var(--rx-text) !important;
             border-color: var(--rx-site-border) !important;
         }
-        html.rumblex-active rum-video-thumbnail[role="listitem"]:focus-within {
+        html.rumblex-active .media-page-related-media-desktop-floating {
+            background: var(--rx-site-panel) !important;
+            color: var(--rx-text) !important;
+            border-color: var(--rx-site-border) !important;
+        }
+        html.rumblex-active rum-video-thumbnail[role="listitem"]:focus-within,
+        html.rumblex-active rum-card-video[role="listitem"]:focus-within {
             outline: 2px solid var(--rx-accent) !important;
             outline-offset: 3px !important;
         }
@@ -4636,11 +4686,18 @@ const DarkEnhance = {
 
         /* Chat and comments */
         html.rumblex-active .media-page-chat-aside-chat,
+        html.rumblex-active .media-page-chat-aside-chat-wrapper-fixed,
+        html.rumblex-active .media-page-chat-aside-chat-wrapper-fixed > .chat,
+        html.rumblex-active .chat--container,
+        html.rumblex-active .chat--height,
+        html.rumblex-active .chat-history,
+        html.rumblex-active #chat-history-list,
         html.rumblex-active .chat--header,
         html.rumblex-active .chat--input,
         html.rumblex-active .chat-form-overflow-wrapper {
-            background: var(--rx-site-panel) !important;
-            border-color: var(--rx-site-border) !important;
+            background: var(--rx-theater-panel, var(--rx-site-panel)) !important;
+            border-color: var(--rx-theater-border, var(--rx-site-border)) !important;
+            color: var(--rx-theater-text, var(--rx-text)) !important;
         }
         html.rumblex-active .chat--input,
         html.rumblex-active .comments-create-textarea,
@@ -4711,6 +4768,7 @@ const DarkEnhance = {
             html.rumblex-active .main-menu-item-channel { margin-inline: 4px !important; }
             html.rumblex-active .rum-featured-pills-row__pill { min-height: 44px !important; }
             html.rumblex-active rum-video-thumbnail[role="listitem"]:hover,
+            html.rumblex-active rum-card-video[role="listitem"]:hover,
             html.rumblex-active .videostream:hover,
             html.rumblex-active .video-listing-entry .video-item:hover { transform: none; }
         }
@@ -10011,7 +10069,7 @@ const WatchProgress = {
             const progress = store[id];
             if (!progress || progress.t < this.RESUME_THRESHOLD) continue;
 
-            const thumb = VideoCards.thumbnail(entry);
+            const thumb = VideoCards.overlayHost(entry);
             if (!thumb || thumb.querySelector('.rx-progress-bar')) continue;
 
             const pct = Math.min(100, (progress.t / progress.d) * 100);
@@ -14151,7 +14209,7 @@ const RelatedFilter = {
         if (!Page.isWatch()) return;
         this._styleEl = injectStyle(this._css, 'rx-related-filter-css');
 
-        waitForFeature(this, '.mediaList-list, .media-page-related-media-desktop-sidebar').then(sidebar => {
+        waitForFeature(this, '.mediaList-list, .media-page-related-media-desktop-sidebar, .media-page-related-media-desktop-floating').then(sidebar => {
             const bar = document.createElement('div');
             bar.className = 'rx-related-filter';
             bar.setAttribute('role', 'region');
@@ -15113,6 +15171,10 @@ const NotifEnhance = {
             box-shadow: 0 12px 40px rgba(0,0,0,0.5) !important;
             max-height: 500px !important;
             overflow-y: auto !important;
+            color: var(--rx-text, #cdd6f4) !important;
+        }
+        .user-notifications * {
+            color: var(--rx-text, #cdd6f4) !important;
         }
         .user-notifications--header {
             background: var(--rx-mantle, #181825) !important;
@@ -15213,6 +15275,8 @@ const PlaylistQuickSave = {
         .thumbnail__thumb:hover .rx-quick-save,
         .videostream:hover .rx-quick-save,
         .rum-video-thumbnail__image:hover .rx-quick-save,
+        rum-card-video:hover .rx-quick-save,
+        rum-video-poster:hover .rx-quick-save,
         .video-item--img-wrapper:hover .rx-quick-save { opacity: 1; }
         .rx-quick-save:hover { background: rgba(17,17,27,0.95); border-color: var(--rx-accent, #89b4fa); }
         .rx-quick-save.saved { border-color: var(--rx-green, #a6e3a1); color: var(--rx-green, #a6e3a1); }
@@ -15246,7 +15310,7 @@ const PlaylistQuickSave = {
 
     _addButtons() {
         for (const card of VideoCards.all()) {
-            const thumb = VideoCards.thumbnail(card);
+            const thumb = VideoCards.overlayHost(card);
             if (!thumb) continue;
             if (thumb.querySelector('.rx-quick-save')) continue;
 
@@ -16613,6 +16677,7 @@ const FullTitles = {
         html.rumblex-active .media-item__title,
         html.rumblex-active .video-item--title,
         html.rumblex-active rum-video-thumbnail rum-text[role="heading"],
+        html.rumblex-active rum-card-video[role="listitem"] rum-text[role="heading"],
         html.rumblex-active h3.thumbnail__title {
             -webkit-line-clamp: unset !important;
             line-clamp: unset !important;
@@ -16779,6 +16844,7 @@ const TitleNormalizer = {
 
     _TITLE_SELECTOR: [
         'rum-video-thumbnail rum-text[role="heading"]',
+        'rum-card-video rum-text[role="heading"]',
         '.thumbnail__title',
         '.videostream__title',
         '.mediaList-heading',
@@ -16954,6 +17020,7 @@ const TitleFont = {
         html.rumblex-active .mediaList-heading,
         html.rumblex-active .video-item--title,
         html.rumblex-active rum-video-thumbnail rum-text[role="heading"],
+        html.rumblex-active rum-card-video[role="listitem"] rum-text[role="heading"],
         html.rumblex-active .video-header-container__title,
         html.rumblex-active h1.video-header-container__title {
             font-weight: 500 !important;
@@ -20158,6 +20225,7 @@ const BatchDownload = {
         .videostream:hover .rx-batch-chk,
         article.video-item:hover .rx-batch-chk,
         rum-video-thumbnail[role="listitem"]:hover .rx-batch-chk,
+        rum-card-video[role="listitem"]:hover .rx-batch-chk,
         .rx-batch-chk:focus-visible,
         .rx-batch-mode .rx-batch-chk { opacity: 1; }
         .rx-batch-chk:focus-visible { outline: 2px solid var(--rx-accent, #89b4fa); outline-offset: 2px; }
@@ -21469,7 +21537,11 @@ const RealFramePreviews = {
             }
             if (signal.aborted || generation !== this._rxLifecycleGeneration) return;
             for (const waitingCard of waiters.get(key) || []) this._mount(waitingCard, blob);
-        }).catch(() => {}).finally(() => {
+        }).catch((error) => {
+            if (error?.name !== 'AbortError') {
+                RxErrorLog?.record?.(this.id, error, `frame preview ${key}`);
+            }
+        }).finally(() => {
             pending.delete(key);
             waiters.delete(key);
         });
@@ -21570,6 +21642,8 @@ const ThumbnailHider = {
                 html.rumblex-active img.video-item--img,
                 html.rumblex-active rum-video-thumbnail .rum-video-thumbnail__image,
                 html.rumblex-active rum-video-thumbnail img,
+                html.rumblex-active rum-card-video .rum-video-thumbnail__image,
+                html.rumblex-active rum-card-video img,
                 html.rumblex-active .media-item__thumb img,
                 html.rumblex-active picture.thumbnail__image-container > img,
                 html.rumblex-active .rx-real-frame-overlay,
@@ -21590,6 +21664,8 @@ const ThumbnailHider = {
                     html.rumblex-active .streams__container .thumbnail__thumb img,
                     html.rumblex-active .videostream__thumbnail img,
                     html.rumblex-active .homepage-content--inner rum-video-thumbnail img,
+                    html.rumblex-active .homepage-content--inner rum-card-video img,
+                    html.rumblex-active rum-card-video[role="listitem"] img,
                     html.rumblex-active .video-item--img-wrapper img,
                     html.rumblex-active img.video-item--img,
                     html.rumblex-active .homepage-content--inner .rx-real-frame-overlay,
@@ -21607,10 +21683,15 @@ const ThumbnailHider = {
             if (related) {
                 rules.push(`
                     html.rumblex-active .media-page-related-media-desktop-sidebar img,
+                    html.rumblex-active .media-page-related-media-desktop-floating img,
                     html.rumblex-active .mediaList-item img,
                     html.rumblex-active .mediaList-item picture,
                     html.rumblex-active .media-page-related-media-desktop-sidebar .rx-real-frame-overlay,
-                    html.rumblex-active .media-page-related-media-desktop-sidebar rum-video-thumbnail .rum-video-thumbnail__image {
+                    html.rumblex-active .media-page-related-media-desktop-floating .rx-real-frame-overlay,
+                    html.rumblex-active .media-page-related-media-desktop-sidebar rum-video-thumbnail .rum-video-thumbnail__image,
+                    html.rumblex-active .media-page-related-media-desktop-sidebar rum-card-video .rum-video-thumbnail__image,
+                    html.rumblex-active .media-page-related-media-desktop-floating rum-video-thumbnail .rum-video-thumbnail__image,
+                    html.rumblex-active .media-page-related-media-desktop-floating rum-card-video .rum-video-thumbnail__image {
                         visibility: hidden !important;
                         opacity: 0 !important;
                     }
@@ -21650,8 +21731,10 @@ const DenseMode = {
         html.rumblex-active body.rx-dense .mediaList-item { margin-bottom: 6px !important; }
         html.rumblex-active body.rx-dense .video-listing-entry { margin-bottom: 6px !important; }
         html.rumblex-active body.rx-dense .video-item--title { line-height: 1.25 !important; margin-top: 4px !important; }
-        html.rumblex-active body.rx-dense rum-video-thumbnail[role="listitem"] { margin-bottom: 6px !important; }
-        html.rumblex-active body.rx-dense rum-video-thumbnail rum-text[role="heading"] { line-height: 1.25 !important; }
+        html.rumblex-active body.rx-dense rum-video-thumbnail[role="listitem"],
+        html.rumblex-active body.rx-dense rum-card-video[role="listitem"] { margin-bottom: 6px !important; }
+        html.rumblex-active body.rx-dense rum-video-thumbnail rum-text[role="heading"],
+        html.rumblex-active body.rx-dense rum-card-video rum-text[role="heading"] { line-height: 1.25 !important; }
         html.rumblex-active body.rx-dense h1.video-header-container__title { margin: 4px 0 !important; }
     `,
     init() {

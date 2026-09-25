@@ -36,9 +36,13 @@ assert.deepEqual(releaseCalls, ['verify'], 'A failed verification must prevent t
 // absent unless it is told they are optional, which is every machine except
 // the maintainer's. Without the flag the mandatory gate cannot pass on a clone,
 // while the README says it can.
-const { pythonStep } = require('./local-workflow');
+const { pythonStep, RELEASE_ARTIFACTS } = require('./local-workflow');
 const selectorStep = pythonStep();
 assert.ok(selectorStep.args.includes('--allow-missing-fixtures'),
     'the selector-contracts step must tolerate a missing Sample Pages/, or npm run verify cannot pass on a clean clone');
+assert.ok(RELEASE_ARTIFACTS.includes('RumbleX-chrome.crx'),
+    'release cleanup must remove the current CRX before rebuilding it');
+assert.ok(RELEASE_ARTIFACTS.includes('RumbleX-v1.9.3.crx'),
+    'release cleanup must remove the obsolete legacy CRX');
 
 console.log('Release gate OK: a deliberately failing guard prevents verification and release packaging.');
