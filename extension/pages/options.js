@@ -66,6 +66,10 @@
     }
 
     function applyI18n(root = document) {
+        try {
+            const uiLanguage = chrome.i18n?.getUILanguage?.();
+            if (uiLanguage) document.documentElement.lang = uiLanguage;
+        } catch {}
         root.querySelectorAll('[data-i18n]').forEach((el) => {
             el.textContent = i18n(el.dataset.i18n, el.textContent);
         });
@@ -699,10 +703,9 @@
             'button:not([disabled]), [href], input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
         )).filter((el) => {
             if (!(el instanceof HTMLElement)) return false;
-            if (el.hidden) return false;
-            if (el.getAttribute('aria-hidden') === 'true') return false;
+            if (el.closest('[hidden], [aria-hidden="true"], [inert]')) return false;
             const style = window.getComputedStyle(el);
-            return style.display !== 'none' && style.visibility !== 'hidden';
+            return style.display !== 'none' && style.visibility !== 'hidden' && el.getClientRects().length > 0;
         });
     }
     function trapFocusWithin(root, event) {

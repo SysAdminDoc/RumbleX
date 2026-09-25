@@ -108,7 +108,7 @@ const BODY = `
   <button class="header-upload">Upload</button><button class="notification-bell">Notifications</button>
 </header>
 <nav id="main-menu" class="sidenav"><a href="/"><img alt="Rumble"></a></nav>
-<div class="theme-option-group"><a class="main-menu-item theme-option main-menu-item--active" data-theme-option="system"></a><a class="main-menu-item theme-option" data-theme-option="dark"></a></div>
+<div class="theme-option-group"><button class="main-menu-item theme-option is-selected" aria-pressed="true" data-theme-option="system"></button><button class="main-menu-item theme-option" aria-pressed="false" data-theme-option="dark"></button></div>
 <main class="nonconstrained media-page" data-js="media_container">
   <section class="main-and-sidebar"><div class="main-content">
     <h1 class="video-header-container__title">Feature Fixture Video</h1>

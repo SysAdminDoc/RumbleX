@@ -157,7 +157,7 @@ const INJECTED_SURFACES = [
     { id: 'watchHistory', selector: '.rx-history-overlay', label: 'Watch history' },
     { id: 'quickBookmark', selector: '.rx-bookmarks-overlay', label: 'Bookmarks' },
     { id: 'sponsorBlock', selector: '.rx-sb-panel', label: 'SponsorBlock segments' },
-    { id: 'autoplayScheduler', selector: '.rx-queue-panel', label: 'Autoplay queue' },
+    { id: 'autoplayScheduler', selector: '.rx-queue-panel', label: 'Autoplay Queue' },
     { id: 'transcripts', selector: '.rx-trans-panel', label: 'Transcript' },
     { id: 'liveDVR', selector: '.rx-dvr-panel', label: 'Live DVR controls' },
 ];

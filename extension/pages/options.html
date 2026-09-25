@@ -105,7 +105,7 @@
             color: var(--text-muted); font-size: 13px; line-height: 1.6;
         }
         .network-shield-status {
-            grid-column: 1 / -1; display: flex; align-items: center; gap: 12px;
+            grid-column: 1 / -1; display: flex; align-items: center; gap: 8px 12px; flex-wrap: wrap;
             min-height: 42px; margin-top: -2px; padding: 11px 14px 0;
             border-top: 1px solid rgba(255, 255, 255, 0.07); color: var(--text-muted);
             font-size: 12px; line-height: 1.45;
@@ -314,7 +314,12 @@
         .snapshot-list .snapshot-reason { color: var(--text-2, #a8b0bc); font-style: italic; }
         .snapshot-list button { font-size: 12px; padding: 4px 10px; min-height: 24px; }
         /* v3.9.0 — Channel notifier add-form inputs. */
-        .notifier-add { gap: 8px; align-items: stretch; flex-wrap: wrap; margin-top: 10px; }
+        .notifier-add { display: flex; gap: 8px; align-items: stretch; flex-wrap: wrap; margin-top: 10px; }
+        .notifier-field {
+            display: flex; flex: 1 1 220px; min-width: 0; flex-direction: column; gap: 5px;
+            color: var(--text-muted); font: 700 11px/1.3 inherit;
+        }
+        .notifier-field .notifier-input { width: 100%; }
         .notifier-input {
             flex: 1; min-width: 180px;
             min-height: 36px;
@@ -739,6 +744,8 @@
             .settings-modal-header { flex-wrap: wrap; }
             .settings-item-title { white-space: normal; }
             .settings-workspace-note { white-space: normal; }
+            .network-shield-status { align-items: flex-start; }
+            .network-shield-verified { width: 100%; margin-left: 21px; }
         }
         @media (prefers-reduced-motion: reduce) {
             *, *::before, *::after {
@@ -889,8 +896,8 @@
                     </summary>
                     <p class="data-section-copy">Polls each watched channel on a background alarm and fires an OS notification (and an optional Discord webhook POST) when the channel posts a new video or goes live. Enable <code>channelNotifierEnabled</code> in the Settings editor + add at least one channel below.</p>
                     <div class="button-row notifier-add">
-                        <input type="url" id="notifier-url-input" placeholder="https://rumble.com/c/SomeChannel" class="notifier-input">
-                        <input type="text" id="notifier-name-input" placeholder="Display name (optional)" class="notifier-input">
+                        <label class="notifier-field"><span>Channel URL</span><input type="url" id="notifier-url-input" placeholder="https://rumble.com/c/SomeChannel" class="notifier-input" autocomplete="url"></label>
+                        <label class="notifier-field"><span>Display name (optional)</span><input type="text" id="notifier-name-input" placeholder="Example channel" class="notifier-input" autocomplete="off"></label>
                         <button id="notifier-add-btn" type="button">Add channel</button>
                     </div>
                     <ul class="snapshot-list" id="notifier-list" aria-live="polite"></ul>
@@ -1009,13 +1016,13 @@
                     <p class="data-section-copy">Cross-device settings sync via a private GitHub gist you control. Your settings are encrypted client-side with AES-GCM-256 (PBKDF2-SHA256, 200k iterations) under a passphrase only you know. Neither the passphrase nor the cleartext settings ever leave your device. RumbleX has zero server.</p>
                     <p class="data-section-copy"><strong>Setup:</strong> create a GitHub personal access token with the <code>gist</code> scope at <a href="https://github.com/settings/tokens?type=beta" target="_blank" rel="noopener noreferrer">github.com/settings/tokens</a>, paste it below, then push once. The first push creates a new private gist and saves its ID automatically.</p>
                     <div class="notifier-add">
-                        <input type="password" id="gist-sync-token-input" placeholder="GitHub PAT (gist scope)" class="notifier-input" autocomplete="off">
+                        <label class="notifier-field"><span>GitHub personal access token</span><input type="password" id="gist-sync-token-input" placeholder="Token with gist scope" class="notifier-input" autocomplete="off"></label>
                     </div>
                     <div class="notifier-add">
-                        <input type="text" id="gist-sync-id-input" placeholder="Gist ID (set automatically on first push)" class="notifier-input" autocomplete="off">
+                        <label class="notifier-field"><span>Gist ID</span><input type="text" id="gist-sync-id-input" placeholder="Set automatically on first push" class="notifier-input" autocomplete="off"></label>
                     </div>
                     <div class="notifier-add">
-                        <input type="password" id="gist-sync-passphrase-input" placeholder="Passphrase (min 8 chars, never stored)" class="notifier-input" autocomplete="new-password">
+                        <label class="notifier-field"><span>Encryption passphrase</span><input type="password" id="gist-sync-passphrase-input" placeholder="At least 8 characters, never stored" class="notifier-input" autocomplete="new-password"></label>
                     </div>
                     <div class="button-row">
                         <button id="gist-sync-push-btn" type="button">Push to gist</button>
@@ -1060,7 +1067,7 @@
                     </summary>
                     <p class="data-section-copy">Named settings snapshots for work / casual / creator / lab configurations. Save a profile to capture current settings, switch to instantly load another profile (the current state is snapshotted to the backup history first so nothing is lost). 25 profile cap.</p>
                     <div class="button-row notifier-add">
-                        <input type="text" id="profile-name-input" placeholder="Profile name (e.g. Work)" class="notifier-input">
+                        <label class="notifier-field"><span>Profile name</span><input type="text" id="profile-name-input" placeholder="Example: Work" class="notifier-input" autocomplete="off"></label>
                         <button id="profile-save-btn" type="button">Save current settings as profile</button>
                     </div>
                     <ul class="snapshot-list" id="profile-list" aria-live="polite"></ul>

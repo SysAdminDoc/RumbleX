@@ -2528,5 +2528,65 @@
   "toastPageDensityChanged": {
     "message": "Seitendichte aktualisiert",
     "description": "In-page UI string (shared core)."
+  },
+  "close": {
+    "message": "Schließen",
+    "description": "In-page UI string (shared core)."
+  },
+  "saveToWatchLater": {
+    "message": "Für später speichern",
+    "description": "In-page UI string (shared core)."
+  },
+  "noMatchingFeatures": {
+    "message": "Keine passenden Funktionen",
+    "description": "In-page UI string (shared core)."
+  },
+  "nothingMatchedSearch": {
+    "message": "„{query}“ ergab keine Treffer. Versuche einen anderen Begriff.",
+    "description": "In-page UI string (shared core)."
+  },
+  "autoplayQueueEmpty": {
+    "message": "Die Warteschlange ist leer. Füge oben Video-URLs hinzu.",
+    "description": "In-page UI string (shared core)."
+  },
+  "remove": {
+    "message": "Entfernen",
+    "description": "In-page UI string (shared core)."
+  },
+  "removeFromAutoplayQueue": {
+    "message": "{title} aus der Warteschlange entfernen",
+    "description": "In-page UI string (shared core)."
+  },
+  "autoplayQueue": {
+    "message": "Autoplay-Warteschlange",
+    "description": "In-page UI string (shared core)."
+  },
+  "openAutoplayQueue": {
+    "message": "Autoplay-Warteschlange öffnen",
+    "description": "In-page UI string (shared core)."
+  },
+  "addCurrentVideoShort": {
+    "message": "+ aktuelles Video",
+    "description": "In-page UI string (shared core)."
+  },
+  "addCurrentVideo": {
+    "message": "Aktuelles Video hinzufügen",
+    "description": "In-page UI string (shared core)."
+  },
+  "rumbleVideoUrl": {
+    "message": "Rumble-Video-URL",
+    "description": "In-page UI string (shared core)."
+  },
+  "pasteRumbleUrl": {
+    "message": "Rumble-URL einfügen...",
+    "description": "In-page UI string (shared core)."
+  },
+  "add": {
+    "message": "Hinzufügen",
+    "description": "In-page UI string (shared core)."
+  },
+  "closeAutoplayQueue": {
+    "message": "Autoplay-Warteschlange schließen",
+    "description": "In-page UI string (shared core)."
   }
 }

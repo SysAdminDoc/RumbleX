@@ -4,6 +4,12 @@ All notable changes to RumbleX will be documented in this file.
 
 ## Unreleased
 
+### Changed
+
+- Injected surfaces now use the active palette for their translucent colors instead of baking Catppuccin RGB values into individual panels. The build guard also catches palette colors written as `rgb()` or `rgba()`.
+- The new search, queue, dialog, and Watch Later control text is localized across all six shipped languages. The Options document also declares the browser UI language.
+- Options integration fields now have persistent visible labels, and their row can wrap without overflowing a narrow side panel.
+
 ### Fixed
 
 - Activity migration now merges history, bookmarks, progress, and other JSON collections from both Rumble origins before removing legacy copies. Failed extension-storage writes stay queued and retry with backoff instead of disappearing after a reload.
@@ -11,6 +17,14 @@ All notable changes to RumbleX will be documented in this file.
 - Runtime message limits now measure UTF-8 bytes, settings saves report storage failures, and a started browser download is no longer reported as rejected only because recovery metadata could not be saved.
 - Archive discovery has a deadline, notifier checks are single-flight and time bounded, and abandoned archive work is requeued after a service-worker restart.
 - Concurrent media-probe cache callers now share one initial storage read, preventing one scan from erasing another scan's first cached result.
+- A document-start cleanup rule no longer remains active after boot and silently hides page toolbar or player controls for the rest of the session.
+- In-page settings search now covers every category, exposes a useful no-results state, and returns to the previously selected category when cleared.
+- Keyboard users can reveal Quick Save, chat and comment block actions, and mini-player controls without hovering. The settings editor focus trap now skips controls inside hidden ancestors.
+- The standalone downloader now behaves as a modal dialog with initial focus, Escape handling, background isolation, focus restoration, and announced progress updates.
+- The autoplay queue now has a labelled URL field, disclosure state, responsive narrow-screen layout, and localized control names. Its panel no longer clips at a 320 pixel viewport.
+- Narrow Theater layout keeps divider input within its documented 32 to 54 percent range. Home, End, and arrow input no longer make the panel jump to desktop geometry.
+- Mention suggestions expose combobox state and the active option. Chat profile cards now have dialog semantics, a close control, Escape handling, focus containment, and viewport clamping.
+- Site Theme Sync recognizes Rumble's current button navigation and `is-selected` state. Reduced-motion preference also disables scripted smooth scrolling in Comment Navigator.
 
 ## [3.60.1] - 2026-09-24
 

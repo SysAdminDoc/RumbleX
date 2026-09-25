@@ -41,6 +41,12 @@ const PALETTE = Object.freeze([...new Set(
 )]);
 assert.ok(PALETTE.length > 20, 'canonical theme registry exposes too few palette colours');
 const HEX = new RegExp(`#(${PALETTE.join('|')})\\b`, 'gi');
+const PALETTE_RGB = new Set(PALETTE.map((hex) => [
+    Number.parseInt(hex.slice(0, 2), 16),
+    Number.parseInt(hex.slice(2, 4), 16),
+    Number.parseInt(hex.slice(4, 6), 16),
+]).filter(([red, green, blue]) => red !== green || green !== blue).map((rgb) => rgb.join(',')));
+const RGB = /rgba?\(\s*(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(\d{1,3})(?:\s*,\s*(?:0|1|0?\.\d+))?\s*\)/gi;
 assert.match(source, /const THEMES = RXSettingsSchema\.THEMES;/,
     'content runtime no longer reads the canonical schema palette registry');
 
@@ -49,6 +55,13 @@ lines.forEach((line, index) => {
     const number = index + 1;
     for (const match of line.matchAll(HEX)) {
         // Allowed only as the fallback of an rx token: var(--rx-token, #hex).
+        const before = line.slice(0, match.index);
+        if (/var\(\s*--rx-[a-z0-9-]+\s*,\s*$/i.test(before)) continue;
+        offenders.push(`${number}: ${line.trim().slice(0, 120)}`);
+        break;
+    }
+    for (const match of line.matchAll(RGB)) {
+        if (!PALETTE_RGB.has([match[1], match[2], match[3]].join(','))) continue;
         const before = line.slice(0, match.index);
         if (/var\(\s*--rx-[a-z0-9-]+\s*,\s*$/i.test(before)) continue;
         offenders.push(`${number}: ${line.trim().slice(0, 120)}`);

@@ -1652,13 +1652,29 @@ test('ChatComposerAssist completes @mentions from the people who actually spoke'
         pendingFor('@a');
         ac._onInput();
         const openCount = ac._matches.length;
+        const ariaWhileOpen = {
+            role: input.getAttribute('role'),
+            autocomplete: input.getAttribute('aria-autocomplete'),
+            controls: input.getAttribute('aria-controls'),
+            expanded: input.getAttribute('aria-expanded'),
+            activeDescendant: input.getAttribute('aria-activedescendant'),
+            activeOption: ac._box.querySelector('[aria-selected="true"]')?.id || null,
+        };
         ac._onKeyDown({ key: 'ArrowDown', preventDefault() {} });
         const activeAfterArrow = ac._active;
         ac._onKeyDown({ key: 'Escape', preventDefault() {} });
         const hiddenAfterEscape = ac._box.hidden;
+        const ariaAfterEscape = {
+            expanded: input.getAttribute('aria-expanded'),
+            activeDescendant: input.getAttribute('aria-activedescendant'),
+        };
 
         ac.destroy();
         const boxGone = !document.querySelector('.rx-chat-ac');
+        const ariaAfterDestroy = {
+            role: input.getAttribute('role'),
+            controls: input.getAttribute('aria-controls'),
+        };
 
         return {
             hadInput,
@@ -1668,6 +1684,7 @@ test('ChatComposerAssist completes @mentions from the people who actually spoke'
             afterSpaceTerm: afterSpace ? afterSpace.term : null,
             forAl, forFan, accepted, inputEvents, hiddenAfterAccept,
             openCount, activeAfterArrow, hiddenAfterEscape, boxGone,
+            ariaWhileOpen, ariaAfterEscape, ariaAfterDestroy,
         };
     });
 
@@ -1692,6 +1709,17 @@ test('ChatComposerAssist completes @mentions from the people who actually spoke'
     expect(result.openCount).toBeGreaterThan(1);
     expect(result.activeAfterArrow).toBe(1);
     expect(result.hiddenAfterEscape).toBe(true);
+    expect(result.ariaWhileOpen).toEqual({
+        role: 'combobox',
+        autocomplete: 'list',
+        controls: 'rx-chat-mention-list',
+        expanded: 'true',
+        activeDescendant: result.ariaWhileOpen.activeOption,
+        activeOption: result.ariaWhileOpen.activeOption,
+    });
+    expect(result.ariaWhileOpen.activeOption).toBeTruthy();
+    expect(result.ariaAfterEscape).toEqual({ expanded: 'false', activeDescendant: null });
+    expect(result.ariaAfterDestroy).toEqual({ role: null, controls: null });
     expect(result.boxGone).toBe(true);
 });
 
@@ -1871,6 +1899,16 @@ test('ChatUserCards logs per person, renames locally, and reverts everything on 
         const cardName = cards._card.querySelector('.rx-chat-card__name').textContent;
         const cardMeta = cards._card.querySelector('.rx-chat-card__meta').textContent;
         const logLines = [...cards._card.querySelectorAll('.rx-chat-card__log div')].map((d) => d.textContent);
+        const dialogA11y = {
+            role: cards._card.getAttribute('role'),
+            labelledBy: cards._card.getAttribute('aria-labelledby'),
+            closeLabel: cards._card.querySelector('.rx-chat-card__close')?.getAttribute('aria-label'),
+            left: Number.parseFloat(cards._card.style.left),
+            top: Number.parseFloat(cards._card.style.top),
+        };
+        cards._onKeyDown({ key: 'Escape', preventDefault() {} });
+        const hiddenAfterEscape = cards._card.hidden;
+        cards._open('Alice', aliceBtn);
 
         // Mention writes into the composer.
         const composer = document.querySelector('form.chat-message-form textarea');
@@ -1918,6 +1956,7 @@ test('ChatUserCards logs per person, renames locally, and reverts everything on 
 
         return {
             perUser, aliceAfterReindex, cardVisible, cardName, cardMeta, logLines,
+            dialogA11y, hiddenAfterEscape,
             composerValue, storedNick, renamed, keptRealName, clearedNick, restoredName,
             blocked, renamedAgain, afterDestroy,
         };
@@ -1932,6 +1971,14 @@ test('ChatUserCards logs per person, renames locally, and reverts everything on 
     expect(result.cardVisible).toBe(true);
     expect(result.cardName).toBe('Alice');
     expect(result.cardMeta).toBe('2 messages this session');
+    expect(result.dialogA11y).toMatchObject({
+        role: 'dialog',
+        labelledBy: 'rx-chat-card-title',
+        closeLabel: 'Close',
+    });
+    expect(result.dialogA11y.left).toBeGreaterThanOrEqual(8);
+    expect(result.dialogA11y.top).toBeGreaterThanOrEqual(8);
+    expect(result.hiddenAfterEscape).toBe(true);
     // Newest first.
     expect(result.logLines).toEqual(['second', 'first']);
 

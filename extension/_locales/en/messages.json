@@ -2530,5 +2530,65 @@
   "toastPageDensityChanged": {
     "message": "Page density updated",
     "description": "In-page UI string (shared core)."
+  },
+  "close": {
+    "message": "Close",
+    "description": "In-page UI string (shared core)."
+  },
+  "saveToWatchLater": {
+    "message": "Save to Watch Later",
+    "description": "In-page UI string (shared core)."
+  },
+  "noMatchingFeatures": {
+    "message": "No matching features",
+    "description": "In-page UI string (shared core)."
+  },
+  "nothingMatchedSearch": {
+    "message": "Nothing matched “{query}”. Try another term.",
+    "description": "In-page UI string (shared core)."
+  },
+  "autoplayQueueEmpty": {
+    "message": "Queue is empty. Add video URLs above.",
+    "description": "In-page UI string (shared core)."
+  },
+  "remove": {
+    "message": "Remove",
+    "description": "In-page UI string (shared core)."
+  },
+  "removeFromAutoplayQueue": {
+    "message": "Remove {title} from the queue",
+    "description": "In-page UI string (shared core)."
+  },
+  "autoplayQueue": {
+    "message": "Autoplay Queue",
+    "description": "In-page UI string (shared core)."
+  },
+  "openAutoplayQueue": {
+    "message": "Open autoplay queue",
+    "description": "In-page UI string (shared core)."
+  },
+  "addCurrentVideoShort": {
+    "message": "+ current",
+    "description": "In-page UI string (shared core)."
+  },
+  "addCurrentVideo": {
+    "message": "Add current video",
+    "description": "In-page UI string (shared core)."
+  },
+  "rumbleVideoUrl": {
+    "message": "Rumble video URL",
+    "description": "In-page UI string (shared core)."
+  },
+  "pasteRumbleUrl": {
+    "message": "Paste Rumble URL...",
+    "description": "In-page UI string (shared core)."
+  },
+  "add": {
+    "message": "Add",
+    "description": "In-page UI string (shared core)."
+  },
+  "closeAutoplayQueue": {
+    "message": "Close autoplay queue",
+    "description": "In-page UI string (shared core)."
   }
 }

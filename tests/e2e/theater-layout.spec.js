@@ -245,7 +245,13 @@ test('keyboard moves in the narrow layout never overwrite the desktop ratio', as
         await expect(divider).toHaveAttribute('aria-orientation', 'horizontal');
         await divider.focus();
         await divider.press('Home');
+        await expect(divider).toHaveAttribute('aria-valuenow', '32');
         await divider.press('ArrowLeft');
+        await expect(divider).toHaveAttribute('aria-valuenow', '32');
+        await divider.press('End');
+        await expect(divider).toHaveAttribute('aria-valuenow', '54');
+        await divider.press('ArrowRight');
+        await expect(divider).toHaveAttribute('aria-valuenow', '54');
         // The narrow geometry moved, but what desktop opens with did not.
         expect((await t.settings()).theaterLayout).toEqual({ vod: { ratio: 68 } });
         await t.page.setViewportSize({ width: 1440, height: 900 });

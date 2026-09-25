@@ -2528,5 +2528,65 @@
   "toastPageDensityChanged": {
     "message": "Densité de page mise à jour",
     "description": "In-page UI string (shared core)."
+  },
+  "close": {
+    "message": "Fermer",
+    "description": "In-page UI string (shared core)."
+  },
+  "saveToWatchLater": {
+    "message": "Enregistrer pour plus tard",
+    "description": "In-page UI string (shared core)."
+  },
+  "noMatchingFeatures": {
+    "message": "Aucune fonctionnalité correspondante",
+    "description": "In-page UI string (shared core)."
+  },
+  "nothingMatchedSearch": {
+    "message": "Aucun résultat pour « {query} ». Essayez un autre terme.",
+    "description": "In-page UI string (shared core)."
+  },
+  "autoplayQueueEmpty": {
+    "message": "La file est vide. Ajoutez des URL de vidéos ci-dessus.",
+    "description": "In-page UI string (shared core)."
+  },
+  "remove": {
+    "message": "Retirer",
+    "description": "In-page UI string (shared core)."
+  },
+  "removeFromAutoplayQueue": {
+    "message": "Retirer {title} de la file",
+    "description": "In-page UI string (shared core)."
+  },
+  "autoplayQueue": {
+    "message": "File de lecture automatique",
+    "description": "In-page UI string (shared core)."
+  },
+  "openAutoplayQueue": {
+    "message": "Ouvrir la file de lecture automatique",
+    "description": "In-page UI string (shared core)."
+  },
+  "addCurrentVideoShort": {
+    "message": "+ vidéo actuelle",
+    "description": "In-page UI string (shared core)."
+  },
+  "addCurrentVideo": {
+    "message": "Ajouter la vidéo actuelle",
+    "description": "In-page UI string (shared core)."
+  },
+  "rumbleVideoUrl": {
+    "message": "URL de vidéo Rumble",
+    "description": "In-page UI string (shared core)."
+  },
+  "pasteRumbleUrl": {
+    "message": "Collez une URL Rumble...",
+    "description": "In-page UI string (shared core)."
+  },
+  "add": {
+    "message": "Ajouter",
+    "description": "In-page UI string (shared core)."
+  },
+  "closeAutoplayQueue": {
+    "message": "Fermer la file de lecture automatique",
+    "description": "In-page UI string (shared core)."
   }
 }

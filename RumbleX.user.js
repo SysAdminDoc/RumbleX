@@ -23,7 +23,7 @@
 // @updateURL    https://github.com/SysAdminDoc/RumbleX/raw/main/RumbleX.user.js
 // ==/UserScript==
 
-// Generated from the shared extension core files. Shared runtime SHA-256: 7f0197cbecd93fed2b2b5cedc7007b6ce35752b86257aace429126eca3b216eb
+// Generated from the shared extension core files. Shared runtime SHA-256: 6d081a26297fe30bdc360cba3d7734ef31f3c4b2bc0f2baf1078099b09657613
 // RumbleX shared settings schema. This file is the canonical source for
 // defaults and trust-boundary normalization across content, options, popup,
 // background profile/Gist restores, and the generated userscript.
@@ -1584,7 +1584,22 @@
   "pageDensityCompact": "Compact",
   "pageDensityBalanced": "Balanced",
   "pageDensityShowcase": "Showcase",
-  "toastPageDensityChanged": "Page density updated"
+  "toastPageDensityChanged": "Page density updated",
+  "close": "Close",
+  "saveToWatchLater": "Save to Watch Later",
+  "noMatchingFeatures": "No matching features",
+  "nothingMatchedSearch": "Nothing matched “{query}”. Try another term.",
+  "autoplayQueueEmpty": "Queue is empty. Add video URLs above.",
+  "remove": "Remove",
+  "removeFromAutoplayQueue": "Remove {title} from the queue",
+  "autoplayQueue": "Autoplay Queue",
+  "openAutoplayQueue": "Open autoplay queue",
+  "addCurrentVideoShort": "+ current",
+  "addCurrentVideo": "Add current video",
+  "rumbleVideoUrl": "Rumble video URL",
+  "pasteRumbleUrl": "Paste Rumble URL...",
+  "add": "Add",
+  "closeAutoplayQueue": "Close autoplay queue"
 });
     const STORAGE_KEYS_WITH_CHANGE_EVENTS = ['rx_settings'];
     const ALLOWED_REQUEST_HOSTS = ['rumble.com', 'rumble.cloud', '1a-1791.com'];
@@ -5662,7 +5677,9 @@ const TheaterSplit = {
             const onMove = (me) => {
                 const coord = narrow ? me.clientY : me.clientX;
                 const delta = coord - startCoord;
-                const newLeft = Math.max(30, Math.min(80, startLeftFrac + (delta / total * 100)));
+                const min = narrow ? 32 : 30;
+                const max = narrow ? 54 : 80;
+                const newLeft = Math.max(min, Math.min(max, startLeftFrac + (delta / total * 100)));
                 this._applySplitGeometry(newLeft);
             };
 
@@ -5689,14 +5706,15 @@ const TheaterSplit = {
             e.preventDefault();
             const current = Number(divider.getAttribute('aria-valuenow')) || this._layout().ratio;
             let next = current;
-            if (e.key === 'Home') next = 30;
-            else if (e.key === 'End') next = 80;
+            const narrow = this._isNarrow();
+            if (e.key === 'Home') next = narrow ? 32 : 30;
+            else if (e.key === 'End') next = narrow ? 54 : 80;
             else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') next -= 2;
             else next += 2;
+            if (narrow) next = Math.max(32, Math.min(54, next));
             // The narrow layout's divider runs on its own 32-54 scale, so a
             // value from it would open the next desktop visit squeezed. Same
             // rule as a drag.
-            const narrow = this._isNarrow();
             this._applySplitGeometry(next, !narrow);
             if (narrow) this._narrowLeft = Number(divider.getAttribute('aria-valuenow'));
         });
@@ -6363,7 +6381,7 @@ const VideoDownloader = {
             flex: 1;
             padding: 8px;
             border-radius: 8px;
-            border: 1px solid var(--rx-theater-border, var(--rx-site-border, rgba(137,180,250,0.15)));
+            border: 1px solid var(--rx-theater-border, var(--rx-site-border, color-mix(in srgb, var(--rx-accent, #89b4fa) 15%, transparent)));
             background: color-mix(in srgb, var(--rx-theater-raised, var(--rx-site-raised, var(--rx-surface0, #313244))) 58%, transparent);
             color: var(--rx-theater-text, var(--rx-text, #cdd6f4));
             font-size: 12px;
@@ -7548,6 +7566,7 @@ const VideoDownloader = {
         const existing = qs('#rx-download-overlay');
         if (existing) {
             existing.classList.add('open');
+            existing.querySelector('.rx-dl-card-close')?.focus({ preventScroll: true });
             return;
         }
         injectStyle(`
@@ -7580,17 +7599,25 @@ const VideoDownloader = {
                 background: rgba(255,255,255,0.06); color: #fff;
             }
             #rx-download-overlay .rx-dl-body { padding: 14px 16px; }
+            #rx-download-overlay .rx-dl-live {
+                position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+                overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0;
+            }
         `, 'rx-download-overlay-css');
 
         const overlay = document.createElement('div');
         overlay.id = 'rx-download-overlay';
         overlay.className = 'open';
+        overlay.setAttribute('role', 'dialog');
+        overlay.setAttribute('aria-modal', 'true');
+        overlay.setAttribute('aria-labelledby', 'rx-download-overlay-title');
         const card = document.createElement('div');
         card.className = 'rx-dl-card';
 
         const header = document.createElement('div');
         header.className = 'rx-dl-card-header';
         const title = document.createElement('h2');
+        title.id = 'rx-download-overlay-title';
         title.textContent = rxT('dlTitle', 'Download Video');
         const closeBtn = document.createElement('button');
         closeBtn.type = 'button';
@@ -7607,19 +7634,44 @@ const VideoDownloader = {
         const body = document.createElement('div');
         body.className = 'rx-dl-body';
         tab.appendChild(body);
+        const live = document.createElement('div');
+        live.className = 'rx-dl-live';
+        live.setAttribute('role', 'status');
+        live.setAttribute('aria-live', 'polite');
+        live.setAttribute('aria-atomic', 'true');
 
         header.append(title, closeBtn);
-        card.append(header, tab);
+        card.append(header, tab, live);
         overlay.appendChild(card);
+        this._overlayReturnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
         document.body.appendChild(overlay);
+        this._overlayInertState = Array.from(document.body.children)
+            .filter((el) => el !== overlay)
+            .map((el) => ({ el, inert: el.inert }));
+        this._overlayInertState.forEach(({ el }) => { el.inert = true; });
 
         overlay.addEventListener('click', (e) => {
             if (e.target === overlay) this._closeDownloadOverlay();
         });
         this._overlayKeyHandler = (e) => {
             if (e.key === 'Escape') this._closeDownloadOverlay();
+            if (e.key !== 'Tab') return;
+            const focusable = Array.from(card.querySelectorAll(
+                'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+            )).filter((el) => el instanceof HTMLElement && el.offsetParent !== null);
+            if (!focusable.length) return;
+            const first = focusable[0];
+            const last = focusable[focusable.length - 1];
+            if (e.shiftKey && document.activeElement === first) {
+                e.preventDefault();
+                last.focus({ preventScroll: true });
+            } else if (!e.shiftKey && document.activeElement === last) {
+                e.preventDefault();
+                first.focus({ preventScroll: true });
+            }
         };
         document.addEventListener('keydown', this._overlayKeyHandler);
+        requestAnimationFrame(() => closeBtn.focus({ preventScroll: true }));
 
         this._loadQualities();
     },
@@ -7635,7 +7687,14 @@ const VideoDownloader = {
             document.removeEventListener('keydown', this._overlayKeyHandler);
             this._overlayKeyHandler = null;
         }
+        for (const entry of this._overlayInertState || []) {
+            if (entry.el?.isConnected) entry.el.inert = entry.inert;
+        }
+        this._overlayInertState = null;
         qs('#rx-download-overlay')?.remove();
+        const returnFocus = this._overlayReturnFocus;
+        this._overlayReturnFocus = null;
+        if (returnFocus?.isConnected) requestAnimationFrame(() => returnFocus.focus({ preventScroll: true }));
     },
 
     _getBody() {
@@ -7645,6 +7704,12 @@ const VideoDownloader = {
     _setBody(html) {
         const body = this._getBody();
         if (body) body.innerHTML = html;
+        const live = qs('#rx-download-overlay .rx-dl-live');
+        if (live) {
+            const text = (body?.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 240);
+            live.textContent = '';
+            requestAnimationFrame(() => { live.textContent = text; });
+        }
         return body;
     },
 
@@ -10164,8 +10229,8 @@ const WatchProgress = {
             left: 50%;
             transform: translateX(-50%) translateY(20px);
             padding: 10px 20px;
-            background: rgba(24,24,37,0.95);
-            border: 1px solid rgba(137,180,250,0.2);
+            background: color-mix(in srgb, var(--rx-mantle, #181825) 95%, transparent);
+            border: 1px solid color-mix(in srgb, var(--rx-accent, #89b4fa) 20%, transparent);
             color: var(--rx-text, #cdd6f4);
             font-size: 13px;
             border-radius: 10px;
@@ -10179,12 +10244,12 @@ const WatchProgress = {
             transform: translateX(-50%) translateY(0);
         }
         .rx-resume-toast:hover {
-            border-color: rgba(137,180,250,0.4);
+            border-color: color-mix(in srgb, var(--rx-accent, #89b4fa) 40%, transparent);
         }
         .rx-resume-toast button {
             min-height: 36px; margin-left: 8px; padding: 6px 10px;
-            border: 1px solid rgba(137,180,250,0.35); border-radius: 6px;
-            background: rgba(137,180,250,0.14); color: inherit; cursor: pointer;
+            border: 1px solid color-mix(in srgb, var(--rx-accent, #89b4fa) 35%, transparent); border-radius: 6px;
+            background: color-mix(in srgb, var(--rx-accent, #89b4fa) 14%, transparent); color: inherit; cursor: pointer;
         }
         .rx-resume-toast button:focus-visible { outline: 3px solid var(--rx-accent, #89b4fa); outline-offset: 2px; }
     `,
@@ -10390,8 +10455,8 @@ const ChannelBlocker = {
         }
         .rx-block-btn:hover {
             color: var(--rx-red, #f38ba8);
-            border-color: rgba(243,139,168,0.3);
-            background: rgba(243,139,168,0.1);
+            border-color: color-mix(in srgb, var(--rx-red, #f38ba8) 30%, transparent);
+            background: color-mix(in srgb, var(--rx-red, #f38ba8) 10%, transparent);
         }
         .rx-block-btn svg {
             width: 12px;
@@ -10407,15 +10472,15 @@ const ChannelBlocker = {
             font-size: 11px;
             padding: 3px 8px 3px 10px;
             border-radius: 12px;
-            border: 1px solid rgba(243,139,168,0.2);
-            background: rgba(243,139,168,0.08);
+            border: 1px solid color-mix(in srgb, var(--rx-red, #f38ba8) 20%, transparent);
+            background: color-mix(in srgb, var(--rx-red, #f38ba8) 8%, transparent);
             color: var(--rx-red, #f38ba8);
             cursor: pointer;
             transition: background 0.15s, border-color 0.15s;
         }
         .rx-unblock-chip:hover {
-            background: rgba(243,139,168,0.15);
-            border-color: rgba(243,139,168,0.4);
+            background: color-mix(in srgb, var(--rx-red, #f38ba8) 15%, transparent);
+            border-color: color-mix(in srgb, var(--rx-red, #f38ba8) 40%, transparent);
         }
         .rx-unblock-chip svg { width: 10px; height: 10px; }
     `,
@@ -10605,15 +10670,15 @@ const ChannelRss = {
     _css: `
         .rx-rss-btn {
             display: inline-flex; align-items: center; gap: 6px;
-            background: rgba(250,179,135,0.12);
+            background: color-mix(in srgb, var(--rx-peach, #fab387) 12%, transparent);
             color: var(--rx-peach, #fab387);
-            border: 1px solid rgba(250,179,135,0.35);
+            border: 1px solid color-mix(in srgb, var(--rx-peach, #fab387) 35%, transparent);
             border-radius: 6px;
             padding: 6px 12px;
             font: 600 12px/1 system-ui, sans-serif;
             cursor: pointer; margin-left: 8px; min-height: 24px;
         }
-        .rx-rss-btn:hover { background: rgba(250,179,135,0.22); border-color: rgba(250,179,135,0.55); }
+        .rx-rss-btn:hover { background: color-mix(in srgb, var(--rx-peach, #fab387) 22%, transparent); border-color: color-mix(in srgb, var(--rx-peach, #fab387) 55%, transparent); }
     `,
 
     _SVG: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 11a9 9 0 0 1 9 9"/><path d="M4 4a16 16 0 0 1 16 16"/><circle cx="5" cy="19" r="1"/></svg>',
@@ -10741,9 +10806,9 @@ const ChannelArchiveButton = {
     _css: `
         .rx-archive-channel-btn {
             display: inline-flex; align-items: center; gap: 6px;
-            background: rgba(137,180,250,0.12);
+            background: color-mix(in srgb, var(--rx-accent, #89b4fa) 12%, transparent);
             color: var(--rx-accent, #89b4fa);
-            border: 1px solid rgba(137,180,250,0.35);
+            border: 1px solid color-mix(in srgb, var(--rx-accent, #89b4fa) 35%, transparent);
             border-radius: 6px;
             padding: 6px 12px;
             font: 600 12px/1 system-ui, sans-serif;
@@ -10751,8 +10816,8 @@ const ChannelArchiveButton = {
             transition: background .15s, border-color .15s;
         }
         .rx-archive-channel-btn:hover {
-            background: rgba(137,180,250,0.22);
-            border-color: rgba(137,180,250,0.55);
+            background: color-mix(in srgb, var(--rx-accent, #89b4fa) 22%, transparent);
+            border-color: color-mix(in srgb, var(--rx-accent, #89b4fa) 55%, transparent);
         }
         .rx-archive-channel-btn[disabled] {
             opacity: 0.6; cursor: progress;
@@ -11118,11 +11183,12 @@ const ChatComposerAssist = {
     _names: null,
     _matches: [],
     _active: 0,
+    _inputAria: null,
 
     _css: `
         .rx-chat-ac {
             position: absolute; z-index: 10030;
-            background: rgba(30,30,46,0.98);
+            background: color-mix(in srgb, var(--rx-base, #1e1e2e) 98%, transparent);
             border: 1px solid rgba(255,255,255,0.10);
             border-radius: 8px; padding: 4px;
             box-shadow: 0 8px 24px rgba(0,0,0,0.55);
@@ -11137,7 +11203,7 @@ const ChatComposerAssist = {
             min-height: 24px;
         }
         .rx-chat-ac button:hover,
-        .rx-chat-ac button[aria-selected="true"] { background: rgba(137,180,250,0.22); }
+        .rx-chat-ac button[aria-selected="true"] { background: color-mix(in srgb, var(--rx-accent, #89b4fa) 22%, transparent); }
     `,
 
     _indexNames() {
@@ -11171,6 +11237,8 @@ const ChatComposerAssist = {
 
     _hide() {
         if (this._box) this._box.hidden = true;
+        this._input?.setAttribute('aria-expanded', 'false');
+        this._input?.removeAttribute('aria-activedescendant');
         this._matches = [];
         this._active = 0;
     },
@@ -11182,6 +11250,7 @@ const ChatComposerAssist = {
         this._matches.forEach((name, index) => {
             const item = document.createElement('button');
             item.type = 'button';
+            item.id = `rx-chat-ac-option-${index}`;
             item.textContent = name;
             item.setAttribute('role', 'option');
             item.setAttribute('aria-selected', index === this._active ? 'true' : 'false');
@@ -11193,6 +11262,12 @@ const ChatComposerAssist = {
             box.appendChild(item);
         });
         box.hidden = this._matches.length === 0;
+        this._input?.setAttribute('aria-expanded', String(this._matches.length > 0));
+        if (this._matches.length) {
+            this._input?.setAttribute('aria-activedescendant', `rx-chat-ac-option-${this._active}`);
+        } else {
+            this._input?.removeAttribute('aria-activedescendant');
+        }
     },
 
     _accept(name) {
@@ -11254,6 +11329,13 @@ const ChatComposerAssist = {
         if (!input || input === this._input) return;
         this._detachInput();
         this._input = input;
+        this._inputAria = Object.fromEntries([
+            'role', 'aria-autocomplete', 'aria-controls', 'aria-expanded', 'aria-activedescendant',
+        ].map((name) => [name, input.getAttribute(name)]));
+        input.setAttribute('role', 'combobox');
+        input.setAttribute('aria-autocomplete', 'list');
+        input.setAttribute('aria-controls', 'rx-chat-mention-list');
+        input.setAttribute('aria-expanded', 'false');
         const onInput = () => this._onInput();
         const onKeyDown = (event) => this._onKeyDown(event);
         const onBlur = () => setTimeout(() => this._hide(), 120);
@@ -11269,8 +11351,15 @@ const ChatComposerAssist = {
             this._input.removeEventListener('keydown', this._handlers.onKeyDown);
             this._input.removeEventListener('blur', this._handlers.onBlur);
         }
+        if (this._input && this._inputAria) {
+            for (const [name, value] of Object.entries(this._inputAria)) {
+                if (value == null) this._input.removeAttribute(name);
+                else this._input.setAttribute(name, value);
+            }
+        }
         this._input = null;
         this._handlers = null;
+        this._inputAria = null;
     },
 
     init() {
@@ -11280,6 +11369,7 @@ const ChatComposerAssist = {
         this._names = new Set();
         const box = document.createElement('div');
         box.className = 'rx-chat-ac';
+        box.id = 'rx-chat-mention-list';
         box.setAttribute('role', 'listbox');
         box.setAttribute('aria-label', rxT('chatMentionListLabel', 'Chat name suggestions'));
         box.hidden = true;
@@ -11414,6 +11504,8 @@ const ChatUserCards = {
     _card: null,
     _log: null,
     _onDocClick: null,
+    _onKeyDown: null,
+    _returnFocus: null,
     _MAX_USERS: 300,
     _MAX_PER_USER: 50,
 
@@ -11421,31 +11513,38 @@ const ChatUserCards = {
         .rx-chat-card {
             position: absolute; z-index: 10035;
             width: 260px; max-height: 320px; overflow-y: auto;
-            background: rgba(30,30,46,0.98);
+            background: color-mix(in srgb, var(--rx-base, #1e1e2e) 98%, transparent);
             border: 1px solid rgba(255,255,255,0.10);
             border-radius: 10px; padding: 10px;
             box-shadow: 0 10px 30px rgba(0,0,0,0.6);
             color: var(--rx-text, #cdd6f4); font: 12px/1.45 system-ui, sans-serif;
         }
         .rx-chat-card[hidden] { display: none; }
-        .rx-chat-card__name { font-weight: 700; font-size: 13px; margin-bottom: 2px; word-break: break-word; }
+        .rx-chat-card__header { display: flex; align-items: flex-start; gap: 8px; margin-bottom: 2px; }
+        .rx-chat-card__name { flex: 1; font-weight: 700; font-size: 13px; word-break: break-word; }
+        .rx-chat-card__close {
+            width: 28px; height: 28px; flex: 0 0 auto; display: grid; place-items: center;
+            padding: 0; border-radius: 6px; border: 1px solid rgba(255,255,255,0.08);
+            background: color-mix(in srgb, var(--rx-surface0, #313244) 50%, transparent); color: var(--rx-subtext, #a6adc8); cursor: pointer;
+        }
+        .rx-chat-card__close:hover { color: var(--rx-text, #cdd6f4); background: color-mix(in srgb, var(--rx-surface0, #313244) 90%, transparent); }
         .rx-chat-card__meta { color: var(--rx-subtext, #a6adc8); font-size: 11px; margin-bottom: 8px; }
         .rx-chat-card__actions { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
         .rx-chat-card__actions button {
-            background: rgba(49,50,68,0.6); border: 1px solid rgba(255,255,255,0.08);
+            background: color-mix(in srgb, var(--rx-surface0, #313244) 60%, transparent); border: 1px solid rgba(255,255,255,0.08);
             color: var(--rx-text, #cdd6f4); border-radius: 5px; padding: 5px 10px; cursor: pointer;
             font: 600 11px/1 system-ui, sans-serif; min-height: 24px;
         }
-        .rx-chat-card__actions button:hover { background: rgba(49,50,68,0.9); }
+        .rx-chat-card__actions button:hover { background: color-mix(in srgb, var(--rx-surface0, #313244) 90%, transparent); }
         .rx-chat-card__nick { display: flex; gap: 6px; margin-bottom: 8px; }
         .rx-chat-card__nick input {
-            flex: 1; min-width: 0; background: rgba(49,50,68,0.5);
+            flex: 1; min-width: 0; background: color-mix(in srgb, var(--rx-surface0, #313244) 50%, transparent);
             border: 1px solid rgba(255,255,255,0.08); border-radius: 5px;
             color: var(--rx-text, #cdd6f4); padding: 4px 8px; font-size: 11px; min-height: 24px;
         }
         .rx-chat-card__log { display: flex; flex-direction: column; gap: 4px; }
         .rx-chat-card__log div {
-            background: rgba(49,50,68,0.35); border-radius: 4px; padding: 4px 6px;
+            background: color-mix(in srgb, var(--rx-surface0, #313244) 35%, transparent); border-radius: 4px; padding: 4px 6px;
             font-size: 11px; word-break: break-word;
         }
         .rx-chat-card__empty { color: var(--rx-subtext0, #6c7086); font-size: 11px; }
@@ -11506,8 +11605,13 @@ const ChatUserCards = {
         input.focus();
     },
 
-    _close() {
+    _close(restoreFocus = true) {
         if (this._card) this._card.hidden = true;
+        const returnFocus = this._returnFocus;
+        this._returnFocus = null;
+        if (restoreFocus && returnFocus?.isConnected) {
+            requestAnimationFrame(() => returnFocus.focus({ preventScroll: true }));
+        }
     },
 
     _open(name, anchor) {
@@ -11518,10 +11622,21 @@ const ChatUserCards = {
         const messages = this._log.get(name) || [];
 
         card.textContent = '';
+        this._returnFocus = anchor instanceof HTMLElement ? anchor : document.activeElement;
+        const header = document.createElement('div');
+        header.className = 'rx-chat-card__header';
         const title = document.createElement('div');
         title.className = 'rx-chat-card__name';
+        title.id = 'rx-chat-card-title';
         title.textContent = alias ? `${alias} (${name})` : name;
-        card.appendChild(title);
+        const close = document.createElement('button');
+        close.type = 'button';
+        close.className = 'rx-chat-card__close';
+        close.setAttribute('aria-label', rxT('close', 'Close'));
+        close.textContent = '×';
+        close.addEventListener('click', () => this._close());
+        header.append(title, close);
+        card.appendChild(header);
 
         const meta = document.createElement('div');
         meta.className = 'rx-chat-card__meta';
@@ -11533,7 +11648,7 @@ const ChatUserCards = {
         const mention = document.createElement('button');
         mention.type = 'button';
         mention.textContent = rxT('chatCardMention', 'Mention');
-        mention.addEventListener('click', () => { this._insertMention(name); this._close(); });
+        mention.addEventListener('click', () => { this._insertMention(name); this._close(false); });
         const block = document.createElement('button');
         block.type = 'button';
         block.textContent = rxT('chatCardBlock', 'Block');
@@ -11590,8 +11705,15 @@ const ChatUserCards = {
 
         card.hidden = false;
         const rect = anchor.getBoundingClientRect();
-        card.style.left = `${Math.round(Math.min(rect.left, window.innerWidth - 280))}px`;
-        card.style.top = `${Math.round(rect.bottom + window.scrollY + 4)}px`;
+        const margin = 8;
+        const left = Math.max(margin, Math.min(rect.left, window.innerWidth - card.offsetWidth - margin));
+        const below = rect.bottom + window.scrollY + 4;
+        const viewportBottom = window.scrollY + window.innerHeight - margin;
+        const above = rect.top + window.scrollY - card.offsetHeight - 4;
+        const top = below + card.offsetHeight <= viewportBottom ? below : Math.max(window.scrollY + margin, above);
+        card.style.left = `${Math.round(left)}px`;
+        card.style.top = `${Math.round(top)}px`;
+        requestAnimationFrame(() => close.focus({ preventScroll: true }));
     },
 
     _onClick(event) {
@@ -11614,7 +11736,7 @@ const ChatUserCards = {
         const card = document.createElement('div');
         card.className = 'rx-chat-card';
         card.setAttribute('role', 'dialog');
-        card.setAttribute('aria-label', rxT('chatCardLabel', 'Chat participant'));
+        card.setAttribute('aria-labelledby', 'rx-chat-card-title');
         card.hidden = true;
         // No click handler here on purpose: the document-level listener below
         // already ignores clicks landing inside the card, and a click-only
@@ -11629,10 +11751,32 @@ const ChatUserCards = {
             if (event.target.closest?.('.chat-history--username, .chat-history--rant-username, .js-chat-username')) {
                 this._onClick(event);
             } else if (!event.target.closest?.('.rx-chat-card')) {
-                this._close();
+                this._close(false);
             }
         };
         document.addEventListener('click', this._onDocClick, true);
+        this._onKeyDown = (event) => {
+            if (!this._card || this._card.hidden) return;
+            if (event.key === 'Escape') {
+                event.preventDefault();
+                this._close();
+                return;
+            }
+            if (event.key !== 'Tab') return;
+            const focusable = Array.from(this._card.querySelectorAll('button:not([disabled]), input:not([disabled])'))
+                .filter((el) => el instanceof HTMLElement && el.offsetParent !== null);
+            if (!focusable.length) return;
+            const first = focusable[0];
+            const last = focusable[focusable.length - 1];
+            if (event.shiftKey && document.activeElement === first) {
+                event.preventDefault();
+                last.focus({ preventScroll: true });
+            } else if (!event.shiftKey && document.activeElement === last) {
+                event.preventDefault();
+                first.focus({ preventScroll: true });
+            }
+        };
+        document.addEventListener('keydown', this._onKeyDown);
 
         this._obs = new MutationObserver(() => {
             scheduleFeatureFrame(this, 'chat-cards', () => { this._index(); this._applyNicknames(); });
@@ -11645,6 +11789,9 @@ const ChatUserCards = {
         this._obs = null;
         if (this._onDocClick) document.removeEventListener('click', this._onDocClick, true);
         this._onDocClick = null;
+        if (this._onKeyDown) document.removeEventListener('keydown', this._onKeyDown);
+        this._onKeyDown = null;
+        this._returnFocus = null;
         this._styleEl?.remove();
         this._styleEl = null;
         this._card?.remove();
@@ -11796,7 +11943,7 @@ const LiveChatEnhance = {
 
     _css: `
         .rx-chat-highlight {
-            background: rgba(137,180,250,0.15) !important;
+            background: color-mix(in srgb, var(--rx-accent, #89b4fa) 15%, transparent) !important;
             border-left: 2px solid var(--rx-accent, #89b4fa) !important;
         }
         .rx-chat-mention {
@@ -11807,7 +11954,7 @@ const LiveChatEnhance = {
             display: inline-block;
             padding: 1px 5px;
             border-radius: 4px;
-            background: rgba(243,139,168,0.15);
+            background: color-mix(in srgb, var(--rx-red, #f38ba8) 15%, transparent);
             color: var(--rx-red, #f38ba8);
             font-size: 10px;
             font-weight: 600;
@@ -11918,12 +12065,12 @@ const VideoTimestamps = {
             font-weight: 600;
             font-variant-numeric: tabular-nums;
             text-decoration: none;
-            border-bottom: 1px dotted rgba(137,180,250,0.3);
+            border-bottom: 1px dotted color-mix(in srgb, var(--rx-accent, #89b4fa) 30%, transparent);
             transition: color 0.15s, border-color 0.15s;
         }
         .rx-timestamp-link:hover {
             color: #b4d0fb;
-            border-bottom-color: rgba(137,180,250,0.6);
+            border-bottom-color: color-mix(in srgb, var(--rx-accent, #89b4fa) 60%, transparent);
         }
         .rx-timestamp-link:focus-visible { outline: 2px solid var(--rx-accent, #89b4fa); outline-offset: 2px; }
     `,
@@ -12813,7 +12960,7 @@ const BulkUnsubscribe = {
         }
         html.rumblex-active .rx-bu-dry-tag {
             display: inline-block; padding: 2px 6px;
-            background: rgba(212, 168, 67, 0.18);
+            background: color-mix(in srgb, var(--rx-yellow, #d4a843) 18%, transparent);
             color: var(--rx-yellow, #f9e2af);
             border-radius: 4px;
             font: 700 10px/1 inherit;
@@ -13292,33 +13439,34 @@ const MiniPlayer = {
             position: absolute; top: 0; left: 0; right: 0;
             display: flex; justify-content: space-between; align-items: center;
             padding: 6px 10px;
-            background: linear-gradient(to bottom, rgba(17,17,27,0.85), transparent);
+            background: linear-gradient(to bottom, color-mix(in srgb, var(--rx-crust, #11111b) 85%, transparent), transparent);
             opacity: 0; transition: opacity 0.2s;
             z-index: 2;
         }
-        .rx-miniplayer:hover .rx-miniplayer-bar { opacity: 1; }
+        .rx-miniplayer:hover .rx-miniplayer-bar,
+        .rx-miniplayer:focus-within .rx-miniplayer-bar { opacity: 1; }
         .rx-miniplayer-title {
             color: var(--rx-text, #cdd6f4); font: 600 11px/1.3 system-ui, sans-serif;
             overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
             max-width: 300px;
         }
         .rx-miniplayer-pip {
-            appearance: none; background: rgba(137,180,250,0.14);
-            color: var(--rx-accent, #89b4fa); border: 1px solid rgba(137,180,250,0.35);
+            appearance: none; background: color-mix(in srgb, var(--rx-accent, #89b4fa) 14%, transparent);
+            color: var(--rx-accent, #89b4fa); border: 1px solid color-mix(in srgb, var(--rx-accent, #89b4fa) 35%, transparent);
             border-radius: 6px; padding: 2px 8px; margin-left: auto;
             font: 600 11px/1.4 system-ui, sans-serif; cursor: pointer;
             min-height: 24px;
         }
-        .rx-miniplayer-pip:hover { background: rgba(137,180,250,0.24); }
+        .rx-miniplayer-pip:hover { background: color-mix(in srgb, var(--rx-accent, #89b4fa) 24%, transparent); }
         .rx-miniplayer-pip:focus-visible { outline: 2px solid var(--rx-accent, #89b4fa); outline-offset: 2px; }
         /* While the video lives in the PiP window the overlay is just a bar. */
         .rx-miniplayer.rx-miniplayer-in-pip { height: auto; }
         .rx-miniplayer-close {
-            background: rgba(243,139,168,0.2); border: none; color: var(--rx-red, #f38ba8);
+            background: color-mix(in srgb, var(--rx-red, #f38ba8) 20%, transparent); border: none; color: var(--rx-red, #f38ba8);
             border-radius: 4px; cursor: pointer; font-size: 14px; padding: 2px 6px;
             line-height: 1;
         }
-        .rx-miniplayer-close:hover { background: rgba(243,139,168,0.4); }
+        .rx-miniplayer-close:hover { background: color-mix(in srgb, var(--rx-red, #f38ba8) 40%, transparent); }
     `,
 
     /**
@@ -13705,7 +13853,7 @@ const LoopControl = {
             position: absolute;
             bottom: 78px; right: 10px;
             z-index: 100;
-            background: rgba(17,17,27,0.85);
+            background: color-mix(in srgb, var(--rx-crust, #11111b) 85%, transparent);
             border: 1px solid var(--rx-surface1, #45475a);
             border-radius: 6px;
             padding: 6px 10px;
@@ -14207,7 +14355,8 @@ const CommentNav = {
         this._idx = Math.max(0, Math.min(idx, this._items.length - 1));
         const el = this._items[this._idx];
         el.classList.add('rx-comment-highlight');
-        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
+        el.scrollIntoView({ behavior: reducedMotion ? 'auto' : 'smooth', block: 'center' });
     },
 
     _next() { this._refresh(); this._goto(this._idx + 1); },
@@ -14315,22 +14464,22 @@ const RantHighlight = {
 
     _css: `
         /* Enhance rant visibility by tier */
-        .chat-history--rant[data-level="1"] { box-shadow: 0 0 8px rgba(166,227,161,0.2); }
-        .chat-history--rant[data-level="2"] { box-shadow: 0 0 12px rgba(137,180,250,0.3); }
-        .chat-history--rant[data-level="3"] { box-shadow: 0 0 12px rgba(249,226,175,0.3); }
-        .chat-history--rant[data-level="4"] { box-shadow: 0 0 16px rgba(249,226,175,0.4); }
-        .chat-history--rant[data-level="5"] { box-shadow: 0 0 20px rgba(243,139,168,0.4); }
+        .chat-history--rant[data-level="1"] { box-shadow: 0 0 8px color-mix(in srgb, var(--rx-green, #a6e3a1) 20%, transparent); }
+        .chat-history--rant[data-level="2"] { box-shadow: 0 0 12px color-mix(in srgb, var(--rx-accent, #89b4fa) 30%, transparent); }
+        .chat-history--rant[data-level="3"] { box-shadow: 0 0 12px color-mix(in srgb, var(--rx-yellow, #f9e2af) 30%, transparent); }
+        .chat-history--rant[data-level="4"] { box-shadow: 0 0 16px color-mix(in srgb, var(--rx-yellow, #f9e2af) 40%, transparent); }
+        .chat-history--rant[data-level="5"] { box-shadow: 0 0 20px color-mix(in srgb, var(--rx-red, #f38ba8) 40%, transparent); }
         .chat-history--rant[data-level="6"],
         .chat-history--rant[data-level="7"],
         .chat-history--rant[data-level="8"],
         .chat-history--rant[data-level="9"],
         .chat-history--rant[data-level="10"] {
-            box-shadow: 0 0 24px rgba(243,139,168,0.5);
+            box-shadow: 0 0 24px color-mix(in srgb, var(--rx-red, #f38ba8) 50%, transparent);
             animation: rx-rant-glow 2s ease-in-out infinite alternate;
         }
         @keyframes rx-rant-glow {
-            from { box-shadow: 0 0 20px rgba(243,139,168,0.4); }
-            to { box-shadow: 0 0 30px rgba(243,139,168,0.7); }
+            from { box-shadow: 0 0 20px color-mix(in srgb, var(--rx-red, #f38ba8) 40%, transparent); }
+            to { box-shadow: 0 0 30px color-mix(in srgb, var(--rx-red, #f38ba8) 70%, transparent); }
         }
     `,
 
@@ -15035,8 +15184,8 @@ const TimeRemaining = {
             position: absolute;
             bottom: 52px; left: 16px;
             z-index: 100;
-            background: rgba(17,17,27,0.75);
-            border: 1px solid rgba(205,214,244,0.2);
+            background: color-mix(in srgb, var(--rx-crust, #11111b) 75%, transparent);
+            border: 1px solid color-mix(in srgb, var(--rx-text, #cdd6f4) 20%, transparent);
             color: var(--rx-text, #cdd6f4);
             border-radius: 6px;
             padding: 5px 10px;
@@ -15237,7 +15386,7 @@ const ChatAutoScroll = {
             bottom: 60px; left: 50%;
             transform: translateX(-50%);
             z-index: 200;
-            background: rgba(137,180,250,0.9);
+            background: color-mix(in srgb, var(--rx-accent, #89b4fa) 90%, transparent);
             color: var(--rx-base, #1e1e2e);
             border: none; border-radius: 8px;
             padding: 5px 14px;
@@ -15488,8 +15637,8 @@ const PlaylistQuickSave = {
             position: absolute;
             top: 6px; right: 6px;
             z-index: 50;
-            background: rgba(17,17,27,0.8);
-            border: 1px solid rgba(205,214,244,0.15);
+            background: color-mix(in srgb, var(--rx-crust, #11111b) 80%, transparent);
+            border: 1px solid color-mix(in srgb, var(--rx-text, #cdd6f4) 15%, transparent);
             color: var(--rx-text, #cdd6f4);
             border-radius: 6px;
             width: 28px; height: 28px;
@@ -15504,8 +15653,9 @@ const PlaylistQuickSave = {
         .rum-video-thumbnail__image:hover .rx-quick-save,
         rum-card-video:hover .rx-quick-save,
         rum-video-poster:hover .rx-quick-save,
-        .video-item--img-wrapper:hover .rx-quick-save { opacity: 1; }
-        .rx-quick-save:hover { background: rgba(17,17,27,0.95); border-color: var(--rx-accent, #89b4fa); }
+        .video-item--img-wrapper:hover .rx-quick-save,
+        .rx-quick-save:focus-visible { opacity: 1; }
+        .rx-quick-save:hover { background: color-mix(in srgb, var(--rx-crust, #11111b) 95%, transparent); border-color: var(--rx-accent, #89b4fa); }
         .rx-quick-save.saved { border-color: var(--rx-green, #a6e3a1); color: var(--rx-green, #a6e3a1); }
         .rx-quick-save svg { width: 16px; height: 16px; fill: currentColor; pointer-events: none; }
     `,
@@ -15545,8 +15695,10 @@ const PlaylistQuickSave = {
             thumb.style.position = thumb.style.position || 'relative';
 
             const btn = document.createElement('button');
+            btn.type = 'button';
             btn.className = 'rx-quick-save';
-            btn.title = 'Save to Watch Later';
+            btn.title = rxT('saveToWatchLater', 'Save to Watch Later');
+            btn.setAttribute('aria-label', rxT('saveToWatchLater', 'Save to Watch Later'));
             btn.innerHTML = `<svg viewBox="0 0 24 24"><path d="M12 6v6l4 2-1 1.7L10 13V6h2zm0-4C6.5 2 2 6.5 2 12s4.5 10 10 10 10-4.5 10-10S17.5 2 12 2zm0 18c-4.4 0-8-3.6-8-8s3.6-8 8-8 8 3.6 8 8-3.6 8-8 8z"/></svg>`;
             btn.addEventListener('click', (e) => {
                 e.preventDefault();
@@ -15983,6 +16135,13 @@ const SettingsPanel = {
             color: var(--rx-modal-faint); pointer-events: none;
         }
         .rx-m-search-icon svg { width: 14px; height: 14px; }
+        .rx-m-search-empty {
+            margin: auto; max-width: 420px; padding: 28px; text-align: center;
+            color: var(--rx-modal-muted); border: 1px dashed var(--rx-modal-border-strong);
+            border-radius: 12px; background: var(--rx-modal-raised);
+        }
+        .rx-m-search-empty strong { display: block; margin-bottom: 6px; color: var(--rx-modal-text); font-size: 15px; }
+        .rx-m-search-empty button { margin-top: 14px; }
         .rx-m-nav-btn {
             display: flex; align-items: center; gap: 10px; width: 100%;
             min-height: 42px; padding: 6px 10px; background: transparent; border: 1px solid transparent;
@@ -16037,8 +16196,8 @@ const SettingsPanel = {
             content: ''; width: 8px; height: 8px; border-radius: 50%; flex: 0 0 auto;
             background: var(--rx-modal-success); box-shadow: 0 0 0 4px color-mix(in srgb, var(--rx-modal-success) 12%, transparent);
         }
-        .rx-m-shield-status.is-limited { border-color: rgba(249,226,175,0.24); background: rgba(249,226,175,0.05); }
-        .rx-m-shield-status.is-limited::before { background: var(--rx-yellow, #f9e2af); box-shadow: 0 0 0 4px rgba(249,226,175,0.09); }
+        .rx-m-shield-status.is-limited { border-color: color-mix(in srgb, var(--rx-yellow, #f9e2af) 24%, transparent); background: color-mix(in srgb, var(--rx-yellow, #f9e2af) 5%, transparent); }
+        .rx-m-shield-status.is-limited::before { background: var(--rx-yellow, #f9e2af); box-shadow: 0 0 0 4px color-mix(in srgb, var(--rx-yellow, #f9e2af) 9%, transparent); }
         .rx-m-shield-title { color: var(--rx-modal-success); font-weight: 800; white-space: nowrap; }
         .rx-m-shield-status.is-limited .rx-m-shield-title { color: var(--rx-yellow, #f9e2af); }
         .rx-m-shield-note { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -16143,7 +16302,7 @@ const SettingsPanel = {
             color: var(--rx-modal-muted); background: var(--rx-modal-raised); border: 1px solid var(--rx-modal-border);
         }
         .rx-m-btn-secondary:hover { background: var(--rx-modal-hover); color: var(--rx-modal-text); border-color: var(--rx-modal-border-strong); }
-        .rx-m-reload-note { font-size: 10px; color: rgba(166,173,200,0.5); text-align: center; padding: 12px 0 4px; }
+        .rx-m-reload-note { font-size: 10px; color: color-mix(in srgb, var(--rx-subtext, #a6adc8) 50%, transparent); text-align: center; padding: 12px 0 4px; }
 
         /* ── Narrow / short viewports ──
            MUST stay last. A media query adds no specificity, so any property
@@ -16351,7 +16510,7 @@ const SettingsPanel = {
         input.type = 'text';
         input.placeholder = placeholder;
         input.setAttribute('aria-label', titleText);
-        input.style.cssText = 'width:100%;background:rgba(49,50,68,0.5);border:1px solid rgba(255,255,255,0.08);border-radius:6px;padding:6px 10px;color:var(--rx-text, #cdd6f4);font-size:12px;margin-bottom:8px;outline:none;';
+        input.style.cssText = 'width:100%;background:color-mix(in srgb, var(--rx-surface0, #313244) 50%, transparent);border:1px solid rgba(255,255,255,0.08);border-radius:6px;padding:6px 10px;color:var(--rx-text, #cdd6f4);font-size:12px;margin-bottom:8px;outline:none;';
         pane.appendChild(input);
 
         const grid = document.createElement('div');
@@ -16662,6 +16821,8 @@ const SettingsPanel = {
         searchInput.placeholder = rxT('modalSearchFeatures', 'Search features...');
         searchInput.type = 'text';
         searchInput.setAttribute('aria-label', 'Search RumbleX features');
+        searchInput.setAttribute('aria-controls', 'rx-settings-search-results');
+        this._searchInput = searchInput;
         let searchTimer = null;
         searchInput.addEventListener('input', () => {
             clearTimeout(searchTimer);
@@ -16678,7 +16839,25 @@ const SettingsPanel = {
         // Content
         const content = document.createElement('div');
         content.className = 'rx-m-content';
+        content.id = 'rx-settings-search-results';
         this._contentEl = content;
+        const searchEmpty = document.createElement('div');
+        searchEmpty.className = 'rx-m-search-empty';
+        searchEmpty.hidden = true;
+        searchEmpty.setAttribute('role', 'status');
+        searchEmpty.setAttribute('aria-live', 'polite');
+        const searchEmptyTitle = document.createElement('strong');
+        searchEmptyTitle.textContent = rxT('noMatchingFeatures', 'No matching features');
+        const searchEmptyCopy = document.createElement('span');
+        const searchEmptyClear = document.createElement('button');
+        searchEmptyClear.type = 'button';
+        searchEmptyClear.className = 'rx-m-btn rx-m-btn-secondary';
+        searchEmptyClear.textContent = rxT('clearSearch', 'Clear search');
+        searchEmptyClear.addEventListener('click', () => this._clearSearch(true));
+        searchEmpty.append(searchEmptyTitle, searchEmptyCopy, searchEmptyClear);
+        content.appendChild(searchEmpty);
+        this._searchEmptyEl = searchEmpty;
+        this._searchEmptyCopyEl = searchEmptyCopy;
 
         for (let i = 0; i < RX_CATEGORIES.length; i++) {
             const cat = RX_CATEGORIES[i];
@@ -16704,7 +16883,10 @@ const SettingsPanel = {
             navCount.className = 'rx-m-nav-count';
             navCount.textContent = `${enabledCount}/${mainFeats.length}`;
             navBtn.append(navIcon, navLabel, navCount);
-            navBtn.addEventListener('click', () => this._switchTab(cat.id));
+            navBtn.addEventListener('click', () => {
+                this._clearSearch(false);
+                this._switchTab(cat.id);
+            });
             tablist.appendChild(navBtn);
             this._navBtns.push(navBtn);
 
@@ -16906,6 +17088,12 @@ const SettingsPanel = {
         }
     },
 
+    _clearSearch(focus = false) {
+        if (this._searchInput) this._searchInput.value = '';
+        this._filterSearch('');
+        if (focus) this._searchInput?.focus({ preventScroll: true });
+    },
+
     _filterSearch(query) {
         query = query.toLowerCase().trim();
         const allPanes = this._contentEl.querySelectorAll('.rx-m-pane');
@@ -16914,18 +17102,20 @@ const SettingsPanel = {
         if (!query) {
             allCards.forEach(c => c.style.display = '');
             allPanes.forEach(p => p.style.display = '');
-            // Restore first active
-            const activeBtn = this._navBtns.find(b => b.classList.contains('active'));
-            allPanes.forEach(p => p.classList.remove('active'));
-            if (activeBtn) {
-                const pane = this._contentEl.querySelector('#rx-pane-' + activeBtn.dataset.tab);
-                if (pane) pane.classList.add('active');
-            }
+            this._searchEmptyEl.hidden = true;
+            const restoreId = this._searchRestoreCatId
+                || this._navBtns.find(b => b.classList.contains('active'))?.dataset.tab
+                || this._navBtns[0]?.dataset.tab;
+            this._searchRestoreCatId = null;
+            if (restoreId) this._switchTab(restoreId);
             return;
         }
 
+        if (!this._searchRestoreCatId) {
+            this._searchRestoreCatId = this._navBtns.find(b => b.classList.contains('active'))?.dataset.tab || null;
+        }
         // Show all panes, filter cards
-        allPanes.forEach(p => { p.classList.add('active'); p.style.display = ''; });
+        allPanes.forEach(p => { p.hidden = false; p.classList.add('active'); p.style.display = ''; });
         let anyMatch = false;
         allCards.forEach(card => {
             const text = card.dataset.searchText || '';
@@ -16937,8 +17127,14 @@ const SettingsPanel = {
         // Hide panes with zero visible cards
         allPanes.forEach(pane => {
             const visible = pane.querySelectorAll('.rx-m-card:not([style*="display: none"])').length;
-            if (visible === 0) pane.style.display = 'none';
+            pane.hidden = visible === 0;
         });
+        this._searchEmptyEl.hidden = anyMatch;
+        this._searchEmptyCopyEl.textContent = anyMatch ? '' : rxT(
+            'nothingMatchedSearch',
+            'Nothing matched “{query}”. Try another term.',
+            { query }
+        );
     },
 
     init() {
@@ -16961,6 +17157,10 @@ const SettingsPanel = {
         this._toolbarEl = null;
         this._keyHandler = null;
         this._navBtns = null;
+        this._searchInput = null;
+        this._searchEmptyEl = null;
+        this._searchEmptyCopyEl = null;
+        this._searchRestoreCatId = null;
     }
 };
 
@@ -17414,12 +17614,13 @@ const ChatUserBlock = {
         .rx-chat-block-btn {
             margin-left: 6px; cursor: pointer; opacity: 0; transition: opacity .15s;
             font: 600 9px/1.4 system-ui, sans-serif; color: var(--rx-red, #f38ba8);
-            background: rgba(243,139,168,0.1); border: 1px solid rgba(243,139,168,0.3);
+            background: color-mix(in srgb, var(--rx-red, #f38ba8) 10%, transparent); border: 1px solid color-mix(in srgb, var(--rx-red, #f38ba8) 30%, transparent);
             border-radius: 4px; padding: 1px 5px; vertical-align: baseline;
         }
         #chat-history-list li:hover .rx-chat-block-btn,
-        .chat--message-container:hover .rx-chat-block-btn { opacity: 1; }
-        .rx-chat-block-btn:hover { background: rgba(243,139,168,0.25); }
+        .chat--message-container:hover .rx-chat-block-btn,
+        .rx-chat-block-btn:focus-visible { opacity: 1; }
+        .rx-chat-block-btn:hover { background: color-mix(in srgb, var(--rx-red, #f38ba8) 25%, transparent); }
     `,
 
     _blocked() {
@@ -17533,12 +17734,12 @@ const ChatExport = {
 
     _css: `
         .rx-chat-export-btn {
-            background: rgba(49,50,68,0.5); border: 1px solid rgba(137,180,250,0.25);
+            background: color-mix(in srgb, var(--rx-surface0, #313244) 50%, transparent); border: 1px solid color-mix(in srgb, var(--rx-accent, #89b4fa) 25%, transparent);
             color: var(--rx-text, #cdd6f4); border-radius: 6px; padding: 4px 10px; cursor: pointer;
             font: 600 11px/1 system-ui, sans-serif; margin-left: 6px;
             transition: background .15s, border-color .15s;
         }
-        .rx-chat-export-btn:hover { background: rgba(49,50,68,0.8); border-color: rgba(137,180,250,0.5); }
+        .rx-chat-export-btn:hover { background: color-mix(in srgb, var(--rx-surface0, #313244) 80%, transparent); border-color: color-mix(in srgb, var(--rx-accent, #89b4fa) 50%, transparent); }
     `,
 
     _collect() {
@@ -17629,8 +17830,8 @@ const RantArchive = {
     _css: `
         .rx-rant-archive {
             margin: 8px 0; padding: 0;
-            background: rgba(249,226,175,0.07);
-            border: 1px solid rgba(249,226,175,0.22);
+            background: color-mix(in srgb, var(--rx-yellow, #f9e2af) 7%, transparent);
+            border: 1px solid color-mix(in srgb, var(--rx-yellow, #f9e2af) 22%, transparent);
             border-radius: 8px;
             color: var(--rx-text, #cdd6f4); font: 12px/1.45 system-ui, sans-serif;
             overflow: hidden;
@@ -17641,7 +17842,7 @@ const RantArchive = {
             border: 0; background: transparent; color: var(--rx-text, #cdd6f4); cursor: pointer;
             text-align: left; font: inherit;
         }
-        .rx-rant-archive__summary:hover { background: rgba(249,226,175,0.07); }
+        .rx-rant-archive__summary:hover { background: color-mix(in srgb, var(--rx-yellow, #f9e2af) 7%, transparent); }
         .rx-rant-archive__summary:focus-visible {
             outline: 2px solid var(--rx-accent, #89b4fa); outline-offset: -2px;
         }
@@ -17653,22 +17854,22 @@ const RantArchive = {
             color: var(--rx-subtext, #a6adc8); font: 600 10px/1 system-ui, sans-serif;
             white-space: nowrap;
         }
-        .rx-rant-archive__body { padding: 9px 10px 10px; border-top: 1px solid rgba(249,226,175,0.14); }
+        .rx-rant-archive__body { padding: 9px 10px 10px; border-top: 1px solid color-mix(in srgb, var(--rx-yellow, #f9e2af) 14%, transparent); }
         .rx-rant-archive__totals { display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 8px; }
         .rx-rant-archive__stat strong { display: block; font-size: 15px; color: var(--rx-yellow, #f9e2af); }
         .rx-rant-archive__stat span { font-size: 10px; color: var(--rx-subtext, #a6adc8); }
         .rx-rant-archive__top { display: flex; flex-direction: column; gap: 3px; margin-bottom: 8px; }
         .rx-rant-archive__top div {
             display: flex; justify-content: space-between; gap: 8px;
-            background: rgba(49,50,68,0.35); border-radius: 4px; padding: 3px 6px; font-size: 11px;
+            background: color-mix(in srgb, var(--rx-surface0, #313244) 35%, transparent); border-radius: 4px; padding: 3px 6px; font-size: 11px;
         }
         .rx-rant-archive__actions { display: flex; gap: 6px; }
         .rx-rant-archive__actions button {
-            background: rgba(49,50,68,0.6); border: 1px solid rgba(255,255,255,0.08);
+            background: color-mix(in srgb, var(--rx-surface0, #313244) 60%, transparent); border: 1px solid rgba(255,255,255,0.08);
             color: var(--rx-text, #cdd6f4); border-radius: 5px; padding: 5px 10px; cursor: pointer;
             font: 600 11px/1 system-ui, sans-serif; min-height: 24px;
         }
-        .rx-rant-archive__actions button:hover { background: rgba(49,50,68,0.9); }
+        .rx-rant-archive__actions button:hover { background: color-mix(in srgb, var(--rx-surface0, #313244) 90%, transparent); }
         .rx-rant-archive__empty { color: var(--rx-subtext0, #6c7086); font-size: 11px; }
     `,
 
@@ -17930,7 +18131,7 @@ const RantPersist = {
         }
         .rx-rant-persist-badge {
             display: inline-block; margin-left: 6px; padding: 1px 5px;
-            background: rgba(249,226,175,0.15); color: var(--rx-yellow, #f9e2af);
+            background: color-mix(in srgb, var(--rx-yellow, #f9e2af) 15%, transparent); color: var(--rx-yellow, #f9e2af);
             border-radius: 4px; font: 600 9px/1.4 system-ui, sans-serif;
         }
     `,
@@ -18180,14 +18381,14 @@ const CommentSort = {
             border-bottom: 1px solid rgba(255,255,255,0.06);
         }
         .rx-comment-sort-btn {
-            background: rgba(49,50,68,0.4); border: 1px solid rgba(255,255,255,0.06);
+            background: color-mix(in srgb, var(--rx-surface0, #313244) 40%, transparent); border: 1px solid rgba(255,255,255,0.06);
             color: var(--rx-subtext, #a6adc8); border-radius: 8px; padding: 4px 12px; cursor: pointer;
             font: 600 11px/1 system-ui, sans-serif; transition: all .15s;
         }
-        .rx-comment-sort-btn:hover { background: rgba(49,50,68,0.8); }
+        .rx-comment-sort-btn:hover { background: color-mix(in srgb, var(--rx-surface0, #313244) 80%, transparent); }
         .rx-comment-sort-btn.active {
-            background: rgba(137,180,250,0.15); color: var(--rx-accent, #89b4fa);
-            border-color: rgba(137,180,250,0.4);
+            background: color-mix(in srgb, var(--rx-accent, #89b4fa) 15%, transparent); color: var(--rx-accent, #89b4fa);
+            border-color: color-mix(in srgb, var(--rx-accent, #89b4fa) 40%, transparent);
         }
     `,
 
@@ -18467,12 +18668,12 @@ const PopoutChat = {
 
     _css: `
         .rx-popout-chat-btn {
-            background: rgba(49,50,68,0.5); border: 1px solid rgba(137,180,250,0.25);
+            background: color-mix(in srgb, var(--rx-surface0, #313244) 50%, transparent); border: 1px solid color-mix(in srgb, var(--rx-accent, #89b4fa) 25%, transparent);
             color: var(--rx-text, #cdd6f4); border-radius: 6px; padding: 4px 10px; cursor: pointer;
             font: 600 11px/1 system-ui, sans-serif; margin-left: 6px;
             transition: background .15s, border-color .15s;
         }
-        .rx-popout-chat-btn:hover { background: rgba(49,50,68,0.8); border-color: rgba(137,180,250,0.5); }
+        .rx-popout-chat-btn:hover { background: color-mix(in srgb, var(--rx-surface0, #313244) 80%, transparent); border-color: color-mix(in srgb, var(--rx-accent, #89b4fa) 50%, transparent); }
     `,
 
     _popout() {
@@ -18612,17 +18813,17 @@ const AutoplayScheduler = {
         .rx-queue-fab {
             position: fixed; bottom: 20px; right: 74px; z-index: 10008;
             width: 42px; height: 42px; border-radius: 50%;
-            background: rgba(30,30,46,0.9); border: 1px solid rgba(137,180,250,0.25);
+            background: color-mix(in srgb, var(--rx-base, #1e1e2e) 90%, transparent); border: 1px solid color-mix(in srgb, var(--rx-accent, #89b4fa) 25%, transparent);
             color: rgba(255,255,255,0.7); cursor: pointer;
             display: flex; align-items: center; justify-content: center;
             box-shadow: 0 4px 16px rgba(0,0,0,0.4);
         }
-        .rx-queue-fab:hover { border-color: rgba(137,180,250,0.6); }
+        .rx-queue-fab:hover { border-color: color-mix(in srgb, var(--rx-accent, #89b4fa) 60%, transparent); }
         html.rx-theater .rx-queue-fab { display: none; }
         .rx-queue-panel {
             position: fixed; bottom: 76px; right: 20px; z-index: 10009;
-            width: 320px; max-height: 420px; overflow-y: auto;
-            background: rgba(17,17,27,0.98); border: 1px solid rgba(137,180,250,0.2);
+            width: min(320px, calc(100vw - 24px)); max-height: min(420px, calc(100vh - 112px)); overflow-y: auto;
+            background: color-mix(in srgb, var(--rx-crust, #11111b) 98%, transparent); border: 1px solid color-mix(in srgb, var(--rx-accent, #89b4fa) 20%, transparent);
             border-radius: 12px; padding: 12px;
             color: var(--rx-text, #cdd6f4); font: 12px system-ui, sans-serif;
             box-shadow: 0 12px 40px rgba(0,0,0,0.6);
@@ -18638,23 +18839,32 @@ const AutoplayScheduler = {
             display: flex; gap: 6px; margin-bottom: 8px;
         }
         .rx-queue-add input {
-            flex: 1; background: rgba(49,50,68,0.5); border: 1px solid rgba(255,255,255,0.08);
+            flex: 1; background: color-mix(in srgb, var(--rx-surface0, #313244) 50%, transparent); border: 1px solid rgba(255,255,255,0.08);
             border-radius: 6px; padding: 5px 8px; color: var(--rx-text, #cdd6f4); font-size: 11px; outline: none;
         }
         .rx-queue-add button {
-            background: rgba(137,180,250,0.15); border: 1px solid rgba(137,180,250,0.3);
+            background: color-mix(in srgb, var(--rx-accent, #89b4fa) 15%, transparent); border: 1px solid color-mix(in srgb, var(--rx-accent, #89b4fa) 30%, transparent);
             color: var(--rx-accent, #89b4fa); border-radius: 6px; padding: 4px 10px;
             cursor: pointer; font-weight: 600; font-size: 11px;
         }
         .rx-queue-item {
             display: flex; align-items: center; gap: 6px; padding: 6px;
-            border-radius: 6px; margin-bottom: 4px; background: rgba(49,50,68,0.3);
+            border-radius: 6px; margin-bottom: 4px; background: color-mix(in srgb, var(--rx-surface0, #313244) 30%, transparent);
         }
         .rx-queue-item .rx-qi-url { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; }
         .rx-queue-item button {
             background: transparent; border: none; color: var(--rx-red, #f38ba8); cursor: pointer; font-size: 14px;
         }
         .rx-queue-empty { padding: 16px; text-align: center; color: var(--rx-subtext, #a6adc8); font-size: 11px; }
+        .rx-sr-only {
+            position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+            overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0;
+        }
+        @media (max-width: 420px) {
+            .rx-queue-panel { left: 12px; right: 12px; bottom: 72px; }
+            .rx-queue-add { flex-direction: column; }
+            .rx-queue-add input, .rx-queue-add button { min-height: 40px; }
+        }
     `,
 
     _queue() {
@@ -18699,7 +18909,10 @@ const AutoplayScheduler = {
         const q = this._queue();
         list.innerHTML = '';
         if (!q.length) {
-            list.innerHTML = '<div class="rx-queue-empty">Queue is empty. Add video URLs above.</div>';
+            const empty = document.createElement('div');
+            empty.className = 'rx-queue-empty';
+            empty.textContent = rxT('autoplayQueueEmpty', 'Queue is empty. Add video URLs above.');
+            list.appendChild(empty);
             return;
         }
         q.forEach((url, i) => {
@@ -18711,8 +18924,12 @@ const AutoplayScheduler = {
             const del = document.createElement('button');
             del.type = 'button';
             del.textContent = '×';
-            del.title = 'Remove';
-            del.setAttribute('aria-label', `Remove ${span.textContent} from the queue`);
+            del.title = rxT('remove', 'Remove');
+            del.setAttribute('aria-label', rxT(
+                'removeFromAutoplayQueue',
+                'Remove {title} from the queue',
+                { title: span.textContent }
+            ));
             del.addEventListener('click', () => {
                 const nq = this._queue();
                 nq.splice(i, 1);
@@ -18727,45 +18944,68 @@ const AutoplayScheduler = {
     _build() {
         const fab = document.createElement('button');
         fab.className = 'rx-queue-fab';
-        fab.title = 'Autoplay Queue';
+        fab.title = rxT('autoplayQueue', 'Autoplay Queue');
+        fab.setAttribute('aria-label', rxT('openAutoplayQueue', 'Open autoplay queue'));
+        fab.setAttribute('aria-expanded', 'false');
+        fab.setAttribute('aria-controls', 'rx-autoplay-queue-panel');
         fab.innerHTML = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="14" y2="18"/><polygon points="18 15 24 18 18 21" fill="currentColor"/></svg>';
         document.body.appendChild(fab);
         this._fab = fab;
 
         const panel = document.createElement('div');
         panel.className = 'rx-queue-panel';
+        panel.id = 'rx-autoplay-queue-panel';
         panel.setAttribute('role', 'region');
-        panel.setAttribute('aria-label', 'Autoplay queue');
+        panel.setAttribute('aria-label', rxT('autoplayQueue', 'Autoplay Queue'));
         panel.innerHTML = `
             <div class="rx-queue-header">
-                <span class="rx-queue-title">Autoplay Queue</span>
-                <button class="rx-queue-add-current" title="Add current video">+ current</button>
+                <span class="rx-queue-title"></span>
+                <button type="button" class="rx-queue-add-current"></button>
             </div>
             <div class="rx-queue-add">
-                <input type="text" placeholder="Paste Rumble URL..." />
-                <button>Add</button>
+                <label class="rx-sr-only" for="rx-queue-url"></label>
+                <input id="rx-queue-url" type="url" inputmode="url" autocomplete="url" />
+                <button type="button"></button>
             </div>
             <div class="rx-queue-list"></div>`;
         document.body.appendChild(panel);
         this._panel = panel;
 
+        panel.querySelector('.rx-queue-title').textContent = rxT('autoplayQueue', 'Autoplay Queue');
+        const currentBtn = panel.querySelector('.rx-queue-add-current');
+        currentBtn.textContent = rxT('addCurrentVideoShort', '+ current');
+        currentBtn.title = rxT('addCurrentVideo', 'Add current video');
+        const urlLabel = rxT('rumbleVideoUrl', 'Rumble video URL');
+        panel.querySelector('label[for="rx-queue-url"]').textContent = urlLabel;
+        const input = panel.querySelector('#rx-queue-url');
+        input.setAttribute('aria-label', urlLabel);
+        input.placeholder = rxT('pasteRumbleUrl', 'Paste Rumble URL...');
+        const addBtn = panel.querySelector('.rx-queue-add button');
+        addBtn.textContent = rxT('add', 'Add');
+
         fab.addEventListener('click', () => {
             panel.classList.toggle('open');
-            if (panel.classList.contains('open')) this._renderList();
+            const open = panel.classList.contains('open');
+            fab.setAttribute('aria-expanded', String(open));
+            fab.setAttribute(
+                'aria-label',
+                open
+                    ? rxT('closeAutoplayQueue', 'Close autoplay queue')
+                    : rxT('openAutoplayQueue', 'Open autoplay queue')
+            );
+            if (open) this._renderList();
         });
 
         panel.querySelector('.rx-queue-add-current').addEventListener('click', () => {
             if (Page.isWatch()) this._addCurrent();
         });
-        const input = panel.querySelector('input');
-        const addBtn = panel.querySelector('.rx-queue-add button');
         const doAdd = () => { this._addUrl(input.value); input.value = ''; };
         addBtn.addEventListener('click', doAdd);
         input.addEventListener('keydown', (e) => { if (e.key === 'Enter') doAdd(); });
 
         // Style buttons in header
         const headerBtn = panel.querySelector('.rx-queue-add-current');
-        headerBtn.style.cssText = 'background:rgba(137,180,250,0.15);border:1px solid rgba(137,180,250,0.3);color:var(--rx-accent,#89b4fa);border-radius:6px;padding:3px 8px;cursor:pointer;font-size:10px;font-weight:600;';
+        headerBtn.style.cssText = 'background:color-mix(in srgb, var(--rx-accent, #89b4fa) 15%, transparent);border:1px solid color-mix(in srgb, var(--rx-accent, #89b4fa) 30%, transparent);color:var(--rx-accent,#89b4fa);border-radius:6px;padding:3px 8px;cursor:pointer;font-size:10px;font-weight:600;';
     },
 
     _hookVideoEnd() {
@@ -18843,7 +19083,7 @@ const Chapters = {
         .rx-chapter-mark:hover .rx-chapter-tooltip { opacity: 1; }
         .rx-chapters-panel {
             margin: 12px 0; padding: 10px 12px;
-            background: rgba(30,30,46,0.5); border: 1px solid rgba(137,180,250,0.12);
+            background: color-mix(in srgb, var(--rx-base, #1e1e2e) 50%, transparent); border: 1px solid color-mix(in srgb, var(--rx-accent, #89b4fa) 12%, transparent);
             border-radius: 8px;
         }
         .rx-chapters-title {
@@ -18860,7 +19100,7 @@ const Chapters = {
             transition: background .15s;
         }
         .rx-chapters-item:focus-visible { outline: 2px solid var(--rx-accent, #89b4fa); outline-offset: -2px; }
-        .rx-chapters-item:hover { background: rgba(137,180,250,0.1); }
+        .rx-chapters-item:hover { background: color-mix(in srgb, var(--rx-accent, #89b4fa) 10%, transparent); }
         .rx-chapters-item .rx-ci-time {
             color: var(--rx-accent, #89b4fa); font-weight: 600; font-variant-numeric: tabular-nums;
             min-width: 52px;
@@ -19031,17 +19271,17 @@ const SponsorBlockRX = {
             position: absolute; top: 0; height: 100%;
             background: rgba(255,188,42,0.7); border-radius: 1px;
         }
-        .rx-sb-segment.category-intro { background: rgba(137,180,250,0.7); }
-        .rx-sb-segment.category-outro { background: rgba(249,226,175,0.7); }
+        .rx-sb-segment.category-intro { background: color-mix(in srgb, var(--rx-accent, #89b4fa) 70%, transparent); }
+        .rx-sb-segment.category-outro { background: color-mix(in srgb, var(--rx-yellow, #f9e2af) 70%, transparent); }
         .rx-sb-segment.category-selfpromo { background: rgba(203,166,247,0.7); }
-        .rx-sb-segment.category-sponsor { background: rgba(243,139,168,0.75); }
+        .rx-sb-segment.category-sponsor { background: color-mix(in srgb, var(--rx-red, #f38ba8) 75%, transparent); }
         .rx-sb-segment.category-spoiler { background: rgba(148,226,213,0.7); }
-        .rx-sb-segment.category-loudNoise { background: rgba(250,179,135,0.75); }
+        .rx-sb-segment.category-loudNoise { background: color-mix(in srgb, var(--rx-peach, #fab387) 75%, transparent); }
         .rx-sb-segment.category-flashingLights { background: rgba(245,224,220,0.8); }
         .rx-sb-notice {
             position: fixed; bottom: 90px; left: 50%; transform: translateX(-50%);
-            padding: 8px 16px; background: rgba(30,30,46,0.95);
-            border: 1px solid rgba(243,139,168,0.4); border-radius: 8px;
+            padding: 8px 16px; background: color-mix(in srgb, var(--rx-base, #1e1e2e) 95%, transparent);
+            border: 1px solid color-mix(in srgb, var(--rx-red, #f38ba8) 40%, transparent); border-radius: 8px;
             color: var(--rx-red, #f38ba8); font: 600 12px/1 system-ui, sans-serif;
             z-index: 10020; box-shadow: 0 6px 20px rgba(0,0,0,0.5);
             opacity: 0; transition: opacity .3s;
@@ -19049,34 +19289,34 @@ const SponsorBlockRX = {
         .rx-sb-notice.visible { opacity: 1; }
         .rx-sb-notice { display: flex; align-items: center; gap: 10px; }
         .rx-sb-undo {
-            background: rgba(243,139,168,0.18); border: 1px solid rgba(243,139,168,0.5);
+            background: color-mix(in srgb, var(--rx-red, #f38ba8) 18%, transparent); border: 1px solid color-mix(in srgb, var(--rx-red, #f38ba8) 50%, transparent);
             color: var(--rx-red, #f38ba8); border-radius: 5px; padding: 4px 10px; cursor: pointer;
             font: 700 11px/1 system-ui, sans-serif; min-height: 24px; min-width: 44px;
         }
-        .rx-sb-undo:hover { background: rgba(243,139,168,0.3); }
+        .rx-sb-undo:hover { background: color-mix(in srgb, var(--rx-red, #f38ba8) 30%, transparent); }
 
         .rx-sb-panel {
             margin: 8px 0; padding: 10px;
-            background: rgba(243,139,168,0.08); border: 1px solid rgba(243,139,168,0.2);
+            background: color-mix(in srgb, var(--rx-red, #f38ba8) 8%, transparent); border: 1px solid color-mix(in srgb, var(--rx-red, #f38ba8) 20%, transparent);
             border-radius: 8px;
         }
         .rx-sb-title { font: 700 11px/1 system-ui, sans-serif; color: var(--rx-red, #f38ba8); margin-bottom: 6px; text-transform: uppercase; }
         .rx-sb-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 6px; }
         .rx-sb-btn {
-            background: rgba(49,50,68,0.4); border: 1px solid rgba(255,255,255,0.06);
+            background: color-mix(in srgb, var(--rx-surface0, #313244) 40%, transparent); border: 1px solid rgba(255,255,255,0.06);
             color: var(--rx-text, #cdd6f4); border-radius: 5px; padding: 4px 10px; cursor: pointer;
             font: 600 11px/1 system-ui, sans-serif;
         }
-        .rx-sb-btn:hover { background: rgba(49,50,68,0.7); }
+        .rx-sb-btn:hover { background: color-mix(in srgb, var(--rx-surface0, #313244) 70%, transparent); }
         .rx-sb-saved { font: 600 10px/1.4 system-ui, sans-serif; color: var(--rx-subtext, #a6adc8); margin-bottom: 6px; }
         .rx-sb-saved:empty { display: none; }
         .rx-sb-list { display: flex; flex-direction: column; gap: 3px; font-size: 11px; }
         .rx-sb-item {
             display: flex; gap: 6px; align-items: center; padding: 3px 6px;
-            background: rgba(49,50,68,0.3); border-radius: 4px;
+            background: color-mix(in srgb, var(--rx-surface0, #313244) 30%, transparent); border-radius: 4px;
         }
         .rx-sb-item select {
-            background: rgba(30,30,46,0.8); color: var(--rx-text, #cdd6f4);
+            background: color-mix(in srgb, var(--rx-base, #1e1e2e) 80%, transparent); color: var(--rx-text, #cdd6f4);
             border: 1px solid rgba(255,255,255,0.08); border-radius: 4px;
             font-size: 10px; padding: 1px 4px;
         }
@@ -19428,21 +19668,21 @@ const VideoClips = {
     _css: `
         .rx-clip-panel {
             margin: 8px 0; padding: 10px;
-            background: rgba(166,227,161,0.06); border: 1px solid rgba(166,227,161,0.2);
+            background: color-mix(in srgb, var(--rx-green, #a6e3a1) 6%, transparent); border: 1px solid color-mix(in srgb, var(--rx-green, #a6e3a1) 20%, transparent);
             border-radius: 8px;
         }
         .rx-clip-title { font: 700 11px/1 system-ui, sans-serif; color: var(--rx-green, #a6e3a1); margin-bottom: 6px; text-transform: uppercase; }
         .rx-clip-row { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 4px; }
         .rx-clip-btn {
-            background: rgba(49,50,68,0.4); border: 1px solid rgba(255,255,255,0.06);
+            background: color-mix(in srgb, var(--rx-surface0, #313244) 40%, transparent); border: 1px solid rgba(255,255,255,0.06);
             color: var(--rx-text, #cdd6f4); border-radius: 5px; padding: 4px 10px; cursor: pointer;
             font: 600 11px/1 system-ui, sans-serif;
         }
-        .rx-clip-btn:hover { background: rgba(49,50,68,0.7); }
-        .rx-clip-btn.primary { background: rgba(166,227,161,0.15); color: var(--rx-green, #a6e3a1); border-color: rgba(166,227,161,0.3); }
+        .rx-clip-btn:hover { background: color-mix(in srgb, var(--rx-surface0, #313244) 70%, transparent); }
+        .rx-clip-btn.primary { background: color-mix(in srgb, var(--rx-green, #a6e3a1) 15%, transparent); color: var(--rx-green, #a6e3a1); border-color: color-mix(in srgb, var(--rx-green, #a6e3a1) 30%, transparent); }
         .rx-clip-info { font: 11px/1.4 system-ui, sans-serif; color: var(--rx-subtext, #a6adc8); margin: 4px 0; font-variant-numeric: tabular-nums; }
         .rx-clip-status { font: 11px/1.4 system-ui, sans-serif; color: var(--rx-accent, #89b4fa); margin-top: 4px; }
-        .rx-clip-bar-bg { height: 4px; background: rgba(49,50,68,0.5); border-radius: 2px; overflow: hidden; margin-top: 4px; }
+        .rx-clip-bar-bg { height: 4px; background: color-mix(in srgb, var(--rx-surface0, #313244) 50%, transparent); border-radius: 2px; overflow: hidden; margin-top: 4px; }
         .rx-clip-bar-fill { height: 100%; width: 0%; background: linear-gradient(90deg,var(--rx-green, #a6e3a1),var(--rx-accent, #89b4fa)); transition: width .2s; }
     `,
 
@@ -19636,17 +19876,17 @@ const LiveDVR = {
     _css: `
         .rx-dvr-panel {
             margin: 8px 0; padding: 10px;
-            background: rgba(249,226,175,0.06); border: 1px solid rgba(249,226,175,0.22);
+            background: color-mix(in srgb, var(--rx-yellow, #f9e2af) 6%, transparent); border: 1px solid color-mix(in srgb, var(--rx-yellow, #f9e2af) 22%, transparent);
             border-radius: 8px;
         }
         .rx-dvr-title { font: 700 11px/1 system-ui, sans-serif; color: var(--rx-yellow, #f9e2af); margin-bottom: 6px; text-transform: uppercase; }
         .rx-dvr-row { display: flex; flex-wrap: wrap; gap: 6px; }
         .rx-dvr-btn {
-            background: rgba(49,50,68,0.4); border: 1px solid rgba(255,255,255,0.06);
+            background: color-mix(in srgb, var(--rx-surface0, #313244) 40%, transparent); border: 1px solid rgba(255,255,255,0.06);
             color: var(--rx-text, #cdd6f4); border-radius: 5px; padding: 4px 10px; cursor: pointer;
             font: 600 11px/1 system-ui, sans-serif;
         }
-        .rx-dvr-btn:hover { background: rgba(49,50,68,0.7); }
+        .rx-dvr-btn:hover { background: color-mix(in srgb, var(--rx-surface0, #313244) 70%, transparent); }
         .rx-dvr-status { font: 11px/1.4 system-ui, sans-serif; color: var(--rx-accent, #89b4fa); margin-top: 4px; }
     `,
 
@@ -19772,21 +20012,21 @@ const SubtitleSidecar = {
         .rx-sub-native { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; margin-top: 6px; }
         .rx-sub-native:empty { display: none; }
         .rx-sub-native-btn[aria-pressed="true"] {
-            border-color: rgba(137,180,250,0.6); background: rgba(137,180,250,0.18); color: var(--rx-accent, #89b4fa);
+            border-color: color-mix(in srgb, var(--rx-accent, #89b4fa) 60%, transparent); background: color-mix(in srgb, var(--rx-accent, #89b4fa) 18%, transparent); color: var(--rx-accent, #89b4fa);
         }
         .rx-sub-panel {
             margin: 8px 0; padding: 10px;
-            background: rgba(137,180,250,0.06); border: 1px solid rgba(137,180,250,0.2);
+            background: color-mix(in srgb, var(--rx-accent, #89b4fa) 6%, transparent); border: 1px solid color-mix(in srgb, var(--rx-accent, #89b4fa) 20%, transparent);
             border-radius: 8px;
         }
         .rx-sub-title { font: 700 11px/1 system-ui, sans-serif; color: var(--rx-accent,#89b4fa); margin-bottom: 6px; text-transform: uppercase; }
         .rx-sub-row { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
         .rx-sub-btn {
-            background: rgba(49,50,68,0.4); border: 1px solid rgba(255,255,255,0.06);
+            background: color-mix(in srgb, var(--rx-surface0, #313244) 40%, transparent); border: 1px solid rgba(255,255,255,0.06);
             color: var(--rx-text, #cdd6f4); border-radius: 5px; padding: 4px 10px; cursor: pointer;
             font: 600 11px/1 system-ui, sans-serif;
         }
-        .rx-sub-btn:hover { background: rgba(49,50,68,0.7); }
+        .rx-sub-btn:hover { background: color-mix(in srgb, var(--rx-surface0, #313244) 70%, transparent); }
         .rx-sub-status { font: 11px system-ui; color: var(--rx-subtext, #a6adc8); }
         .rx-sub-overlay {
             position: absolute; left: 50%; bottom: 12%; transform: translateX(-50%);
@@ -20085,7 +20325,7 @@ const Transcripts = {
             min-width: 52px; flex-shrink: 0;
         }
         .rx-trans-search {
-            width: 100%; background: rgba(49,50,68,0.5);
+            width: 100%; background: color-mix(in srgb, var(--rx-surface0, #313244) 50%, transparent);
             border: 1px solid rgba(255,255,255,0.08); border-radius: 6px;
             padding: 5px 8px; color: var(--rx-text, #cdd6f4); font-size: 11px; margin-bottom: 6px; outline: none;
         }
@@ -20538,7 +20778,7 @@ const BatchDownload = {
         .rx-batch-bar {
             position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
             z-index: 10020; display: flex; gap: 10px; align-items: center;
-            background: rgba(30,30,46,0.97); border: 1px solid rgba(137,180,250,0.3);
+            background: color-mix(in srgb, var(--rx-base, #1e1e2e) 97%, transparent); border: 1px solid color-mix(in srgb, var(--rx-accent, #89b4fa) 30%, transparent);
             border-radius: 12px; padding: 10px 14px;
             font: 600 12px system-ui, sans-serif; color: var(--rx-text, #cdd6f4);
             box-shadow: 0 10px 30px rgba(0,0,0,0.5);
@@ -20546,12 +20786,12 @@ const BatchDownload = {
         }
         .rx-batch-bar.visible { opacity: 1; pointer-events: auto; transform: translateX(-50%) translateY(0); }
         .rx-batch-bar button {
-            background: rgba(137,180,250,0.15); border: 1px solid rgba(137,180,250,0.3);
+            background: color-mix(in srgb, var(--rx-accent, #89b4fa) 15%, transparent); border: 1px solid color-mix(in srgb, var(--rx-accent, #89b4fa) 30%, transparent);
             color: var(--rx-accent, #89b4fa); border-radius: 6px; padding: 5px 10px;
             cursor: pointer; font: 600 11px system-ui;
         }
-        .rx-batch-bar button:hover { background: rgba(137,180,250,0.25); }
-        .rx-batch-bar .rx-batch-clear { color: var(--rx-red, #f38ba8); border-color: rgba(243,139,168,0.3); background: rgba(243,139,168,0.1); }
+        .rx-batch-bar button:hover { background: color-mix(in srgb, var(--rx-accent, #89b4fa) 25%, transparent); }
+        .rx-batch-bar .rx-batch-clear { color: var(--rx-red, #f38ba8); border-color: color-mix(in srgb, var(--rx-red, #f38ba8) 30%, transparent); background: color-mix(in srgb, var(--rx-red, #f38ba8) 10%, transparent); }
     `,
 
     _attachToCard(card) {
@@ -21390,13 +21630,14 @@ const CommentBlocking = {
         .rx-blocked-comment { display: none !important; }
         .rx-comment-block-btn {
             margin-left: 8px; padding: 2px 8px;
-            background: rgba(243,139,168,0.12); border: 1px solid rgba(243,139,168,0.3);
+            background: color-mix(in srgb, var(--rx-red, #f38ba8) 12%, transparent); border: 1px solid color-mix(in srgb, var(--rx-red, #f38ba8) 30%, transparent);
             color: var(--rx-red, #f38ba8); border-radius: 4px; cursor: pointer; opacity: 0;
             font: 600 10px/1.2 system-ui, sans-serif;
             transition: opacity .15s, background .15s;
         }
-        .comment-item:hover .rx-comment-block-btn { opacity: 1; }
-        .rx-comment-block-btn:hover { background: rgba(243,139,168,0.25); }
+        .comment-item:hover .rx-comment-block-btn,
+        .rx-comment-block-btn:focus-visible { opacity: 1; }
+        .rx-comment-block-btn:hover { background: color-mix(in srgb, var(--rx-red, #f38ba8) 25%, transparent); }
     `,
 
     _blocked() {
@@ -21460,14 +21701,17 @@ const SiteTheme = {
 
     // Settings.get('siteTheme') is a string: 'system' | 'dark' | 'light'
     _apply(themeValue) {
-        const target = qs(`a.main-menu-item.theme-option[data-theme-option="${themeValue}"]`);
-        if (target instanceof HTMLElement && !target.classList.contains('main-menu-item--active')) {
+        const target = qs(`:is(a, button).main-menu-item.theme-option[data-theme-option="${themeValue}"]`);
+        const isActive = target?.classList.contains('main-menu-item--active')
+            || target?.classList.contains('is-selected')
+            || target?.getAttribute('aria-pressed') === 'true';
+        if (target instanceof HTMLElement && !isActive) {
             try { target.click(); } catch {}
         }
     },
 
     _sync() {
-        const activeEl = qs('a.main-menu-item.theme-option.main-menu-item--active');
+        const activeEl = qs(':is(a, button).main-menu-item.theme-option:is(.main-menu-item--active, .is-selected, [aria-pressed="true"])');
         const active = activeEl?.dataset?.themeOption || 'system';
         if (Settings.get('siteTheme') !== active) {
             Settings.set('siteTheme', active);
@@ -22712,11 +22956,11 @@ const RxDownloadDiagnostics = {
                 border-top: 1px solid rgba(255,255,255,0.08);
             }
             .rx-diagnostic-action {
-                border: 1px solid rgba(137,180,250,0.28); border-radius: 6px;
-                background: rgba(49,50,68,0.55); color: var(--rx-text, #cdd6f4);
+                border: 1px solid color-mix(in srgb, var(--rx-accent, #89b4fa) 28%, transparent); border-radius: 6px;
+                background: color-mix(in srgb, var(--rx-surface0, #313244) 55%, transparent); color: var(--rx-text, #cdd6f4);
                 padding: 6px 9px; font: 600 11px/1 system-ui, sans-serif; cursor: pointer;
             }
-            .rx-diagnostic-action:hover { background: rgba(49,50,68,0.85); border-color: rgba(137,180,250,0.5); }
+            .rx-diagnostic-action:hover { background: color-mix(in srgb, var(--rx-surface0, #313244) 85%, transparent); border-color: color-mix(in srgb, var(--rx-accent, #89b4fa) 50%, transparent); }
             .rx-diagnostic-action:focus-visible { outline: 2px solid var(--rx-accent, #89b4fa); outline-offset: 2px; }
             .rx-diagnostic-action:disabled { opacity: 0.55; cursor: wait; }
             .rx-diagnostic-status { flex-basis: 100%; color: var(--rx-subtext, #a6adc8); font: 11px/1.4 system-ui, sans-serif; }
@@ -22888,8 +23132,8 @@ const CreatorProgram = {
     _css: `
         .rx-cp-panel {
             margin: 10px 0; padding: 12px 14px;
-            background: rgba(166,227,161,0.07);
-            border: 1px solid rgba(166,227,161,0.25);
+            background: color-mix(in srgb, var(--rx-green, #a6e3a1) 7%, transparent);
+            border: 1px solid color-mix(in srgb, var(--rx-green, #a6e3a1) 25%, transparent);
             border-radius: 10px;
             font: 12px/1.5 system-ui, sans-serif; color: var(--rx-text, #cdd6f4);
         }
@@ -22900,7 +23144,7 @@ const CreatorProgram = {
         .rx-cp-rows { display: flex; flex-direction: column; gap: 8px; }
         .rx-cp-row { display: flex; align-items: center; gap: 10px; }
         .rx-cp-name { min-width: 150px; color: var(--rx-subtext, #a6adc8); }
-        .rx-cp-track { flex: 1; height: 6px; border-radius: 3px; background: rgba(49,50,68,0.7); overflow: hidden; }
+        .rx-cp-track { flex: 1; height: 6px; border-radius: 3px; background: color-mix(in srgb, var(--rx-surface0, #313244) 70%, transparent); overflow: hidden; }
         .rx-cp-fill { height: 100%; background: linear-gradient(90deg, var(--rx-green, #a6e3a1), #94e2d5); border-radius: 3px; }
         .rx-cp-fill.is-short { background: linear-gradient(90deg, var(--rx-yellow, #f9e2af), var(--rx-peach, #fab387)); }
         .rx-cp-count { font-variant-numeric: tabular-nums; font-weight: 700; min-width: 62px; text-align: right; }
@@ -23584,6 +23828,10 @@ async function boot() {
         } catch (e) {
             console.error('[RumbleX] Settings panel init failed:', e);
             RxErrorLog.record('SettingsPanel', e, 'init');
+        } finally {
+            // The document-start cleanup prevents bfcache or reinjection flashes,
+            // but it must stop hiding the newly mounted controls once boot ends.
+            watchSurfaceCleanupStyle.remove();
         }
         try {
             Selectors.startHealthMonitor();

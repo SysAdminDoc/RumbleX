@@ -427,6 +427,77 @@ test('the in-page settings modal stays usable in a small window', async ({ conte
     await page.close();
 });
 
+test('in-page settings search reaches every category and explains empty results', async ({ context }) => {
+    test.setTimeout(60_000);
+    const fs = require('node:fs');
+    const path = require('node:path');
+    const fixture = fs.readFileSync(
+        path.join(__dirname, '..', 'fixtures', 'platform', 'modern-watch.html'),
+        'utf8',
+    );
+    const page = await context.newPage();
+    await page.route('https://rumble.com/vsettings-search.html', (route) => route.fulfill({
+        status: 200, contentType: 'text/html', body: fixture,
+    }));
+    await page.goto('https://rumble.com/vsettings-search.html', { waitUntil: 'domcontentloaded' });
+    await page.locator('#rx-settings-btn').waitFor({ state: 'attached', timeout: 30_000 });
+    await page.evaluate(() => document.querySelector('#rx-settings-btn')?.click());
+
+    const search = page.locator('.rx-m-search');
+    await search.fill('Auto-hide Header');
+    await expect(page.locator('.rx-m-card[data-feature-id="autoHideHeader"]')).toBeVisible();
+    await expect(page.locator('#rx-pane-nav-chrome')).not.toHaveAttribute('hidden', '');
+
+    await search.fill('definitely-not-a-rumblex-setting');
+    const empty = page.locator('.rx-m-search-empty');
+    await expect(empty).toBeVisible();
+    await expect(empty).toContainText('No matching features');
+    await empty.getByRole('button', { name: 'Clear search' }).click();
+    await expect(search).toHaveValue('');
+    await expect(page.locator('.rx-m-pane.active:not([hidden])')).toHaveCount(1);
+    await page.close();
+});
+
+test('standalone downloader behaves as a modal and restores focus', async ({ context, extensionId }) => {
+    test.setTimeout(60_000);
+    const fs = require('node:fs');
+    const path = require('node:path');
+    const fixture = fs.readFileSync(
+        path.join(__dirname, '..', 'fixtures', 'platform', 'modern-watch.html'),
+        'utf8',
+    );
+    const options = await context.newPage();
+    await options.goto(`chrome-extension://${extensionId}/pages/options.html`);
+    await options.evaluate(async () => chrome.storage.local.set({
+        rx_settings: { videoDownload: true, theaterSplit: false },
+    }));
+    await options.close();
+
+    const page = await context.newPage();
+    await page.route('https://rumble.com/vdownload-dialog.html', (route) => route.fulfill({
+        status: 200, contentType: 'text/html', body: fixture,
+    }));
+    await page.goto('https://rumble.com/vdownload-dialog.html', { waitUntil: 'domcontentloaded' });
+    const trigger = page.locator('#rx-download-btn');
+    await trigger.waitFor({ state: 'attached', timeout: 30_000 });
+    await trigger.click();
+
+    const dialog = page.locator('#rx-download-overlay');
+    await expect(dialog).toHaveAttribute('role', 'dialog');
+    await expect(dialog).toHaveAttribute('aria-modal', 'true');
+    await expect(page.locator('.rx-dl-card-close')).toBeFocused();
+    expect(await page.evaluate(() => Array.from(document.body.children)
+        .filter((el) => el.id !== 'rx-download-overlay')
+        .every((el) => el.inert))).toBe(true);
+
+    await page.keyboard.press('Shift+Tab');
+    expect(await page.evaluate(() => !!document.activeElement?.closest('#rx-download-overlay'))).toBe(true);
+    await page.keyboard.press('Escape');
+    await expect(dialog).toHaveCount(0);
+    await expect(trigger).toBeFocused();
+    await page.close();
+});
+
 test('first-run choices scan in two columns and keep both actions together', async ({ context, extensionId }) => {
     const page = await context.newPage();
     await page.setViewportSize({ width: 1440, height: 900 });
