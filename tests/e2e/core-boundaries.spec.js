@@ -231,6 +231,15 @@ test('media probe cache shares one first load across concurrent writers', async 
             target: { tabId: targetTabId },
             world: 'ISOLATED',
             func: async () => {
+                const deadline = Date.now() + 10_000;
+                while ((typeof Settings === 'undefined' || !Settings._ready
+                    || typeof MediaProbeCache === 'undefined') && Date.now() < deadline) {
+                    await new Promise((resolve) => setTimeout(resolve, 25));
+                }
+                if (typeof Settings === 'undefined' || !Settings._ready
+                    || typeof MediaProbeCache === 'undefined') {
+                    throw new Error('RumbleX content runtime did not become ready');
+                }
                 const originalTtl = Settings._cache.downloadProbeCacheTtlHours;
                 const realGet = chrome.storage.local.get.bind(chrome.storage.local);
                 let reads = 0;

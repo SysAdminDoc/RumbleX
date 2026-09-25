@@ -77,11 +77,12 @@ test.describe('store listing assets', () => {
             // 3. The privacy report — the listing leans on it, so it is shown.
             await options.keyboard.press('Escape');
             await options.waitForTimeout(250);
-            const privacy = options.locator('#privacy-report, [data-section="privacy"]').first();
-            if (await privacy.count()) {
-                await privacy.scrollIntoViewIfNeeded();
-                await options.waitForTimeout(250);
-            }
+            const privacy = options.locator('#privacy-section');
+            await expect(privacy).toBeVisible();
+            await privacy.locator('details').evaluate((details) => { details.open = true; });
+            await privacy.scrollIntoViewIfNeeded();
+            await expect(privacy.locator('#privacy-heading')).toBeVisible();
+            await options.waitForTimeout(250);
             const privacyShot = path.join(OUT, `screenshot-3-privacy-${suffix}.png`);
             await options.screenshot({ path: privacyShot, fullPage: false });
             written.push([privacyShot, size]);

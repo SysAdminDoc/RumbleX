@@ -4,6 +4,7 @@
 const assert = require('assert/strict');
 const fs = require('fs');
 const path = require('path');
+const { spawnSync } = require('child_process');
 const {
     createDeterministicZip,
     writeFileAtomically,
@@ -25,8 +26,35 @@ function readPackageDeclarations() {
     };
 }
 
+function trackedDirectoryFiles(directory) {
+    const result = spawnSync('git', ['ls-files', '--', `extension/${directory}`], {
+        cwd: ROOT,
+        encoding: 'utf8',
+        windowsHide: true,
+    });
+    if (result.status === 0) {
+        return result.stdout.split(/\r?\n/)
+            .filter(Boolean)
+            .map((file) => file.replace(/^extension[\\/]/, '').split(path.sep).join('/'));
+    }
+    // The AMO source archive deliberately has no .git directory. Its
+    // extension tree was already copied from git ls-files, so recursion is the
+    // reproducible fallback there. A checkout with broken Git must fail.
+    assert.ok(!fs.existsSync(path.join(ROOT, '.git')),
+        `git ls-files failed while collecting extension/${directory}: ${result.stderr || result.error?.message || 'unknown error'}`);
+    return null;
+}
+
 function collectDirectory(directory, entries) {
     const root = path.join(EXT, directory);
+    const tracked = trackedDirectoryFiles(directory);
+    if (tracked) {
+        assert.ok(tracked.length > 0, `no tracked package files found under extension/${directory}`);
+        for (const name of tracked) {
+            entries.push({ name, data: fs.readFileSync(path.join(EXT, ...name.split('/'))) });
+        }
+        return;
+    }
     const visit = (current) => {
         for (const item of fs.readdirSync(current, { withFileTypes: true })) {
             if (item.name === '.DS_Store') continue;

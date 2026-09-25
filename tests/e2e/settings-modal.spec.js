@@ -348,10 +348,12 @@ test('starter settings and the seen marker commit in one storage write', async (
     await page.locator('#welcome-preset-autoTheater').check();
 
     await page.evaluate(() => {
-        const originalSet = chrome.storage.local.set.bind(chrome.storage.local);
-        chrome.storage.local.set = (value, callback) => {
-            if (Object.hasOwn(value, 'rx_welcome_seen')) throw new Error('fixture atomic write failure');
-            return originalSet(value, callback);
+        const originalSend = chrome.runtime.sendMessage.bind(chrome.runtime);
+        chrome.runtime.sendMessage = (message, ...rest) => {
+            if (message?.action === 'applyWelcomeSettings') {
+                return Promise.reject(new Error('fixture atomic write failure'));
+            }
+            return originalSend(message, ...rest);
         };
     });
     await page.locator('#welcome-apply-btn').click();

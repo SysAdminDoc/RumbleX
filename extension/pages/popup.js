@@ -318,12 +318,12 @@ let _pendingSettings = null;
 // chrome.runtime.lastError, not by throwing, so the previous synchronous
 // try/catch could never have caught a real persist failure. A dropped write
 // left the toggle looking saved when it was not.
-function persistSettings(settings) {
+function persistSettings(patch) {
     try {
-        chrome.storage.local.set({ rx_settings: settings }, () => {
+        chrome.runtime.sendMessage({ action: 'patchSettings', data: patch }, (response) => {
             const err = chrome.runtime.lastError;
-            if (err) {
-                reportSaveFailure(err.message);
+            if (err || !response?.success) {
+                reportSaveFailure(err?.message || response?.error || 'Settings update failed');
                 return;
             }
             const banner = document.getElementById('save-error');
@@ -344,8 +344,8 @@ function reportSaveFailure(message) {
     showPopupFeedback(banner.textContent, 'error');
 }
 
-function saveSettings(settings) {
-    _pendingSettings = settings;
+function saveSettings(patch) {
+    _pendingSettings = { ...(_pendingSettings || {}), ...patch };
     clearTimeout(_saveTimer);
     _saveTimer = setTimeout(() => {
         _saveTimer = null;
@@ -450,7 +450,7 @@ async function init() {
 
             const toggle = makeToggle(feat.id, localizedLabel, settings[feat.id] ?? true, (checked) => {
                 settings[feat.id] = checked;
-                saveSettings(settings);
+                saveSettings({ [feat.id]: checked });
                 // Keep the enabled-count badge in sync as the user toggles.
                 const countEl = groupEl.querySelector('.feat-group-count');
                 if (countEl) {
@@ -508,7 +508,7 @@ async function init() {
         chip.append(swatch, t.label);
         chip.addEventListener('click', () => {
             settings.theme = t.id;
-            saveSettings(settings);
+            saveSettings({ theme: t.id });
             for (const c of themeGrid.querySelectorAll('.theme-chip')) {
                 c.classList.remove('active');
                 c.setAttribute('aria-pressed', 'false');
@@ -543,7 +543,7 @@ async function init() {
         chip.setAttribute('aria-pressed', settings.pageDensity === density.id ? 'true' : 'false');
         chip.addEventListener('click', () => {
             settings.pageDensity = density.id;
-            saveSettings(settings);
+            saveSettings({ pageDensity: density.id });
             for (const candidate of densityGrid.querySelectorAll('.density-chip')) {
                 candidate.classList.remove('active');
                 candidate.setAttribute('aria-pressed', 'false');

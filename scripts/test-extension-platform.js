@@ -37,7 +37,9 @@ async function testFirefoxBrowserNamespace() {
         runtime: {
             getManifest: () => ({ manifest_version: 2, version: VERSION }),
             getURL: (name) => `moz-extension://fixture/${name}`,
-            sendMessage: async (message) => ({ ok: true, echo: message.action }),
+            sendMessage: async (message) => message.action === 'patchSettings'
+                ? ({ success: true, settings: { ...message.data, persisted: true } })
+                : ({ ok: true, echo: message.action }),
             onMessage: messages,
         },
         storage: {
@@ -59,6 +61,10 @@ async function testFirefoxBrowserNamespace() {
     assert.equal(platform.kind, 'extension');
     assert.equal(platform.version, VERSION);
     assert.equal((await platform.storage.get('rx_settings')).rx_settings.adNuker, true);
+    assert.deepEqual(
+        JSON.parse(JSON.stringify(await platform.storage.patchSettings({ darkEnhance: true }))),
+        { darkEnhance: true, persisted: true },
+    );
     assert.equal((await platform.sendMessage({ action: 'ping' })).echo, 'ping');
     assert.equal(await platform.assetText('worker.js'), 'asset:moz-extension://fixture/worker.js');
     assert.equal(platform.t('hello'), 't:hello');
@@ -75,7 +81,11 @@ async function testChromiumCallbackNamespace() {
             lastError: null,
             getManifest: () => ({ manifest_version: 3, version: VERSION }),
             getURL: (name) => `chrome-extension://fixture/${name}`,
-            sendMessage(message, callback) { callback({ ok: true, echo: message.action }); },
+            sendMessage(message, callback) {
+                callback(message.action === 'patchSettings'
+                    ? { success: true, settings: { ...message.data, persisted: true } }
+                    : { ok: true, echo: message.action });
+            },
             onMessage: messages,
         },
         storage: {
@@ -93,6 +103,10 @@ async function testChromiumCallbackNamespace() {
     const platform = context.RumbleXPlatform;
     assert.equal((await platform.storage.get('alpha')).alpha, 1);
     await platform.storage.set({ alpha: 2 });
+    assert.deepEqual(
+        JSON.parse(JSON.stringify(await platform.storage.patchSettings({ beta: 3 }))),
+        { beta: 3, persisted: true },
+    );
     await platform.storage.remove('alpha');
     assert.equal((await platform.sendMessage({ action: 'pong' })).echo, 'pong');
     assert.equal(platform.capabilities.requestBlockingMode, 'chromium-dnr');

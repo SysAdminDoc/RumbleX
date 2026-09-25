@@ -42,6 +42,14 @@
                 await Promise.resolve(GM_setValue(key, value));
             }
         },
+        async patchSettings(patch) {
+            const stored = await this.get('rx_settings');
+            const current = stored.rx_settings && typeof stored.rx_settings === 'object' ? stored.rx_settings : {};
+            const schema = globalThis.RumbleXSettingsSchema;
+            const next = schema.normalizeStored({ ...current, ...patch }, schema.DEFAULTS);
+            await this.set({ rx_settings: next });
+            return next;
+        },
         async remove(keys) {
             for (const key of (Array.isArray(keys) ? keys : [keys])) {
                 if (typeof key === 'string') await Promise.resolve(GM_deleteValue(key));

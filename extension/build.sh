@@ -7,6 +7,12 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 cd "$SCRIPT_DIR"
 
+if ! git -C .. rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    echo "[!] Release packaging requires a Git checkout."
+    echo "    AMO source archives reproduce the Firefox package with npm run build-for-amo."
+    exit 1
+fi
+
 echo "=== RumbleX Extension Build ==="
 
 # A leftover backup means an earlier build died between swapping the manifest and
@@ -32,8 +38,8 @@ fi
 MUX_JS_VERSION="7.1.0"
 MUX_JS_URL="https://cdn.jsdelivr.net/npm/mux.js@${MUX_JS_VERSION}/dist/mux.min.js"
 MUX_JS_SHA256="eb088a07f954554db7c38114487b21df6d1f28c4a84d53003644e962c7567b5b"
-MEDIABUNNY_VERSION="1.59.1"
-MEDIABUNNY_JS_SHA256="25795ed46b204b6b8613cf76f7337ee3f52000f4c3d39d7bb24595d67b46a7e2"
+MEDIABUNNY_VERSION="1.60.0"
+MEDIABUNNY_JS_SHA256="ea3f1a537e64aa99e1e5af7d066977d4fac90bc6d71617200b4ab8147fb17f5a"
 MEDIABUNNY_LICENSE_SHA256="3f3d9e0024b1921b067d6f7f88deb4a60cbe7a78e76c64e3f1d7fc3b779b9d04"
 CHROME_ZIP="../RumbleX-chrome.zip"
 CHROME_CRX="../RumbleX-chrome.crx"
@@ -145,7 +151,19 @@ pack_extension() {
             cp "$item" "$stage/$item" || exit 1
         done
         for item in $PACK_DIRS; do
-            cp -R "$item" "$stage/$item" || exit 1
+            local found=0
+            local tracked
+            while IFS= read -r tracked; do
+                [ -n "$tracked" ] || continue
+                tracked="${tracked#extension/}"
+                mkdir -p "$stage/$(dirname "$tracked")" || exit 1
+                cp "$tracked" "$stage/$tracked" || exit 1
+                found=1
+            done < <(git -C .. ls-files -- "extension/$item")
+            if [ "$found" -ne 1 ]; then
+                echo "[!] No tracked package files found under extension/$item"
+                exit 1
+            fi
         done
     } || rc=1
 
@@ -207,6 +225,8 @@ build_source_bundle() {
     local stage
     local abs_dest
     local rc=0
+    local tracked
+    local relative
 
     rm -f "$SOURCE_BUNDLE"
     stage="$(mktemp -d)" || return 1
@@ -214,8 +234,12 @@ build_source_bundle() {
 
     {
         mkdir -p "$stage/extension" "$stage/scripts" || exit 1
-        cp -R . "$stage/extension/" || exit 1
-        rm -rf "$stage/extension/_metadata" || true
+        while IFS= read -r tracked; do
+            [ -n "$tracked" ] || continue
+            relative="${tracked#extension/}"
+            mkdir -p "$stage/extension/$(dirname "$relative")" || exit 1
+            cp "$relative" "$stage/extension/$relative" || exit 1
+        done < <(git -C .. ls-files -- extension)
         cp ../scripts/build-userscript.js "$stage/scripts/" || exit 1
         cp ../scripts/build-firefox-amo.js "$stage/scripts/" || exit 1
         cp ../scripts/zip-utils.js "$stage/scripts/" || exit 1

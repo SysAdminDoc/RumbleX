@@ -15,6 +15,7 @@
 const assert = require('assert/strict');
 const fs = require('fs');
 const path = require('path');
+const { spawnSync } = require('child_process');
 const { readArchive, readArchiveBuffer } = require('./zip-utils');
 const { verifyCrx3 } = require('./crx3-utils');
 
@@ -74,18 +75,19 @@ assert.deepEqual(undeclaredDirs, [],
 
 const runtimeSources = new Map(packFiles.map((name) => [name, path.join(EXT, name)]));
 const collectDirectory = (directory) => {
-    const root = path.join(EXT, directory);
-    const visit = (current) => {
-        for (const entry of fs.readdirSync(current, { withFileTypes: true })) {
-            const absolute = path.join(current, entry.name);
-            if (entry.isDirectory()) visit(absolute);
-            else if (entry.isFile()) {
-                const relative = path.relative(EXT, absolute).split(path.sep).join('/');
-                runtimeSources.set(relative, absolute);
-            }
-        }
-    };
-    visit(root);
+    const result = spawnSync('git', ['ls-files', '--', `extension/${directory}`], {
+        cwd: ROOT,
+        encoding: 'utf8',
+        windowsHide: true,
+    });
+    assert.equal(result.status, 0,
+        `git ls-files failed for extension/${directory}: ${result.stderr || result.error?.message || 'unknown error'}`);
+    const tracked = result.stdout.split(/\r?\n/).filter(Boolean);
+    assert.ok(tracked.length > 0, `no tracked runtime files found under extension/${directory}`);
+    for (const file of tracked) {
+        const relative = file.replace(/^extension[\\/]/, '').split(path.sep).join('/');
+        runtimeSources.set(relative, path.join(ROOT, ...file.split('/')));
+    }
 };
 for (const directory of packDirs) collectDirectory(directory);
 

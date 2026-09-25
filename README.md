@@ -400,7 +400,7 @@ ssh-keygen -Y verify -f allowed_signers -I release@rumblex -n file \
 
 A `Good "file" signature` result means the checksums came from the key published in this repository. If either check fails, do not install the files. The only official sources are this repository's Releases page and the raw userscript URLs above; copies elsewhere are not ours.
 
-v3.60.1 is unsigned because the project does not yet have a published release signing identity. Its release page states that directly; use `SHA256SUMS.txt` to verify download integrity.
+v3.60.1 is unsigned because the project does not yet have a published release signing identity. Use `SHA256SUMS.txt` to verify download integrity, and treat the lack of a signature as an explicit limit on provenance.
 
 ### Request-shield support matrix
 
@@ -412,7 +412,7 @@ v3.60.1 is unsigned because the project does not yet have a published release si
 
 All three copies of the blocked-host list are machine-checked against each other by `npm run test:ad-blocking`, so a host cannot be added to one runtime and forgotten in another. One difference is structural and intentional: `@webRequest` selectors are globs, so the first-party affiliate rule (a regex over `rumble.com/l/...?af=`) exists in the DNR ruleset and the Firefox listener but cannot be expressed in the userscript at all. Every blocked *host* is present in all three.
 
-**Last verified against production Rumble: 2026-08-18.** A cold-load audit of the home and watch surfaces recorded no completed ad responses and no visible ad DOM (`RUMBLEX_AD_NETWORK_AUDIT=1 npx playwright test tests/e2e/ad-network-live.spec.js`). That audit only observes hosts it already knows about, so it is a regression check rather than a discovery tool. re-date this claim on every release rather than treating it as permanent.
+**Last verified against production Rumble: 2026-09-25.** A cold-load audit of the home and watch surfaces recorded no completed ad responses and no visible ad DOM (`RUMBLEX_AD_NETWORK_AUDIT=1 npx playwright test tests/e2e/ad-network-live.spec.js`). That audit only observes hosts it already knows about, so it is a regression check rather than a discovery tool. Re-date this claim on every release rather than treating it as permanent.
 
 RumbleX intentionally does not request Declarative Net Request feedback/debug permission for per-rule history. The settings and Privacy Report expose the enforcement mode and declared rule count without retaining request URLs or browsing history.
 
@@ -421,7 +421,7 @@ RumbleX intentionally does not request Declarative Net Request feedback/debug pe
 - Chrome Extension Manifest V3 + Firefox Manifest V2 (parallel manifests)
 - `chrome.storage.local` (extensions) or `GM_*Value` (userscript) for settings persistence
 - Activity (watch progress, volume memory, history, bookmarks, rant archives) lives in extension storage in the extension builds, so clearing rumble.com's site data leaves it alone. Userscripts have no extension storage and keep it in rumble.com's `localStorage`. Existing installs move it over once, on the first Rumble page after updating, keeping a copy of what was there to roll back to.
-- Mediabunny 1.59.1 (bundled) for default HLS-to-MP4 conversion, including direct-to-disk streaming
+- Mediabunny 1.60.0 (bundled) for default HLS-to-MP4 conversion, including direct-to-disk streaming
 - mux.js 7.1.0 (bundled) as the bounded fallback when Mediabunny or WebCodecs is unavailable
 - `AbortController` + generation-counter guards for cancellable async work
 - Anti-FOUC: CSS injected at `document_start`
@@ -446,7 +446,7 @@ flowchart LR
     Userscript --> Embedded[Embedded pinned media workers]
 ```
 
-`settings-schema.js` owns defaults, migration, and validation for every runtime. Four small shared files own routing, selector health, card adaptation, and media/probe helpers. `content.js` holds the injected feature modules. The browser extension and generated userscripts load those sources in the same order, with a hash guard that catches drift. `extension/platform.js` and `userscript/platform.js` adapt storage, downloads, network requests, assets, localization, and capabilities. `background.js` remains the extension-only privileged boundary for persistent downloads, context menus, notifications, tab operations, queue alarms, and offscreen work. Popup, options, and side-panel pages edit the same validated settings catalog in `chrome.storage.local`. Per-Rumble history and bookmarks stay on the Rumble origin.
+`settings-schema.js` owns defaults, migration, and validation for every runtime. Four small shared files own routing, selector health, card adaptation, and media/probe helpers. `content.js` holds the injected feature modules. The browser extension and generated userscripts load those sources in the same order, with a hash guard that catches drift. `extension/platform.js` and `userscript/platform.js` adapt storage, downloads, network requests, assets, localization, and capabilities. `background.js` remains the extension-only privileged boundary for persistent downloads, context menus, notifications, tab operations, queue alarms, and offscreen work. Popup, options, and side-panel pages edit the same validated settings catalog in `chrome.storage.local`. Browser-extension activity such as history and bookmarks also lives in extension storage. Userscripts keep that activity on the Rumble origin because they have no extension store.
 
 ### Feature-module template
 
@@ -511,7 +511,7 @@ Create a clean local release with the same gate:
 npm run release:local
 ```
 
-The release command removes known old package outputs, runs `npm run verify`, rebuilds the final files from a clean package state, and checks the archive bytes again. A failed guard stops before packaging. Requires `zip`; on Windows without `zip`, the build uses the Windows-bundled bsdtar so ZIP entries keep browser-safe forward-slash paths.
+The release command first refuses a dirty Git tree, then removes known old package outputs, runs `npm run verify`, rebuilds the final files, and checks the archive bytes again. Browser packages and the AMO source bundle only copy Git-tracked files, so an ignored browser file or a local scratch file cannot leak into an archive. A failed guard stops before packaging. Requires `zip`; on Windows without `zip`, the build uses the Windows-bundled bsdtar so ZIP entries keep browser-safe forward-slash paths.
 
 The selector tests use checked-in, synthetic desktop captures. Private MHTML captures in `Sample Pages/` are optional local evidence and never enter release packages: `test_selectors.py` reports their absence and carries on. Live-site checks remain opt-in because network and account state are not deterministic release inputs.
 

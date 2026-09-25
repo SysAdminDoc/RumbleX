@@ -8,6 +8,7 @@ const vm = require('vm');
 const { resolveObjectURL } = require('buffer');
 
 const ROOT = path.resolve(__dirname, '..');
+const schemaSource = fs.readFileSync(path.join(ROOT, 'extension', 'settings-schema.js'), 'utf8');
 const template = fs.readFileSync(path.join(ROOT, 'userscript', 'platform.js'), 'utf8');
 const source = template
     .replace('__RUMBLEX_VERSION__', JSON.stringify('9.9.9-test'))
@@ -74,6 +75,7 @@ async function main() {
         GM_xmlhttpRequest: (options) => xhrImpl(options),
         GM_download: (options) => { downloadOptions = options; },
     });
+    vm.runInContext(schemaSource, context, { filename: 'settings-schema.js' });
     vm.runInContext(source, context, { filename: 'userscript/platform.js' });
     const platform = context.RumbleXPlatform;
 
@@ -96,6 +98,10 @@ async function main() {
     assert.equal(JSON.stringify(await platform.storage.get(['alpha', 'beta'])), JSON.stringify({ alpha: 1, beta: { ok: true } }));
     await platform.storage.remove('alpha');
     assert.equal((await platform.storage.get('alpha')).alpha, undefined);
+    await platform.storage.set({ rx_settings: { darkEnhance: false, pageDensity: 'normal' } });
+    const patched = await platform.storage.patchSettings({ darkEnhance: true });
+    assert.equal(patched.darkEnhance, true);
+    assert.equal(patched.pageDensity, 'normal');
     let change;
     const unsubscribe = platform.storage.onChanged((next) => { change = next; });
     const listener = [...valueListeners.values()][0];

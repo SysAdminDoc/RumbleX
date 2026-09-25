@@ -18,6 +18,13 @@ const schema = context.RumbleXSettingsSchema;
 
 assert.ok(schema, 'schema global was not installed');
 assert.equal(schema.SCHEMA_VERSION, 4);
+assert.deepEqual([...schema.TRACKING_QUERY_KEYS], [
+    'e9s', 'ref', 'referrer', 'src',
+    'utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content',
+    'campaign', 'mtm_source', 'mtm_medium', 'mtm_campaign',
+    'fbclid', 'gclid', 'mc_cid', 'mc_eid', 'igshid', '_ga', 'yclid',
+]);
+assert.ok(Object.isFrozen(schema.TRACKING_QUERY_KEYS), 'tracking allowlist must be immutable');
 assert.ok(Object.keys(schema.DEFAULTS).length >= 208, 'canonical defaults catalog unexpectedly shrank');
 for (const id of ['videoClips', 'subtitleSidecar', 'transcripts']) {
     assert.equal(schema.DEFAULTS[id], false, `${id} must not add an open workspace on a new install`);

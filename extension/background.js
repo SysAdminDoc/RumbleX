@@ -602,12 +602,27 @@ async function rxGetSettings() {
     } catch { return {}; }
 }
 
+// Every extension surface writes through this queue. A popup toggle, content
+// feature, notifier update, and Options save can otherwise all read the same
+// old object and let the last full-object write erase the others.
+let rxSettingsWriteChain = Promise.resolve();
+
+function rxQueueSettingsWrite(data, { replace = false, extraValues = null } = {}) {
+    const commit = async () => {
+        const current = replace ? {} : (await chrome.storage.local.get('rx_settings')).rx_settings || {};
+        const next = rxNormalizeSettings(replace ? data : { ...current, ...data });
+        await chrome.storage.local.set({ ...(extraValues || {}), rx_settings: next });
+        return next;
+    };
+    rxSettingsWriteChain = rxSettingsWriteChain.then(commit, commit);
+    return rxSettingsWriteChain;
+}
+
 async function rxSetSettings(patch) {
     try {
-        const data = await chrome.storage.local.get('rx_settings');
-        const merged = rxNormalizeSettings({ ...(data.rx_settings || {}), ...patch });
-        await chrome.storage.local.set({ rx_settings: merged });
+        return await rxQueueSettingsWrite(patch);
     } catch (e) { console.warn('[RumbleX] rxSetSettings failed:', e); }
+    return null;
 }
 
 async function rxSyncChannelNotifier() {
@@ -2331,16 +2346,9 @@ if (chrome.downloads?.onErased) {
     });
 }
 
-// Allowlist of tracking params to strip — kept in sync with content.js
-// StripTrackingParams. Duplicated here because the SW handles the link-
-// context case where the user right-clicked a link (whose URL the content
-// script never saw).
-const RX_CM_TRACKING_PARAMS = new Set([
-    'e9s', 'ref', 'referrer', 'src',
-    'utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content',
-    'campaign', 'mtm_source', 'mtm_medium', 'mtm_campaign',
-    'fbclid', 'gclid', 'mc_cid', 'mc_eid', 'igshid', '_ga', 'yclid',
-]);
+// The context-menu worker handles links the content script never sees, but it
+// consumes the same canonical privacy allowlist as every other runtime.
+const RX_CM_TRACKING_PARAMS = new Set(RXSettingsSchema.TRACKING_QUERY_KEYS);
 
 function rxStripTrackingFromUrl(href) {
     try {
@@ -2496,6 +2504,12 @@ const RX_EXTENSION_OR_CONTENT = Object.freeze([
 // field kinds validate nested records that can carry URLs or privileged data.
 const RX_MESSAGE_ACTIONS = Object.freeze({
     getSettings: rxMessageRule(RX_EXTENSION_OR_CONTENT),
+    patchSettings: rxMessageRule(RX_EXTENSION_OR_CONTENT, {
+        data: rxMessageField('json-object', { required: true, maxBytes: 2 * 1024 * 1024 }),
+    }),
+    applyWelcomeSettings: rxMessageRule(RX_EXTENSION_ONLY, {
+        data: rxMessageField('json-object', { required: true, maxBytes: 2 * 1024 * 1024 }),
+    }),
     saveSettings: rxMessageRule(RX_EXTENSION_ONLY, {
         data: rxMessageField('json-object', { required: true, maxBytes: 2 * 1024 * 1024 }),
     }),
@@ -2759,12 +2773,23 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     }
 
     if (message.action === 'saveSettings') {
-        chrome.storage.local.set({ rx_settings: rxNormalizeSettings(message.data) }, () => {
-            const error = chrome.runtime.lastError;
-            sendResponse(error
-                ? { success: false, error: error.message || String(error) }
-                : { success: true });
-        });
+        rxQueueSettingsWrite(message.data, { replace: true })
+            .then(() => sendResponse({ success: true }))
+            .catch((error) => sendResponse({ success: false, error: error?.message || String(error) }));
+        return true;
+    }
+
+    if (message.action === 'patchSettings') {
+        rxQueueSettingsWrite(message.data)
+            .then((settings) => sendResponse({ success: true, settings }))
+            .catch((error) => sendResponse({ success: false, error: error?.message || String(error) }));
+        return true;
+    }
+
+    if (message.action === 'applyWelcomeSettings') {
+        rxQueueSettingsWrite(message.data, { extraValues: { rx_welcome_seen: true } })
+            .then(() => sendResponse({ success: true }))
+            .catch((error) => sendResponse({ success: false, error: error?.message || String(error) }));
         return true;
     }
 
@@ -3135,7 +3160,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                 // a parallel snapshot store.
                 await rxWriteSettingsSnapshot('pre-profile-switch');
                 const next = rxNormalizeSettings({ ...target.settings, activeProfileId: target.id });
-                await chrome.storage.local.set({ rx_settings: next });
+                await rxQueueSettingsWrite(next, { replace: true });
                 sendResponse({ ok: true, name: target.name });
             } catch (e) { sendResponse({ ok: false, reason: String(e?.message || e) }); }
         })();
@@ -3383,8 +3408,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                     const newId = data && data.id ? data.id : gistId;
                     // Persist the gist id if this was a CREATE.
                     if (!gistId && newId) {
-                        const next = rxNormalizeSettings({ ...settings, encryptedGistSyncId: newId });
-                        await new Promise((resolve) => chrome.storage.local.set({ rx_settings: next }, resolve));
+                        await rxQueueSettingsWrite({ encryptedGistSyncId: newId });
                     }
                     sendResponse({ ok: true, gistId: newId, bytes: JSON.stringify(payload).length });
                     return;
@@ -3445,7 +3469,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                     encryptedGistSyncToken: token,
                     encryptedGistSyncId: gistId,
                 });
-                await new Promise((resolve) => chrome.storage.local.set({ rx_settings: next }, resolve));
+                await rxQueueSettingsWrite(next, { replace: true });
                 sendResponse({ ok: true, encryptedAt: env.encryptedAt || null, keyCount: Object.keys(next).length });
             } catch (e) {
                 sendResponse({ ok: false, reason: String(e?.message || e) });

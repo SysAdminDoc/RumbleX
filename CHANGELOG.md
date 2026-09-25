@@ -10,8 +10,12 @@ All notable changes to RumbleX will be documented in this file.
 - The new search, queue, dialog, and Watch Later control text is localized across all six shipped languages. The Options document also declares the browser UI language.
 - Options integration fields now have persistent visible labels, and their row can wrap without overflowing a narrow side panel.
 - Default chat observers now process only the rows added in the current frame. New messages no longer make mention styling, autocomplete, user blocking, spam detection, and session counts rescan the full chat history.
+- Paid-rant persistence now follows the same incremental chat path. It waits for a staged row to have a username and price before caching it, instead of rescanning the entire history or saving an incomplete entry.
 - Selector contracts are matched against parsed HTML elements. A class on one node, an ID on another, or markup-like text inside a comment or script can no longer create a false pass.
 - Repeated-navigation coverage now swaps route-specific Home, Watch, Search, Channel, and Subscriptions fixtures instead of reusing one watch-page body for every URL.
+- Mediabunny is updated from 1.59.1 to 1.60.0. The npm tarball, bundled module, license, byte count, and package hash are pinned together.
+- Local releases now require a clean Git tree before verification starts. Runtime packages and the AMO source archive copy tracked files only, preventing local scratch files inside `extension/` from entering a release.
+- URL cleanup uses one immutable tracking-parameter list in the shared schema. Context-menu copies, address-bar cleanup, link clicks, timestamp sharing, and userscripts can no longer drift apart.
 
 ### Fixed
 
@@ -20,6 +24,7 @@ All notable changes to RumbleX will be documented in this file.
 - Runtime message limits now measure UTF-8 bytes, settings saves report storage failures, and a started browser download is no longer reported as rejected only because recovery metadata could not be saved.
 - Archive discovery has a deadline, notifier checks are single-flight and time bounded, and abandoned archive work is requeued after a service-worker restart.
 - Concurrent media-probe cache callers now share one initial storage read, preventing one scan from erasing another scan's first cached result.
+- Settings patches from tabs, the popup, Options, profiles, and background jobs now pass through one serialized writer. A nearly simultaneous change on another surface can no longer be erased by a stale whole-profile save.
 - A document-start cleanup rule no longer remains active after boot and silently hides page toolbar or player controls for the rest of the session.
 - In-page settings search now covers every category, exposes a useful no-results state, and returns to the previously selected category when cleared.
 - Keyboard users can reveal Quick Save, chat and comment block actions, and mini-player controls without hovering. The settings editor focus trap now skips controls inside hidden ancestors.
@@ -31,8 +36,9 @@ All notable changes to RumbleX will be documented in this file.
 - Page-gated modules now remount after Rumble SPA navigation. Features first initialized on Home can start after entering Watch or Channel, and watch-only observers are torn down when the tab leaves that route.
 - Auto Max Quality now owns its delayed menu-selection work, so disabling the feature or changing routes cancels every pending player click.
 - Chat User Block and Spam Dedup now remove their injected controls, hidden state, and processing markers during teardown.
+- Chrome's internal offscreen document is no longer web accessible to Rumble pages. The service worker can still create it through the extension-only API.
 
-## [3.60.1] - 2026-09-24
+## [3.60.1] - 2026-09-25
 
 ### Fixed
 

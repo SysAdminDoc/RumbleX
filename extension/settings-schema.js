@@ -7,6 +7,15 @@
     if (globalThis.RumbleXSettingsSchema) return;
 
     const SCHEMA_VERSION = 4;
+    // One privacy allowlist serves the page runtime, context-menu service
+    // worker, generated userscripts, and tests. Playback/navigation parameters
+    // must never be added here.
+    const TRACKING_QUERY_KEYS = Object.freeze([
+        'e9s', 'ref', 'referrer', 'src',
+        'utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content',
+        'campaign', 'mtm_source', 'mtm_medium', 'mtm_campaign',
+        'fbclid', 'gclid', 'mc_cid', 'mc_eid', 'igshid', '_ga', 'yclid',
+    ]);
     // One canonical palette registry feeds the site runtime, popup, full
     // settings editor, injected settings panel, tests, and generated
     // userscripts. Keeping labels and preview swatches beside the actual
@@ -906,6 +915,7 @@
             safeWebhookUrl,
             safeLiveStreamApiUrl,
             SECRET_SETTING_KEYS,
+            TRACKING_QUERY_KEYS,
             redactUrl,
             sanitizeDiagnosticText,
             sanitizeDiagnosticValue,

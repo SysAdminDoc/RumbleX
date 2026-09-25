@@ -20,6 +20,7 @@ const SOURCE_STEPS = Object.freeze([
     nodeStep('github-permission', 'GitHub optional permission contract', 'scripts/test-github-permission.js'),
     nodeStep('message-boundary', 'Runtime message boundary', 'scripts/check-message-boundary.js'),
     nodeStep('settings-schema', 'Settings schema contract', 'scripts/test-settings-schema.js'),
+    nodeStep('settings-writes', 'Serialized settings writes', 'scripts/test-settings-writes.js'),
     nodeStep('settings-consumers', 'Settings consumer registry', 'scripts/check-settings-consumers.js'),
     nodeStep('local-storage-keys', 'Reset All Data key coverage', 'scripts/check-local-storage-keys.js'),
     nodeStep('feature-catalog', 'Feature catalog integrity', 'scripts/test-feature-catalog.js'),

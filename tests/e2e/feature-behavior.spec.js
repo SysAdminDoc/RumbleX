@@ -597,6 +597,62 @@ test('RantPersist scopes its cache key per video and derives a clean title', asy
     expect(result.fromTitle).toBe('Fallback Title');
 });
 
+test('RantPersist processes only added roots and waits for staged rant identity', async () => {
+    const result = await inHarness(({ body }) => {
+        document.body.innerHTML = body;
+        history.replaceState({}, '', '/vrant789-incremental.html');
+        const harness = globalThis.__RumbleXFeatureHarness;
+        harness.enable('rantPersist');
+        const feature = harness.features.find((f) => f.id === 'rantPersist');
+        feature._cached = [];
+
+        const chat = document.querySelector('#chat-history-list');
+        const unrelated = document.createElement('div');
+        unrelated.className = 'chat-history--rant';
+        unrelated.innerHTML = '<button class="chat-history--rant-username">Old</button><span class="chat-history--rant-price">$1</span>';
+        chat.appendChild(unrelated);
+
+        const staged = document.createElement('div');
+        staged.className = 'chat-history--rant';
+        staged.innerHTML = '<span class="chat-history--rant-price">$20</span>';
+        chat.appendChild(staged);
+
+        feature._persist(staged);
+        const beforeIdentity = {
+            cached: feature._cached.length,
+            stagedMarked: staged.dataset.rxPersisted,
+            stagedCached: staged.dataset.rxRantCached || '',
+            unrelatedMarked: unrelated.dataset.rxPersisted || '',
+        };
+
+        const username = document.createElement('button');
+        username.className = 'chat-history--rant-username';
+        username.textContent = 'New chatter';
+        staged.appendChild(username);
+        feature._persist(username);
+
+        return {
+            beforeIdentity,
+            cached: feature._cached,
+            badgeCount: staged.querySelectorAll('.rx-rant-persist-badge').length,
+            stagedCached: staged.dataset.rxRantCached,
+            unrelatedMarked: unrelated.dataset.rxPersisted || '',
+        };
+    });
+
+    expect(result.beforeIdentity).toEqual({
+        cached: 0,
+        stagedMarked: '1',
+        stagedCached: '',
+        unrelatedMarked: '',
+    });
+    expect(result.cached).toHaveLength(1);
+    expect(result.cached[0]).toMatchObject({ user: 'New chatter', price: '$20' });
+    expect(result.badgeCount).toBe(1);
+    expect(result.stagedCached).toBe('1');
+    expect(result.unrelatedMarked).toBe('');
+});
+
 test('PopoutChat prefers the native control and only opens a scoped window otherwise', async () => {
     const result = await inHarness(({ body }) => {
         document.body.innerHTML = body;

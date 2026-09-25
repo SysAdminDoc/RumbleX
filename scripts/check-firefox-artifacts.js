@@ -151,6 +151,33 @@ assert.equal(JSON.parse(unsignedEntries.get('manifest.json').toString('utf8')).m
     `${path.basename(OUTPUT)} does not contain the Firefox MV2 manifest`);
 
 const sourceEntries = readArchive(SOURCE_ARCHIVE);
+const trackedExtensionResult = spawnSync('git', ['ls-files', '--', 'extension'], {
+    cwd: ROOT,
+    encoding: 'utf8',
+    windowsHide: true,
+});
+assert.equal(trackedExtensionResult.status, 0,
+    `could not enumerate tracked extension sources: ${trackedExtensionResult.stderr || trackedExtensionResult.error?.message || 'unknown error'}`);
+const trackedExtension = new Set(
+    trackedExtensionResult.stdout.split(/\r?\n/).filter(Boolean).map((name) => name.split(path.sep).join('/')),
+);
+const archivedExtension = new Set(
+    [...sourceEntries.keys()].filter((name) => name.startsWith('extension/') && !name.endsWith('/')),
+);
+assert.deepEqual([...archivedExtension].filter((name) => !trackedExtension.has(name)), [],
+    `${path.basename(SOURCE_ARCHIVE)} contains untracked extension files`);
+assert.deepEqual([...trackedExtension].filter((name) => !archivedExtension.has(name)), [],
+    `${path.basename(SOURCE_ARCHIVE)} is missing tracked extension source files`);
+
+const allowedSourceScripts = new Set([
+    'scripts/build-userscript.js',
+    'scripts/build-firefox-amo.js',
+    'scripts/zip-utils.js',
+]);
+const archivedScripts = [...sourceEntries.keys()]
+    .filter((name) => name.startsWith('scripts/') && !name.endsWith('/'));
+assert.deepEqual(archivedScripts.filter((name) => !allowedSourceScripts.has(name)), [],
+    `${path.basename(SOURCE_ARCHIVE)} contains undeclared build scripts`);
 for (const required of [
     'extension/manifest-firefox.json',
     'extension/build.sh',

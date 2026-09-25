@@ -169,22 +169,6 @@ const Selectors = {
             return (br.width * br.height) - (ar.width * ar.height);
         })[0] || null;
     },
-    wait(key, { timeout = 8000, root } = {}) {
-        return new Promise((resolve, reject) => {
-            const found = this.find(key, root);
-            if (found) return resolve(found);
-            const obs = new MutationObserver(() => {
-                const el = this.find(key, root);
-                if (el) { obs.disconnect(); clearTimeout(timer); resolve(el); }
-            });
-            obs.observe(document.documentElement, { childList: true, subtree: true });
-            const timer = setTimeout(() => {
-                obs.disconnect();
-                this._note(key, 'timeout');
-                reject(new Error('Selectors.wait timeout: ' + key));
-            }, timeout);
-        });
-    },
     _note(key, kind) {
         if (!Settings._ready || !Settings.get('debugSelectorTelemetry')) return;
         this._telemetry.push({ key, kind, at: Date.now() });

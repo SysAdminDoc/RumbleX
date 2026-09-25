@@ -12,6 +12,16 @@
 
     const BRAND_NAME = 'RumbleX';
     const STORAGE_KEY = 'rx_settings';
+
+    async function writeSettings(action, data) {
+        const response = await chrome.runtime.sendMessage({ action, data });
+        if (!response?.success) throw new Error(response?.error || 'Settings update failed');
+        return response.settings;
+    }
+
+    const patchStoredSettings = (patch) => writeSettings('patchSettings', patch);
+    const replaceStoredSettings = (settings) => writeSettings('saveSettings', settings);
+    const applyWelcomeSettings = (patch) => writeSettings('applyWelcomeSettings', patch);
     // Mirrors RX_EXTENSION_STORAGE_RESET_KEYS in content.js. The two lists are
     // held in sync by `npm run test:local-storage-keys`, which fails if either
     // side drifts — this page cannot import from the content runtime.
@@ -937,7 +947,7 @@
             : list.find((s) => s.at === indexOrAt);
         if (!snap) return { ok: false, reason: 'not-found' };
         await createSettingsSnapshot('pre-restore');
-        await chrome.storage.local.set({ [STORAGE_KEY]: normaliseImported(snap.settings || {}) });
+        await replaceStoredSettings(normaliseImported(snap.settings || {}));
         // Snapshots taken before activity was captured carry no `activity` key,
         // and restore settings only, exactly as they always did.
         if (snap.activity && typeof snap.activity === 'object') {
@@ -1026,7 +1036,7 @@
             }
 
             const snapshot = await createSettingsSnapshot('pre-import-settings');
-            await chrome.storage.local.set({ [STORAGE_KEY]: sanitized });
+            await replaceStoredSettings(sanitized);
 
             // v2+: restore per-site data to any open Rumble tabs. If no tab
             // is open we silently skip — the payload is already gone from the
@@ -1777,18 +1787,10 @@
             return;
         }
         try {
-            let merged;
-            if (state.dirtyKeys.size > 0) {
-                const fresh = await chrome.storage.local.get(STORAGE_KEY);
-                const latest = fresh[STORAGE_KEY] || {};
-                const base = { ...deepClone(DEFAULTS), ...deepClone(latest) };
-                for (const k of state.dirtyKeys) base[k] = deepClone(state.draftSettings[k]);
-                merged = base;
-            } else {
-                merged = deepClone(state.draftSettings);
-            }
-            const next = sanitizeSettingsObject(merged);
-            await chrome.storage.local.set({ [STORAGE_KEY]: next });
+            const patch = Object.fromEntries(
+                [...state.dirtyKeys].map((key) => [key, deepClone(state.draftSettings[key])]),
+            );
+            const next = await patchStoredSettings(sanitizeSettingsObject(patch));
 
             state.storedSettings = deepClone(next);
             state.resolvedSettings = { ...deepClone(DEFAULTS), ...deepClone(next) };
@@ -2741,11 +2743,7 @@
     async function _persistGistSyncCredentials() {
         const token = (elements.gistSyncTokenInput?.value || '').trim();
         const gistId = (elements.gistSyncIdInput?.value || '').trim();
-        const got = await new Promise((resolve) => chrome.storage.local.get(['rx_settings'], resolve));
-        const settings = (got && got.rx_settings && typeof got.rx_settings === 'object') ? got.rx_settings : {};
-        settings.encryptedGistSyncToken = token;
-        settings.encryptedGistSyncId = gistId;
-        await new Promise((resolve) => chrome.storage.local.set({ rx_settings: settings }, resolve));
+        await patchStoredSettings({ encryptedGistSyncToken: token, encryptedGistSyncId: gistId });
     }
 
     // Shared so push and pull explain an identical backend refusal identically;
@@ -3133,11 +3131,9 @@
     if (elements.archiveMaxHeightInput) {
         elements.archiveMaxHeightInput.addEventListener('change', async () => {
             try {
-                const got = await new Promise((resolve) => chrome.storage.local.get(['rx_settings'], resolve));
-                const s = (got && got.rx_settings && typeof got.rx_settings === 'object') ? got.rx_settings : {};
-                s.channelArchiveMaxHeight = elements.archiveMaxHeightInput.value || 'best';
-                await new Promise((resolve) => chrome.storage.local.set({ rx_settings: s }, resolve));
-                showStatus('Archive max height set to ' + (s.channelArchiveMaxHeight === 'best' ? 'best available' : '≤ ' + s.channelArchiveMaxHeight + 'p') + '.', 'success');
+                const channelArchiveMaxHeight = elements.archiveMaxHeightInput.value || 'best';
+                await patchStoredSettings({ channelArchiveMaxHeight });
+                showStatus('Archive max height set to ' + (channelArchiveMaxHeight === 'best' ? 'best available' : '≤ ' + channelArchiveMaxHeight + 'p') + '.', 'success');
             } catch (e) {
                 showStatus('Could not save: ' + String(e?.message || e), 'error');
             }
@@ -3149,11 +3145,9 @@
     if (elements.archiveSubfolderInput) {
         elements.archiveSubfolderInput.addEventListener('change', async () => {
             try {
-                const got = await new Promise((resolve) => chrome.storage.local.get(['rx_settings'], resolve));
-                const s = (got && got.rx_settings && typeof got.rx_settings === 'object') ? got.rx_settings : {};
-                s.channelArchiveSubfolder = (elements.archiveSubfolderInput.value || 'RumbleX').trim() || 'RumbleX';
-                await new Promise((resolve) => chrome.storage.local.set({ rx_settings: s }, resolve));
-                showStatus('Archive subfolder set to "' + s.channelArchiveSubfolder + '" (sanitized server-side).', 'success');
+                const channelArchiveSubfolder = (elements.archiveSubfolderInput.value || 'RumbleX').trim() || 'RumbleX';
+                await patchStoredSettings({ channelArchiveSubfolder });
+                showStatus('Archive subfolder set to "' + channelArchiveSubfolder + '" (sanitized server-side).', 'success');
                 await refreshArchiveFolderState();
             } catch (e) {
                 showStatus('Could not save: ' + String(e?.message || e), 'error');
@@ -3383,14 +3377,10 @@
                 .filter((input) => input.checked)
                 .map((input) => input.dataset.key);
             try {
-                const stored = (await welcomeStorageGet([STORAGE_KEY]))[STORAGE_KEY] || {};
-                const next = { ...stored };
-                for (const key of chosen) next[key] = true;
-                // Same trust boundary as every other settings write.
-                const normalized = RXSettingsSchema.normalizeStored(next, DEFAULTS);
-                // Settings and the seen marker are one storage operation so a
-                // failed apply cannot persist half of the user's decision.
-                await welcomeStorageSet({ [STORAGE_KEY]: normalized, rx_welcome_seen: true });
+                const patch = Object.fromEntries(chosen.map((key) => [key, true]));
+                // The service worker serializes this patch with every other
+                // settings writer and commits the seen marker in the same call.
+                await applyWelcomeSettings(patch);
                 panel.hidden = true;
                 showStatus(
                     chosen.length

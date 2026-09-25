@@ -60,6 +60,9 @@ test('popup fits Chromium bounds and keeps the footer and last setting reachable
     await page.goto(`chrome-extension://${extensionId}/pages/popup.html`);
 
     const features = page.locator('#features');
+    // Navigation finishing does not mean the async storage-backed catalog has
+    // rendered. Measure the populated scroll region, not its empty shell.
+    await expect(features.locator('.feat-group').first()).toBeVisible();
     const footer = page.locator('.footer');
     const footerBox = await footer.boundingBox();
     expect(footerBox).not.toBeNull();

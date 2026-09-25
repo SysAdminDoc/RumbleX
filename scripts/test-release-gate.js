@@ -2,8 +2,13 @@
 'use strict';
 
 const assert = require('assert/strict');
-const { runLocalRelease } = require('./release-local');
+const fs = require('fs');
+const path = require('path');
+const { RELEASE_TREE_STEP, runLocalRelease } = require('./release-local');
+const { releaseTreeStatus } = require('./check-release-tree');
 const { runVerification, SOURCE_STEPS } = require('./verify');
+const { createFirefoxArchive } = require('./build-firefox-amo');
+const { readArchiveBuffer } = require('./zip-utils');
 
 const verificationCalls = [];
 const failedGuardStatus = runVerification({
@@ -23,13 +28,37 @@ const failedReleaseStatus = runLocalRelease({
     clean() { cleanCalls += 1; },
     execute(step) {
         releaseCalls.push(step.id);
-        return false;
+        return step.id !== 'verify';
     },
 });
 
 assert.equal(failedReleaseStatus, 1, 'A failed mandatory verification must fail the local release');
 assert.equal(cleanCalls, 1, 'The release must clean stale packages before verification');
-assert.deepEqual(releaseCalls, ['verify'], 'A failed verification must prevent the final build and archive checks');
+assert.deepEqual(releaseCalls, [RELEASE_TREE_STEP.id, 'verify'],
+    'the clean-tree guard must run before cleanup, and a failed verification must prevent packaging');
+
+const fakeGit = (stdout, status = 0) => () => ({ status, stdout, stderr: '', error: null });
+assert.equal(releaseTreeStatus({ spawn: fakeGit('') }).ok, true, 'a clean tree must pass the release guard');
+const dirtyTree = releaseTreeStatus({ spawn: fakeGit(' M extension/content.js\n?? extension/private.txt\n') });
+assert.equal(dirtyTree.ok, false, 'tracked or untracked source changes must block a release');
+assert.deepEqual(dirtyTree.paths, [' M extension/content.js', '?? extension/private.txt']);
+
+const packageProbe = path.join(__dirname, '..', 'extension', 'pages', '.untracked-package-probe');
+assert.ok(!fs.existsSync(packageProbe), 'package probe path already exists');
+try {
+    fs.writeFileSync(packageProbe, 'must not ship\n');
+    const entries = readArchiveBuffer(createFirefoxArchive(), 'untracked-package-probe.zip');
+    assert.equal(entries.has('pages/.untracked-package-probe'), false,
+        'an untracked file inside a declared runtime directory leaked into the Firefox package');
+} finally {
+    fs.rmSync(packageProbe, { force: true });
+}
+
+const buildScript = fs.readFileSync(path.join(__dirname, '..', 'extension', 'build.sh'), 'utf8');
+assert.match(buildScript, /git -C \.\. ls-files -- "extension\/\$item"/,
+    'browser package staging must enumerate tracked directory files');
+assert.doesNotMatch(buildScript, /cp -R \. "\$stage\/extension\//,
+    'the source archive must not copy the whole local extension directory');
 
 
 // The selector harness exits 2 when the private Sample Pages/ captures are

@@ -34,6 +34,11 @@
         set(values) {
             return callAsync(ext.storage.local, 'set', values);
         },
+        async patchSettings(patch) {
+            const response = await callAsync(ext.runtime, 'sendMessage', { action: 'patchSettings', data: patch });
+            if (!response?.success) throw new Error(response?.error || 'Settings update failed');
+            return response.settings;
+        },
         remove(keys) {
             return callAsync(ext.storage.local, 'remove', keys);
         },

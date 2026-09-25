@@ -57,6 +57,7 @@ const rxCatLabel = (cat) => rxT('cat_' + cat.id.replace(/-/g, '_') + '_label', c
 const RXSettingsSchema = globalThis.RumbleXSettingsSchema;
 if (!RXSettingsSchema) throw new Error('RumbleX settings schema is missing');
 const SCHEMA_VERSION = RXSettingsSchema.SCHEMA_VERSION;
+const RX_TRACKING_QUERY_KEYS = new Set(RXSettingsSchema.TRACKING_QUERY_KEYS);
 
 // ── Settings Manager (chrome.storage.local) ──
 const Settings = {
@@ -106,7 +107,7 @@ const Settings = {
         if (migrated !== stored || JSON.stringify(sanitized) !== JSON.stringify(migrated)) {
             // Persist migrations and normalization so other extension surfaces
             // never keep reading values the content core has already rejected.
-            try { await RXPlatform.storage.set({ rx_settings: this._cache }); } catch {}
+            try { await RXPlatform.storage.patchSettings(this._cache); } catch {}
             this._lastWritten = JSON.stringify(this._cache);
         }
     },
@@ -150,14 +151,16 @@ const Settings = {
         if (!this._pendingWrite || !this._cache) return this._writeChain;
         this._pendingWrite = false;
         const snapshotObject = JSON.parse(JSON.stringify(this._cache));
-        const snapshot = JSON.stringify(snapshotObject);
         const captured = new Map(this._pendingRevisions);
+        const patch = Object.fromEntries(
+            [...captured.keys()]
+                .filter((key) => Object.hasOwn(snapshotObject, key))
+                .map((key) => [key, snapshotObject[key]]),
+        );
         const commit = async () => {
-            // Mark before dispatch so the synchronous storage-change event
-            // some engines emit for our own write is recognized as local.
-            this._lastWritten = snapshot;
             try {
-                await RXPlatform.storage.set({ rx_settings: snapshotObject });
+                const written = await RXPlatform.storage.patchSettings(patch);
+                this._lastWritten = JSON.stringify(written || snapshotObject);
                 for (const [key, revision] of captured) {
                     if (this._pendingRevisions.get(key) !== revision) continue;
                     this._pendingRevisions.delete(key);
@@ -165,7 +168,7 @@ const Settings = {
                 }
                 return true;
             } catch (e) {
-                if (this._lastWritten === snapshot) this._lastWritten = null;
+                this._lastWritten = null;
                 console.warn('[RumbleX] settings flush failed; retrying:', e);
                 this._pendingWrite = true;
                 clearTimeout(this._writeTimer);
@@ -835,19 +838,6 @@ function rxEscapeHtml(value) {
 // helpers (`filter`, `map`, `some`) and a raw NodeList does not provide them
 // consistently across Chromium, Firefox, or userscript managers.
 function qsa(sel, root) { return Array.from((root || document).querySelectorAll(sel)); }
-
-function waitFor(selector, timeout = 8000) {
-    return new Promise((resolve, reject) => {
-        const el = qs(selector);
-        if (el) return resolve(el);
-        const obs = new MutationObserver(() => {
-            const found = qs(selector);
-            if (found) { obs.disconnect(); clearTimeout(timer); resolve(found); }
-        });
-        obs.observe(document.documentElement, { childList: true, subtree: true });
-        const timer = setTimeout(() => { obs.disconnect(); reject(new Error('Timeout: ' + selector)); }, timeout);
-    });
-}
 
 // Feature DOM often arrives after an htmx swap. Pair those waits with the
 // feature's lifecycle generation so disabling a toggle while a wait is
@@ -14107,7 +14097,7 @@ const SettingsPanel = {
                         }
                         await rxBackupSnapshot('pre-in-page-import');
                         Settings._cache = { ...Settings._defaults, ...sanitized };
-                        await RXPlatform.storage.set({ rx_settings: Settings._cache });
+                        await RXPlatform.storage.patchSettings(Settings._cache);
                         location.reload();
                     } catch (e) {
                         console.error('[RumbleX] Import failed:', e);
@@ -15405,8 +15395,11 @@ const RantPersist = {
 
     _cache(rantEl) {
         const priceEl = rantEl.querySelector('.chat-history--rant-price');
-        const userEl = rantEl.querySelector('.chat-history--username');
+        const userEl = rantEl.querySelector('.chat-history--username, .chat-history--rant-username');
         const textEl = rantEl.querySelector('.chat--message, .chat-history--message');
+        // Rumble stages row children across several mutations. Wait for the
+        // identifying fields instead of permanently caching a half-built row.
+        if (!priceEl || !userEl) return false;
         const level = rantEl.getAttribute('data-level') || '1';
         // Strip RX-injected children when reading the username so the cache
         // stores the real chatter name (consistent with rxReadUsername).
@@ -15422,7 +15415,7 @@ const RantPersist = {
             text: textEl ? textEl.textContent.trim() : '',
             level, ts: Date.now(),
         };
-        if (this._cached.some((c) => c.user === entry.user && c.text === entry.text && c.price === entry.price)) return;
+        if (this._cached.some((c) => c.user === entry.user && c.text === entry.text && c.price === entry.price)) return true;
         this._cached.push(entry);
         // Cap per-video so one stream can't hog localStorage on its own.
         if (this._cached.length > this._MAX_PER_VIDEO) {
@@ -15439,17 +15432,22 @@ const RantPersist = {
         }
         // Debounced mirror to chrome.storage.local for the options-page RantStats panel.
         this._scheduleMirrorWrite();
+        return true;
     },
 
-    _persist() {
-        for (const r of qsa('.chat-history--rant')) {
-            if (r.dataset.rxPersisted) {
-                if (!r.classList.contains('rx-rant-persist')) r.classList.add('rx-rant-persist');
-                continue;
-            }
+    _persist(root = document) {
+        const rants = new Set();
+        if (root instanceof Element) {
+            const parent = root.closest('.chat-history--rant');
+            if (parent) rants.add(parent);
+        }
+        if (root?.matches?.('.chat-history--rant')) rants.add(root);
+        for (const rant of qsa('.chat-history--rant', root)) rants.add(rant);
+
+        for (const r of rants) {
             r.dataset.rxPersisted = '1';
             r.classList.add('rx-rant-persist');
-            const userEl = r.querySelector('.chat-history--username');
+            const userEl = r.querySelector('.chat-history--username, .chat-history--rant-username');
             if (userEl && !r.querySelector('.rx-rant-persist-badge')) {
                 const badge = document.createElement('span');
                 badge.className = 'rx-rant-persist-badge';
@@ -15459,7 +15457,7 @@ const RantPersist = {
                 // pick up the badge text as part of the username.
                 userEl.insertAdjacentElement('afterend', badge);
             }
-            this._cache(r);
+            if (!r.dataset.rxRantCached && this._cache(r)) r.dataset.rxRantCached = '1';
         }
     },
 
@@ -15522,8 +15520,12 @@ const RantPersist = {
         }
         this._mergeObservedGifts();
         waitForFeature(this, '#chat-history-list, .chat-history').then(chatEl => {
-            this._persist();
-            this._obs = new MutationObserver(() => this._persist());
+            this._persist(chatEl);
+            this._obs = new MutationObserver((records) => {
+                scheduleChatMutationRoots(this, 'rant-persist-scan', records, (roots) => {
+                    for (const root of roots) this._persist(root);
+                });
+            });
             // childList+subtree is enough — we override fade-out via !important CSS,
             // so we don't need to react to attribute/class changes (expensive).
             this._obs.observe(chatEl, { childList: true, subtree: true });
@@ -15534,11 +15536,13 @@ const RantPersist = {
         this._styleEl?.remove();
         this._obs?.disconnect();
         this._obs = null;
+        clearChatMutationRoots(this);
         clearTimeout(this._mirrorWriteTimer);
         this._mirrorWriteTimer = null;
         for (const rant of qsa('.rx-rant-persist, [data-rx-persisted]')) {
             rant.classList.remove('rx-rant-persist');
             rant.removeAttribute('data-rx-persisted');
+            rant.removeAttribute('data-rx-rant-cached');
         }
         for (const badge of qsa('.rx-rant-persist-badge, .rx-rant-export-btn')) badge.remove();
     }
@@ -19790,8 +19794,8 @@ const ExternalPlayer = {
         if (!Settings.get(this.id)) return;
         if (!Page.isWatch()) return;
         this._styleEl = injectStyle(this._css, 'rx-extplayer-css');
-        // The watch-page buttons render after the initial HTML parse; poll
-        // through Selectors.wait so we don't race htmx swaps. Re-mount on
+        // The watch-page buttons render after the initial HTML parse; wait
+        // through the feature lifecycle so we don't race htmx swaps. Re-mount on
         // route changes (htmx navigates between watch pages without reload).
         waitForSelectorFeature(this, 'watch.share', { timeout: 15000 }).then(() => this._tryMount()).catch(() => {});
         this._routerUnsub = Router.onChange((d) => {
@@ -19833,14 +19837,9 @@ const StripTrackingParams = {
     name: 'Strip Tracking Params',
     _handler: null,
     _routerUnsub: null,
-    // Conservative removal list. Adding to this is one-edit-per-param; keep
-    // canonical params (start, t, v, q, page) out of it.
-    _strip: new Set([
-        'e9s', 'ref', 'referrer', 'src',
-        'utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content',
-        'campaign', 'mtm_source', 'mtm_medium', 'mtm_campaign',
-        'fbclid', 'gclid', 'mc_cid', 'mc_eid', 'igshid', '_ga', 'yclid',
-    ]),
+    // Conservative removal list. Canonical parameters such as start, t, v, q,
+    // and page deliberately stay outside the shared schema allowlist.
+    _strip: RX_TRACKING_QUERY_KEYS,
     _clean(href) {
         let url;
         try { url = new URL(href, location.href); } catch { return href; }
@@ -21342,7 +21341,6 @@ const RX_PRIVACY_WEB_RESOURCE_DISCLOSURES = Object.freeze({
     'lib/mediabunny.LICENSE': 'Bundled Mediabunny license notice exposed for package compliance.',
     'worker.js': 'Extension-bundled Web Worker used for local video segment processing.',
     'mediabunny-worker.js': 'Extension-bundled module Worker used for local Mediabunny media conversion.',
-    'offscreen.html': 'Chrome MV3 offscreen document shell used only in the extension origin.',
 });
 
 function rxManifestApiPermissions(manifest) {
@@ -21519,7 +21517,7 @@ async function rxRestoreSnapshot(indexOrAt) {
         if (!snap) return { ok: false, reason: 'not-found' };
         // Snapshot BEFORE we overwrite, so an unwanted restore is itself undoable.
         await rxBackupSnapshot('pre-restore');
-        await RXPlatform.storage.set({ rx_settings: { ...Settings._defaults, ...Settings._sanitize(snap.settings) } });
+        await RXPlatform.storage.patchSettings({ ...Settings._defaults, ...Settings._sanitize(snap.settings) });
         return { ok: true, restored: { at: snap.at, reason: snap.reason } };
     } catch (e) {
         return { ok: false, reason: 'storage', error: String(e?.message || e) };
@@ -21639,23 +21637,9 @@ RXPlatform.onMessage((msg, sender, sendResponse) => {
         try {
             const video = getActiveMedia(qs('#rx-split-left') || qs('#videoPlayer') || document);
             const t = video && Number.isFinite(video.currentTime) ? Math.floor(video.currentTime) : null;
-            // Clean URL: reuse the same allowlist-strip set as StripTrackingParams.
-            let cleanUrl = location.href;
-            try {
-                const u = new URL(location.href);
-                if (/(^|\.)rumble\.com$/i.test(u.hostname)) {
-                    const strip = new Set([
-                        'e9s', 'ref', 'referrer', 'src',
-                        'utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content',
-                        'campaign', 'mtm_source', 'mtm_medium', 'mtm_campaign',
-                        'fbclid', 'gclid', 'mc_cid', 'mc_eid', 'igshid', '_ga', 'yclid',
-                    ]);
-                    for (const k of [...u.searchParams.keys()]) {
-                        if (strip.has(k.toLowerCase())) u.searchParams.delete(k);
-                    }
-                    cleanUrl = u.toString();
-                }
-            } catch {}
+            // Clean URL through the same implementation used for clicks and
+            // address-bar scrubbing, regardless of whether that UI feature is on.
+            const cleanUrl = StripTrackingParams._clean(location.href);
             sendResponse({ ok: true, cleanUrl, currentTime: t, isWatch: Page.isWatch() });
         } catch (e) {
             sendResponse({ ok: false, reason: String(e?.message || e) });
